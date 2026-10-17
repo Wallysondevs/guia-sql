@@ -924,3 +924,68 @@ figcaption { margin-top: 8px; font-size: .92rem; color: var(--muted); line-heigh
   .tc-tab { font-size: 12.5px; padding: 3px 7px; }
   .tc .ts-run { flex-direction: column; align-items: stretch; }
 }
+
+/* ---------------- sqlsim: o "Experimente" do Guia SQL ---------------- */
+.trysql {
+  margin: 22px 0;
+  padding: 4px 18px 14px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+}
+.sql-saida {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--bg);
+}
+.ts + .sql-saida, .ts .sql-saida { margin-top: -8px; } /* cola no bloco do editor */
+.ts .ts-run { border-radius: 0; }
+.ts .sql-saida { border-radius: 0 0 8px 8px; }
+.sql-result-wrap { overflow-x: auto; margin: 6px 0 2px; }
+table.sql-result {
+  border-collapse: collapse;
+  font: 14px/1.45 "Ubuntu Mono", ui-monospace, Menlo, Consolas, monospace;
+  min-width: 40%;
+}
+.sql-result th, .sql-result td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+  white-space: pre-wrap;
+}
+.sql-result thead th { background: var(--sidebar-bg); font-weight: 700; }
+.sql-result tbody tr:nth-child(even) { background: var(--example-bg); }
+.sql-null { color: var(--muted); font-style: italic; }
+.sql-n { margin: 2px 0 8px; font-size: 13px; color: var(--muted); }
+.sql-msg { margin: 6px 0; font-size: 14px; color: var(--muted); font-style: italic; }
+.sql-msg.sql-vazio { color: var(--muted); }
+.sql-erro {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-left: 4px solid var(--bad);
+  background: var(--warn-bg);
+  color: var(--bad);
+  font: 14px/1.5 "Ubuntu Mono", ui-monospace, monospace;
+  white-space: pre-wrap;
+}
+.sql-falta { font-weight: 400; color: var(--muted); }
+.sql-dica { color: var(--muted); font-size: 13.5px; }
+.sql-res { margin: -8px 0 20px; }
+.sql-res-rot {
+  margin: 0;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--sidebar-bg);
+  font: 700 12.5px system-ui, sans-serif;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  display: inline-block;
+}
+.sql-res .sql-saida { border-top: 1px solid var(--border); border-radius: 0 8px 8px 8px; }
+@media (max-width: 600px) {
+  .trysql { padding: 4px 10px 12px; }
+}
