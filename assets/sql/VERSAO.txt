@@ -1,0 +1,5 @@
+SQLite WASM 3.50.4 (build oficial sqlite.org)
+Zip: https://sqlite.org/2025/sqlite-wasm-3500400.zip (sha256 do zip na página de download)
+Arquivos vendorizados: jswasm/sqlite3.js e jswasm/sqlite3.wasm (sem COOP/COEP; OPFS não é usado — banco efêmero em memória)
+sourceId: 2025-07-30 19:33:53 4d8adfb30e03f9cf27f800a2c1ba3c48fb4ca1b08b0f5ed59a4d5ecbf45e20a3
+Nota: a série oficial 3.50.x termina na 3.50.4; o sqlite3 nativo da VPS (Android platform-tools) se identifica como 3.50.6.
