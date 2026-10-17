@@ -70,7 +70,48 @@ Igual aos outros guias: `$ ` = `ana@notebook:~$`, `sqlite> ` = o prompt do sqlit
 ## 5. Metas do .trysql
 > **Esta seção é mantida pelo agente do simulador.** Antes de escrever uma frase do tipo "no editor…" que não esteja aqui, confira com as ferramentas dele.
 
-*(placeholder — o agente do simulador escreve aqui o contrato das metas, o testador e o que o editor faz e não faz)*
+### O que o editor faz a cada Rodar
+1. Cria um banco **novo em memória** e carrega `assets/sql/aurora.sql` (a Loja Aurora). Determinístico: rodar duas vezes dá o mesmo resultado.
+2. Executa o SQL da caixa, **vários comandos separados por `;`**, e mostra, na ordem:
+   - cada SELECT como **tabela** (cabeçalho = nomes das colunas; `NULL` aparece como *NULL* em itálico) com o total de linhas embaixo;
+   - cada INSERT/UPDATE/DELETE como "N linha(s) afetada(s)";
+   - os demais comandos como "CREATE TABLE: ok", "DROP TABLE: ok"…;
+   - um erro **para a execução ali** e aparece em vermelho com a mensagem **real** do SQLite (em inglês).
+3. Limites que o autor precisa saber:
+   - comandos de ponto (`.tables`, `.mode`…) **não existem no editor** — são do programa `sqlite3`, não SQL; ali eles dão o erro real de sintaxe. Ensine-os só no `pre.term`;
+   - um SQL sem fim (ex.: `WITH RECURSIVE` sem `LIMIT`) é interrompido depois de ~4 s com o erro `interrupted`;
+   - a tabela mostra até 500 linhas (as metas contam todas).
+
+### A saída canônica (o que as metas `out:` e `contem:` enxergam)
+Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .mode list`: valores separados por `|`, um registro por linha, `NULL` vira vazio, números como o SQLite os escreve (`4.9`, não `4.90`). Ex.: `Lápis Grafite HB|1.15`.
+
+### As metas (`data-goal`)
+| Meta | Passa quando |
+|---|---|
+| `out:REGEX` | a saída canônica casa com a regex (JavaScript, **sem flags**: maiúsculas contam, `^` só casa o começo do texto todo). `\|` dentro da regex casa um `\|` literal; `\|` sem escape é alternativa normal de regex |
+| `linhas:N` | o **último** SELECT devolveu exatamente N linhas |
+| `colunas:a,b,c` | os nomes das colunas do último SELECT são exatamente esses, nessa ordem (use `AS`); `\,` é vírgula dentro de um nome |
+| `contem:TEXTO` | o TEXTO aparece literalmente na saída canônica |
+| `erro:` | a execução terminou em erro (qualquer um) |
+| `erro:REGEX` | a mensagem de erro casa com a regex |
+| `tabela:nome` | a tabela existe depois de rodar (nome em minúsculas) |
+| `mudou:tabela=N` | depois de rodar, a tabela tem exatamente N linhas |
+
+- Combine com `;;`: `data-goal="colunas:nome,preco;;linhas:3"` — **todas** precisam passar.
+- Se o SQL deu erro, **só** metas `erro:` podem passar.
+- O código inicial da caixa **não pode** cumprir a meta; o `pre.solucao` **tem** de cumprir. O testador confere os dois.
+- Escape de HTML vale também dentro de `data-goal` (`&quot;` etc.) e dos `pre`.
+- Prefira metas que aceitem respostas equivalentes (`linhas:`, `mudou:`, `contem:`) a um `out:` que só casa com uma escrita exata.
+
+### O testador (na VPS)
+```bash
+node tools/testar-missoes.js pagina.html outra.html   # as missões da página
+node tools/testar-missoes.js --nativo pagina.html     # + compara com o sqlite3 do host
+node tools/sim.js consulta.sql                        # roda um .sql como o editor rodaria
+```
+- `testar-missoes.js` extrai cada `.trysql` e confere: contrato válido (meta conhecida, regex válida, missão com `pre.solucao`), **inicial falha** a meta, **solução passa**. Também roda cada `pre.file[data-resultado]` e acusa SQL que dá erro sem ser um exemplo de erro (marque exemplos de erro de propósito com `data-erro` no `pre`).
+- `--nativo` roda tudo também no `sqlite3` nativo e compara a saída canônica; diferenças ficam registradas em `tools/DIFERENCAS.md`.
+- `sim.js` serve para colher a saída real que você vai citar no texto da aula.
 
 ## 6. Fidelidade: o laboratório (`~/guia-sql-lab/lab`, na VPS)
 É a máquina da Ana (usuária `ana`, computador `notebook`, `/home/ana`, pt_BR) com o **sqlite3 3.50.6 de verdade** e o banco `~/loja.db` pronto. Toda saída de terminal mostrada numa aula vem de lá:
