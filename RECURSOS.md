@@ -4,16 +4,16 @@
 
 | Onde | O que fica lá |
 |---|---|
-| **VPS** (Debian 13, 8 núcleos, 31 GB) | O guia **de verdade**: `~/guia-html` (git), o laboratório `~/guia-html-lab/lab` (Ubuntu 26.04 + validador W3C) e o Node 24. |
+| **VPS** (Debian 13, 8 núcleos, 31 GB) | O guia **de verdade**: `~/guia-sql` (git), o laboratório `~/guia-sql-lab/lab` (Debian 13 + sqlite3 3.50.6) e o Node 24. |
 | **Notebook** | Só o seu rascunho (`SCRATCH/SEU-NOME/`) e o modelo de estrutura das páginas, para leitura: `~/guia-c`. |
 
 ## Os comandos (rodam no notebook, o trabalho acontece na VPS)
 | Comando | O que faz |
 |---|---|
-| `~/guia-c-lab/vps 'comando'` | Roda um comando na VPS (a pasta inicial é `/home/admin`). Ex.: `~/guia-c-lab/vps 'cat ~/guia-html/links.html'` |
-| `~/guia-c-lab/vps 'timeout 120 ~/guia-html-lab/lab -n SEU-NOME -i' < cmds.txt` | Laboratório da Ana (o stdin passa pelo ssh). |
-| `~/guia-html-lab/enviar SCRATCH/SEU-NOME/pagina.html` | Copia a página para `~/guia-html/` na VPS. |
-| `~/guia-html-lab/testar [--nativo] pagina.html` | Testador de missões na VPS (`timeout` incluso). Só existe depois que o agente do simulador entregar o testador. |
+| `~/guia-c-lab/vps 'comando'` | Roda um comando na VPS (a pasta inicial é `/home/admin`). Ex.: `~/guia-c-lab/vps 'cat ~/guia-sql/CONTRIBUINDO.md'` |
+| `~/guia-c-lab/vps 'timeout 120 ~/guia-sql-lab/lab -n SEU-NOME -i' < cmds.txt` | Laboratório da Ana (o stdin passa pelo ssh). |
+| `~/guia-sql-lab/enviar SCRATCH/SEU-NOME/pagina.html` | Copia a página para `~/guia-sql/` na VPS. |
+| `~/guia-sql-lab/testar [--nativo] pagina.html` | Testador de missões na VPS (`timeout` incluso). Só existe depois que o agente do simulador entregar o testador. |
 
 ## Fluxo de uma página
 1. Escreva e edite a página **no rascunho**: `SCRATCH/SEU-NOME/pagina.html`, com Write/Edit.
@@ -21,14 +21,14 @@
 3. Mande a página com `enviar` e teste com `testar`.
 4. Faça o commit **na VPS**, só dos seus arquivos:
    ```bash
-   ~/guia-c-lab/vps 'cd ~/guia-html && git add pagina.html && git commit -q -m "pagina: aula nova" -- pagina.html'
+   ~/guia-c-lab/vps 'cd ~/guia-sql && git add pagina.html && git commit -q -m "pagina: aula nova" -- pagina.html'
    ```
    - Faça um commit a cada página pronta.
    - Nunca use `git add -A`, `commit -a`, `stash`, `reset`, `checkout -- .`, `rebase` ou `push`.
    - Se der `index.lock`, espere 2 s e tente de novo.
 
 ## Regras
-1. **No notebook, nada pesado:** nada de `node`, `java`/`vnu` nem Chromium. Lá, só ler, escrever no rascunho, usar `ssh`/`scp`, `grep` e `sed`.
+1. **No notebook, nada pesado:** nada de `node` nem Chromium. Lá, só ler, escrever no rascunho, usar `ssh`/`scp`, `grep` e `sed`.
 2. **Na VPS:** um processo pesado por vez, por agente, e sempre com `timeout`.
 3. **Sem subagentes.**
 4. **Nunca use `pkill` ou `killall`**, nem na VPS (lá rodam outros serviços do dono). Use `kill %1` ou `kill $!`.
