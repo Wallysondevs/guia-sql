@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SQL WHERE — filtrando as linhas do resultado | Guia SQL</title>
-<meta name="description" content="A cláusula WHERE para quem está começando: como filtrar as linhas de um SELECT, números sem aspas e textos entre aspas simples, por que comparar texto liga para maiúsculas e acentos, o apóstrofo dentro do texto, o erro das aspas duplas no SQLite e as mensagens reais, com missões na Loja Aurora.">
+<meta name="description" content="A cláusula WHERE para quem está começando: como filtrar as linhas de um SELECT, números sem aspas e textos entre aspas simples, por que comparar texto liga para maiúsculas e acentos, o apóstrofo dentro do texto, o erro das aspas duplas (o editor recusa, o terminal aceita calado) e as mensagens reais, com missões na Loja Aurora.">
 <link rel="stylesheet" href="assets/style.css">
 <script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
@@ -260,29 +260,39 @@ WHERE descontinuado = 1;
 <h2 id="errado">Quando dá errado</h2>
 
 <div class="cenario">
-<strong>Aspas duplas no lugar de aspas simples</strong>
-<p>Quem vem de outras linguagens de programação costuma escrever texto entre aspas duplas. No SQLite do guia, isso dá erro:</p>
+<strong>Aspas duplas no lugar de aspas simples: o editor recusa, o terminal aceita calado</strong>
+<p>Quem vem de outras linguagens de programação costuma escrever texto entre aspas duplas. No <strong>editor do guia</strong>, isso dá erro:</p>
 <pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome, preco
 FROM produtos
 WHERE nome = "Mouse Sem Fio";
 </pre>
-<p>A mensagem diz: "não existe a coluna <code>"Mouse Sem Fio"</code>; isso deveria ser um texto entre aspas simples?". O próprio SQLite dá a dica. No SQL padrão, aspas <strong>duplas</strong> servem para <strong>nomes</strong> (de colunas, de tabelas), e não para textos. Então o banco procurou uma coluna chamada <code>Mouse Sem Fio</code> e, claro, não achou. No terminal, a mesma mensagem vem com uma seta apontando o lugar exato:</p>
+<p>A mensagem diz: "não existe a coluna <code>"Mouse Sem Fio"</code>; isso deveria ser um texto entre aspas simples?". O próprio SQLite dá a dica. No SQL padrão, aspas <strong>duplas</strong> servem para <strong>nomes</strong> (de colunas, de tabelas), e não para textos. Então o banco procurou uma coluna chamada <code>Mouse Sem Fio</code> e, claro, não achou. O editor segue o padrão à risca.</p>
+<p>Agora a mesma consulta no <strong>terminal</strong>, no <code>sqlite3</code> que vem no Debian da Ana (e em muitas outras distribuições Linux):</p>
 <pre class="term">$ sqlite3 loja.db
 SQLite version 3.50.4 2025-07-30 19:33:53
 Enter ".help" for usage hints.
 sqlite> SELECT nome, preco FROM produtos WHERE nome = "Mouse Sem Fio";
-Parse error: no such column: "Mouse Sem Fio" - should this be a string literal in single-quotes?
-  SELECT nome, preco FROM produtos WHERE nome = "Mouse Sem Fio";
-                                  error here ---^
-sqlite> SELECT nome, preco FROM produtos WHERE nome = 'Mouse Sem Fio';
 Mouse Sem Fio|59.95
 sqlite> .quit</pre>
-<p><strong>Como consertar:</strong> textos sempre entre <strong>aspas simples</strong>: <code>WHERE nome = 'Mouse Sem Fio'</code>.</p>
+<p><strong>Funcionou, sem aviso nenhum.</strong> Esse <code>sqlite3</code> é "tolerante": quando não acha uma coluna com aquele nome, ele desiste de procurar e trata <code>"Mouse Sem Fio"</code> como texto. Parece uma gentileza, mas é uma armadilha. As aspas duplas continuam querendo dizer "nome de coluna"; o texto só vale enquanto <strong>não existir</strong> uma coluna com aquele nome. Veja o que acontece no dia em que alguém cria uma coluna chamada <code>PI</code> na tabela de clientes:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT count(*) FROM clientes WHERE estado = "PI";
+14
+sqlite> ALTER TABLE clientes ADD COLUMN PI INTEGER;          « alguém criou uma coluna chamada PI
+sqlite> SELECT count(*) FROM clientes WHERE estado = "PI";
+0                                                            « agora "PI" é a coluna nova, vazia
+sqlite> SELECT count(*) FROM clientes WHERE estado = 'PI';
+14                                                           « com aspas simples, nada muda
+sqlite> .quit</pre>
+<p>A mesma consulta, sem mudar uma letra, passou de 14 clientes para 0, e de novo sem erro nenhum. Com <code>"PI"</code>, o banco agora compara o estado com a coluna <code>PI</code> (que está vazia). Com <code>'PI'</code>, ele compara com o texto PI, hoje e sempre. (O <code>ALTER TABLE</code>, que acrescenta uma coluna, tem aula própria: <a href="alter-table.html">ALTER TABLE</a>.)</p>
+<p><strong>Como consertar:</strong> textos sempre entre <strong>aspas simples</strong>: <code>WHERE nome = 'Mouse Sem Fio'</code>. Assim a consulta funciona igual no editor, no terminal e em qualquer banco.</p>
 </div>
 
 <div class="note">
 <strong>Nos outros bancos</strong>
-<p>Por que tanta gente escreve aspas duplas? Porque alguns bancos aceitam. No <strong>MySQL</strong>, um texto pode ficar entre aspas simples ou duplas (a não ser que o modo <code>ANSI_QUOTES</code> esteja ligado; aí as duplas viram nomes, como no padrão). No <strong>PostgreSQL</strong>, aspas duplas são sempre nomes, e textos só vão entre aspas simples, como no SQLite do guia. Com aspas simples, a consulta funciona em todos eles; é por isso que o guia usa só elas.</p>
+<p>Por que tanta gente escreve aspas duplas? Porque alguns bancos aceitam. No <strong>MySQL</strong>, um texto pode ficar entre aspas simples ou duplas (a não ser que o modo <code>ANSI_QUOTES</code> esteja ligado; aí as duplas viram nomes, como no padrão). No <strong>PostgreSQL</strong>, aspas duplas são sempre nomes, e textos só vão entre aspas simples, como no editor do guia. Com aspas simples, a consulta funciona em todos eles; é por isso que o guia usa só elas.</p>
 </div>
 
 <div class="cenario">
@@ -352,7 +362,8 @@ WHERE cidade = 'Recife';
 <div class="table-wrap">
 <table class="ref">
 <tr><th>Sintoma</th><th>Causa provável</th></tr>
-<tr><td><code>no such column: "Mouse Sem Fio" - should this be a string literal in single-quotes?</code></td><td>Texto entre aspas duplas: troque por aspas simples</td></tr>
+<tr><td><code>no such column: "Mouse Sem Fio" - should this be a string literal in single-quotes?</code> (no editor)</td><td>Texto entre aspas duplas: troque por aspas simples</td></tr>
+<tr><td>No terminal, <code>"PI"</code> funciona, mas um dia para de funcionar, sem erro</td><td>Aspas duplas viram texto só enquanto não existe coluna com aquele nome: use aspas simples</td></tr>
 <tr><td><code>no such column: PI</code></td><td>Texto sem aspas</td></tr>
 <tr><td><code>near "Água": syntax error</code></td><td>Apóstrofo dentro do texto sem dobrar</td></tr>
 <tr><td><code>near "FROM": syntax error</code></td><td><code>WHERE</code> antes do <code>FROM</code></td></tr>
@@ -377,7 +388,7 @@ WHERE cidade = 'Recife';
 </div>
 
 <div class="mc" data-answer="3">
-<p class="mc-q">3. Qual destas condições está escrita do jeito certo para o SQLite do guia?</p>
+<p class="mc-q">3. Qual destas condições está escrita do jeito certo (e funciona igual no editor e no terminal)?</p>
 <label><input type="radio" name="q3"> <code>WHERE estado = "CE"</code></label>
 <label><input type="radio" name="q3"> <code>WHERE estado = CE</code></label>
 <label><input type="radio" name="q3"> <code>WHERE estado = 'CE'</code></label>
@@ -430,7 +441,7 @@ WHERE chefe_id = 5;
   <li><code>WHERE</code> ("onde") filtra as <strong>linhas</strong>: o banco testa a condição em cada linha e só mostra aquelas em que ela é verdadeira.</li>
   <li>A ordem é fixa: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code>. A coluna testada não precisa aparecer no <code>SELECT</code>.</li>
   <li>Números sem aspas (com ponto nos decimais); textos e datas entre <strong>aspas simples</strong>.</li>
-  <li>Aspas duplas são para <strong>nomes</strong>, não para textos: <code>"Mouse Sem Fio"</code> dá <code>no such column</code>.</li>
+  <li>Aspas duplas são para <strong>nomes</strong>, não para textos. No editor, <code>"Mouse Sem Fio"</code> dá <code>no such column</code>; no <code>sqlite3</code> do terminal, passa calado e quebra no dia em que existir uma coluna com aquele nome.</li>
   <li>Comparar texto é exato: maiúsculas, acentos e espaços contam. "Nenhuma linha" não é erro; confira o valor.</li>
   <li>Apóstrofo dentro do texto se escreve com duas aspas simples: <code>'Loja D''Água'</code>.</li>
   <li><code>= NULL</code> nunca encontra nada; para os campos vazios existe o <code>IS NULL</code>.</li>
