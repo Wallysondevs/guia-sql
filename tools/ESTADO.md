@@ -1,31 +1,45 @@
-# Estado do SIMULADOR (agente do sqlsim) — fim do dia 17/10
+# Estado do SIMULADOR (agente do sqlsim) — 18/10
 
-## PRONTO (commitado e testado no Node)
-- **Motor vendorizado**: `assets/sql/sqlite3.js` + `sqlite3.wasm` = **SQLite WASM 3.50.4 oficial** (zip `https://sqlite.org/2025/sqlite-wasm-3500400.zip`). Versão anotada em `assets/sql/VERSAO.txt`. **18/10 (coordenador):** o lab agora usa o sqlite3 **3.50.4 oficial**, compilado em `~/guia-sql-lab/src/sqlite3` com as MESMAS opções do wasm (DQS=0, FTS5, math, dbstat…). O 3.50.6 do Android não tinha math nem FTS5 e foi descartado. Sem OPFS/COOP/COEP: banco efêmero em memória.
-- **`assets/sqlsim.js`** (commit 733f137): núcleo + UI.
-  - `SQLSim.rodar(sqlite3, seed, sql)`: banco novo `:memory:`, roda `aurora.sql`, executa o SQL do aluno statement a statement via `capi.sqlite3_prepare_v3` com `pzTail` (valores via `sqlite3_column_text` → **texto formatado pelo próprio SQLite**, igual ao CLI). Devolve `{itens, erro, canonico, ultimo, estado:{tabelas:{nome:n}}}`. Saída canônica = todas as linhas dos SELECTs em `.mode list` (`|`, NULL→vazio). Trava anti-loop: `sqlite3_progress_handler`, aborta com `interrupted` após `SQLSim.tempoMax` (4 s).
-  - Metas: `SQLSim.avaliarMetas(goal, res)` — `out:`, `linhas:`, `colunas:` (`\,` = vírgula literal), `contem:`, `erro:`/`erro:RE`, `tabela:`, `mudou:tab=N`, combinadas com `;;`. Com erro de SQL, só `erro:` passa. Contrato publicado na §5 do CONTRIBUINDO.md.
-  - UI: caixa `.trysql` (textarea com números de linha, Rodar/Ctrl+Enter, Restaurar, "Ver solução" com confirmação, `sim-status` da missão) e `pre.file[data-resultado]` (quadro "Resultado" rodando o SQL de verdade, lazy via IntersectionObserver; `?sqlsim-teste` desliga o lazy). Solução = `pre.solucao` (padrão guia-html, NÃO comentário HTML). Cada caixa expõe `ctrl.testar("inicial"|"solucao")` → Promise `{metas,res}` em `SQLSim.caixas` (p/ teste no navegador).
-  - Carga: motor+seed só no primeiro uso; `fetch('assets/sql/aurora.sql')` com cache de promise; mensagem amigável se abrir via file:// .
-  - **No Node**: `require('./assets/sqlsim.js')` exporta o módulo puro (sem DOM). Inicializar o motor assim:
-    ```js
-    require('/home/admin/guia-sql/assets/sql/sqlite3.js');          // define globalThis.sqlite3InitModule
-    globalThis.sqlite3InitModule({ wasmBinary: fs.readFileSync('.../sqlite3.wasm'), print(){}, printErr(){} })
-    ```
-    (o `module.exports` do glue NÃO serve; use a global. Testado ok: ver /tmp/sqlwasm/t2.js desta sessão — 10 casos passando, inclusive trava e metas.)
-- **CSS**: bloco `/* sqlsim */` no FIM de `assets/style.css` (`.trysql`, `table.sql-result`, `.sql-null`, `.sql-erro`, `.sql-msg`, `.sql-res`...). As classes `.ts-*` do editor já existiam.
-- **CONTRIBUINDO.md §5**: contrato completo das metas + saída canônica + como o testador vai funcionar (commit 7634e50).
+## Ferramentas (todas na VPS, em ~/guia-sql; Node 24: rode `. ~/.profile` antes)
+| Comando | O que faz |
+|---|---|
+| `timeout 900 node tools/testar-missoes.js [-q] [--nativo] pagina.html…` | Testador de missões (sem navegador, ~0,5 s por página). `--todas` = todas as .html da raiz. Saída: uma linha por item (`ok`/`FALHA`/`aviso`, com a linha do HTML). Código 0 = sem FALHA, 1 = FALHA, 2 = página não encontrada. Do notebook: `~/guia-sql-lab/testar [--nativo] [-q] pagina.html`. |
+| `timeout 900 node tools/testar-navegador.js [-q] [--fotos DIR] pagina.html…\|--todas` | Chromium headless de verdade (puppeteer-core de `~/rascunho/coord/cdp/node_modules`, `/usr/bin/chromium`). Sobe um servidor HTTP próprio em 127.0.0.1 com porta escolhida pelo sistema (morre com o script; nada de pkill). Por página: erro de JS/console/HTTP, menu, caixas montadas, `SQLSim.caixas[i].testar("inicial"/"solucao")`, rola até cada `pre.file[data-resultado]` (caminho preguiçoso real) e confere o desenho e o `data-erro`. Na `simulador-teste-interno.html` faz também o teste de interface com cliques reais. `--todas` nas 80 páginas de hoje: 1 min 20 s, 0 problemas. |
+| `node tools/sim.js [--canonico] [--goal META] arquivo.sql\|-` | Roda um SQL como o editor (do coordenador; só mudei a contagem de linhas para usar `total`). |
+| `tools/motor-node.js` | Carrega o wasm + aurora.sql no Node (interface intacta). |
 
-## FALTA (próximos passos, em ordem)
-1. **`tools/testar-missoes.js`** (Node 24, sem npm): extrair cada `.trysql` do HTML por regex (`<div class="trysql"[^>]*>...</div>` — as caixas não têm div aninhado), decodificar entidades HTML (&lt; &gt; &amp; &quot;), ler `data-goal`, `pre.script`, `pre.solucao`; conferir contrato (meta válida, missão tem solução); rodar inicial (meta deve FALHAR) e solução (deve PASSAR) com `SQLSim.rodar`/`avaliarMetas`; rodar também cada `pre.file[data-resultado]` e acusar erro de SQL — exceto se o `pre` tiver `data-erro` (convenção já documentada na §5!). `--nativo`: rodar seed+sql no sqlite3 do lab (`~/guia-sql-lab/src/sqlite3 :memory:` com `-bail -batch`, stdin; é o mesmo 3.50.4 do wasm) e comparar stdout com `res.canonico`; registrar diferenças em `tools/DIFERENCAS.md` (criar; anotar lá que lab e editor são o mesmo 3.50.4 com as mesmas opções).
-2. **`tools/sim.js arquivo.sql`**: carrega motor+seed, `SQLSim.rodar`, imprime colunas, linhas em `.mode list`, "N linha(s) afetada(s)" e erro — para os autores colherem saídas.
-3. **Página `simulador-teste-interno.html`** (NÃO entra na NIVEIS): algumas caixas `.trysql` (livre, com missão boa, com meta que o inicial não cumpre, com erro:) + `pre.file[data-resultado]`. Testar no Chromium headless da VPS: helper `~/rascunho/coord/cdp/navegador.js` (puppeteer-core instalado) — ainda NÃO estudei esse helper. Precisa servir por HTTP (wasm não carrega de file://): subir servidor estático Node em 127.0.0.1 porta alta durante o teste, com timeout, e matar com kill $! (nunca pkill). Clicar Rodar de verdade e conferir a `table.sql-result` renderizada; `?sqlsim-teste` + `SQLSim.caixas[i].testar(...)` ajudam.
-4. Detalhe de doc: na tabela de metas da §5 do CONTRIBUINDO.md, a célula do `out:` precisa render certo: no fonte Markdown o primeiro code-span deveria ser "\\|" (barra+pipe escapado) para RENDERIZAR `\|`; hoje os três aparecem como `|`. Corrigir quando mexer lá.
-5. Avisar o coordenador quando o testador existir (o RECURSOS.md promete `~/guia-sql-lab/testar`, que embrulha o testar-missoes.js).
+### O que o testar-missoes confere
+- `.trysql`: meta conhecida/regex válida, um só `pre.script`, missão com `pre.solucao`, inicial NÃO cumpre, solução cumpre; caixa livre roda sem erro (ou `data-erro` na div).
+- `pre.file[data-resultado]`: erro só com `data-erro`; `data-erro` sem erro = FALHA.
+- Todo `<pre>`: `<` e `&` sem escape = FALHA (o `>` pode ficar cru); entidade desconhecida em pre de código = FALHA.
+- Privacidade (`/home/admin`, `wallyson` exceto `wallysondevs.github.io`, `ip-172-`, o IP da VPS, `guia-sql-lab`) = FALHA. Link para fora da NIVEIS, SQL > 1,5 s, SELECT > 500 linhas, página sem missão = aviso.
+- `--nativo`: roda cada SQL em `~/guia-sql-lab/src/sqlite3 -bail -batch -cmd ".read aurora.sql" :memory:` e compara com a saída canônica (o EXPLAIN QUERY PLAN do editor é convertido na árvore do CLI; SQL com comando de ponto e a trava não são comparados). Diferença = aviso + seção da página em `tools/DIFERENCAS.md` (reescrita a cada run, com trava `.lock`; o cabeçalho sempre vem do testador). **Os autores rodam --nativo e o arquivo muda sozinho: o coordenador commita o DIFERENCAS.md quando quiser.**
+- Páginas de teste do próprio testador: `tools/teste/erros-de-proposito.html` (12 FALHAs esperadas, uma de cada tipo), `tools/teste/nativo-bateria.html` (formatos de número, math, JSON, FTS5, dbstat, datas, erros: 0 diferenças), `tools/teste/wallyson.html` (2 FALHAs esperadas).
 
-## Como conferir rápido amanhã
-```bash
-cd /home/admin/guia-sql && git log --oneline | head -5
-node /tmp/sqlwasm/t2.js   # se /tmp sobreviveu; senão recriar a partir do padrão acima
-```
-Nenhum arquivo meu fora de: assets/sqlsim.js, assets/sql/{sqlite3.js,sqlite3.wasm,VERSAO.txt}, assets/style.css (só o bloco final), CONTRIBUINDO.md (§5), tools/ESTADO.md.
+## PRONTO (commits de 18/10)
+- 480fd75 testar-missoes.js + páginas de teste + DIFERENCAS.md
+- 23eaa64 SELECT que dá erro antes da 1ª linha não desenha tabela vazia (como o CLI)
+- 762cb2a / ff1aff4 / d43ed28 §5 do CONTRIBUINDO: mensagens editor × terminal (exemplos reais), foreign_keys, EXPLAIN QUERY PLAN, funções só do sqlite3, escape, `data-erro`, erro em várias linhas, testador; o `\|` da tabela de metas saiu da tabela (vira nota).
+- d5b0054 testar-navegador.js + simulador-teste-interno.html (fora da NIVEIS, `noindex`); trava mostra explicação em português.
+- 84ac6a7 páginas **index.html** e **simulador.html**; sqlsim conta todas as linhas mas guarda só 20 000 (`SQLSim.maxGuardar`; item select ganhou `total`); --nativo entende EQP.
+- d43ed28 filtro libera wallysondevs.github.io; o editor tira espaços/quebras do fim do SQL antes de rodar (a mensagem da aspa sem fechar fica igual à do terminal).
+
+## Diferenças editor × sqlite3 achadas (detalhes em DIFERENCAS.md e §5)
+- Saída canônica: **zero** diferenças em todas as 80 páginas (mesmo 3.50.4, mesmas opções).
+- Mensagem de erro: o CLI põe `Parse error:`/`Runtime error:` (stdin de arquivo: `… near line N:`; argumento: `Error: in prepare, …`), a seta `^--- error here` e às vezes o código `(19)`.
+- `sqlite3 loja.db` começa com `foreign_keys` = 0; o editor (aurora.sql) liga. INSERT com FK ruim / `DELETE FROM produtos` passam no terminal e falham no editor.
+- EXPLAIN QUERY PLAN: tabela crua no editor, árvore no CLI. (As páginas indices/union-all/explain descrevem a tabela do editor; se um dia o editor desenhar a árvore, o texto delas muda — decisão do coordenador.)
+- Extensões só do shell sqlite3: generate_series, REGEXP, median, percentile, base64, sha3, decimal_*, readfile… (no editor: no such table/function).
+
+## Limitações conhecidas (para os autores)
+- O SQL roda na thread principal: durante a trava (4 s) a página fica parada. Por isso exemplo sem fim deve ser `.trysql` (o leitor clica), nunca `pre.file data-resultado` (travaria a rolagem).
+- De um SELECT gigante, só as 20 000 primeiras linhas entram na saída canônica (as metas `linhas:` contam todas).
+- `random()`/`date('now')` mudam a cada Rodar.
+- No Chromium da VPS falta a fonte de emoji (o 📄 do nome do arquivo vira um quadradinho nos prints); nos navegadores normais aparece.
+
+## FALTA / ideias
+- Opcional: rodar o SQL num Web Worker (não travar a página durante a trava de 4 s).
+- Opcional: desenhar EXPLAIN QUERY PLAN como árvore no editor (combinar com os autores de indices/union-all/explain).
+- O coordenador roda `testar-navegador.js --todas` no fim (as 122 páginas).
+
+Arquivos meus: assets/sqlsim.js, assets/sql/{sqlite3.js,sqlite3.wasm,VERSAO.txt}, assets/style.css (bloco /* sqlsim */), CONTRIBUINDO.md §5, tools/{testar-missoes.js,testar-navegador.js,ESTADO.md,DIFERENCAS.md,teste/}, simulador-teste-interno.html, simulador.html, index.html.
