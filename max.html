@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL MAX() — o maior valor e a coluna nua do SQLite | Guia SQL</title>
+<meta name="description" content="MAX em SQL para quem nunca usou um banco: o produto mais caro, o último pedido e o cliente mais novo da Loja Aurora; MAX com texto e datas, o número guardado como texto ('9' maior que '100'), e o SELECT nome, MAX(preco): a coluna nua, uma extensão do SQLite que os outros bancos recusam com erro, e as formas que funcionam em todos.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">MAX()</span></h1>
+
+<p class="intro">Qual é o produto mais caro da Loja Aurora? Quando foi o último pedido? Qual o maior salário? <code>MAX()</code>, de <em>maximum</em>, "máximo", é a irmã da <a href="min.html">MIN()</a>: mesma regra, ponta oposta. Ela devolve o valor que ficaria em <strong>último</strong> lugar numa ordenação crescente. Esta aula mostra o <code>MAX</code> com números, textos e datas e depois trata de uma consulta que todo iniciante escreve, <code>SELECT nome, MAX(preco)</code>. No SQLite ela funciona, e na maioria dos outros bancos ela dá erro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Achar o maior valor de uma coluna, de uma conta ou de um grupo com <code>WHERE</code>.</li>
+  <li><code>MAX</code> com textos e datas, e o susto do número guardado como texto.</li>
+  <li>O que é uma <strong>coluna nua</strong> (<code>SELECT nome, MAX(preco)</code>) e a regra especial do SQLite para ela.</li>
+  <li>Quando a coluna nua engana: empates, duas agregadas, nenhuma linha.</li>
+  <li>Por que os outros bancos recusam essa consulta, e as formas que funcionam em todos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o pódio</h2>
+<p>Numa corrida, o <code>MAX</code> é o tempo do mais lento e o <code>MIN</code> é o do mais rápido. Mas repare na pergunta que todo mundo faz depois: "<strong>quem</strong> ganhou?". Saber o valor é uma coisa; saber de <strong>qual linha</strong> ele veio é outra. A primeira metade desta aula responde "quanto"; a segunda, "quem".</p>
+
+<hr>
+
+<h2>1. O maior número</h2>
+
+<pre class="file" data-file="mais-caro.sql" data-resultado>SELECT MAX(preco) AS mais_caro
+FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>MAX</dt><dd>A função do maior valor.</dd>
+  <dt>(preco)</dt><dd>A coluna onde procurar. Como as outras agregadas (menos o <code>COUNT</code>), não aceita <code>*</code>.</dd>
+  <dt>AS mais_caro</dt><dd>O apelido da coluna do resultado.</dd>
+</dl>
+
+<p>Com <code>WHERE</code>, o maior de um grupo. O item mais caro da Papelaria:</p>
+
+<pre class="file" data-file="papelaria.sql" data-resultado>SELECT MAX(preco) AS mais_caro
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<p>E com uma conta dentro: qual foi o maior valor de uma linha de item, quantidade × preço?</p>
+
+<pre class="file" data-file="maior-item.sql" data-resultado>SELECT MAX(quantidade * preco_unitario) AS maior_item
+FROM itens_pedido;
+</pre>
+
+<p>569.97: três unidades da Caixa de Som Portátil, de 189.99, no mesmo pedido.</p>
+
+<hr>
+
+<h2>2. O maior texto e a data mais recente</h2>
+<p>Com texto, <code>MAX</code> devolve o <strong>último</strong> na ordem do SQLite, que é a ordem <code>BINARY</code> explicada em <a href="min.html">MIN()</a> (maiúsculas antes das minúsculas, acentuadas depois do z):</p>
+
+<pre class="file" data-file="maior-texto.sql" data-resultado>SELECT MAX(nome)   AS ultimo_nome,
+       MAX(cidade) AS ultima_cidade
+FROM clientes;
+</pre>
+
+<p>Com datas no formato <code>AAAA-MM-DD</code>, o maior texto é a data mais <strong>recente</strong>. O último pedido e a última entrega:</p>
+
+<pre class="file" data-file="ultimas-datas.sql" data-resultado>SELECT MAX(data)       AS ultimo_pedido,
+       MAX(entregue_em) AS ultima_entrega
+FROM pedidos;
+</pre>
+
+<p>Repare: a última entrega (16/09/2026) é bem anterior ao último pedido (14/10/2026). Os pedidos mais novos ainda não chegaram: o <code>entregue_em</code> deles é <code>NULL</code>, e o <code>MAX</code> não conta <code>NULL</code>. E o cliente mais <strong>novo</strong> é quem tem o <strong>maior</strong> nascimento:</p>
+
+<pre class="file" data-file="mais-novo.sql" data-resultado>SELECT MAX(nascimento) AS nasceu_por_ultimo
+FROM clientes;
+</pre>
+
+<div class="trysql" data-goal="out:^5400\.25$">
+<p class="try-task"><strong>Experimente:</strong> o maior salário da loja é o da gerente. Qual é o maior salário <strong>tirando</strong> a gerente? Acrescente um <code>WHERE</code> que deixe de fora o cargo <code>'Gerente'</code> (o "diferente" é <code>&lt;&gt;</code>).</p>
+<pre class="script" data-file="consulta.sql">SELECT MAX(salario) AS maior_salario
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT MAX(salario) AS maior_salario
+FROM funcionarios
+WHERE cargo &lt;&gt; 'Gerente';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Quem é o mais caro? A coluna nua</h2>
+<p>O <code>MAX(preco)</code> diz que o mais caro custa 249.9. Mas qual produto é? A primeira ideia de todo mundo é pôr o nome ao lado:</p>
+
+<pre class="file" data-file="coluna-nua.sql" data-resultado>SELECT nome, MAX(preco) AS preco
+FROM produtos;
+</pre>
+
+<p>Deu certo: o Jogo de Panelas 5 peças. Mas pense no que essa consulta pede. O <code>MAX(preco)</code> junta as 45 linhas numa só. E o <code>nome</code>? Ele não está dentro de nenhuma agregada; há 45 nomes e só uma linha no resultado. Qual deles deveria aparecer? Uma coluna assim, fora de qualquer agregada, tem um nome técnico: <strong>coluna nua</strong> (em inglês, <em>bare column</em>).</p>
+
+<h3>A regra do SQLite</h3>
+<p>A documentação do SQLite explica o que ele faz com uma coluna nua:</p>
+<ul>
+  <li>Se a consulta tem <strong>exatamente um</strong> <code>MIN()</code> ou <code>MAX()</code>, as colunas nuas vêm de <strong>uma linha que tem esse mínimo ou máximo</strong>. Por isso o nome saiu certo: veio da linha do preço 249.9.</li>
+  <li>Em qualquer outro caso, a coluna nua vem de uma linha <strong>qualquer</strong>, e não dá para saber qual.</li>
+</ul>
+<p>A mesma documentação avisa: a maioria dos outros bancos <strong>não aceita</strong> colunas nuas e dá erro. Ela é uma extensão do SQLite, algo que só ele tem; o SQLite diz que isso é de propósito, "um recurso, e não um defeito". Funciona, mas tem três armadilhas.</p>
+
+<h3>Armadilha 1: empates</h3>
+<p>Qual pedido pagou o maior frete?</p>
+
+<pre class="file" data-file="empate.sql" data-resultado>SELECT id, MAX(frete) AS maior_frete
+FROM pedidos;
+</pre>
+
+<p>Apareceu o pedido 8, e parece que só ele pagou 30.0. Não é verdade:</p>
+
+<pre class="file" data-file="empatados.sql" data-resultado>SELECT id, frete
+FROM pedidos
+WHERE frete = 30.0;
+</pre>
+
+<p>Onze pedidos empatam com o frete de 30.0. A coluna nua mostra <strong>um</strong> deles, sem avisar que existem outros, e a documentação diz que a escolha entre os empatados é arbitrária.</p>
+
+<h3>Armadilha 2: duas agregadas</h3>
+<p>Com um <code>MAX</code> e um <code>MIN</code> na mesma consulta, de qual linha vem o nome?</p>
+
+<pre class="file" data-file="duas-agregadas.sql" data-resultado>SELECT nome, MAX(preco), MIN(preco)
+FROM produtos;
+</pre>
+
+<pre class="file" data-file="duas-invertidas.sql" data-resultado>SELECT nome, MIN(preco), MAX(preco)
+FROM produtos;
+</pre>
+
+<p>Só mudou a ordem das colunas, e o nome mudou: na primeira veio o Lápis (o mais barato), ao lado do preço 249.9; na segunda, as Panelas, ao lado do 1.15. Nas duas, o nome não combina com um dos preços. Com duas agregadas, o SQLite pega o nome da linha de uma delas, e a documentação diz que não dá para prever qual. Com <code>AVG</code>, <code>SUM</code> ou <code>COUNT</code>, que não apontam para linha nenhuma, a coluna nua vem de uma linha qualquer:</p>
+
+<pre class="file" data-file="nua-avg.sql" data-resultado>SELECT nome, AVG(preco)
+FROM produtos;
+</pre>
+
+<p>O Caderno Pautado não tem nada a ver com o preço médio. Esse resultado é lixo com cara de resposta.</p>
+
+<h3>Armadilha 3: nenhuma linha</h3>
+
+<pre class="file" data-file="nua-vazia.sql" data-resultado>SELECT nome, MAX(preco)
+FROM produtos
+WHERE preco &gt; 1000;
+</pre>
+
+<p>Sem linhas, o <code>MAX</code> dá <code>NULL</code>, e a coluna nua também. Aqui saiu <code>NULL</code>, mas a documentação avisa que, nesse caso, a coluna nua pode ter <strong>qualquer</strong> valor.</p>
+
+<hr>
+
+<h2>4. As formas que funcionam em qualquer banco</h2>
+<p>Para responder "qual é o produto mais caro?" sem depender da regra do SQLite:</p>
+
+<pre class="file" data-file="order-desc.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 1;
+</pre>
+
+<pre class="file" data-file="subconsulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco = (SELECT MAX(preco) FROM produtos);
+</pre>
+
+<p>A primeira ordena do mais caro para o mais barato (<code>DESC</code>, aula <a href="order-by.html">ORDER BY</a>) e fica com a primeira linha. A segunda calcula o máximo numa <strong>subconsulta</strong>, o <code>SELECT</code> entre parênteses (aula <a href="subconsultas.html">Subconsultas</a>), e depois busca as linhas que têm esse preço. A segunda é a única que mostra <strong>todos</strong> os empatados. Experimente trocar <code>preco</code> por <code>frete</code> e <code>produtos</code> por <code>pedidos</code> nela: saem os onze pedidos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Empates</th><th>Outros bancos</th><th>Use quando</th></tr>
+<tr><td><code>SELECT MAX(preco)</code></td><td>Não importa</td><td>Funciona</td><td>Só quer o valor</td></tr>
+<tr><td><code>SELECT nome, MAX(preco)</code></td><td>Mostra um, sem avisar</td><td>Erro na maioria</td><td>Consulta rápida no SQLite, sabendo que não há empate</td></tr>
+<tr><td><code>ORDER BY preco DESC LIMIT 1</code></td><td>Mostra um</td><td>Funciona (<code>TOP 1</code> no SQL Server)</td><td>Quer uma linha, e tanto faz qual dos empatados</td></tr>
+<tr><td><code>WHERE preco = (SELECT MAX(preco) …)</code></td><td>Mostra todos</td><td>Funciona</td><td>Quer a resposta completa. É a mais segura</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Números guardados como texto</strong>
+<p>Se alguém guardar números como texto (por exemplo, ao importar uma planilha), o <code>MAX</code> compara letra por letra, como num dicionário:</p>
+<pre class="file" data-file="texto-numero.sql" data-resultado>SELECT MAX(column1) AS maior
+FROM (VALUES ('9'), ('10'), ('100'));
+</pre>
+<p><strong>O que aconteceu:</strong> o "maior" é <code>9</code>. Como texto, <code>'9'</code> vem depois de <code>'1…'</code>, assim como "zebra" vem depois de "abacate", não importa o tamanho. Com números de verdade, <code>(9), (10), (100)</code>, sem aspas, o <code>MAX</code> dá 100.</p>
+<p><strong>Como consertar:</strong> guarde números em colunas numéricas, sem aspas (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Se os dados já chegaram como texto, converta na consulta: <code>MAX(CAST(coluna AS INTEGER))</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>MAX no WHERE</strong>
+<pre class="file" data-file="max-where.sql" data-resultado data-erro>SELECT nome FROM produtos WHERE preco = MAX(preco);
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate function MAX()</code>, "uso indevido da função agregada <code>MAX()</code>". O <code>WHERE</code> olha uma linha por vez; o máximo só existe depois de ver todas.</p>
+<p><strong>Como consertar:</strong> a subconsulta da seção 4.</p>
+</div>
+
+<div class="cenario">
+<strong>MAX(*)</strong>
+<pre class="file" data-file="max-asterisco.sql" data-resultado data-erro>SELECT MAX(*) FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function MAX()</code>. Diga a coluna: <code>MAX(preco)</code>. (E, como o <code>min</code>, o <code>max</code> com dois ou mais valores, <code>MAX(a, b)</code>, é uma função comum, linha por linha.)</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos: a coluna nua dá erro</strong>
+<p>A consulta <code>SELECT nome, MAX(preco) FROM produtos;</code> é recusada:</p>
+<ul>
+  <li><strong>PostgreSQL</strong>: a documentação diz que, numa consulta com agregadas ou <code>GROUP BY</code>, a lista do <code>SELECT</code> não pode citar colunas que não estão agrupadas, a não ser dentro de uma agregada (ou se a coluna depender da chave primária agrupada).</li>
+  <li><strong>MySQL</strong>: o modo <code>ONLY_FULL_GROUP_BY</code>, ligado por padrão, recusa a consulta. O exemplo da documentação oficial, com uma tabela <code>t</code>, mostra a mensagem: <code>ERROR 1140 (42000): In aggregated query without GROUP BY, expression #1 of SELECT list contains nonaggregated column 'mydb.t.name'; this is incompatible with sql_mode=only_full_group_by</code>. Quando você sabe que tanto faz qual valor vem, o MySQL aceita <code>ANY_VALUE(nome)</code>.</li>
+  <li><strong>SQL Server</strong>: dá o erro 8120. Na documentação da Microsoft, o exemplo é <code>Column 'Sales.SalesOrderHeader.PurchaseOrderNumber' is invalid in the select list because it is not contained in either an aggregate function or the GROUP BY clause.</code> ("a coluna é inválida na lista do SELECT porque não está numa função agregada nem no GROUP BY").</li>
+</ul>
+<p>Por isso, neste guia, a coluna nua aparece só para você reconhecê-la. Nas suas consultas, prefira as formas da seção 4.</p>
+<pre class="file" data-file="mysql (ilustrativo, não roda no SQLite)">SELECT ANY_VALUE(nome), MAX(preco) FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>MAX(coluna)</code></td><td>O maior valor não <code>NULL</code></td><td><code>MAX(preco)</code> = 249.9</td></tr>
+<tr><td><code>MAX(texto)</code></td><td>O último na ordem <code>BINARY</code></td><td><code>MAX(cidade)</code> = Teresina</td></tr>
+<tr><td><code>MAX(data)</code></td><td>A data mais recente (em <code>AAAA-MM-DD</code>)</td><td><code>MAX(data)</code> = 2026-10-14</td></tr>
+<tr><td><code>MAX(a * b)</code></td><td>O maior resultado da conta</td><td>569.97</td></tr>
+<tr><td><code>SELECT nome, MAX(preco)</code></td><td>Só SQLite: o nome vem da linha do máximo (um só, se houver empate)</td><td>Jogo de Panelas 5 peças</td></tr>
+<tr><td><code>WHERE x = (SELECT MAX(x) …)</code></td><td>Todas as linhas com o máximo, em qualquer banco</td><td></td></tr>
+<tr><td>Sem nenhuma linha</td><td><code>NULL</code></td><td></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate function MAX()</code></td><td><code>MAX</code> dentro do <code>WHERE</code></td></tr>
+<tr><td><code>wrong number of arguments to function MAX()</code></td><td><code>MAX(*)</code> ou <code>MAX()</code> vazio</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O maior estoque</h3>
+<p>Complete para achar o maior estoque entre os produtos:</p>
+<div class="ex-code">SELECT <input data-answer="MAX" aria-label="função">(estoque) FROM produtos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Do mais caro para o mais barato</h3>
+<p>Complete para mostrar o produto mais caro numa forma que funciona em qualquer banco:</p>
+<div class="ex-code">SELECT nome, preco FROM produtos ORDER BY preco <input data-answer="DESC" aria-label="direção" size="5"> LIMIT 1;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual é o <code>MAX</code> dos textos <code>'8'</code>, <code>'75'</code> e <code>'600'</code>?</p>
+<label><input type="radio" name="q3"> 600</label>
+<label><input type="radio" name="q3"> 75</label>
+<label><input type="radio" name="q3"> 8</label>
+<label><input type="radio" name="q3"> Dá erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que é uma "coluna nua"?</p>
+<label><input type="radio" name="q4"> Uma coluna sem apelido (sem AS)</label>
+<label><input type="radio" name="q4"> Uma coluna que aparece no SELECT de uma consulta agregada sem estar dentro de uma agregada nem no GROUP BY</label>
+<label><input type="radio" name="q4"> Uma coluna cheia de NULL</label>
+<label><input type="radio" name="q4"> Uma coluna sem tipo definido</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Onze pedidos têm o frete máximo, 30.0. Quantas linhas mostra <code>SELECT id, MAX(frete) FROM pedidos;</code> no SQLite?</p>
+<label><input type="radio" name="q5"> 11</label>
+<label><input type="radio" name="q5"> 90</label>
+<label><input type="radio" name="q5"> Nenhuma: dá erro</label>
+<label><input type="radio" name="q5"> 1</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que acontece com <code>SELECT nome, MAX(preco) FROM produtos;</code> no PostgreSQL?</p>
+<label><input type="radio" name="q6"> Dá erro: <code>nome</code> não está numa agregada nem no GROUP BY</label>
+<label><input type="radio" name="q6"> Funciona igual ao SQLite</label>
+<label><input type="radio" name="q6"> Mostra os 45 nomes</label>
+<label><input type="radio" name="q6"> Mostra o nome em ordem alfabética</label>
+</div>
+
+<h3>Missão final: quem ganha mais</h3>
+
+<div class="trysql" data-goal="linhas:1;;contem:Marta Lustosa;;contem:9800.0">
+<p class="try-task"><strong>Missão:</strong> a consulta mostra só o maior salário. Mude-a para mostrar o <strong>nome</strong> e o salário de quem ganha mais, numa linha só. Tente usar uma das formas que funcionam em qualquer banco.</p>
+<pre class="script" data-file="consulta.sql">SELECT MAX(salario) AS maior_salario
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario = (SELECT MAX(salario) FROM funcionarios);
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>MAX(coluna)</code> devolve o maior valor, o último de um <code>ORDER BY</code> crescente, sem contar os <code>NULL</code>.</li>
+  <li>Em texto, vale a ordem <code>BINARY</code>; em datas <code>AAAA-MM-DD</code>, o maior é a mais recente. Números guardados como texto se comparam como texto: <code>'9'</code> &gt; <code>'100'</code>.</li>
+  <li><code>SELECT nome, MAX(preco)</code> tem uma <strong>coluna nua</strong>. O SQLite a aceita: com um único <code>MIN</code>/<code>MAX</code>, ela vem da linha do extremo. É uma extensão só dele.</li>
+  <li>A coluna nua esconde empates, fica imprevisível com duas agregadas e vira lixo com <code>AVG</code>/<code>SUM</code>/<code>COUNT</code>.</li>
+  <li>PostgreSQL, MySQL e SQL Server recusam a coluna nua com erro. Em qualquer banco funcionam <code>ORDER BY … DESC LIMIT 1</code> e <code>WHERE x = (SELECT MAX(x) …)</code>, e esta última mostra todos os empatados.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
