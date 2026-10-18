@@ -80,7 +80,7 @@ Igual aos outros guias: `$ ` = `ana@notebook:~$`, `sqlite> ` = o prompt do sqlit
 3. Limites que o autor precisa saber:
    - comandos de ponto (`.tables`, `.mode`…) **não existem no editor** — são do programa `sqlite3`, não SQL; ali eles dão o erro real de sintaxe (`near ".": syntax error`). Ensine-os só no `pre.term`;
    - um SQL sem fim (ex.: `WITH RECURSIVE` sem `LIMIT`) é interrompido depois de ~4 s com o erro `interrupted`;
-   - a tabela mostra até 500 linhas (as metas contam todas);
+   - a tabela mostra até 500 linhas (as metas contam todas; de um SELECT gigante, só as 20 000 primeiras linhas entram na saída canônica);
    - `random()`, `datetime('now')`, `date('now')` mudam a cada Rodar: nunca os use numa meta nem num resultado citado no texto.
 
 ### Mensagens de erro: editor × terminal
@@ -101,9 +101,11 @@ O motor é o mesmo (SQLite 3.50.4, mesmas opções), então **o miolo da mensage
 - No texto da aula, cite a mensagem **do lugar onde o leitor vai vê-la**: no `pre.file`/`.trysql`, a do editor; no `pre.term`, a do terminal, copiada do lab. Explique em português o que ela quer dizer.
 
 ### Editor × `sqlite3 loja.db` no terminal: o que pode dar diferente
-- **Chaves estrangeiras.** O `aurora.sql` liga `PRAGMA foreign_keys = ON;`, então no editor um `INSERT` com `categoria_id = 99` dá `FOREIGN KEY constraint failed`. No terminal, **cada conexão nova começa com `foreign_keys` desligado** (`PRAGMA foreign_keys;` → `0` no lab): o mesmo `INSERT` em `sqlite3 loja.db` **passa sem erro**. Na aula de chaves estrangeiras (e em qualquer `pre.term` que dependa delas), mostre o `PRAGMA foreign_keys = ON;` antes.
+- **Chaves estrangeiras.** O `aurora.sql` liga `PRAGMA foreign_keys = ON;`, então no editor um `INSERT` com `categoria_id = 99` dá `FOREIGN KEY constraint failed` (e `DELETE FROM produtos;` também: há itens de pedido apontando para eles). No terminal, **cada conexão nova começa com `foreign_keys` desligado** (`PRAGMA foreign_keys;` → `0` no lab): o mesmo `INSERT` em `sqlite3 loja.db` **passa sem erro** (e `DELETE FROM produtos;` apaga os 45). Na aula de chaves estrangeiras (e em qualquer `pre.term` que dependa delas), mostre o `PRAGMA foreign_keys = ON;` antes.
 - **O banco não volta sozinho.** No editor, cada Rodar parte do banco limpo; no terminal, um `DELETE` em `loja.db` é para valer (no lab: `lab -n SEUNOME -r` recomeça a home).
 - **Formato.** O terminal começa em `.mode list` sem cabeçalho (`Lápis Grafite HB|1.15`); o editor desenha tabela. Os valores (números, datas, `NULL`) saem iguais.
+- **`EXPLAIN QUERY PLAN`.** O editor mostra a tabela crua (colunas `id`, `parent`, `notused`, `detail`; o que interessa é o `detail`); o terminal desenha a árvore (`QUERY PLAN` e, embaixo, `` `--SCAN pedidos ``). O conteúdo é o mesmo.
+- **Funções que só o programa `sqlite3` tem.** O shell `sqlite3` embute extensões que a biblioteca SQLite (a do editor e a dos aplicativos) **não** tem: `generate_series`, o operador `REGEXP`, `median()`, `percentile()`, `base64()`, `sha3()`, `decimal_add()`, `readfile()`… No editor elas dão `no such table: generate_series` / `no such function: REGEXP`. Não as use em `.trysql` nem em `data-resultado` (a não ser como exemplo de erro, com `data-erro`); no `pre.term`, deixe claro que é coisa do terminal. Para gerar sequências no editor, use `WITH RECURSIVE … LIMIT`.
 - O testador com `--nativo` confere o resto; as diferenças achadas ficam em `tools/DIFERENCAS.md`.
 
 ### A saída canônica (o que as metas `out:` e `contem:` enxergam)
