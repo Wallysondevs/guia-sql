@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Os Tipos no SQLite — tipagem dinâmica, afinidade e STRICT | Guia SQL</title>
+<meta name="description" content="Como o SQLite trata os tipos, para quem nunca mexeu num banco: as cinco classes de armazenamento, a função typeof(), a afinidade de cada coluna, o que acontece quando você guarda texto numa coluna INTEGER, e as tabelas STRICT com o erro real cannot store TEXT value in INTEGER column.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Os Tipos no SQLite</span></h1>
+
+<p class="intro">Na aula <a href="tipos-de-dados.html">Tipos de Dados</a> você viu que, no MySQL, no PostgreSQL e no SQL Server, o tipo da coluna é <strong>lei</strong>: coluna de número só aceita número. O SQLite pensa diferente. Nele, o tipo da coluna é uma <strong>sugestão</strong>, e quem tem tipo de verdade é cada <strong>valor</strong>. Isso se chama <strong>tipagem dinâmica</strong>. Nesta aula você vai ver o que isso quer dizer na prática (sim, dá para guardar a palavra "cinco" numa coluna <code>INTEGER</code>), como descobrir o tipo de cada valor com <code>typeof()</code> e como ligar o modo rígido do SQLite, as tabelas <code>STRICT</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As <strong>cinco classes de armazenamento</strong> do SQLite: <code>NULL</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code> e <code>BLOB</code>.</li>
+  <li>A função <code>typeof()</code>, que diz o tipo de qualquer valor.</li>
+  <li>A <strong>afinidade</strong>: como o SQLite lê o tipo que você escreveu no <code>CREATE TABLE</code> e o que ele faz com cada valor que chega.</li>
+  <li>O que acontece quando um texto vai parar numa coluna <code>INTEGER</code>, e como isso estraga uma média sem dar erro.</li>
+  <li>As tabelas <code>STRICT</code>: os seis tipos que elas aceitam e as mensagens de erro reais delas.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a etiqueta na gaveta</h2>
+<p>Pense no estoque da Loja Aurora. Cada gaveta tem uma <strong>etiqueta</strong>: "Lápis", "Canetas", "Borrachas". Se alguém põe uma borracha na gaveta dos lápis, a gaveta não reclama: a etiqueta só <strong>sugere</strong> o que deveria estar ali. Um funcionário caprichoso até tenta ajudar ("isto aqui é um lápis embrulhado, vou desembrulhar"), mas, se não der, a borracha fica lá dentro mesmo.</p>
+
+<p>Uma coluna do SQLite funciona assim. O tipo que você escreve no <code>CREATE TABLE</code> é a etiqueta. Quando chega um valor, o SQLite <strong>tenta</strong> convertê-lo para o tipo da etiqueta; se a conversão não der certo sem perder nada, ele guarda o valor do jeito que veio.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>MySQL, PostgreSQL, SQL Server</th><th>SQLite (normal)</th><th>SQLite com <code>STRICT</code></th></tr>
+<tr><td>O tipo é…</td><td>da coluna</td><td>de cada valor</td><td>da coluna</td></tr>
+<tr><td>A coluna <code>INTEGER</code> recebe <code>'cinco'</code></td><td>Erro</td><td>Guarda o texto <code>'cinco'</code></td><td>Erro</td></tr>
+<tr><td>Comparação</td><td>Uma fechadura</td><td>Uma etiqueta</td><td>Uma fechadura</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. As cinco classes de armazenamento</h2>
+<p>Todo valor guardado no SQLite pertence a uma de cinco <strong>classes de armazenamento</strong> (em inglês, <em>storage classes</em>). São só cinco, e é com elas que o SQLite trabalha por dentro:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Classe</th><th>O que é</th><th>Exemplo</th></tr>
+<tr><td><code>NULL</code></td><td>A ausência de valor (aula <a href="null.html">O Valor NULL</a>)</td><td><code>NULL</code></td></tr>
+<tr><td><code>INTEGER</code></td><td>Número inteiro, com sinal, até 8 bytes</td><td><code>42</code></td></tr>
+<tr><td><code>REAL</code></td><td>Número com casas decimais (ponto flutuante de 8 bytes)</td><td><code>4.2</code></td></tr>
+<tr><td><code>TEXT</code></td><td>Texto</td><td><code>'Ana'</code></td></tr>
+<tr><td><code>BLOB</code></td><td>Bytes, guardados exatamente como chegaram</td><td><code>x'CAFE'</code></td></tr>
+</table>
+</div>
+
+<p>Repare no que <strong>não</strong> está na lista: não existe classe para data nem para verdadeiro/falso. Datas são guardadas como <code>TEXT</code> (<code>'2026-10-14'</code>) e o verdadeiro/falso como <code>INTEGER</code> (1 e 0), como você viu na aula anterior.</p>
+
+<h3>A função <code>typeof()</code></h3>
+<p>Para saber a classe de um valor, use <code>typeof()</code> ("tipo de"). Ela devolve o nome da classe, em minúsculas:</p>
+
+<pre class="file" data-file="typeof.sql" data-resultado>SELECT typeof(42), typeof(4.2), typeof('Ana'), typeof(NULL), typeof(x'CAFE');
+</pre>
+
+<dl class="anatomy">
+  <dt>typeof(42)</dt><dd><code>integer</code>: número sem ponto.</dd>
+  <dt>typeof(4.2)</dt><dd><code>real</code>: número com ponto.</dd>
+  <dt>typeof('Ana')</dt><dd><code>text</code>: o que está entre aspas simples é texto.</dd>
+  <dt>typeof(NULL)</dt><dd><code>null</code>: o "vazio" também tem a sua classe.</dd>
+  <dt>typeof(x'CAFE')</dt><dd><code>blob</code>: um <code>x</code> seguido de algarismos hexadecimais entre aspas escreve bytes. <code>CAFE</code> são dois bytes.</dd>
+</dl>
+
+<p>A função também serve nas colunas de uma tabela, linha por linha. Nos produtos da Loja Aurora, o preço é <code>real</code> e o estoque é <code>integer</code>:</p>
+
+<pre class="file" data-file="typeof-produtos.sql" data-resultado>SELECT nome, preco, typeof(preco), estoque, typeof(estoque)
+FROM produtos
+LIMIT 3;
+</pre>
+
+<p>E, junto com o <code>GROUP BY</code> (aula <a href="group-by.html">GROUP BY</a>), ela faz um "raio X" de uma coluna inteira: quantos valores de cada classe existem lá. Na coluna <code>email</code> dos clientes:</p>
+
+<pre class="file" data-file="raio-x.sql" data-resultado>SELECT typeof(email), count(*)
+FROM clientes
+GROUP BY typeof(email);
+</pre>
+
+<p>São 27 emails de texto e 3 <code>NULL</code>: os clientes 7, 15 e 23, que não informaram email.</p>
+
+<div class="trysql" data-goal="contem:null|2">
+<p class="try-task"><strong>Experimente:</strong> faça o mesmo "raio X" na coluna <code>nascimento</code> dos clientes. Quantos clientes estão sem data de nascimento?</p>
+<pre class="script" data-file="raio-x.sql">SELECT typeof(email), count(*)
+FROM clientes
+GROUP BY typeof(email);
+</pre>
+<pre class="solucao" data-file="raio-x.sql">SELECT typeof(nascimento), count(*)
+FROM clientes
+GROUP BY typeof(nascimento);
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A afinidade: o que o SQLite faz com o tipo que você escreveu</h2>
+<p>Você pode escrever praticamente qualquer nome de tipo no <code>CREATE TABLE</code> do SQLite: <code>VARCHAR(100)</code>, <code>DECIMAL(10,2)</code>, <code>BOOLEAN</code>, <code>DATE</code>… Ele aceita todos. Mas, por dentro, ele resume cada nome a uma de cinco <strong>afinidades</strong> (em inglês, <em>type affinity</em>): o tipo que aquela coluna "prefere".</p>
+
+<p>A regra está na documentação do SQLite e é aplicada <strong>nesta ordem</strong>, olhando as letras do nome do tipo:</p>
+
+<ol class="passo">
+  <li>Se o nome contém <code>INT</code> → afinidade <strong>INTEGER</strong>.</li>
+  <li>Senão, se contém <code>CHAR</code>, <code>CLOB</code> ou <code>TEXT</code> → afinidade <strong>TEXT</strong>.</li>
+  <li>Senão, se contém <code>BLOB</code>, ou se a coluna não tem tipo → afinidade <strong>BLOB</strong> (nenhuma conversão).</li>
+  <li>Senão, se contém <code>REAL</code>, <code>FLOA</code> ou <code>DOUB</code> → afinidade <strong>REAL</strong>.</li>
+  <li>Senão → afinidade <strong>NUMERIC</strong>.</li>
+</ol>
+
+<p>Aplicando a regra aos nomes que você viu na aula anterior:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você escreve</th><th>Regra</th><th>Afinidade</th></tr>
+<tr><td><code>INTEGER</code>, <code>INT</code>, <code>SMALLINT</code>, <code>BIGINT</code></td><td>1 (tem <code>INT</code>)</td><td>INTEGER</td></tr>
+<tr><td><code>TEXT</code>, <code>VARCHAR(100)</code>, <code>CHAR(2)</code></td><td>2 (tem <code>CHAR</code> ou <code>TEXT</code>)</td><td>TEXT</td></tr>
+<tr><td><code>BLOB</code>, ou nenhum tipo</td><td>3</td><td>BLOB</td></tr>
+<tr><td><code>REAL</code>, <code>FLOAT</code>, <code>DOUBLE PRECISION</code></td><td>4</td><td>REAL</td></tr>
+<tr><td><code>NUMERIC</code>, <code>DECIMAL(10,2)</code>, <code>BOOLEAN</code>, <code>DATE</code>, <code>DATETIME</code></td><td>5 (nenhuma das anteriores)</td><td>NUMERIC</td></tr>
+<tr><td><code>FLOATING POINT</code> (pegadinha!)</td><td>1: "POINT" tem <code>INT</code> no meio</td><td>INTEGER</td></tr>
+<tr><td><code>STRING</code> (pegadinha!)</td><td>5: não tem nenhuma das palavras</td><td>NUMERIC</td></tr>
+</table>
+</div>
+
+<p>Duas consequências importantes. Primeira: os números entre parênteses são <strong>ignorados</strong>. <code>VARCHAR(2)</code> é só "texto", sem limite nenhum. Segunda: <code>DATE</code> e <code>BOOLEAN</code> não criam nada especial; eles caem na afinidade NUMERIC, a mesma do <code>DECIMAL</code>.</p>
+
+<h3>O que cada afinidade faz com um valor</h3>
+<p>A afinidade age no momento em que o valor <strong>entra</strong> (no <code>INSERT</code> ou no <code>UPDATE</code>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Afinidade</th><th>Quando chega um texto que parece número</th><th>Quando chega um número</th></tr>
+<tr><td>TEXT</td><td>Fica texto</td><td>Vira texto</td></tr>
+<tr><td>INTEGER e NUMERIC</td><td>Vira número (inteiro, se der)</td><td>Fica número; <code>3.0</code> vira o inteiro <code>3</code></td></tr>
+<tr><td>REAL</td><td>Vira número com decimais</td><td>Vira número com decimais: <code>42</code> vira <code>42.0</code></td></tr>
+<tr><td>BLOB</td><td>Fica como chegou</td><td>Fica como chegou</td></tr>
+</table>
+</div>
+
+<p>O exemplo clássico da documentação do SQLite: o mesmo texto <code>'500.0'</code> inserido em cinco colunas, uma de cada afinidade.</p>
+
+<pre class="file" data-file="quinhentos.sql" data-resultado>CREATE TABLE t1 (
+    t  TEXT,     -- afinidade TEXT
+    nu NUMERIC,  -- afinidade NUMERIC
+    i  INTEGER,  -- afinidade INTEGER
+    r  REAL,     -- afinidade REAL
+    no BLOB      -- afinidade BLOB (nenhuma)
+);
+
+INSERT INTO t1 VALUES ('500.0', '500.0', '500.0', '500.0', '500.0');
+
+SELECT t, typeof(t), nu, typeof(nu), i, typeof(i), r, typeof(r), no, typeof(no)
+FROM t1;
+</pre>
+
+<dl class="anatomy">
+  <dt>t (TEXT)</dt><dd>Continua o texto <code>500.0</code>.</dd>
+  <dt>nu (NUMERIC)</dt><dd>Virou o inteiro <code>500</code>: o texto parecia um número, e um número sem parte decimal de verdade vira inteiro.</dd>
+  <dt>i (INTEGER)</dt><dd>A mesma coisa: inteiro <code>500</code>.</dd>
+  <dt>r (REAL)</dt><dd>Virou o número com decimais <code>500.0</code> (classe <code>real</code>).</dd>
+  <dt>no (BLOB)</dt><dd>Nenhuma conversão: continua o texto <code>500.0</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>3. Texto numa coluna <code>INTEGER</code></h2>
+<p>Agora o caso que assusta quem vem de outros bancos. Uma coluna <code>INTEGER</code> recebe seis valores de tipos diferentes:</p>
+
+<pre class="file" data-file="misturado.sql" data-resultado>CREATE TABLE t (n INTEGER);
+
+INSERT INTO t VALUES (10), ('20'), ('abc'), (3.0), (3.5), (NULL);
+
+SELECT n, typeof(n) FROM t;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor inserido</th><th>Guardado como</th><th>Por quê</th></tr>
+<tr><td><code>10</code></td><td><code>10</code>, integer</td><td>Já era inteiro</td></tr>
+<tr><td><code>'20'</code></td><td><code>20</code>, integer</td><td>Texto que parece inteiro: a afinidade converteu</td></tr>
+<tr><td><code>'abc'</code></td><td><code>abc</code>, <strong>text</strong></td><td>Não dá para converter sem perder nada: ficou texto mesmo, e <strong>sem erro</strong></td></tr>
+<tr><td><code>3.0</code></td><td><code>3</code>, integer</td><td>Número com decimal "de mentira": vira inteiro sem perder nada</td></tr>
+<tr><td><code>3.5</code></td><td><code>3.5</code>, <strong>real</strong></td><td>Virar inteiro perderia o <code>.5</code>, então ficou real</td></tr>
+<tr><td><code>NULL</code></td><td><code>NULL</code>, null</td><td><code>NULL</code> nunca é convertido</td></tr>
+</table>
+</div>
+
+<p>Numa coluna chamada "inteiro", três classes diferentes. Para o SQLite está tudo certo. Para quem consulta, nem tanto, como você vai ver agora.</p>
+
+<h3>O estrago: uma média que mente</h3>
+<p>A Ana montou uma tabela de notas dos produtos. Alguém digitou a nota por extenso:</p>
+
+<pre class="file" data-file="media.sql" data-resultado>CREATE TABLE notas (n INTEGER);
+
+INSERT INTO notas VALUES (5), ('quatro'), (4);
+
+SELECT avg(n) FROM notas;
+</pre>
+
+<p>A média deu <code>3.0</code>. Mas as notas são 5 e 4, e a média delas é 4,5! O que aconteceu: o <code>'quatro'</code> ficou guardado como texto, e na hora da conta o <code>avg()</code> tratou esse texto como <strong>0</strong>. Resultado: (5 + 0 + 4) / 3 = 3. Nenhum erro, nenhum aviso. Só um relatório errado.</p>
+
+<h3>E na ordenação?</h3>
+<p>Quando uma coluna mistura classes, o <code>ORDER BY</code> segue uma ordem fixa: primeiro os <code>NULL</code>, depois os números (inteiros e reais juntos, pelo valor), depois os textos, depois os blobs.</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>CREATE TABLE t (n INTEGER);
+INSERT INTO t VALUES (10), ('abc'), (9), (2.5), (NULL);
+
+SELECT n, typeof(n) FROM t ORDER BY n;
+</pre>
+
+<div class="trysql" data-goal="contem:04567000">
+<p class="try-task"><strong>Experimente:</strong> a afinidade também pode atrapalhar. Rode e veja: o CEP <code>04567000</code> perdeu o zero da frente, porque a coluna tem afinidade INTEGER e o texto foi convertido em número. Troque o tipo da coluna <code>cep</code> para que o CEP fique intacto.</p>
+<pre class="script" data-file="cep.sql">CREATE TABLE enderecos (cliente_id INTEGER, cep INTEGER);
+INSERT INTO enderecos VALUES (5, '04567000');
+
+SELECT cep, typeof(cep) FROM enderecos;
+</pre>
+<pre class="solucao" data-file="cep.sql">CREATE TABLE enderecos (cliente_id INTEGER, cep TEXT);
+INSERT INTO enderecos VALUES (5, '04567000');
+
+SELECT cep, typeof(cep) FROM enderecos;
+</pre>
+</div>
+
+<p>Cuidado com nomes de tipo inventados: <code>STRING</code> parece "texto", mas, pela regra 5, a afinidade dele é NUMERIC, e o zero da frente some do mesmo jeito:</p>
+
+<pre class="file" data-file="string.sql" data-resultado>CREATE TABLE t (codigo STRING);
+INSERT INTO t VALUES ('0042');
+
+SELECT codigo, typeof(codigo) FROM t;
+</pre>
+
+<hr>
+
+<h2>4. Tabelas <code>STRICT</code>: o SQLite rígido</h2>
+<p>Desde a versão 3.37.0 (de 2021), o SQLite tem um modo rígido, por tabela: basta escrever <code>STRICT</code> ("estrito") depois do parêntese que fecha o <code>CREATE TABLE</code>. Numa tabela <code>STRICT</code>, o tipo da coluna vira fechadura: o valor que não pode ser convertido sem perda é <strong>recusado</strong>, com erro.</p>
+
+<pre class="file" data-file="strict.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+) STRICT;
+
+INSERT INTO avaliacoes VALUES (1, 3, 'cinco', 'Chegou rápido');
+</pre>
+
+<dl class="anatomy">
+  <dt>) STRICT</dt><dd>A palavra vai <strong>fora</strong> dos parênteses, logo depois do <code>)</code> que fecha a lista de colunas, e antes do <code>;</code>.</dd>
+  <dt>cannot store TEXT value</dt><dd>"Não é possível guardar um valor TEXT…"</dd>
+  <dt>in INTEGER column</dt><dd>"…numa coluna INTEGER…"</dd>
+  <dt>avaliacoes.nota</dt><dd>"…<code>avaliacoes.nota</code>": a mensagem diz a tabela e a coluna, separadas por ponto. Ótimo para achar o problema num <code>INSERT</code> com muitas colunas.</dd>
+</dl>
+
+<p>No terminal, a mesma mensagem vem com o prefixo <code>Runtime error:</code> ("erro durante a execução") e, no fim, o número <code>(19)</code>, o código que o SQLite usa para "uma restrição foi violada":</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT) STRICT;
+sqlite&gt; INSERT INTO avaliacoes VALUES (1, 3, 'cinco', 'Chegou rápido');
+Runtime error: cannot store TEXT value in INTEGER column avaliacoes.nota (19)
+sqlite&gt; .quit</pre>
+
+<h3><code>STRICT</code> ainda converte quando não perde nada</h3>
+<p>O modo rígido não é implicante: se o valor pode virar o tipo da coluna <strong>sem perder nada</strong>, ele converte, como antes. O texto <code>'5'</code> vira o inteiro 5 sem problema:</p>
+
+<pre class="file" data-file="strict-converte.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+) STRICT;
+
+INSERT INTO avaliacoes VALUES (1, 3, '5', 'Chegou rápido');
+
+SELECT nota, typeof(nota) FROM avaliacoes;
+</pre>
+
+<p>Já <code>3.5</code> numa coluna <code>INTEGER</code> perderia o <code>.5</code>, então é recusado:</p>
+
+<pre class="file" data-file="strict-real.sql" data-resultado data-erro>CREATE TABLE notas (n INTEGER) STRICT;
+INSERT INTO notas VALUES (3.5);
+</pre>
+
+<h3>Os seis tipos de uma tabela <code>STRICT</code></h3>
+<p>Numa tabela <code>STRICT</code>, toda coluna <strong>tem</strong> de ter tipo, e só valem estes seis nomes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Aceita</th></tr>
+<tr><td><code>INT</code> ou <code>INTEGER</code></td><td>Inteiros (e o que vira inteiro sem perda, como <code>'5'</code> ou <code>3.0</code>)</td></tr>
+<tr><td><code>REAL</code></td><td>Números (um inteiro vira real: <code>42</code> vira <code>42.0</code>)</td></tr>
+<tr><td><code>TEXT</code></td><td>Texto (um número vira texto)</td></tr>
+<tr><td><code>BLOB</code></td><td>Bytes</td></tr>
+<tr><td><code>ANY</code></td><td>Qualquer coisa, guardada <strong>exatamente</strong> como chegou, sem conversão nenhuma</td></tr>
+</table>
+</div>
+
+<p>Em todas, <code>NULL</code> é aceito, a menos que a coluna tenha a regra <a href="not-null.html">NOT NULL</a>. Os nomes "dos outros bancos" não passam:</p>
+
+<pre class="file" data-file="strict-varchar.sql" data-resultado data-erro>CREATE TABLE clientes_novos (
+    nome  VARCHAR(100),
+    email TEXT
+) STRICT;
+</pre>
+
+<p>"Tipo de dado desconhecido para <code>clientes_novos.nome</code>: <code>VARCHAR(100)</code>." Em tabela <code>STRICT</code>, escreva <code>TEXT</code>. Datas também: <code>DATE</code> dá o mesmo erro, e a data vai numa coluna <code>TEXT</code> no formato <code>'AAAA-MM-DD'</code>.</p>
+
+<h3>Como saber se uma tabela é <code>STRICT</code></h3>
+<p>O <code>PRAGMA table_list</code> lista as tabelas, e a última coluna, <code>strict</code>, vale 1 nas tabelas rígidas. As da Loja Aurora são todas normais (0); a <code>avaliacoes</code> criada com <code>STRICT</code> aparece com 1:</p>
+
+<pre class="file" data-file="table-list.sql" data-resultado>CREATE TABLE avaliacoes (id INTEGER, nota INTEGER) STRICT;
+
+SELECT name, strict
+FROM pragma_table_list
+WHERE schema = 'main' AND name NOT LIKE 'sqlite_%';
+</pre>
+
+<p>(<code>pragma_table_list</code> é o mesmo <code>PRAGMA table_list</code>, escrito como tabela, para poder usar <code>SELECT</code> e <code>WHERE</code>; o <code>NOT LIKE 'sqlite_%'</code> esconde a tabela interna <code>sqlite_schema</code>. Mais em <a href="pragma.html">PRAGMAs Úteis</a>.)</p>
+
+<hr>
+
+<h2>Formas diferentes de proteger os tipos</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Tabela <code>STRICT</code></td><td><code>CREATE TABLE avaliacoes (…) STRICT;</code></td><td>Tabelas novas, quando o SQLite é 3.37.0 ou mais novo. A forma mais simples e completa</td></tr>
+<tr><td><code>CHECK</code> com <code>typeof()</code></td><td><code>nota INTEGER CHECK (typeof(nota) = 'integer')</code></td><td>Para proteger <strong>uma</strong> coluna, ou quando a tabela precisa de um tipo como <code>DATE</code> no nome (aula <a href="check.html">CHECK</a>)</td></tr>
+<tr><td>Converter na consulta</td><td><code>SELECT CAST(n AS INTEGER) FROM t;</code></td><td>Para ler dados que já estão bagunçados. Não protege nada, só remenda</td></tr>
+<tr><td>Confiar no programa</td><td>O sistema da loja só manda números</td><td>É o que muita gente faz, e funciona até o dia em que alguém digita "quatro"</td></tr>
+</table>
+</div>
+
+<p>O <code>CHECK</code> dá um erro diferente, que mostra a regra que falhou:</p>
+
+<pre class="file" data-file="check-typeof.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id   INTEGER,
+    nota INTEGER CHECK (typeof(nota) = 'integer')
+);
+
+INSERT INTO avaliacoes VALUES (1, 'cinco');
+</pre>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Texto numa coluna de número, sem erro nenhum</strong>
+<pre class="file" data-file="sem-erro.sql" data-resultado>CREATE TABLE avaliacoes (id INTEGER, nota INTEGER);
+INSERT INTO avaliacoes VALUES (1, 'cinco');
+
+SELECT nota, typeof(nota) FROM avaliacoes;
+</pre>
+<p><strong>O que acontece:</strong> o <code>INSERT</code> passa e o texto fica lá. O problema só aparece numa conta (a média que deu 3.0) ou numa ordenação. <strong>Como evitar:</strong> crie a tabela com <code>STRICT</code>, ou proteja a coluna com <code>CHECK (typeof(nota) = 'integer')</code>. Para achar o lixo numa tabela que já existe: <code>SELECT * FROM avaliacoes WHERE typeof(nota) &lt;&gt; 'integer';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>STRICT</code> com um tipo que ele não conhece</strong>
+<pre class="file" data-file="strict-date.sql" data-resultado data-erro>CREATE TABLE entregas (id INTEGER, saiu_em DATE) STRICT;
+</pre>
+<p><strong>O que diz:</strong> <code>unknown datatype for entregas.saiu_em: "DATE"</code>, "tipo de dado desconhecido". No terminal: <code>Parse error: unknown datatype for entregas.saiu_em: "DATE"</code>. <strong>Como consertar:</strong> só <code>INT</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code> ou <code>ANY</code>. A data vira <code>TEXT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>STRICT</code> com uma coluna sem tipo</strong>
+<pre class="file" data-file="strict-sem-tipo.sql" data-resultado data-erro>CREATE TABLE avaliacoes (id INTEGER, comentario) STRICT;
+</pre>
+<p><strong>O que diz:</strong> <code>missing datatype for avaliacoes.comentario</code>, "falta o tipo de dado". Na tabela normal, coluna sem tipo é permitida (afinidade BLOB); na <code>STRICT</code>, não. <strong>Como consertar:</strong> <code>comentario TEXT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Número com decimais numa coluna <code>INTEGER</code> de tabela <code>STRICT</code></strong>
+<p>Você já viu: <code>cannot store REAL value in INTEGER column notas.n</code>. <strong>Como consertar:</strong> se a coluna precisa de decimais, ela é <code>REAL</code>. Se não precisa, arredonde antes de guardar: <code>round(3.5)</code> ou <code>CAST(3.5 AS INTEGER)</code> (que corta: dá 3).</p>
+</div>
+
+<div class="cenario">
+<strong>O tipo que "parece texto" mas não é</strong>
+<p><code>STRING</code>, <code>CARACTERES</code>, <code>NOME</code>… qualquer nome inventado sem <code>CHAR</code>, <code>CLOB</code> ou <code>TEXT</code> cai na afinidade NUMERIC, e um código como <code>'0042'</code> vira o número 42. <strong>Como evitar:</strong> use os nomes de sempre (<code>TEXT</code>, <code>VARCHAR(n)</code>) e confira com <code>typeof()</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>No MySQL (no modo estrito, que é o padrão do MySQL 8.4), no PostgreSQL e no SQL Server, o tipo da coluna é sempre lei: um texto que não é número, numa coluna de número, dá erro, como numa tabela <code>STRICT</code> do SQLite. Neles, todos os valores de uma coluna têm o tipo da coluna. Se um dia a Loja Aurora mudar para um desses bancos, os dados "bagunçados" de uma tabela SQLite normal são os que vão dar trabalho na mudança: mais um motivo para usar <code>STRICT</code> desde o começo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>typeof(x)</code></td><td>A classe do valor: <code>null</code>, <code>integer</code>, <code>real</code>, <code>text</code> ou <code>blob</code></td></tr>
+<tr><td><code>CAST(x AS INTEGER)</code></td><td>Converte para inteiro (<code>'12abc'</code> dá 12; <code>'abc'</code> dá 0; <code>3.99</code> dá 3)</td></tr>
+<tr><td><code>CREATE TABLE t (…) STRICT;</code></td><td>Tabela rígida: recusa o valor que não cabe no tipo</td></tr>
+<tr><td><code>INT</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code>, <code>ANY</code></td><td>Os únicos tipos de uma tabela <code>STRICT</code></td></tr>
+<tr><td><code>SELECT name, strict FROM pragma_table_list;</code></td><td>Mostra quais tabelas são <code>STRICT</code></td></tr>
+<tr><td><code>CHECK (typeof(col) = 'integer')</code></td><td>Protege uma coluna só, numa tabela normal</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>cannot store TEXT value in INTEGER column t.c</code></td><td>Tabela <code>STRICT</code>: um texto que não é número numa coluna inteira</td></tr>
+<tr><td><code>cannot store REAL value in INTEGER column t.c</code></td><td>Tabela <code>STRICT</code>: um número com decimais numa coluna inteira</td></tr>
+<tr><td><code>unknown datatype for t.c: "DATE"</code></td><td>Tabela <code>STRICT</code> com um tipo fora dos seis</td></tr>
+<tr><td><code>missing datatype for t.c</code></td><td>Tabela <code>STRICT</code> com uma coluna sem tipo</td></tr>
+<tr><td><code>CHECK constraint failed: typeof(nota) = 'integer'</code></td><td>A regra <code>CHECK</code> recusou o valor</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Qual é a classe?</h3>
+<p>Complete com o que o SQLite responde para <code>SELECT typeof(1.15);</code>:</p>
+<div class="ex-code"><input data-answer="real|REAL" aria-label="classe"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A tabela rígida</h3>
+<p>Complete para que a tabela recuse texto na coluna <code>nota</code>:</p>
+<div class="ex-code">CREATE TABLE notas (n INTEGER) <input data-answer="STRICT|strict" aria-label="palavra">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Numa tabela normal (sem <code>STRICT</code>), a coluna <code>n INTEGER</code> recebe <code>'abc'</code>. O que acontece?</p>
+<label><input type="radio" name="q3"> Dá erro: <code>cannot store TEXT value in INTEGER column</code></label>
+<label><input type="radio" name="q3"> O texto <code>'abc'</code> é guardado, sem erro</label>
+<label><input type="radio" name="q3"> O valor vira 0</label>
+<label><input type="radio" name="q3"> O valor vira <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual é a afinidade de uma coluna declarada como <code>VARCHAR(2)</code>?</p>
+<label><input type="radio" name="q4"> NUMERIC</label>
+<label><input type="radio" name="q4"> BLOB</label>
+<label><input type="radio" name="q4"> Texto de no máximo 2 caracteres</label>
+<label><input type="radio" name="q4"> TEXT, e o <code>2</code> é ignorado</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Qual destes <code>CREATE TABLE</code> dá erro?</p>
+<label><input type="radio" name="q5"> <code>CREATE TABLE t (d DATE);</code></label>
+<label><input type="radio" name="q5"> <code>CREATE TABLE t (d TEXT) STRICT;</code></label>
+<label><input type="radio" name="q5"> <code>CREATE TABLE t (d DATE) STRICT;</code></label>
+<label><input type="radio" name="q5"> <code>CREATE TABLE t (d ANY) STRICT;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Numa tabela <code>STRICT</code>, a coluna <code>n INTEGER</code> recebe o texto <code>'7'</code>. O que acontece?</p>
+<label><input type="radio" name="q6"> É guardado o inteiro 7: dá para converter sem perder nada</label>
+<label><input type="radio" name="q6"> Dá erro, porque <code>'7'</code> está entre aspas</label>
+<label><input type="radio" name="q6"> É guardado o texto <code>'7'</code></label>
+<label><input type="radio" name="q6"> É guardado <code>NULL</code></label>
+</div>
+
+<h3>Missão final: tranque a tabela</h3>
+
+<div class="trysql" data-goal="erro:cannot store TEXT value in INTEGER column avaliacoes\.nota">
+<p class="try-task"><strong>Missão:</strong> rode como está: o <code>INSERT</code> com a nota <code>'cinco'</code> passou, e o texto foi parar na coluna <code>INTEGER</code>. Mude a tabela para que o SQLite <strong>recuse</strong> essa avaliação com o erro <code>cannot store TEXT value in INTEGER column avaliacoes.nota</code>. (Uma palavra resolve.)</p>
+<pre class="script" data-file="trancar.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes VALUES (1, 3, 'cinco', 'Chegou rápido');
+
+SELECT nota, typeof(nota) FROM avaliacoes;
+</pre>
+<pre class="solucao" data-file="trancar.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+) STRICT;
+
+INSERT INTO avaliacoes VALUES (1, 3, 'cinco', 'Chegou rápido');
+
+SELECT nota, typeof(nota) FROM avaliacoes;
+</pre>
+</div>
+
+<p>Aqui o erro é o resultado que você quer: ele prova que a tabela agora protege os dados. Troque <code>'cinco'</code> por <code>5</code> e rode de novo para ver a avaliação entrar.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No SQLite, o tipo é de cada <strong>valor</strong>, não da coluna (tipagem dinâmica). Os valores são de cinco classes: <code>NULL</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code>.</li>
+  <li><code>typeof(x)</code> diz a classe de um valor; com <code>GROUP BY typeof(col)</code>, você faz um raio X da coluna.</li>
+  <li>O tipo escrito no <code>CREATE TABLE</code> vira uma <strong>afinidade</strong> (INTEGER, TEXT, BLOB, REAL ou NUMERIC), pelas letras do nome. Os números entre parênteses são ignorados.</li>
+  <li>A afinidade converte quando pode sem perda (<code>'20'</code> vira 20, <code>3.0</code> vira 3); quando não pode, guarda como veio. Texto numa coluna <code>INTEGER</code> passa sem erro e estraga médias e ordenações.</li>
+  <li>Tabelas <code>STRICT</code> (desde o SQLite 3.37.0) recusam o valor errado: <code>cannot store TEXT value in INTEGER column avaliacoes.nota</code>. Elas só aceitam <code>INT</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code> e <code>ANY</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
