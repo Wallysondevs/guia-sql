@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL ORDER BY — ordenando o resultado | Guia SQL</title>
+<meta name="description" content="ORDER BY para quem nunca mexeu num banco de dados: ordem crescente (ASC) e decrescente (DESC), ordenar por várias colunas, pela posição, por uma conta, onde ficam os NULL (NULLS FIRST e NULLS LAST), o problema dos acentos no SQLite e as mensagens de erro reais, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">ORDER BY</span></h1>
+
+<p class="intro">Até agora, as linhas vieram na ordem que o banco quis. Mas a Ana precisa de listas <strong>arrumadas</strong>: os produtos do mais barato ao mais caro, os clientes em ordem alfabética, os funcionários do maior salário ao menor. Quem arruma é o <code>ORDER BY</code> ("ordenar por", em inglês). Ele vem no fim do <code>SELECT</code> e diz por qual coluna (ou colunas) o resultado deve ser ordenado, e em que sentido.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Ordenar o resultado por uma coluna, em ordem crescente (<code>ASC</code>) ou decrescente (<code>DESC</code>).</li>
+  <li>Ordenar por <strong>várias colunas</strong>: primeiro por estado, e dentro de cada estado, por nome.</li>
+  <li>Ordenar pela <strong>posição</strong> da coluna (<code>ORDER BY 2</code>) e por uma <strong>conta</strong> (<code>preco * estoque</code>).</li>
+  <li>Onde ficam os valores vazios (<code>NULL</code>) e como mudar isso com <code>NULLS LAST</code>.</li>
+  <li>Por que o SQLite põe "Lápis" depois de "Luvas": a ordem do texto com acentos.</li>
+  <li>Os erros mais comuns, com as mensagens reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" é desenhado pelo SQLite de verdade, no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: arrumar as fichas antes de entregar</h2>
+<p>Pense de novo nas fichas da loja. O <code>WHERE</code> escolhe <strong>quais</strong> fichas vão para a mão da Ana. O <code>ORDER BY</code> não tira nem põe ficha nenhuma: ele só <strong>arruma a pilha</strong> antes de entregar, como quem organiza o fichário em ordem alfabética.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte do SELECT</th><th>Pergunta que responde</th><th>Muda o número de linhas?</th></tr>
+<tr><td><code>FROM</code></td><td>De qual tabela?</td><td>—</td></tr>
+<tr><td><code>WHERE</code></td><td>Quais linhas?</td><td>Sim</td></tr>
+<tr><td><code>ORDER BY</code></td><td>Em que ordem?</td><td><strong>Não</strong>: as mesmas linhas, só arrumadas</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Sem ORDER BY, a ordem é "qualquer uma"</strong>
+<p>Quando você não usa <code>ORDER BY</code>, o SQLite costuma devolver as linhas na ordem em que estão guardadas, e por isso parece que a tabela "já vem em ordem de id". Mas isso <strong>não é garantido</strong>: depois de apagar linhas, criar um índice ou trocar de banco, a ordem pode mudar. Se a ordem importa, peça com <code>ORDER BY</code>.</p>
+</div>
+
+<hr>
+
+<h2>1. O primeiro ORDER BY</h2>
+<p>Os produtos da Papelaria (categoria 1), do mais barato ao mais caro:</p>
+
+<pre class="file" data-file="papelaria.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 1
+ORDER BY preco;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT nome, preco</dt><dd>As colunas que vão aparecer.</dd>
+  <dt>FROM produtos</dt><dd>A tabela.</dd>
+  <dt>WHERE categoria_id = 1</dt><dd>Só os 6 produtos da Papelaria.</dd>
+  <dt>ORDER BY</dt><dd>"Ordenar por": vem <strong>depois</strong> do <code>WHERE</code>, no fim da consulta.</dd>
+  <dt>preco</dt><dd>A coluna que decide a ordem. Sem mais nada, a ordem é <strong>crescente</strong>: do menor para o maior.</dd>
+</dl>
+
+<p>O Lápis (1.15) veio primeiro e a Mochila (89.99) por último. Repare que as linhas são as mesmas 6 que viriam sem o <code>ORDER BY</code>; só mudou a ordem.</p>
+
+<hr>
+
+<h2>2. Crescente (ASC) e decrescente (DESC)</h2>
+<p>Para inverter o sentido, escreva <code>DESC</code> depois da coluna:</p>
+
+<pre class="file" data-file="papelaria-desc.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 1
+ORDER BY preco DESC;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>Vem de</th><th>Ordem</th><th>Números</th><th>Texto</th><th>Datas (AAAA-MM-DD)</th></tr>
+<tr><td><code>ASC</code></td><td><em>ascending</em>, "subindo"</td><td>Crescente (é o padrão)</td><td>1, 2, 3…</td><td>A, B, C…</td><td>Da mais antiga à mais nova</td></tr>
+<tr><td><code>DESC</code></td><td><em>descending</em>, "descendo"</td><td>Decrescente</td><td>…3, 2, 1</td><td>…C, B, A</td><td>Da mais nova à mais antiga</td></tr>
+</table>
+</div>
+
+<p>Como <code>ASC</code> é o padrão, <code>ORDER BY preco</code> e <code>ORDER BY preco ASC</code> são a mesma coisa. Escrever o <code>ASC</code> é opcional; algumas pessoas escrevem para deixar a intenção clara.</p>
+
+<p>Texto também se ordena. Os mesmos produtos, em ordem alfabética:</p>
+
+<pre class="file" data-file="papelaria-nome.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 1
+ORDER BY nome;
+</pre>
+
+<p>E as datas? A Loja Aurora guarda datas no formato <code>AAAA-MM-DD</code> (ano, mês, dia), como <code>1985-03-12</code>. Nesse formato, a ordem alfabética é <strong>igual</strong> à ordem do calendário, então <code>ORDER BY nascimento</code> funciona direitinho. Você vai ver isso na seção 6.</p>
+
+<div class="trysql" data-goal="out:^Marta Lustosa">
+<p class="try-task"><strong>Experimente:</strong> a lista abaixo mostra os funcionários do menor salário para o maior. Faça a lista começar pelo <strong>maior</strong> salário.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cargo, salario
+FROM funcionarios
+ORDER BY salario;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cargo, salario
+FROM funcionarios
+ORDER BY salario DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Ordenar por várias colunas</h2>
+<p>A Ana quer a lista de clientes agrupada por estado e, dentro de cada estado, por cidade e por nome, como uma lista telefônica. Basta pôr as colunas em fila, separadas por vírgula:</p>
+
+<pre class="file" data-file="clientes-ordenados.sql" data-resultado>SELECT nome, cidade, estado
+FROM clientes
+ORDER BY estado, cidade, nome;
+</pre>
+
+<p>Leia o <code>ORDER BY</code> da esquerda para a direita, como regras de desempate:</p>
+
+<ol class="passo">
+  <li>Primeiro, todo mundo é ordenado por <code>estado</code>: CE, PE, PI, SP.</li>
+  <li>Quem tem o <strong>mesmo</strong> estado é desempatado pela <code>cidade</code>: no Piauí, Floriano, Oeiras, Parnaíba, Picos, Teresina.</li>
+  <li>Quem tem o mesmo estado <strong>e</strong> a mesma cidade é desempatado pelo <code>nome</code>: os 10 clientes de Teresina aparecem em ordem alfabética.</li>
+</ol>
+
+<p>A segunda coluna só é usada quando a primeira empata; a terceira, só quando as duas primeiras empatam.</p>
+
+<h3>Cada coluna tem o seu sentido</h3>
+<p>O <code>ASC</code> ou <code>DESC</code> vale só para a coluna logo antes dele. Os funcionários por cargo (A a Z) e, dentro de cada cargo, do maior salário ao menor:</p>
+
+<pre class="file" data-file="cargo-salario.sql" data-resultado>SELECT nome, cargo, salario
+FROM funcionarios
+ORDER BY cargo, salario DESC;
+</pre>
+
+<p>O <code>cargo</code> ficou crescente (Estoquista, Gerente, Supervisora, Vendedor, Vendedora) e, entre os três Vendedores, o salário ficou decrescente (3200.5, 3100.0, 2980.9). O <code>DESC</code> não "contaminou" o <code>cargo</code>. Se você quer as duas decrescentes, escreva <code>DESC</code> nas duas: <code>ORDER BY cargo DESC, salario DESC</code>.</p>
+
+<div class="warning">
+<strong>A confusão mais comum</strong>
+<p>Muita gente escreve <code>ORDER BY estado, nome DESC</code> esperando "tudo ao contrário". Não é: o <code>estado</code> continua crescente (CE primeiro), e só os nomes ficam de Z a A dentro de cada estado.</p>
+</div>
+
+<hr>
+
+<h2>4. Ordenar pela posição da coluna</h2>
+<p>Em vez do nome da coluna, você pode usar o <strong>número</strong> dela na lista do <code>SELECT</code>: 1 é a primeira, 2 é a segunda, e assim por diante.</p>
+
+<pre class="file" data-file="por-posicao.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; 100
+ORDER BY 2 DESC;
+</pre>
+
+<p>Aqui, <code>2</code> é o <code>preco</code> (a segunda coluna do <code>SELECT</code>). Os 4 produtos acima de R$ 100 vieram do mais caro (Jogo de Panelas, 249.9) ao mais barato (Faqueiro, 119.4).</p>
+
+<p>É prático para testar uma consulta rapidinho, mas tem um perigo: se alguém mudar a ordem das colunas do <code>SELECT</code> (por exemplo, para <code>SELECT preco, nome</code>), o <code>2</code> passa a ser o <code>nome</code>, e a ordem muda sem aviso nenhum. Em consultas que vão ficar guardadas, prefira o nome da coluna.</p>
+
+<hr>
+
+<h2>5. Ordenar por uma conta</h2>
+<p>O <code>ORDER BY</code> aceita qualquer expressão, não só colunas. A Ana quer saber em quais produtos há mais dinheiro parado no estoque: o preço vezes a quantidade guardada.</p>
+
+<pre class="file" data-file="dinheiro-parado.sql" data-resultado>SELECT nome, preco, estoque, preco * estoque
+FROM produtos
+WHERE preco * estoque &gt; 3000
+ORDER BY preco * estoque DESC;
+</pre>
+
+<p>O Carregador USB-C nem é caro (45.5), mas com 150 unidades no estoque soma R$ 6.825,00 parados, mais que qualquer outro. A coluna sem nome bonito (<code>preco * estoque</code>) vai ganhar um apelido na aula <a href="aliases.html">Apelidos (AS)</a>, e aí você poderá escrever <code>ORDER BY</code> com o apelido.</p>
+
+<p>Dá até para ordenar por uma coluna que <strong>não aparece</strong> no <code>SELECT</code>: <code>SELECT nome FROM produtos ORDER BY preco</code> funciona; o preço decide a ordem, mas não é mostrado.</p>
+
+<hr>
+
+<h2>6. E os valores vazios (NULL)?</h2>
+<p>Dois clientes não informaram a data de nascimento: o <code>nascimento</code> deles é <code>NULL</code> (vazio). Onde eles ficam quando a lista é ordenada pela data? Veja com os fornecedores, em que os dois estrangeiros não têm estado:</p>
+
+<pre class="file" data-file="nulls-primeiro.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+ORDER BY estado;
+</pre>
+
+<p>No SQLite, o <code>NULL</code> é considerado <strong>menor que qualquer valor</strong>. Por isso, em ordem crescente, os vazios vêm <strong>primeiro</strong>; em ordem decrescente, por último. Nem sempre é o que você quer: numa lista de aniversários, é estranho começar por quem não tem data. Para mandar os vazios para o fim, use <code>NULLS LAST</code> ("vazios por último"):</p>
+
+<pre class="file" data-file="nulls-last.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento NULLS LAST;
+</pre>
+
+<p>Agora a lista começa por Conceição Prado (1965), a cliente mais velha, e Antônio Carlos Neves e Sebastião Moura, sem data, ficaram no fim.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Onde ficam os NULL no SQLite</th></tr>
+<tr><td><code>ORDER BY coluna</code> (ou <code>ASC</code>)</td><td>No começo</td></tr>
+<tr><td><code>ORDER BY coluna DESC</code></td><td>No fim</td></tr>
+<tr><td><code>ORDER BY coluna NULLS LAST</code></td><td>No fim, mesmo em ordem crescente</td></tr>
+<tr><td><code>ORDER BY coluna DESC NULLS FIRST</code></td><td>No começo, mesmo em ordem decrescente</td></tr>
+</table>
+</div>
+
+<p>O <code>NULLS FIRST</code>/<code>NULLS LAST</code> vem sempre <strong>depois</strong> do <code>ASC</code>/<code>DESC</code>. Mais sobre o vazio em <a href="null.html">O Valor NULL</a>.</p>
+
+<hr>
+
+<h2>7. Texto com acentos: por que "Lápis" vem depois de "Luvas"?</h2>
+<p>Três produtos que começam com L, em ordem alfabética:</p>
+
+<pre class="file" data-file="acentos.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE id = 3 OR id = 24 OR id = 45
+ORDER BY nome;
+</pre>
+
+<p>Num dicionário, "Lápis" viria antes de "Livro" e de "Luvas". O SQLite pôs por último. Não é defeito, é a regra de comparação padrão dele, chamada <code>BINARY</code> ("binária"): ele compara o <strong>código</strong> de cada letra no computador, e não a ordem do alfabeto português. Nos códigos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Grupo</th><th>Exemplos</th><th>Posição na fila</th></tr>
+<tr><td>Algarismos</td><td>0 1 2 … 9</td><td>Primeiro</td></tr>
+<tr><td>Letras maiúsculas sem acento</td><td>A B C … Z</td><td>Depois dos algarismos</td></tr>
+<tr><td>Letras minúsculas sem acento</td><td>a b c … z</td><td>Depois de <strong>todas</strong> as maiúsculas</td></tr>
+<tr><td>Letras com acento (maiúsculas e minúsculas)</td><td>á, ã, é, ô, Á, É…</td><td>Depois de tudo isso</td></tr>
+</table>
+</div>
+
+<p>Em "Lápis" × "Livro", o L empata; depois vêm "á" e "i". O "i" é uma letra comum e o "á" é uma letra acentuada, que fica no fim da fila. Então "Livro" ganha. Pelo mesmo motivo, um nome em minúsculas, como "ana", viria depois de "Zuleica".</p>
+
+<p>Na prática, para os nomes da Loja Aurora isso quase nunca aparece, porque os acentos estão no meio das palavras e as primeiras letras desempatam antes. Mas fique atento quando a primeira diferença cair numa letra acentuada, como em "Lápis".</p>
+
+<div class="tip">
+<strong>E o <code>COLLATE NOCASE</code>?</strong>
+<p>O SQLite tem outra regra de comparação, a <code>NOCASE</code> ("sem caixa"), que ignora a diferença entre maiúsculas e minúsculas: <code>ORDER BY nome COLLATE NOCASE</code> põe "ana" junto de "Ana". Mas ela só conhece as letras <strong>sem acento</strong> (de A a Z): "Á" e "á" continuam no fim da fila. O SQLite puro não traz uma ordem "de dicionário" do português; quando isso importa muito, os programas costumam ordenar a lista do lado deles, ou guardar uma coluna extra com o nome sem acentos só para ordenar.</p>
+</div>
+
+<hr>
+
+<h2>8. Formas diferentes de pedir a mesma ordem</h2>
+<p>Os funcionários do maior salário para o menor (o <code>salario</code> é a 3ª coluna):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Observação</th></tr>
+<tr><td><code>ORDER BY salario DESC</code></td><td>A mais clara: o nome da coluna e o sentido.</td></tr>
+<tr><td><code>ORDER BY 3 DESC</code></td><td>Pela posição no <code>SELECT nome, cargo, salario</code>. Quebra se a lista de colunas mudar.</td></tr>
+<tr><td><code>ORDER BY -salario</code></td><td>Truque com números: "menos o salário" em ordem crescente é o salário em ordem decrescente. Funciona, mas confunde quem lê; não use com texto.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Consulta que vai ficar guardada num programa ou relatório</td><td>O nome da coluna, com <code>ASC</code>/<code>DESC</code> explícito</td></tr>
+<tr><td>Teste rápido no terminal</td><td>A posição (<code>ORDER BY 2</code>) serve</td></tr>
+<tr><td>Ordenar por uma conta</td><td>A conta inteira, ou o apelido dela (aula <a href="aliases.html">AS</a>)</td></tr>
+<tr><td>A coluna pode ter <code>NULL</code></td><td>Decida onde eles ficam: <code>NULLS FIRST</code> ou <code>NULLS LAST</code></td></tr>
+<tr><td>Muitas linhas empatam na primeira coluna</td><td>Acrescente uma segunda coluna de desempate (um nome, um id)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>ORDER BY antes do WHERE</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+ORDER BY preco
+WHERE preco &gt; 100;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "WHERE": syntax error</code>, "perto de <code>WHERE</code>: erro de sintaxe". As partes do <code>SELECT</code> têm uma ordem fixa: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code>. Depois do <code>ORDER BY</code>, o SQLite não espera mais um <code>WHERE</code>.</p>
+<p><strong>Como consertar:</strong> o <code>ORDER BY</code> vai sempre por último (só o <code>LIMIT</code>, da <a href="limit.html">próxima aula</a>, vem depois dele).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o BY</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER preco;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "preco": syntax error</code>. O comando é <code>ORDER BY</code>, duas palavras. Sozinho, <code>ORDER</code> não quer dizer nada para o SQL, e ele tropeça na palavra seguinte.</p>
+</div>
+
+<div class="cenario">
+<strong>Posição que não existe</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER BY 3;
+</pre>
+<p><strong>A mensagem:</strong> <code>1st ORDER BY term out of range - should be between 1 and 2</code>, "o 1º termo do ORDER BY está fora do intervalo: deveria estar entre 1 e 2". O <code>SELECT</code> tem só duas colunas, então só existem as posições 1 e 2. O "1st" diz qual item do <code>ORDER BY</code> está errado (o primeiro). O mesmo erro aparece com <code>ORDER BY 0</code>: as posições começam em 1.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna que não existe</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER BY valor;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: valor</code>, "não existe a coluna valor". A tabela <code>produtos</code> tem <code>preco</code>, não <code>valor</code>. Confira os nomes em <a href="banco-do-guia.html">O Banco da Loja Aurora</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>ASC e DESC juntos</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER BY preco ASC DESC;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "DESC": syntax error</code>. Cada coluna tem <strong>um</strong> sentido: ou <code>ASC</code>, ou <code>DESC</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O nome da coluna entre aspas: não dá erro, mas não ordena</strong>
+<pre class="file" data-file="aspas.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE estado = 'CE'
+ORDER BY 'nome' DESC;
+</pre>
+<p><strong>O que aconteceu:</strong> nenhuma mensagem, e os nomes vieram fora de ordem (Carlos, Fernanda, Patrícia…, na ordem da tabela). Entre aspas simples, <code>'nome'</code> não é a coluna: é o <strong>texto</strong> "nome", igual em todas as linhas. Ordenar por algo que é igual em todas as linhas não muda nada.</p>
+<p><strong>Como consertar:</strong> nome de coluna vai sem aspas: <code>ORDER BY nome DESC</code>. Aspas simples são só para texto (valores), como <code>'CE'</code>.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<p>O <code>ORDER BY</code> com <code>ASC</code>, <code>DESC</code>, várias colunas e posição funciona igual em todos os bancos mais usados. A diferença está nos <strong>NULL</strong> e no <strong>texto</strong>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>NULL em <code>ORDER BY coluna</code> (crescente)</th><th>Aceita <code>NULLS FIRST</code>/<code>NULLS LAST</code>?</th></tr>
+<tr><td>SQLite</td><td>No começo (o NULL é o menor)</td><td>Sim</td></tr>
+<tr><td>MySQL</td><td>No começo</td><td>Não</td></tr>
+<tr><td>SQL Server</td><td>No começo ("o menor valor possível", diz a documentação)</td><td>Não</td></tr>
+<tr><td>PostgreSQL</td><td>No <strong>fim</strong> (o NULL conta como maior que tudo)</td><td>Sim</td></tr>
+</table>
+</div>
+<p>Ou seja, a mesma consulta pode trazer os vazios no começo no SQLite e no fim no PostgreSQL. Se o lugar dos <code>NULL</code> importa, escreva <code>NULLS FIRST</code> ou <code>NULLS LAST</code> (onde o banco aceitar).</p>
+<p>No texto, MySQL, PostgreSQL e SQL Server usam a <strong>collation</strong> (regra de ordem e comparação de texto) configurada no banco ou na coluna, que pode conhecer os acentos e as maiúsculas do português. No MySQL 8, por exemplo, a collation padrão do <code>utf8mb4</code> é <code>utf8mb4_0900_ai_ci</code>, que não diferencia acentos nem maiúsculas. Por isso o "Lápis" desta aula pode aparecer em outro lugar num desses bancos. Ilustrativo (SQL Server, não roda no SQLite):</p>
+<pre class="file" data-file="sqlserver.sql">-- SQL Server: escolhendo a collation só para esta ordenação
+SELECT nome FROM produtos ORDER BY nome COLLATE Latin1_General_CI_AI;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>ORDER BY coluna</code></td><td>Ordem crescente (o mesmo que <code>ASC</code>)</td></tr>
+<tr><td><code>ORDER BY coluna DESC</code></td><td>Ordem decrescente</td></tr>
+<tr><td><code>ORDER BY a, b DESC</code></td><td>Ordena por <code>a</code> (crescente); empates são desempatados por <code>b</code> (decrescente)</td></tr>
+<tr><td><code>ORDER BY 2</code></td><td>Pela 2ª coluna do <code>SELECT</code></td></tr>
+<tr><td><code>ORDER BY preco * estoque</code></td><td>Por uma conta</td></tr>
+<tr><td><code>ORDER BY coluna NULLS LAST</code></td><td>Vazios no fim</td></tr>
+<tr><td><code>ORDER BY coluna DESC NULLS FIRST</code></td><td>Vazios no começo</td></tr>
+<tr><td><code>ORDER BY nome COLLATE NOCASE</code></td><td>Ignora maiúsculas/minúsculas (só de A a Z, sem acentos)</td></tr>
+<tr><td>Ordem das partes</td><td><code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code> → <code>LIMIT</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "WHERE": syntax error</code></td><td><code>WHERE</code> depois do <code>ORDER BY</code></td></tr>
+<tr><td><code>near "preco": syntax error</code></td><td>Faltou o <code>BY</code> (<code>ORDER preco</code>)</td></tr>
+<tr><td><code>1st ORDER BY term out of range - should be between 1 and 2</code></td><td>Posição maior que o número de colunas do <code>SELECT</code> (ou 0)</td></tr>
+<tr><td><code>no such column: valor</code></td><td>A coluna não existe</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Do mais caro ao mais barato</h3>
+<p>Complete a palavra que inverte a ordem:</p>
+<div class="ex-code">SELECT nome, preco FROM produtos ORDER BY preco <input data-answer="DESC" aria-label="sentido da ordem">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. As duas palavras</h3>
+<p>Complete o comando que ordena os clientes por nome:</p>
+<div class="ex-code">SELECT nome FROM clientes <input data-answer="ORDER" aria-label="primeira palavra"> <input data-answer="BY" aria-label="segunda palavra"> nome;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Em <code>ORDER BY estado, nome DESC</code>, como fica o <code>estado</code>?</p>
+<label><input type="radio" name="q3"> Decrescente, porque o <code>DESC</code> vale para tudo</label>
+<label><input type="radio" name="q3"> Crescente: o <code>DESC</code> vale só para o <code>nome</code></label>
+<label><input type="radio" name="q3"> Na ordem da tabela, sem ordenar</label>
+<label><input type="radio" name="q3"> Dá erro: falta o <code>ASC</code> no <code>estado</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. No SQLite, onde ficam os clientes sem data de nascimento em <code>ORDER BY nascimento</code>?</p>
+<label><input type="radio" name="q4"> No começo da lista</label>
+<label><input type="radio" name="q4"> No fim da lista</label>
+<label><input type="radio" name="q4"> Eles não aparecem</label>
+<label><input type="radio" name="q4"> Dá erro, porque não dá para ordenar <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A consulta <code>SELECT nome, preco FROM produtos ORDER BY 3;</code> dá qual resultado?</p>
+<label><input type="radio" name="q5"> Ordena pela 3ª coluna da tabela (<code>fornecedor_id</code>)</label>
+<label><input type="radio" name="q5"> Mostra só 3 linhas</label>
+<label><input type="radio" name="q5"> Erro: <code>1st ORDER BY term out of range - should be between 1 and 2</code></label>
+<label><input type="radio" name="q5"> Ordena pelo <code>preco</code>, a última coluna</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que o SQLite põe "Lápis Grafite HB" depois de "Luvas de Jardinagem" em <code>ORDER BY nome</code>?</p>
+<label><input type="radio" name="q6"> Porque o Lápis é mais barato</label>
+<label><input type="radio" name="q6"> Porque o <code>ORDER BY</code> ignora a primeira letra</label>
+<label><input type="radio" name="q6"> Porque faltou o <code>ASC</code></label>
+<label><input type="radio" name="q6"> Porque ele compara o código das letras, e as letras com acento ficam depois de todas as sem acento</label>
+</div>
+
+<h3>Missão final: a lista de aniversariantes por estado</h3>
+
+<div class="trysql" data-goal="out:^Fernanda Carvalho\|CE\|1995-04-21\nDébora Cristina Alves;;out:Roberto Falcão\|SP\|1975-07-07$">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os clientes separados por estado (em ordem crescente: CE, PE, PI, SP) e, dentro de cada estado, do cliente <strong>mais novo</strong> para o <strong>mais velho</strong>. Mantenha as três colunas na ordem <code>nome, estado, nascimento</code> e arrume o <code>ORDER BY</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estado, nascimento
+FROM clientes
+ORDER BY nascimento;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, estado, nascimento
+FROM clientes
+ORDER BY estado, nascimento DESC;
+</pre>
+</div>
+
+<p>Repare nos dois clientes do Piauí sem data (Antônio Carlos e Sebastião): com <code>DESC</code>, eles ficaram no fim do grupo do Piauí. Quer vê-los no começo do grupo? Acrescente <code>NULLS FIRST</code> depois do <code>DESC</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ORDER BY</code> ("ordenar por") arruma as linhas do resultado; não tira nem acrescenta nenhuma. Sem ele, a ordem não é garantida.</li>
+  <li>Vem depois do <code>WHERE</code>: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code>.</li>
+  <li><code>ASC</code> (crescente) é o padrão; <code>DESC</code> inverte. Cada coluna tem o seu sentido: em <code>ORDER BY a, b DESC</code>, só o <code>b</code> é decrescente.</li>
+  <li>Várias colunas funcionam como desempate, da esquerda para a direita.</li>
+  <li>Também dá para ordenar pela posição (<code>ORDER BY 2</code>) e por uma conta (<code>ORDER BY preco * estoque</code>).</li>
+  <li>No SQLite, o <code>NULL</code> vem primeiro em ordem crescente; use <code>NULLS LAST</code> para mandá-lo para o fim. No PostgreSQL é o contrário.</li>
+  <li>O SQLite ordena texto pelo código das letras: maiúsculas, depois minúsculas, depois acentuadas. Por isso "Lápis" vem depois de "Luvas".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
