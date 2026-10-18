@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL AND — duas condições ao mesmo tempo no WHERE | Guia SQL</title>
+<meta name="description" content="O operador AND para quem está começando: como exigir duas ou mais condições no WHERE, a tabela-verdade do AND com 1 e 0, condições em colunas diferentes, faixas de valores na mesma coluna, datas, e os erros reais do SQLite, incluindo a condição impossível que não dá erro, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">AND</span></h1>
+
+<p class="intro">A Loja Aurora vai fazer um evento em Teresina só para clientes especiais, e a Ana precisa da lista de convidados: clientes do <strong>Piauí</strong> que <strong>também</strong> sejam VIP. São duas condições, e as duas têm de valer ao mesmo tempo. Com o <code>WHERE</code> que você já conhece, dá para testar uma coisa só. Para juntar duas (ou mais), existe o <code>AND</code> (em inglês, "e"): <strong>esta condição e aquela</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A juntar duas condições com <code>AND</code>, e como o banco decide cada linha.</li>
+  <li>A <strong>tabela-verdade</strong> do <code>AND</code>: só dá verdadeiro quando as duas partes são verdadeiras.</li>
+  <li>A usar o <code>AND</code> com colunas diferentes e com a mesma coluna (uma faixa de valores).</li>
+  <li>Que cada <code>AND</code> a mais deixa o resultado <strong>menor</strong> (ou igual), nunca maior.</li>
+  <li>Os erros mais comuns: a condição impossível, o <code>AND</code> pela metade e o <code>&amp;&amp;</code> de outras linguagens.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o porteiro com duas regras</h2>
+<p>Pense no porteiro do evento. Ele tem uma lista com duas regras: "só entra quem <strong>mora no Piauí</strong> e <strong>é VIP</strong>". Para cada pessoa da fila, ele confere as duas coisas:</p>
+
+<ul>
+  <li>Mora no Piauí e é VIP? <strong>Entra.</strong></li>
+  <li>Mora no Piauí, mas não é VIP? Fica de fora.</li>
+  <li>É VIP, mas mora no Ceará? Fica de fora.</li>
+  <li>Nem uma coisa nem outra? Fica de fora.</li>
+</ul>
+
+<p>Basta <strong>uma</strong> regra falhar para a pessoa ficar de fora. Esse é o <code>AND</code>: a linha só entra no resultado se <strong>todas</strong> as condições forem verdadeiras.</p>
+
+<h3>A tabela-verdade</h3>
+<p>Na aula <a href="operadores-comparacao.html">Comparações</a> você viu que o banco responde 1 para "verdadeiro" e 0 para "falso". A tabela abaixo mostra todas as combinações possíveis de duas condições com <code>AND</code>. Ela se chama <strong>tabela-verdade</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Condição A</th><th>Condição B</th><th>A <code>AND</code> B</th><th>No evento</th></tr>
+<tr><td>verdadeira (1)</td><td>verdadeira (1)</td><td><strong>verdadeira (1)</strong></td><td>Do Piauí e VIP: entra</td></tr>
+<tr><td>verdadeira (1)</td><td>falsa (0)</td><td>falsa (0)</td><td>Do Piauí, não VIP: fora</td></tr>
+<tr><td>falsa (0)</td><td>verdadeira (1)</td><td>falsa (0)</td><td>VIP de outro estado: fora</td></tr>
+<tr><td>falsa (0)</td><td>falsa (0)</td><td>falsa (0)</td><td>Nenhuma das duas: fora</td></tr>
+</table>
+</div>
+
+<p>Você pode conferir a tabela no próprio banco, com um <code>SELECT</code> sem tabela:</p>
+
+<pre class="file" data-file="tabela-verdade.sql" data-resultado>SELECT 1 AND 1, 1 AND 0, 0 AND 1, 0 AND 0;
+</pre>
+
+<p>Só a primeira combinação deu 1. As outras três deram 0.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>AND</code></h2>
+<p>A lista de convidados da Ana:</p>
+
+<pre class="file" data-file="convidados.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI' AND vip = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>"Onde": a partir daqui vêm as condições.</dd>
+  <dt>estado = 'PI'</dt><dd>A primeira condição: o cliente mora no Piauí.</dd>
+  <dt>AND</dt><dd>"E": junta as duas condições. A linha só passa se as duas forem verdadeiras.</dd>
+  <dt>vip = 1</dt><dd>A segunda condição: o cliente é VIP.</dd>
+  <dt>;</dt><dd>Fim do comando.</dd>
+</dl>
+
+<p>Só <strong>2 clientes</strong>: José Ribamar e Larissa. Compare com o que você já sabe: o Piauí tem 14 clientes (aula <a href="where.html">WHERE</a>), e a loja tem 5 VIPs. O <code>AND</code> ficou com quem está nas <strong>duas</strong> listas ao mesmo tempo.</p>
+
+<h3>Como o banco decide, linha por linha</h3>
+<ol class="passo">
+  <li>Cliente 1, José Ribamar Silva: estado <code>'PI'</code> (1) e vip <code>1</code> (1). <code>1 AND 1</code> = 1: <strong>entra</strong>.</li>
+  <li>Cliente 2, Maria Clara Mendes: estado <code>'PI'</code> (1), mas vip <code>0</code> (0). <code>1 AND 0</code> = 0: fica de fora.</li>
+  <li>Cliente 3, Ana Beatriz Sousa: vip <code>1</code> (1), mas estado <code>'SP'</code> (0). <code>0 AND 1</code> = 0: fica de fora.</li>
+  <li>Cliente 4, Carlos Eduardo Lima: estado <code>'CE'</code> (0) e vip <code>0</code> (0). <code>0 AND 0</code> = 0: fica de fora.</li>
+  <li>…e assim até o cliente 30.</li>
+</ol>
+
+<p>Os quatro primeiros clientes da tabela, por coincidência, passam pelas quatro linhas da tabela-verdade.</p>
+
+<hr>
+
+<h2>2. Condições em colunas diferentes</h2>
+<p>Cada condição do <code>AND</code> pode testar uma coluna diferente. A Ana quer saber quais produtos são <strong>baratos</strong> (menos de R$ 30) <strong>e</strong> têm <strong>muito estoque</strong> (mais de 100 unidades), para uma promoção de "leve 3":</p>
+
+<pre class="file" data-file="promocao.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE preco &lt; 30 AND estoque &gt; 100;
+</pre>
+
+<p>Cinco produtos, cada um com preço abaixo de 30 e estoque acima de 100. A Mochila Escolar não entrou (tem pouco estoque e é cara), nem o Carregador USB-C (tem 150 unidades, mas custa 45.5). Mais um, com os funcionários:</p>
+
+<pre class="file" data-file="vendedores.sql" data-resultado>SELECT nome, cargo, salario
+FROM funcionarios
+WHERE cargo = 'Vendedor' AND salario &gt; 3000;
+</pre>
+
+<p>Dos três vendedores, dois ganham mais de 3000. O Igor (2980.9) ficou de fora pela segunda condição. E as vendedoras, Renata e Sofia, ficaram de fora pela primeira: <code>'Vendedora'</code> não é igual a <code>'Vendedor'</code>.</p>
+
+<div class="trysql" data-goal="linhas:8">
+<p class="try-task"><strong>Missão:</strong> a loja quer convidar para o programa VIP os clientes de <strong>Teresina</strong> que <strong>ainda não</strong> são VIP (<code>vip = 0</code>). Complete o <code>WHERE</code> com as duas condições.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Teresina';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Teresina' AND vip = 0;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A mesma coluna duas vezes: uma faixa</h2>
+<p>O <code>AND</code> também serve para testar a <strong>mesma</strong> coluna duas vezes, e isso cria uma <strong>faixa</strong> de valores. Quais produtos custam entre 20 e 30 reais?</p>
+
+<pre class="file" data-file="entre-20-e-30.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt;= 20 AND preco &lt;= 30;
+</pre>
+
+<p>Leia como uma frase: "preço maior ou igual a 20 <strong>e</strong> preço menor ou igual a 30". Um produto de 15 reais falha na primeira parte; um de 50 falha na segunda. Só os que estão no meio passam nas duas: 9 produtos.</p>
+
+<div class="tip">
+<strong>Escreva a coluna nas duas condições</strong>
+<p>Em português dizemos "preço maior que 20 e menor que 30", sem repetir a palavra "preço". No SQL, cada lado do <code>AND</code> é uma condição completa, com a coluna, o sinal e o valor: <code>preco &gt;= 20 AND preco &lt;= 30</code>. Se você esquecer a coluna na segunda, vem o erro que está em <a href="#errado">Quando dá errado</a>.</p>
+</div>
+
+<p>Faixas aparecem muito com datas. Os pedidos de 2025 são os que têm a data a partir de 1º de janeiro de 2025 <strong>e</strong> antes de 1º de janeiro de 2026:</p>
+
+<pre class="file" data-file="pedidos-2025.sql" data-resultado>SELECT id, data
+FROM pedidos
+WHERE data &gt;= '2025-01-01' AND data &lt; '2026-01-01';
+</pre>
+
+<p>São 32 pedidos, do 33 ao 64. Repare no <code>&lt;</code> (e não <code>&lt;=</code>) no fim da faixa: assim, o dia 1º de janeiro de 2026 fica de fora, e todo o dia 31 de dezembro de 2025 fica dentro. Para faixas, o SQL tem também um atalho, o <code>BETWEEN</code> ("entre"), da aula <a href="between.html">BETWEEN</a>.</p>
+
+<hr>
+
+<h2>4. Três condições ou mais</h2>
+<p>Dá para encadear quantos <code>AND</code> você quiser. A linha só passa se <strong>todas</strong> as condições forem verdadeiras. Um cliente quer um eletrônico (categoria 2), de menos de R$ 50, que esteja disponível (estoque maior que zero):</p>
+
+<pre class="file" data-file="tres-condicoes.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 2 AND preco &lt; 50 AND estoque &gt; 0;
+</pre>
+
+<p>Os eletrônicos baratos são três: o carregador, o cabo HDMI e o pen drive (29.9). Mas o pen drive tem estoque 0, e a terceira condição o tirou da lista. Sobraram 2.</p>
+
+<p>Quando a lista de condições cresce, o costume é pôr cada <code>AND</code> no começo de uma linha. Fica fácil de ler e de apagar uma condição:</p>
+
+<pre class="file" data-file="uma-por-linha.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 2
+  AND preco &lt; 50
+  AND estoque &gt; 0;
+</pre>
+
+<div class="note">
+<strong>Cada <code>AND</code> só tira, nunca põe</strong>
+<p>Acrescentar um <code>AND</code> é como pôr mais uma peneira, mais fina, embaixo da outra. O resultado pode ficar menor ou continuar igual, mas <strong>nunca</strong> ganha linhas. Nos produtos: só eletrônicos são 7; eletrônicos de menos de 50 são 3; de menos de 50 e com estoque, 2. Se você precisa que o resultado <strong>cresça</strong>, ("os do Piauí e também os do Ceará"), o que você quer é o <code>OR</code>, da próxima aula: <a href="or.html">OR</a>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:3">
+<p class="try-task"><strong>Missão:</strong> o frete grátis aparece como <code>0.0</code> na coluna <code>frete</code>. Quais pedidos tiveram frete grátis <strong>e</strong> foram feitos em 2026 (data a partir de <code>'2026-01-01'</code>)? Mostre o id, a data e o frete.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, data, frete
+FROM pedidos
+WHERE frete = 0;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, data, frete
+FROM pedidos
+WHERE frete = 0 AND data &gt;= '2026-01-01';
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>A ordem das condições no <code>AND</code> não muda o resultado. Estas duas consultas trazem os mesmos 2 clientes:</p>
+
+<pre class="file" data-file="ordem1.sql">SELECT nome, cidade FROM clientes WHERE estado = 'PI' AND vip = 1;
+</pre>
+
+<pre class="file" data-file="ordem2.sql" data-resultado>SELECT nome, cidade FROM clientes WHERE vip = 1 AND estado = 'PI';
+</pre>
+
+<p>É como na matemática: 2 × 3 é igual a 3 × 2. E para a faixa de preços, o <code>BETWEEN</code> faz o mesmo que os dois testes com <code>AND</code>:</p>
+
+<pre class="file" data-file="between.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco BETWEEN 20 AND 30;
+</pre>
+
+<p>Os mesmos 9 produtos. Repare que o <code>BETWEEN</code> também usa a palavra <code>AND</code>, mas ali ela só separa o começo e o fim da faixa. A aula <a href="between.html">BETWEEN</a> explica.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>a AND b</code> numa linha</td><td>Duas condições curtas</td></tr>
+<tr><td>Um <code>AND</code> por linha</td><td>Três condições ou mais</td></tr>
+<tr><td><code>preco &gt;= 20 AND preco &lt;= 30</code></td><td>Faixas, principalmente quando uma ponta é <code>&lt;</code> e a outra é <code>&gt;=</code> (como nas datas)</td></tr>
+<tr><td><code>preco BETWEEN 20 AND 30</code></td><td>Faixas com as duas pontas incluídas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A condição impossível</strong>
+<p>A Ana quer mandar um email para os clientes do Piauí e do Ceará. Em português, ela pensou "do Piauí <strong>e</strong> do Ceará", e escreveu:</p>
+<pre class="file" data-file="impossivel.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado = 'PI' AND estado = 'CE';
+</pre>
+<p>Nenhuma linha, e nenhum erro. A consulta está correta para o banco, mas pede o impossível: um cliente cujo estado seja <code>'PI'</code> e, <strong>ao mesmo tempo</strong>, <code>'CE'</code>. Cada linha tem um estado só, então nenhuma passa nas duas condições. O "e" do português, nessa frase, quer dizer "junte as duas listas", e isso é o <code>OR</code>: <code>WHERE estado = 'PI' OR estado = 'CE'</code> (aula <a href="or.html">OR</a>).</p>
+<p><strong>Como perceber:</strong> se o <code>AND</code> testa a <strong>mesma coluna</strong> com dois <code>=</code> diferentes, o resultado vai ser sempre vazio.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>AND</code> pela metade</strong>
+<pre class="file" data-file="erro-metade.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; 20 AND &lt; 50;
+</pre>
+<p><code>near "&lt;": syntax error</code>. Depois do <code>AND</code>, o banco espera uma condição completa, e encontrou um <code>&lt;</code> solto: menor que <strong>o quê</strong>? <strong>Como consertar:</strong> repita a coluna: <code>preco &gt; 20 AND preco &lt; 50</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Dois <code>WHERE</code></strong>
+<pre class="file" data-file="erro-dois-where.sql" data-resultado data-erro>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI' AND WHERE vip = 1;
+</pre>
+<p><code>near "WHERE": syntax error</code>. Uma consulta tem <strong>um</strong> <code>WHERE</code> só; as condições a mais entram com <code>AND</code>, sem repetir a palavra. <strong>Como consertar:</strong> <code>WHERE estado = 'PI' AND vip = 1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>&amp;&amp;</code> no lugar de <code>AND</code></strong>
+<p>Em muitas linguagens de programação, o "e" se escreve <code>&amp;&amp;</code>. No SQLite, não:</p>
+<pre class="file" data-file="erro-e-comercial.sql" data-resultado data-erro>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI' &amp;&amp; vip = 1;
+</pre>
+<p><code>near "&amp;": syntax error</code>. <strong>Como consertar:</strong> escreva a palavra <code>AND</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a segunda condição</strong>
+<pre class="file" data-file="erro-faltou.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+WHERE preco &gt; 100 AND;
+</pre>
+<p><code>near ";": syntax error</code>. O comando acabou logo depois do <code>AND</code>, e o banco ainda esperava uma condição. Acontece quando se apaga a última condição e o <code>AND</code> fica para trás. <strong>Como consertar:</strong> complete a condição ou apague o <code>AND</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <strong>MySQL</strong> aceita <code>&amp;&amp;</code> como sinônimo de <code>AND</code>, mas a documentação dele avisa que isso é uma extensão fora do padrão, está <strong>obsoleta</strong> e pode deixar de existir numa versão futura. Use sempre a palavra <code>AND</code>: ela funciona em todos os bancos.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:9">
+<p class="try-task"><strong>Missão:</strong> a consulta deveria mostrar os produtos de 20 a 30 reais, mas dá erro. Conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &gt;= 20 AND &lt;= 30;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &gt;= 20 AND preco &lt;= 30;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WHERE a AND b</code></td><td>Só as linhas em que <code>a</code> e <code>b</code> são verdadeiras</td></tr>
+<tr><td><code>WHERE a AND b AND c</code></td><td>Só as linhas em que todas são verdadeiras</td></tr>
+<tr><td><code>WHERE preco &gt;= 20 AND preco &lt;= 30</code></td><td>Uma faixa de valores na mesma coluna</td></tr>
+<tr><td><code>SELECT 1 AND 0;</code></td><td>Testa o <code>AND</code> sem tabela (dá 0)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Causa provável</th></tr>
+<tr><td>Nenhuma linha, sem erro</td><td>Condição impossível: a mesma coluna igual a dois valores. Você queria <code>OR</code></td></tr>
+<tr><td><code>near "&lt;": syntax error</code> (ou <code>"&gt;"</code>, <code>"&lt;="</code>…)</td><td>Faltou a coluna depois do <code>AND</code></td></tr>
+<tr><td><code>near "WHERE": syntax error</code></td><td>Um segundo <code>WHERE</code>: use só <code>AND</code></td></tr>
+<tr><td><code>near "&amp;": syntax error</code></td><td><code>&amp;&amp;</code> no lugar de <code>AND</code></td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Um <code>AND</code> sobrando no fim</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. VIP de São Paulo</h3>
+<p>Complete para mostrar os clientes de São Paulo que são VIP:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE estado = 'SP' <input data-answer="AND|and" aria-label="operador"> vip = 1;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Estoque entre 50 e 100</h3>
+<p>Complete a coluna que falta:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE estoque &gt;= 50 AND <input data-answer="estoque" aria-label="coluna"> &lt;= 100;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é o resultado de <code>SELECT 1 AND 0;</code>?</p>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> Dá erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Uma consulta com <code>WHERE estado = 'PI'</code> trouxe 14 linhas. Se você acrescentar <code>AND vip = 1</code>, quantas linhas podem vir?</p>
+<label><input type="radio" name="q4"> Mais de 14</label>
+<label><input type="radio" name="q4"> Exatamente 14</label>
+<label><input type="radio" name="q4"> Exatamente 1</label>
+<label><input type="radio" name="q4"> 14 ou menos: o <code>AND</code> só pode tirar linhas</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. <code>WHERE cidade = 'Recife' AND cidade = 'Picos'</code> trouxe nenhuma linha. Por quê?</p>
+<label><input type="radio" name="q5"> Não existem clientes nessas cidades</label>
+<label><input type="radio" name="q5"> O <code>AND</code> não aceita textos</label>
+<label><input type="radio" name="q5"> Nenhum cliente mora nas duas cidades ao mesmo tempo; para juntar as duas listas, use <code>OR</code></label>
+<label><input type="radio" name="q5"> Faltou escrever <code>WHERE</code> duas vezes</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual destas condições está escrita do jeito certo?</p>
+<label><input type="radio" name="q6"> <code>WHERE preco &gt; 10 AND preco &lt; 20</code></label>
+<label><input type="radio" name="q6"> <code>WHERE preco &gt; 10 AND &lt; 20</code></label>
+<label><input type="radio" name="q6"> <code>WHERE preco &gt; 10 &amp;&amp; preco &lt; 20</code></label>
+<label><input type="radio" name="q6"> <code>WHERE preco &gt; 10 AND WHERE preco &lt; 20</code></label>
+</div>
+
+<h3>Missão final: a prateleira de esportes</h3>
+
+<div class="trysql" data-goal="colunas:nome,preco;;linhas:2">
+<p class="try-task"><strong>Missão:</strong> um cliente quer um presente da categoria <strong>Esporte e Lazer</strong> (<code>categoria_id = 6</code>) que custe <strong>até R$ 30</strong>. Mostre o nome e o preço das opções.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 6;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 6 AND preco &lt;= 30;
+</pre>
+</div>
+
+<p>Das cinco opções da categoria, só duas cabem no orçamento: a garrafa squeeze e a corda de pular.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>AND</code> ("e") junta condições no <code>WHERE</code>: a linha só entra se <strong>todas</strong> forem verdadeiras.</li>
+  <li>Na tabela-verdade, só <code>1 AND 1</code> dá 1; qualquer 0 deixa o resultado em 0.</li>
+  <li>As condições podem testar colunas diferentes (<code>preco &lt; 30 AND estoque &gt; 100</code>) ou a mesma coluna, formando uma faixa (<code>preco &gt;= 20 AND preco &lt;= 30</code>).</li>
+  <li>Cada lado do <code>AND</code> é uma condição completa: repita a coluna. Uma consulta tem um <code>WHERE</code> só.</li>
+  <li>Cada <code>AND</code> a mais só tira linhas. A mesma coluna igual a dois valores dá sempre vazio: aí você queria <code>OR</code>.</li>
+  <li>A ordem das condições não muda o resultado. Escreva <code>AND</code>, nunca <code>&amp;&amp;</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
