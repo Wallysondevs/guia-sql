@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Tipos de Dados — referência do SQLite e dos outros bancos | Guia SQL</title>
+<meta name="description" content="Referência dos tipos de dados: as cinco classes de armazenamento do SQLite 3.50, as regras de afinidade, os seis tipos das tabelas STRICT, datas e booleanos, typeof e CAST com resultados reais, os tipos da Loja Aurora e a tabela de equivalentes no PostgreSQL, MySQL e SQL Server, com tamanhos e limites conferidos na documentação oficial.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Tipos de Dados</span></h1>
+
+<p class="intro">Todo valor guardado num banco tem um <strong>tipo</strong>: é um número inteiro, um número com casas decimais, um texto, um arquivo… Esta página reúne, num lugar só, tudo o que você precisa consultar sobre tipos: como o SQLite guarda cada valor, o que ele faz com o nome de tipo que você escreve no <code>CREATE TABLE</code>, as tabelas rígidas (<code>STRICT</code>) e o nome de cada tipo no PostgreSQL, no MySQL e no SQL Server. As explicações passo a passo estão nas aulas <a href="tipos-de-dados.html">Tipos de Dados</a> e <a href="tipos-sqlite.html">Os Tipos no SQLite</a>.</p>
+
+<div class="note">
+<strong>Como ler esta página</strong>
+<ul>
+  <li>Os quadros "Resultado" rodam de verdade no SQLite 3.50.4 do seu navegador, com o banco da Loja Aurora.</li>
+  <li>Os tamanhos e limites dos outros bancos foram conferidos na documentação oficial de cada um (PostgreSQL e SQL Server nas versões atuais, MySQL 8.4). Os trechos de código deles <strong>não rodam</strong> aqui e estão marcados como ilustrativos.</li>
+  <li><code>typeof(x)</code> é a função do SQLite que diz a classe de um valor. Ela aparece em quase todos os exemplos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="classes">As cinco classes de armazenamento do SQLite</h2>
+<p>No SQLite, o tipo pertence ao <strong>valor</strong>, e não à coluna. Cada valor guardado é de uma destas cinco classes (em inglês, <em>storage classes</em>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Classe</th><th>O que guarda</th><th>Como se escreve</th><th><code>typeof()</code> devolve</th><th>Tamanho (documentação do SQLite)</th></tr>
+<tr><td><code>NULL</code></td><td>"Sem valor"</td><td><code>NULL</code></td><td><code>null</code></td><td>—</td></tr>
+<tr><td><code>INTEGER</code></td><td>Número inteiro com sinal</td><td><code>42</code>, <code>-7</code>, <code>0</code></td><td><code>integer</code></td><td>0, 1, 2, 3, 4, 6 ou 8 bytes, conforme o tamanho do número</td></tr>
+<tr><td><code>REAL</code></td><td>Número com casas decimais (aproximado)</td><td><code>4.9</code>, <code>1.0</code>, <code>1e3</code></td><td><code>real</code></td><td>Sempre 8 bytes (ponto flutuante IEEE)</td></tr>
+<tr><td><code>TEXT</code></td><td>Texto</td><td><code>'Teresina'</code> (aspas simples)</td><td><code>text</code></td><td>O tamanho do texto, na codificação do banco (UTF-8 na Loja Aurora)</td></tr>
+<tr><td><code>BLOB</code></td><td>Bytes guardados exatamente como chegaram (uma imagem, um arquivo)</td><td><code>x'CAFE'</code> (bytes em hexadecimal)</td><td><code>blob</code></td><td>O tamanho dos bytes</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="classes.sql" data-resultado>SELECT typeof(NULL), typeof(42), typeof(4.9), typeof('Teresina'), typeof(x'CAFE');
+</pre>
+
+<p>Na Loja Aurora, cada coluna guarda sempre a mesma classe, porque os dados foram gravados com cuidado. A exceção são as colunas com campos vazios: a coluna <code>email</code> de <code>clientes</code> tem valores <code>text</code> e três <code>null</code>.</p>
+
+<pre class="file" data-file="classes-email.sql" data-resultado>SELECT DISTINCT typeof(email) FROM clientes;
+</pre>
+
+<hr>
+
+<h2 id="afinidade">A afinidade: o tipo que você escreve no <code>CREATE TABLE</code></h2>
+<p>O nome de tipo de uma coluna (<code>INTEGER</code>, <code>VARCHAR(100)</code>, <code>DATE</code>…) não obriga nada no SQLite comum: ele vira uma <strong>afinidade</strong>, a classe que a coluna "prefere" e para a qual ela tenta converter os valores que chegam. A documentação do SQLite define a afinidade por estas regras, nesta ordem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>Se o nome do tipo…</th><th>Afinidade</th><th>Exemplos da documentação</th></tr>
+<tr><td>1</td><td>contém <code>INT</code></td><td><strong>INTEGER</strong></td><td><code>INT</code>, <code>INTEGER</code>, <code>TINYINT</code>, <code>SMALLINT</code>, <code>MEDIUMINT</code>, <code>BIGINT</code>, <code>UNSIGNED BIG INT</code>, <code>INT2</code>, <code>INT8</code></td></tr>
+<tr><td>2</td><td>contém <code>CHAR</code>, <code>CLOB</code> ou <code>TEXT</code></td><td><strong>TEXT</strong></td><td><code>CHARACTER(20)</code>, <code>VARCHAR(255)</code>, <code>VARYING CHARACTER(255)</code>, <code>NCHAR(55)</code>, <code>NATIVE CHARACTER(70)</code>, <code>NVARCHAR(100)</code>, <code>TEXT</code>, <code>CLOB</code></td></tr>
+<tr><td>3</td><td>contém <code>BLOB</code>, ou não tem tipo</td><td><strong>BLOB</strong> (nenhuma conversão)</td><td><code>BLOB</code>, coluna sem tipo</td></tr>
+<tr><td>4</td><td>contém <code>REAL</code>, <code>FLOA</code> ou <code>DOUB</code></td><td><strong>REAL</strong></td><td><code>REAL</code>, <code>DOUBLE</code>, <code>DOUBLE PRECISION</code>, <code>FLOAT</code></td></tr>
+<tr><td>5</td><td>nenhuma das anteriores</td><td><strong>NUMERIC</strong></td><td><code>NUMERIC</code>, <code>DECIMAL(10,5)</code>, <code>BOOLEAN</code>, <code>DATE</code>, <code>DATETIME</code></td></tr>
+</table>
+</div>
+
+<ul>
+  <li>Os números entre parênteses são <strong>ignorados</strong>: a documentação diz que o SQLite não impõe limite de tamanho por causa deles. <code>VARCHAR(2)</code> aceita <code>'Piauí'</code>.</li>
+  <li><code>DATE</code>, <code>DATETIME</code> e <code>BOOLEAN</code> não criam nada especial: caem na regra 5, afinidade NUMERIC.</li>
+  <li>A ordem das regras importa: <code>FLOATING POINT</code> tem <code>INT</code> no meio ("po<strong>INT</strong>") e vira INTEGER pela regra 1.</li>
+</ul>
+
+<h3>O que cada afinidade faz com o valor que chega</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Afinidade</th><th>Chega um texto que parece número (<code>'19.90'</code>)</th><th>Chega um número</th><th>Chega um texto qualquer (<code>'sim'</code>)</th></tr>
+<tr><td>TEXT</td><td>Fica texto</td><td>Vira texto</td><td>Fica texto</td></tr>
+<tr><td>NUMERIC</td><td>Vira número: inteiro se der, senão real</td><td>Fica número (<code>3.0</code> vira o inteiro <code>3</code>)</td><td>Fica texto</td></tr>
+<tr><td>INTEGER</td><td>Igual à NUMERIC</td><td>Igual à NUMERIC</td><td>Fica texto</td></tr>
+<tr><td>REAL</td><td>Vira real</td><td>Vira real (<code>42</code> vira <code>42.0</code>)</td><td>Fica texto</td></tr>
+<tr><td>BLOB</td><td>Fica como chegou</td><td>Fica como chegou</td><td>Fica como chegou</td></tr>
+</table>
+</div>
+
+<p>Uma tabela com os nomes de tipo dos outros bancos, para ver a afinidade agindo. O <code>'19.90'</code> virou o número <code>19.9</code>; o <code>'sim'</code> continuou texto na coluna <code>BOOLEAN</code>; a data continuou texto; e o <code>VARCHAR(2)</code> guardou as cinco letras de <code>'Piauí'</code>:</p>
+
+<pre class="file" data-file="afinidade.sql" data-resultado>CREATE TABLE t (uf VARCHAR(2), preco DECIMAL(10,2), ativo BOOLEAN, dia DATE);
+INSERT INTO t VALUES ('Piauí', '19.90', 'sim', '2026-10-14');
+SELECT uf, typeof(uf), preco, typeof(preco), ativo, typeof(ativo), dia, typeof(dia)
+FROM t;
+</pre>
+
+<hr>
+
+<h2 id="strict">Tabelas <code>STRICT</code>: os seis tipos aceitos</h2>
+<p>Com a palavra <code>STRICT</code> no fim do <code>CREATE TABLE</code>, o SQLite passa a recusar valores do tipo errado. Toda coluna precisa de tipo, e só valem estes nomes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Aceita</th></tr>
+<tr><td><code>INT</code> ou <code>INTEGER</code></td><td>Inteiros, e o que vira inteiro sem perder nada (<code>'5'</code>, <code>3.0</code>)</td></tr>
+<tr><td><code>REAL</code></td><td>Números; um inteiro vira real</td></tr>
+<tr><td><code>TEXT</code></td><td>Texto; um número vira texto</td></tr>
+<tr><td><code>BLOB</code></td><td>Só bytes</td></tr>
+<tr><td><code>ANY</code></td><td>Qualquer valor, guardado exatamente como chegou</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="strict.sql" data-resultado>CREATE TABLE s (n INTEGER, t TEXT, r REAL, b BLOB, a ANY) STRICT;
+INSERT INTO s VALUES ('5', 42, 42, x'CAFE', '5');
+SELECT n, typeof(n), t, typeof(t), r, typeof(r), typeof(b), a, typeof(a)
+FROM s;
+</pre>
+
+<p>O <code>'5'</code> virou o inteiro 5 na coluna <code>INTEGER</code>, mas continuou o texto <code>'5'</code> na coluna <code>ANY</code>. O <code>42</code> virou texto em <code>t</code> e real em <code>r</code>. As mensagens de quando o valor não serve estão em <a href="#erros">Erros comuns</a>; a aula completa é <a href="tipos-sqlite.html">Os Tipos no SQLite</a>.</p>
+
+<hr>
+
+<h2 id="datas">Datas, horas e booleanos no SQLite</h2>
+<p>O SQLite não tem classe própria para datas nem para verdadeiro/falso. A documentação dele recomenda estas formas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Dado</th><th>Classe usada</th><th>Formato</th><th>Exemplo</th></tr>
+<tr><td>Data e hora</td><td><code>TEXT</code></td><td>ISO 8601: <code>'AAAA-MM-DD HH:MM:SS.SSS'</code></td><td><code>'2026-10-14'</code>, <code>'2026-10-14 15:30:00'</code></td></tr>
+<tr><td>Data e hora</td><td><code>REAL</code></td><td>Dia juliano: dias desde o meio-dia de 24/11/4714 a.C. (em Greenwich)</td><td><code>2461327.5</code></td></tr>
+<tr><td>Data e hora</td><td><code>INTEGER</code></td><td>Tempo Unix: segundos desde 1970-01-01 00:00:00 UTC</td><td><code>1791936000</code></td></tr>
+<tr><td>Booleano</td><td><code>INTEGER</code></td><td><code>1</code> = verdadeiro, <code>0</code> = falso; <code>TRUE</code> e <code>FALSE</code> (desde a versão 3.23.0) são só outros nomes para 1 e 0</td><td><code>vip = 1</code>, <code>vip = TRUE</code></td></tr>
+</table>
+</div>
+
+<p>A Loja Aurora usa a primeira forma: datas em texto ISO, que ordenam e comparam certo. As funções de data convertem entre as três formas:</p>
+
+<pre class="file" data-file="datas.sql" data-resultado>SELECT julianday('2026-10-14'), unixepoch('2026-10-14'),
+       date(2461327.5), date(1791936000, 'unixepoch');
+</pre>
+
+<pre class="file" data-file="booleanos.sql" data-resultado>SELECT TRUE, FALSE, typeof(TRUE);
+</pre>
+
+<p>Mais sobre datas em <a href="datas.html">Datas e Horas</a> e <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<hr>
+
+<h2 id="funcoes">Funções para ver e trocar o tipo</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>typeof(x)</code></td><td>A classe do valor: <code>null</code>, <code>integer</code>, <code>real</code>, <code>text</code> ou <code>blob</code></td><td><code>SELECT typeof(preco) FROM produtos WHERE id = 1;</code></td><td><code>real</code></td></tr>
+<tr><td><code>CAST(x AS INTEGER)</code></td><td>Converte para inteiro; corta as casas decimais</td><td><code>SELECT CAST(3.99 AS INTEGER);</code></td><td><code>3</code></td></tr>
+<tr><td></td><td>De texto: lê os algarismos do começo</td><td><code>SELECT CAST('12abc' AS INTEGER);</code></td><td><code>12</code></td></tr>
+<tr><td></td><td>Texto sem número nenhum vira 0, sem erro</td><td><code>SELECT CAST('abc' AS INTEGER);</code></td><td><code>0</code></td></tr>
+<tr><td><code>CAST(x AS REAL)</code></td><td>Converte para real</td><td><code>SELECT CAST('4.9' AS REAL);</code></td><td><code>4.9</code></td></tr>
+<tr><td><code>CAST(x AS TEXT)</code></td><td>Converte para texto</td><td><code>SELECT typeof(CAST(42 AS TEXT));</code></td><td><code>text</code></td></tr>
+<tr><td><code>pragma_table_info('tabela')</code></td><td>Lista as colunas de uma tabela, com o tipo declarado (coluna <code>type</code>)</td><td><code>SELECT name, type FROM pragma_table_info('produtos');</code></td><td>7 linhas: <code>id|INTEGER</code>, <code>nome|TEXT</code>…</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="cast.sql" data-resultado>SELECT CAST('42' AS INTEGER), CAST('4.9' AS REAL), CAST(42 AS TEXT),
+       typeof(CAST(42 AS TEXT)), CAST('12abc' AS INTEGER),
+       CAST('abc' AS INTEGER), CAST(3.99 AS INTEGER);
+</pre>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque os valores dentro de <code>typeof()</code> e de <code>CAST()</code> e veja a classe de cada um. Teste <code>typeof('42')</code> × <code>typeof(42)</code>, <code>typeof(1.0)</code>, <code>typeof(7 / 2)</code> e <code>typeof(7 / 2.0)</code>.</p>
+<pre class="script" data-file="tipos.sql">SELECT typeof('42'), typeof(42), typeof(1.0), typeof(7 / 2), typeof(7 / 2.0);
+</pre>
+</div>
+
+<hr>
+
+<h2 id="aurora">Os tipos da Loja Aurora</h2>
+<p>Todas as colunas do banco das aulas, com o tipo declarado no <code>CREATE TABLE</code>. A Loja Aurora usa só três nomes: <code>INTEGER</code>, <code>REAL</code> e <code>TEXT</code>.</p>
+
+<pre class="file" data-file="tipos-aurora.sql" data-resultado>SELECT m.name AS tabela, p.name AS coluna, p.type AS tipo
+FROM sqlite_schema AS m, pragma_table_info(m.name) AS p
+WHERE m.type = 'table'
+ORDER BY m.name, p.cid;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Colunas da Loja Aurora</th><th>Por quê</th></tr>
+<tr><td><code>INTEGER</code></td><td><code>id</code>, os <code>…_id</code>, <code>estoque</code>, <code>quantidade</code>, <code>vip</code>, <code>descontinuado</code></td><td>Contagens, números de ficha e sim/não (0 ou 1)</td></tr>
+<tr><td><code>REAL</code></td><td><code>preco</code>, <code>preco_unitario</code>, <code>frete</code>, <code>salario</code></td><td>Valores com centavos (arredonde com <code>round()</code> nas contas)</td></tr>
+<tr><td><code>TEXT</code></td><td>nomes, <code>email</code>, <code>cidade</code>, <code>estado</code>, <code>telefone</code>, <code>data</code>, <code>nascimento</code>, <code>entregue_em</code></td><td>Textos e datas no formato ISO</td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="colunas:name,type;;contem:nascimento|TEXT">
+<p class="try-task"><strong>Missão:</strong> a consulta lista as colunas da tabela <code>produtos</code> com o tipo de cada uma. Mude-a para listar as colunas da tabela <code>clientes</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT name, type FROM pragma_table_info('produtos');
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT name, type FROM pragma_table_info('clientes');
+</pre>
+</div>
+
+<hr>
+
+<h2 id="numeros">Limites e surpresas dos números no SQLite</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caso</th><th>Exemplo</th><th>Resultado</th><th>O que acontece</th></tr>
+<tr><td>Maior inteiro (8 bytes)</td><td><code>SELECT 9223372036854775807;</code></td><td><code>9223372036854775807</code></td><td>2<sup>63</sup> − 1</td></tr>
+<tr><td>Passou do limite</td><td><code>SELECT 9223372036854775807 + 1;</code></td><td><code>9.22337203685478e+18</code></td><td>A conta vira <code>real</code> (aproximado), sem erro</td></tr>
+<tr><td>Divisão de inteiros</td><td><code>SELECT 7 / 2;</code></td><td><code>3</code></td><td>Inteiro dividido por inteiro dá inteiro</td></tr>
+<tr><td>Com um real na conta</td><td><code>SELECT 7 / 2.0;</code></td><td><code>3.5</code></td><td>Basta um dos lados ser real</td></tr>
+<tr><td>Decimais aproximados</td><td><code>SELECT 0.1 + 0.2 = 0.3;</code></td><td><code>0</code></td><td>O <code>real</code> guarda um valor muito próximo, não exato</td></tr>
+<tr><td>Arredondando</td><td><code>SELECT round(0.1 + 0.2, 2);</code></td><td><code>0.3</code></td><td>Arredonde antes de comparar</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="numeros.sql" data-resultado>SELECT 9223372036854775807 + 1, 7 / 2, 7 / 2.0, 0.1 + 0.2 = 0.3, round(0.1 + 0.2, 2);
+</pre>
+
+<p>Mais em <a href="funcoes-numericas.html">Funções Numéricas</a>.</p>
+
+<hr>
+
+<h2 id="outros">Os equivalentes nos outros bancos</h2>
+<p>PostgreSQL, MySQL e SQL Server são <strong>rígidos</strong>: o tipo é da coluna, e um valor que não serve dá erro. Cada um tem os seus nomes. A tabela abaixo põe lado a lado o nome mais usado para cada dado. Nomes, tamanhos e limites conferidos na documentação oficial de cada banco.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Dado</th><th>SQLite</th><th>PostgreSQL</th><th>MySQL</th><th>SQL Server</th></tr>
+<tr><td>Inteiro pequeno</td><td><code>INTEGER</code></td><td><code>smallint</code> (2 bytes)</td><td><code>TINYINT</code> (1 byte), <code>SMALLINT</code> (2 bytes)</td><td><code>tinyint</code> (1 byte, só 0 a 255), <code>smallint</code> (2 bytes)</td></tr>
+<tr><td>Inteiro</td><td><code>INTEGER</code></td><td><code>integer</code> ou <code>int</code> (4 bytes)</td><td><code>INT</code> (4 bytes)</td><td><code>int</code> (4 bytes)</td></tr>
+<tr><td>Inteiro grande</td><td><code>INTEGER</code> (até 8 bytes)</td><td><code>bigint</code> (8 bytes)</td><td><code>BIGINT</code> (8 bytes)</td><td><code>bigint</code> (8 bytes)</td></tr>
+<tr><td>Decimal exato (dinheiro)</td><td>aceita <code>DECIMAL(p,s)</code>, mas guarda aproximado (afinidade NUMERIC)</td><td><code>numeric(p,s)</code> ou <code>decimal(p,s)</code></td><td><code>DECIMAL(M,D)</code>: até 65 algarismos, até 30 depois da vírgula</td><td><code>decimal(p,s)</code> ou <code>numeric(p,s)</code>: até 38 algarismos</td></tr>
+<tr><td>Aproximado simples</td><td>— (o <code>REAL</code> tem sempre 8 bytes)</td><td><code>real</code> (4 bytes, cerca de 6 algarismos)</td><td><code>FLOAT</code> (precisão simples, cerca de 7 casas)</td><td><code>real</code> (4 bytes, 7 algarismos)</td></tr>
+<tr><td>Aproximado duplo</td><td><code>REAL</code> (8 bytes)</td><td><code>double precision</code> (8 bytes, 15 algarismos)</td><td><code>DOUBLE</code> (precisão dupla, cerca de 15 casas)</td><td><code>float</code> (8 bytes, 15 algarismos)</td></tr>
+<tr><td>Texto de tamanho fixo</td><td><code>TEXT</code></td><td><code>char(n)</code></td><td><code>CHAR(M)</code>, M de 0 a 255 letras</td><td><code>char(n)</code>, n de 1 a 8.000 <strong>bytes</strong></td></tr>
+<tr><td>Texto com limite</td><td><code>TEXT</code> (o <code>n</code> é ignorado)</td><td><code>varchar(n)</code></td><td><code>VARCHAR(M)</code>, M até 65.535 (limitado pelo tamanho da linha)</td><td><code>varchar(n)</code>, n de 1 a 8.000 bytes; <code>nvarchar(n)</code>, n de 1 a 4.000 pares de bytes</td></tr>
+<tr><td>Texto longo</td><td><code>TEXT</code></td><td><code>text</code></td><td><code>TEXT</code> (65.535 bytes), <code>MEDIUMTEXT</code>, <code>LONGTEXT</code> (4 GB)</td><td><code>varchar(max)</code> ou <code>nvarchar(max)</code> (2 GB)</td></tr>
+<tr><td>Data</td><td><code>TEXT</code> <code>'AAAA-MM-DD'</code></td><td><code>date</code></td><td><code>DATE</code>, de 1000-01-01 a 9999-12-31</td><td><code>date</code>, de 0001-01-01 a 9999-12-31</td></tr>
+<tr><td>Data e hora</td><td><code>TEXT</code> <code>'AAAA-MM-DD HH:MM:SS'</code></td><td><code>timestamp</code>; com fuso: <code>timestamptz</code></td><td><code>DATETIME</code> (1000 a 9999); <code>TIMESTAMP</code> (1970 a 2038, em UTC)</td><td><code>datetime2</code>, de 0001 a 9999</td></tr>
+<tr><td>Verdadeiro/falso</td><td><code>INTEGER</code> 0/1</td><td><code>boolean</code></td><td><code>BOOLEAN</code> = <code>TINYINT(1)</code></td><td><code>bit</code> (1, 0 ou NULL)</td></tr>
+<tr><td>Binário</td><td><code>BLOB</code></td><td><code>bytea</code></td><td><code>BLOB</code> (65.535 bytes)</td><td><code>varbinary(n)</code>, n até 8.000; <code>varbinary(max)</code></td></tr>
+</table>
+</div>
+
+<h3>As faixas dos inteiros</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tamanho</th><th>Menor valor</th><th>Maior valor</th><th>Nomes</th></tr>
+<tr><td>1 byte</td><td>-128 (MySQL) ou 0 (SQL Server)</td><td>127 (MySQL) ou 255 (SQL Server)</td><td><code>TINYINT</code> (MySQL), <code>tinyint</code> (SQL Server)</td></tr>
+<tr><td>2 bytes</td><td>-32.768</td><td>32.767</td><td><code>smallint</code></td></tr>
+<tr><td>3 bytes</td><td>-8.388.608</td><td>8.388.607</td><td><code>MEDIUMINT</code> (só no MySQL)</td></tr>
+<tr><td>4 bytes</td><td>-2.147.483.648</td><td>2.147.483.647</td><td><code>integer</code> / <code>int</code></td></tr>
+<tr><td>8 bytes</td><td>-9.223.372.036.854.775.808</td><td>9.223.372.036.854.775.807</td><td><code>bigint</code>; o <code>INTEGER</code> do SQLite</td></tr>
+</table>
+</div>
+
+<h3>Pegadinhas entre bancos</h3>
+<ul>
+  <li><strong><code>REAL</code> não é igual em todo lugar.</strong> No SQLite, tem 8 bytes. No PostgreSQL e no SQL Server, <code>real</code> tem 4 bytes (menos precisão). No MySQL, <code>REAL</code> é sinônimo de <code>DOUBLE</code> (a não ser com o modo <code>REAL_AS_FLOAT</code>).</li>
+  <li><strong>O <code>n</code> do SQL Server conta bytes.</strong> A documentação da Microsoft avisa: em <code>varchar(n)</code>, <code>n</code> é o tamanho em bytes, não em letras. Com acentos em UTF-8, cabem menos letras.</li>
+  <li><strong><code>TIMESTAMP</code> do MySQL acaba em 2038.</strong> Para datas fora de 1970–2038, use <code>DATETIME</code>.</li>
+  <li><strong>Dinheiro:</strong> nos bancos rígidos, use o decimal exato (<code>DECIMAL</code>/<code>numeric</code>). No SQLite, guarde em <code>REAL</code> e arredonde, ou guarde os centavos num <code>INTEGER</code>.</li>
+</ul>
+
+<p>A mesma tabela de clientes, em cada dialeto, só para comparar (ilustrativo: só a versão do SQLite roda aqui):</p>
+
+<pre class="file" data-file="PostgreSQL (ilustrativo)">CREATE TABLE clientes (
+    id         integer PRIMARY KEY,
+    nome       varchar(100) NOT NULL,
+    estado     char(2),
+    nascimento date,
+    vip        boolean NOT NULL DEFAULT false
+);
+</pre>
+
+<pre class="file" data-file="MySQL (ilustrativo)">CREATE TABLE clientes (
+    id         INT PRIMARY KEY,
+    nome       VARCHAR(100) NOT NULL,
+    estado     CHAR(2),
+    nascimento DATE,
+    vip        BOOLEAN NOT NULL DEFAULT FALSE
+);
+</pre>
+
+<pre class="file" data-file="SQL Server (ilustrativo)">CREATE TABLE clientes (
+    id         int PRIMARY KEY,
+    nome       nvarchar(100) NOT NULL,
+    estado     char(2),
+    nascimento date,
+    vip        bit NOT NULL DEFAULT 0
+);
+</pre>
+
+<pre class="file" data-file="sqlite.sql" data-resultado>CREATE TABLE clientes_novos (
+    id         INTEGER PRIMARY KEY,
+    nome       TEXT NOT NULL,
+    estado     TEXT,
+    nascimento TEXT,
+    vip        INTEGER NOT NULL DEFAULT 0
+) STRICT;
+</pre>
+
+<hr>
+
+<h2 id="erros">Erros comuns</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Mensagem (ou sintoma)</th><th>O que fazer</th></tr>
+<tr><td>Texto numa coluna <code>INTEGER</code> de tabela <code>STRICT</code></td><td><code>cannot store TEXT value in INTEGER column s.n</code></td><td>Mande um número, ou mude a coluna</td></tr>
+<tr><td>Número com casas decimais numa coluna <code>INT</code> de tabela <code>STRICT</code></td><td><code>cannot store REAL value in INT column s.n</code></td><td>Arredonde antes ou use <code>REAL</code></td></tr>
+<tr><td>Nome de tipo de outro banco em tabela <code>STRICT</code></td><td><code>unknown datatype for s.d: "DATE"</code></td><td>Use só <code>INT</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code> ou <code>ANY</code></td></tr>
+<tr><td>Texto numa coluna <code>INTEGER</code> de tabela comum</td><td>Sem erro: o texto fica guardado como texto</td><td>Confira com <code>typeof()</code>; proteja com <code>STRICT</code> ou <a href="check.html">CHECK</a></td></tr>
+<tr><td><code>VARCHAR(2)</code> recebendo um texto maior</td><td>Sem erro: o SQLite ignora o 2</td><td>Use <code>CHECK (length(uf) = 2)</code></td></tr>
+<tr><td><code>CAST('abc' AS INTEGER)</code></td><td>Sem erro: dá <code>0</code></td><td>Confira os dados antes de converter</td></tr>
+<tr><td><code>0.1 + 0.2 = 0.3</code></td><td>Dá <code>0</code> (falso)</td><td>Compare valores arredondados</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="erro-strict.sql" data-resultado data-erro>CREATE TABLE s (n INTEGER, t TEXT) STRICT;
+INSERT INTO s VALUES ('abc', 'x');
+</pre>
+
+<pre class="file" data-file="erro-date.sql" data-resultado data-erro>CREATE TABLE s (n INTEGER, d DATE) STRICT;
+</pre>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O SQLite guarda cada valor numa de cinco classes: <code>NULL</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code> e <code>BLOB</code>. <code>typeof()</code> mostra qual.</li>
+  <li>O nome de tipo da coluna vira uma afinidade (INTEGER, TEXT, BLOB, REAL ou NUMERIC), pelas cinco regras da documentação. Os números entre parênteses são ignorados.</li>
+  <li>Tabelas <code>STRICT</code> recusam o tipo errado e só aceitam <code>INT</code>, <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>, <code>BLOB</code> e <code>ANY</code>.</li>
+  <li>Datas vão em <code>TEXT</code> ISO (ou dia juliano em <code>REAL</code>, ou tempo Unix em <code>INTEGER</code>); booleanos vão em <code>INTEGER</code> 0/1.</li>
+  <li>PostgreSQL, MySQL e SQL Server são rígidos e têm nomes e limites próprios; cuidado com <code>REAL</code>, com o <code>n</code> em bytes do SQL Server e com o <code>TIMESTAMP</code> do MySQL.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
