@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL VACUUM e ANALYZE — arrumar o arquivo e atualizar as estatísticas | Guia SQL</title>
+<meta name="description" content="VACUUM e ANALYZE no SQLite para quem está começando: por que o arquivo do banco não diminui depois de um DROP TABLE, freelist_count, o VACUUM que devolve o espaço (com o tamanho real do arquivo antes e depois), auto_vacuum, o ANALYZE e a tabela sqlite_stat1, PRAGMA optimize e as mensagens reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">VACUUM e ANALYZE</span></h1>
+
+<p class="intro">A Ana guardou um histórico de 20 mil visitas ao site da loja dentro do <code>loja.db</code>, e o arquivo passou de 45 KB para mais de 1 MB. Depois ela apagou a tabela inteira... e o arquivo continuou com 1 MB. Onde foi parar o espaço? Nesta aula você vai ver dois comandos de manutenção do banco: o <strong><code>VACUUM</code></strong> ("aspirador de pó"), que arruma o arquivo por dentro e devolve o espaço vazio, e o <strong><code>ANALYZE</code></strong> ("analise"), que conta como os dados estão distribuídos para o SQLite escolher o caminho mais rápido em cada consulta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que apagar dados não diminui o arquivo do banco, e como ver o espaço livre com <code>freelist_count</code>.</li>
+  <li>O <code>VACUUM</code>: o que ele faz, quanto o arquivo diminui (com o tamanho real, antes e depois) e quando usar.</li>
+  <li>O <code>auto_vacuum</code>, que devolve o espaço sozinho, e por que o <code>loja.db</code> da Ana se comportou diferente da maioria.</li>
+  <li>O <code>ANALYZE</code> e a tabela <code>sqlite_stat1</code>, onde ficam as estatísticas.</li>
+  <li>O <code>PRAGMA optimize</code>, o jeito recomendado de manter as estatísticas em dia.</li>
+  <li>As mensagens reais quando a manutenção dá errado.</li>
+</ul>
+</div>
+
+<p>O tamanho de um arquivo só existe no disco, então as medidas desta aula saíram do terminal da Ana, com o <code>ls -l</code> antes e depois de cada passo. Mas os dois comandos rodam também no editor do guia: lá dá para ver as páginas livres e as estatísticas do banco em memória, nos quadros "Resultado".</p>
+
+<hr>
+
+<h2>A ideia: o fichário com fichas em branco</h2>
+<p>Imagine o fichário de clientes de uma loja, com folhas numeradas. Quando um cliente sai, você apaga a ficha dele, mas a folha continua no fichário, em branco, esperando a ficha de um cliente novo. O fichário não fica mais fino. Para ele ficar fino de novo, alguém precisa tirar todas as fichas, jogar fora as folhas em branco e montar o fichário de novo, com as fichas bem juntinhas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No fichário</th><th>No banco</th></tr>
+<tr><td>Uma folha</td><td>Uma <strong>página</strong> do arquivo (4096 bytes no <code>loja.db</code>; veja <a href="pragma.html">PRAGMAs Úteis</a>)</td></tr>
+<tr><td>Folhas em branco, esperando ficha nova</td><td>A <strong>lista de páginas livres</strong> (<em>freelist</em>): <code>PRAGMA freelist_count</code></td></tr>
+<tr><td>Remontar o fichário sem as folhas em branco</td><td><code>VACUUM</code></td></tr>
+<tr><td>Uma etiqueta "nesta gaveta há uns 30 clientes de Teresina"</td><td>As estatísticas do <code>ANALYZE</code>, na tabela <code>sqlite_stat1</code></td></tr>
+</table>
+</div>
+
+<p>Por que o banco não joga fora as páginas vazias na hora? Porque é mais rápido reaproveitá-las: o próximo <code>INSERT</code> usa uma página da lista em vez de aumentar o arquivo. Na maioria dos bancos, esse é o comportamento padrão.</p>
+
+<hr>
+
+<h2>1. O espaço que não volta</h2>
+<p>Antes de começar, a Ana confere um detalhe do arquivo dela:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA auto_vacuum;
+1
+sqlite&gt; PRAGMA auto_vacuum = NONE;
+sqlite&gt; VACUUM;
+sqlite&gt; PRAGMA auto_vacuum;
+0
+sqlite&gt; .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:01 loja.db</pre>
+
+<p>O <code>loja.db</code> veio com o <strong><code>auto_vacuum</code></strong> ligado (<code>1</code>), uma opção que devolve o espaço sozinha, e que você vai ver na seção 4. A maioria dos bancos que você vai encontrar está com o padrão do SQLite para bancos novos, que é <code>0</code> (desligado). Para ver o que acontece num banco "comum", a Ana desligou a opção (<code>NONE</code> = "nenhum") e rodou um <code>VACUUM</code>, que é o que faz a mudança valer num banco que já existe. O arquivo ficou com 45056 bytes: 11 páginas de 4096.</p>
+
+<p>Agora o histórico de visitas: uma tabela nova com 20 mil linhas, criadas de uma vez com um <code>WITH RECURSIVE</code> que conta de 1 a 20000 (veja <a href="cte-recursiva.html">CTE Recursiva</a>):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
+sqlite&gt; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000) INSERT INTO historico SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
+sqlite&gt; .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 1200128 out 18 11:01 loja.db</pre>
+
+<p>De 45 KB para 1,2 MB. A Ana desiste do histórico e apaga a tabela inteira:</p>
+
+<pre class="term">$ sqlite3 loja.db "DROP TABLE historico;"
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 1200128 out 18 11:01 loja.db
+$ sqlite3 loja.db "PRAGMA page_count; PRAGMA freelist_count;"
+293
+282</pre>
+
+<dl class="anatomy">
+  <dt>1200128</dt><dd>O arquivo continua exatamente do mesmo tamanho, mesmo sem a tabela.</dd>
+  <dt>page_count = 293</dt><dd>O arquivo tem 293 páginas (293 × 4096 = 1200128).</dd>
+  <dt>freelist_count = 282</dt><dd>Dessas, 282 estão <strong>livres</strong>: eram do histórico e agora estão em branco. Só 11 páginas têm dados de verdade, as mesmas 11 do começo.</dd>
+</dl>
+
+<p>Mais de 96% do arquivo está vazio. Os dados da loja estão intactos; só o espaço não voltou para o disco.</p>
+
+<hr>
+
+<h2>2. <code>VACUUM</code>: remontar o arquivo</h2>
+<p>É aqui que entra o aspirador:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .timer on
+sqlite&gt; VACUUM;
+Run Time: real 0.013 user 0.001259 sys 0.000000
+sqlite&gt; .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:01 loja.db
+$ sqlite3 loja.db "PRAGMA page_count; PRAGMA freelist_count;"
+11
+0
+$ sqlite3 loja.db "SELECT count(*) FROM itens_pedido;"
+220</pre>
+
+<dl class="anatomy">
+  <dt>.timer on</dt><dd>Faz o <code>sqlite3</code> mostrar quanto tempo cada comando levou (aqui, 13 milésimos de segundo, num banco pequeno).</dd>
+  <dt>VACUUM;</dt><dd>Copia todo o conteúdo do banco para um arquivo temporário, bem arrumado, sem páginas vazias, e depois põe essa cópia no lugar do original.</dd>
+  <dt>45056</dt><dd>O arquivo voltou ao tamanho do começo: de 1,2 MB para 44 KB.</dd>
+  <dt>11 e 0</dt><dd>Onze páginas, nenhuma livre.</dd>
+  <dt>220</dt><dd>Os dados continuam todos lá. O <code>VACUUM</code> só arruma; não apaga nada.</dd>
+</dl>
+
+<p>Além de devolver o espaço, o <code>VACUUM</code> põe as páginas de cada tabela em sequência no arquivo. Num banco que passou anos recebendo e apagando dados, as páginas de uma tabela ficam espalhadas, como um fichário bagunçado, e ler fica um pouco mais lento. Depois do <code>VACUUM</code>, tudo fica em ordem.</p>
+
+<p>O mesmo acontece no editor do guia, com o banco em memória. Lá o histórico ocupa menos páginas, porque o banco do editor usa páginas de 8192 bytes:</p>
+
+<pre class="file" data-file="vacuum.sql" data-resultado>CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000)
+INSERT INTO historico
+SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
+
+SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
+
+DROP TABLE historico;
+SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
+
+VACUUM;
+SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
+</pre>
+
+<p>Os três <code>SELECT</code> contam a história inteira: 150 páginas com o histórico; 150 páginas, 141 delas livres, depois do <code>DROP</code>; e 9 páginas, nenhuma livre, depois do <code>VACUUM</code>. O <code>FROM pragma_page_count, pragma_freelist_count</code> junta dois PRAGMAs numa linha só, com a forma de função que você viu em <a href="pragma.html">PRAGMAs Úteis</a>.</p>
+
+<div class="trysql" data-goal="out:^10\|0$">
+<p class="try-task"><strong>Experimente:</strong> a Ana apagou os 20 mil registros com <code>DELETE</code> (em vez de <code>DROP TABLE</code>), e o último <code>SELECT</code> mostra as páginas livres que sobraram. Acrescente o comando que devolve o espaço, antes do último <code>SELECT</code>, para que ele mostre <code>10</code> páginas e <code>0</code> livres (uma página a mais que no exemplo de cima: a tabela <code>historico</code>, vazia, continua existindo).</p>
+<pre class="script" data-file="limpeza.sql">CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000)
+INSERT INTO historico
+SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
+
+DELETE FROM historico;
+
+SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
+</pre>
+<pre class="solucao" data-file="limpeza.sql">CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000)
+INSERT INTO historico
+SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
+
+DELETE FROM historico;
+
+VACUUM;
+SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Quando usar o <code>VACUUM</code> (e quando não)</h2>
+<p>O <code>VACUUM</code> é seguro, mas não é de graça. Para remontar o arquivo, ele:</p>
+<ul>
+  <li><strong>lê e reescreve o banco inteiro</strong>: num banco de 13 milésimos de segundo, nada; num banco de vários gigabytes, pode levar minutos;</li>
+  <li>precisa de <strong>espaço livre no disco</strong>: a documentação do SQLite avisa que ele pode usar até o dobro do tamanho do banco, entre a cópia temporária e o diário;</li>
+  <li><strong>trava o banco</strong> enquanto trabalha: nenhum outro programa consegue escrever, e ele não roda dentro de uma transação (veja <a href="#errado">Quando dá errado</a>).</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Vale um <code>VACUUM</code>?</th></tr>
+<tr><td>Você apagou uma parte grande dos dados (uma tabela de log, um ano de histórico) e quer o espaço de volta</td><td>Sim</td></tr>
+<tr><td>Vai mandar o banco para alguém, ou guardar uma cópia</td><td>Sim, ou melhor, <code>VACUUM INTO 'copia.db'</code>, que já gera a cópia compactada (aula <a href="dump-backup.html">Backup</a>)</td></tr>
+<tr><td>Quer mudar o <code>page_size</code> ou o <code>auto_vacuum</code> de um banco que já existe</td><td>Sim: a mudança só vale depois de um <code>VACUUM</code></td></tr>
+<tr><td>Apagou umas poucas linhas</td><td>Não: as páginas livres serão reaproveitadas pelos próximos <code>INSERT</code></td></tr>
+<tr><td>"Toda noite, por garantia", num banco que só cresce</td><td>Não: é trabalho sem resultado</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Os <code>rowid</code> podem mudar</strong>
+<p>Toda tabela do SQLite tem um número escondido por linha, o <code>rowid</code>. Numa tabela com <code>INTEGER PRIMARY KEY</code> (como todas as da Loja Aurora), o <code>id</code> <strong>é</strong> o <code>rowid</code>, e o <code>VACUUM</code> nunca o muda. Mas numa tabela sem essa coluna, o <code>VACUUM</code> pode renumerar os <code>rowid</code>. Se algum programa guarda <code>rowid</code> de uma tabela assim, ele vai se perder. Mais um motivo para toda tabela ter a sua chave primária (veja <a href="primary-key.html">PRIMARY KEY</a>).</p>
+</div>
+
+<hr>
+
+<h2>4. <code>auto_vacuum</code>: o espaço volta sozinho</h2>
+<p>E o <code>loja.db</code> original, que veio com <code>auto_vacuum</code> igual a 1? A Ana religa a opção (<code>FULL</code> = "completo"; de novo, com um <code>VACUUM</code> para valer) e repete o teste do histórico:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA auto_vacuum = FULL;
+sqlite&gt; VACUUM;
+sqlite&gt; PRAGMA auto_vacuum;
+1
+sqlite&gt; CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
+sqlite&gt; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000) INSERT INTO historico SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
+sqlite&gt; .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 1204224 out 18 11:01 loja.db
+$ sqlite3 loja.db "DROP TABLE historico;"
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 49152 out 18 11:01 loja.db</pre>
+
+<p>Desta vez o arquivo diminuiu <strong>na hora</strong>, sem <code>VACUUM</code>: no fim de cada transação, o SQLite move as páginas livres para o fim do arquivo e corta o arquivo ali. Repare que, com a opção ligada, o banco tem 49152 bytes, uma página a mais que os 45056 do modo desligado: é o "mapa" que o SQLite mantém para saber o que pode mover.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>PRAGMA auto_vacuum</code></th><th>O que faz</th><th>Bom para</th></tr>
+<tr><td><code>0</code> / <code>NONE</code></td><td>Páginas livres ficam no arquivo, para reaproveitar; só o <code>VACUUM</code> devolve. É o padrão para bancos novos</td><td>A maioria dos casos: escrever é mais rápido</td></tr>
+<tr><td><code>1</code> / <code>FULL</code></td><td>Devolve as páginas livres no fim de cada transação</td><td>Celulares e aparelhos com pouco espaço</td></tr>
+<tr><td><code>2</code> / <code>INCREMENTAL</code></td><td>Guarda o mapa, mas só devolve quando você pede: <code>PRAGMA incremental_vacuum(N);</code> devolve até N páginas</td><td>Quem quer escolher a hora da limpeza</td></tr>
+</table>
+</div>
+
+<p>Atenção: o <code>auto_vacuum</code> devolve o espaço, mas <strong>não</strong> arruma a ordem das páginas, e com o tempo pode até deixar o arquivo mais bagunçado. O <code>VACUUM</code> continua sendo o único jeito de remontar o arquivo por completo.</p>
+
+<hr>
+
+<h2>5. <code>ANALYZE</code>: as estatísticas</h2>
+<p>Agora o outro comando da aula, que não mexe no tamanho do arquivo. Para cada consulta, o SQLite escolhe um caminho: ler a tabela inteira, ou usar um índice (aula <a href="explain.html">EXPLAIN QUERY PLAN</a>). Para escolher bem, ele precisa saber como os dados estão distribuídos: quantas linhas a tabela tem, quantas linhas cada valor de um índice costuma ter. O <code>ANALYZE</code> conta isso e guarda o resultado numa tabela especial, a <code>sqlite_stat1</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT * FROM sqlite_stat1;
+Parse error: no such table: sqlite_stat1
+sqlite&gt; ANALYZE;
+sqlite&gt; SELECT * FROM sqlite_stat1;
+itens_pedido|sqlite_autoindex_itens_pedido_1|220 3 1
+pedidos||90
+funcionarios||8
+clientes||30
+categorias||8
+fornecedores||6
+produtos||45</pre>
+
+<dl class="anatomy">
+  <dt>no such table: sqlite_stat1</dt><dd>Antes do primeiro <code>ANALYZE</code>, a tabela de estatísticas nem existe.</dd>
+  <dt>ANALYZE;</dt><dd>Lê as tabelas e os índices do banco e cria a <code>sqlite_stat1</code>. Num banco grande, pode levar um tempo; dá para analisar só uma tabela: <code>ANALYZE produtos;</code>.</dd>
+  <dt>tbl | idx | stat</dt><dd>As três colunas da <code>sqlite_stat1</code>: a tabela, o índice (vazio quando a linha fala da tabela) e os números.</dd>
+  <dt>pedidos||90</dt><dd>A tabela <code>pedidos</code> tem 90 linhas.</dd>
+  <dt>220 3 1</dt><dd>Sobre o índice da chave <code>(pedido_id, produto_id)</code>: a tabela tem 220 linhas; cada valor de <code>pedido_id</code> aparece, em média, em umas 3 linhas (são 2 ou 3 itens por pedido); e cada par <code>(pedido_id, produto_id)</code>, em 1 linha só.</dd>
+</dl>
+
+<p>Com um índice novo, a conta aparece para ele também. A Ana cria um índice de produtos por categoria e analisa de novo, agora no editor:</p>
+
+<pre class="file" data-file="analyze.sql" data-resultado>CREATE INDEX idx_produtos_categoria ON produtos (categoria_id);
+ANALYZE;
+
+SELECT tbl, idx, stat FROM sqlite_stat1 ORDER BY tbl;
+</pre>
+
+<p>A linha nova, <code>produtos | idx_produtos_categoria | 45 6</code>, diz: 45 produtos, e cada categoria tem, em média, uns 6 (45 divididos por 8 categorias dá 5,6, arredondado para cima). Com esse número, o SQLite sabe que procurar "os produtos da categoria 2" pelo índice vai achar umas 6 linhas, bem menos que ler as 45. Numa tabela de milhões de linhas, uma estimativa boa como essa é o que separa uma consulta de um segundo de uma de um minuto.</p>
+
+<div class="tip">
+<strong>O <code>sqlite_stat1</code> é para ler, não para mexer</strong>
+<p>Ela é uma tabela de verdade, e um <code>SELECT</code> nela funciona. Mas quem escreve nela é o <code>ANALYZE</code>. Se as estatísticas ficarem velhas, a solução é rodar o <code>ANALYZE</code> de novo, nunca editar os números à mão.</p>
+</div>
+
+<hr>
+
+<h2>6. <code>PRAGMA optimize</code>: estatísticas em dia, sem esforço</h2>
+<p>Quando rodar o <code>ANALYZE</code>? Depois de criar um índice, ou quando os dados mudarem muito. Para não ter de pensar nisso, existe o <code>PRAGMA optimize</code>: ele confere o que mudou e só roda o <code>ANALYZE</code> nas tabelas em que vale a pena. A Ana testa com um índice recém-criado:</p>
+
+<pre class="term">sqlite&gt; DROP INDEX idx_produtos_categoria;
+sqlite&gt; CREATE INDEX idx_produtos_categoria ON produtos (categoria_id);
+sqlite&gt; SELECT * FROM sqlite_stat1 WHERE tbl = 'produtos';
+sqlite&gt; PRAGMA optimize;
+sqlite&gt; SELECT * FROM sqlite_stat1 WHERE tbl = 'produtos';
+produtos|idx_produtos_categoria|45 6
+sqlite&gt; EXPLAIN QUERY PLAN SELECT nome FROM produtos WHERE categoria_id = 2;
+QUERY PLAN
+`--SEARCH produtos USING INDEX idx_produtos_categoria (categoria_id=?)</pre>
+
+<p>Logo depois do <code>CREATE INDEX</code>, o índice ainda não tinha estatística (o primeiro <code>SELECT</code> não mostrou nada). O <code>PRAGMA optimize</code> percebeu o índice novo e analisou a tabela: a linha <code>45 6</code> apareceu. E o <code>EXPLAIN QUERY PLAN</code> mostra o SQLite usando o índice para achar os produtos da categoria 2 (veja <a href="indices-na-pratica.html">Quando o Índice Ajuda</a>).</p>
+
+<p>A documentação do SQLite recomenda rodar o <code>PRAGMA optimize</code> antes de fechar cada conexão (e, em programas que ficam muito tempo abertos, de tempos em tempos). Na maioria das vezes ele não faz nada e termina num instante; quando há o que fazer, faz só o necessário.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>VACUUM;</code></td><td>Remonta o arquivo: devolve o espaço livre e põe as páginas em ordem</td><td>Depois de apagar muitos dados; para aplicar <code>page_size</code>/<code>auto_vacuum</code></td></tr>
+<tr><td><code>VACUUM INTO 'copia.db';</code></td><td>O mesmo, mas grava o resultado num arquivo novo</td><td>Backup compactado; o original não é tocado</td></tr>
+<tr><td><code>PRAGMA auto_vacuum = FULL;</code> + <code>VACUUM;</code></td><td>O espaço volta sozinho a cada transação</td><td>Pouco espaço em disco</td></tr>
+<tr><td><code>PRAGMA incremental_vacuum(N);</code></td><td>Devolve até N páginas (com <code>auto_vacuum = INCREMENTAL</code>)</td><td>Limpar aos poucos, na hora que você escolhe</td></tr>
+<tr><td><code>ANALYZE;</code> / <code>ANALYZE tabela;</code></td><td>Recalcula as estatísticas (de tudo ou de uma tabela)</td><td>Depois de criar índices ou de grandes mudanças</td></tr>
+<tr><td><code>PRAGMA optimize;</code></td><td>Roda o <code>ANALYZE</code> só onde vale a pena</td><td>Sempre, antes de fechar a conexão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>VACUUM</code> dentro de uma transação</strong>
+<pre class="file" data-file="vacuum-transacao.sql" data-resultado data-erro>BEGIN;
+DELETE FROM itens_pedido WHERE pedido_id = 90;
+VACUUM;
+</pre>
+<p><strong>O que aconteceu:</strong> "não posso fazer VACUUM de dentro de uma transação". O <code>VACUUM</code> troca o arquivo inteiro, e isso não cabe dentro de uma transação que ainda pode ser desfeita. No terminal, a mensagem é a mesma, com o prefixo: <code>Runtime error: cannot VACUUM from within a transaction</code>.</p>
+<p><strong>Como consertar:</strong> termine a transação (<code>COMMIT</code> ou <code>ROLLBACK</code>) e rode o <code>VACUUM</code> sozinho, depois.</p>
+</div>
+
+<div class="cenario">
+<strong>Ler a <code>sqlite_stat1</code> antes do <code>ANALYZE</code></strong>
+<pre class="file" data-file="sem-analyze.sql" data-resultado data-erro>SELECT * FROM sqlite_stat1;
+</pre>
+<p><strong>O que aconteceu:</strong> "não existe a tabela sqlite_stat1". Ela só é criada pelo primeiro <code>ANALYZE</code> (ou por um <code>PRAGMA optimize</code> que decidiu analisar algo). No editor, como o banco é recriado a cada Rodar, ela nunca existe no começo.</p>
+<p><strong>Como consertar:</strong> rode <code>ANALYZE;</code> antes, na mesma caixa.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudou o <code>auto_vacuum</code> e nada aconteceu</strong>
+<pre class="file" data-file="auto-vacuum.sql" data-resultado>PRAGMA auto_vacuum = FULL;
+PRAGMA auto_vacuum;
+
+VACUUM;
+PRAGMA auto_vacuum;
+</pre>
+<p><strong>O que aconteceu:</strong> num banco que já tem tabelas, <code>PRAGMA auto_vacuum = FULL;</code> não dá erro, mas também não muda o modo: a primeira leitura continua mostrando <code>0</code>. Só depois do <code>VACUUM</code>, que remonta o arquivo, a leitura mostra <code>1</code>. Foi por isso que a Ana sempre rodou o <code>VACUUM</code> logo depois de mudar a opção.</p>
+<p><strong>Como evitar:</strong> como todo PRAGMA (aula <a href="pragma.html">PRAGMAs Úteis</a>), confira lendo de volta: <code>PRAGMA auto_vacuum;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Disco cheio no meio do <code>VACUUM</code></strong>
+<p>Se não houver espaço para a cópia temporária, o <code>VACUUM</code> falha e o banco fica como estava, sem perder nada (é uma transação como outra qualquer; lembre do "tudo ou nada" da aula <a href="acid.html">ACID</a>). Libere espaço no disco, ou use <code>VACUUM INTO</code> para gravar a versão compactada em outro disco.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>Manutenção no MySQL, PostgreSQL e SQL Server</strong>
+<p>Todo banco precisa dessas duas tarefas, devolver espaço e atualizar estatísticas, mas cada um tem os seus comandos (trechos <strong>ilustrativos</strong>):</p>
+<pre class="file" data-file="outros-bancos.sql">-- PostgreSQL: VACUUM existe, com outro sentido; ANALYZE também
+VACUUM produtos;          -- marca o espaço para reaproveitar
+VACUUM FULL produtos;     -- reescreve a tabela e devolve o espaço (como o nosso VACUUM)
+ANALYZE produtos;
+
+-- MySQL
+OPTIMIZE TABLE produtos;  -- reorganiza e devolve o espaço
+ANALYZE TABLE produtos;   -- estatísticas
+
+-- SQL Server
+UPDATE STATISTICS produtos;
+</pre>
+<p>No PostgreSQL, um processo do próprio servidor, o <em>autovacuum</em>, roda o <code>VACUUM</code> e o <code>ANALYZE</code> sozinho, o tempo todo. Nos bancos com servidor, quem cuida dessa manutenção costuma ser o administrador do banco; no SQLite, o banco é seu, então essa tarefa também é sua.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>VACUUM;</code></td><td>Remonta o arquivo do banco, sem páginas livres</td></tr>
+<tr><td><code>VACUUM INTO 'arquivo.db';</code></td><td>Grava a versão remontada num arquivo novo</td></tr>
+<tr><td><code>PRAGMA freelist_count;</code></td><td>Quantas páginas estão livres</td></tr>
+<tr><td><code>PRAGMA page_count;</code></td><td>Quantas páginas o arquivo tem</td></tr>
+<tr><td><code>PRAGMA auto_vacuum;</code></td><td>0 (<code>NONE</code>), 1 (<code>FULL</code>) ou 2 (<code>INCREMENTAL</code>); mudar exige um <code>VACUUM</code></td></tr>
+<tr><td><code>PRAGMA incremental_vacuum(N);</code></td><td>Devolve até N páginas livres (modo <code>INCREMENTAL</code>)</td></tr>
+<tr><td><code>ANALYZE;</code> / <code>ANALYZE tabela;</code></td><td>Calcula as estatísticas e as guarda em <code>sqlite_stat1</code></td></tr>
+<tr><td><code>SELECT * FROM sqlite_stat1;</code></td><td>Mostra as estatísticas: tabela, índice, números</td></tr>
+<tr><td><code>PRAGMA optimize;</code></td><td>Atualiza as estatísticas só onde precisa</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>cannot VACUUM from within a transaction</code></td><td>Há um <code>BEGIN</code> aberto: termine a transação antes</td></tr>
+<tr><td><code>no such table: sqlite_stat1</code></td><td>O <code>ANALYZE</code> ainda não foi rodado neste banco</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quanto espaço está livre?</h3>
+<p>Complete o PRAGMA que conta as páginas livres do banco:</p>
+<div class="ex-code">PRAGMA <input data-answer="freelist_count" aria-label="nome do pragma">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A cópia compactada</h3>
+<p>Complete para gravar uma versão remontada do banco no arquivo <code>pequeno.db</code>, sem mexer no original:</p>
+<div class="ex-code">VACUUM <input data-answer="INTO|into" aria-label="palavra"> 'pequeno.db';</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Num banco com <code>auto_vacuum</code> desligado, a Ana apagou uma tabela de 1 MB. O que acontece com o tamanho do arquivo?</p>
+<label><input type="radio" name="q3"> Diminui 1 MB na hora</label>
+<label><input type="radio" name="q3"> Aumenta, por causa do diário</label>
+<label><input type="radio" name="q3"> Continua igual: as páginas ficam livres, esperando dados novos, até um <code>VACUUM</code></label>
+<label><input type="radio" name="q3"> Fica zerado</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O que o <code>ANALYZE</code> faz?</p>
+<label><input type="radio" name="q4"> Conta como os dados estão distribuídos e guarda em <code>sqlite_stat1</code>, para o SQLite escolher melhor o caminho das consultas</label>
+<label><input type="radio" name="q4"> Devolve o espaço livre do arquivo</label>
+<label><input type="radio" name="q4"> Confere se o arquivo está estragado</label>
+<label><input type="radio" name="q4"> Cria os índices que faltam</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou <code>VACUUM</code> logo depois de um <code>BEGIN</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> O <code>VACUUM</code> espera o <code>COMMIT</code></label>
+<label><input type="radio" name="q5"> A transação é confirmada sozinha</label>
+<label><input type="radio" name="q5"> O banco é apagado</label>
+<label><input type="radio" name="q5"> Erro: <code>cannot VACUUM from within a transaction</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Qual é o jeito recomendado de manter as estatísticas em dia sem pensar nelas?</p>
+<label><input type="radio" name="q6"> Rodar <code>VACUUM</code> toda noite</label>
+<label><input type="radio" name="q6"> <code>PRAGMA optimize</code> antes de fechar a conexão</label>
+<label><input type="radio" name="q6"> Editar a <code>sqlite_stat1</code> à mão</label>
+<label><input type="radio" name="q6"> Ligar o <code>auto_vacuum</code></label>
+</div>
+
+<h3>Missão final: a estatística do índice novo</h3>
+
+<div class="trysql" data-goal="contem:idx_clientes_cidade|30 4">
+<p class="try-task"><strong>Missão:</strong> a Ana criou um índice de clientes por cidade, mas a consulta à <code>sqlite_stat1</code> dá erro: as estatísticas ainda não existem. Acrescente o comando que as calcula, no lugar certo. A linha do índice deve mostrar <code>30 4</code>: 30 clientes, uns 4 por cidade.</p>
+<pre class="script" data-file="estatisticas.sql">CREATE INDEX idx_clientes_cidade ON clientes (cidade);
+
+SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'clientes';
+</pre>
+<pre class="solucao" data-file="estatisticas.sql">CREATE INDEX idx_clientes_cidade ON clientes (cidade);
+ANALYZE;
+
+SELECT idx, stat FROM sqlite_stat1 WHERE tbl = 'clientes';
+</pre>
+</div>
+
+<p>São 8 cidades diferentes para 30 clientes: 30 ÷ 8 = 3,75, arredondado para cima, 4. O <code>ANALYZE clientes;</code>, só da tabela, também resolve. Teresina, com 10 clientes, tem bem mais que a média; a <code>sqlite_stat1</code> guarda só a média, e para a maioria das consultas isso basta.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Apagar dados não diminui o arquivo: as páginas ficam livres para reaproveitar. <code>PRAGMA freelist_count</code> mostra quantas.</li>
+  <li><code>VACUUM</code> remonta o arquivo, devolve o espaço e põe as páginas em ordem, sem apagar nenhum dado. No teste da Ana: de 1200128 para 45056 bytes.</li>
+  <li>O <code>VACUUM</code> reescreve o banco inteiro, pode precisar do dobro do espaço e não roda dentro de transação. Use depois de apagar muitos dados, não "por garantia".</li>
+  <li><code>auto_vacuum = FULL</code> devolve o espaço sozinho a cada transação; o padrão é <code>NONE</code>. Mudar o modo exige um <code>VACUUM</code>.</li>
+  <li><code>ANALYZE</code> calcula as estatísticas (linhas por tabela, linhas por valor de índice) e as guarda em <code>sqlite_stat1</code>; o SQLite as usa para escolher o caminho das consultas.</li>
+  <li><code>PRAGMA optimize</code>, antes de fechar a conexão, mantém as estatísticas em dia fazendo só o necessário.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
