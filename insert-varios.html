@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Inserindo Várias Linhas — um INSERT, muitas linhas | Guia SQL</title>
+<meta name="description" content="Inserir várias linhas de uma vez em SQL, para quem nunca mexeu num banco: VALUES com várias listas, vários INSERT seguidos, um pedido novo com os seus itens na Loja Aurora, o 'tudo ou nada' quando uma linha dá erro, RETURNING para ver os ids e os erros reais do SQLite, no editor e no terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Inserindo Várias Linhas</span></h1>
+
+<p class="intro">Na aula <a href="insert.html">INSERT INTO</a>, a Ana cadastrou uma linha de cada vez. Mas um pedido da Loja Aurora quase nunca tem um item só, e quando a loja abre três seções novas, ninguém quer escrever três comandos iguais. O <code>INSERT</code> aceita <strong>várias linhas num comando só</strong>: basta pôr várias listas de valores depois do <code>VALUES</code>, separadas por vírgula. Nesta aula você vai usar isso para cadastrar categorias, clientes e um pedido completo, e vai ver uma propriedade importante: se <strong>uma</strong> das linhas tem erro, <strong>nenhuma</strong> entra.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>VALUES (…), (…), (…)</code>: várias linhas num <code>INSERT</code>.</li>
+  <li>Como o banco numera as linhas novas, uma depois da outra.</li>
+  <li>A diferença entre um <code>INSERT</code> com várias linhas e vários <code>INSERT</code> seguidos.</li>
+  <li>O "tudo ou nada": por que uma linha com erro barra o comando inteiro.</li>
+  <li>Como cadastrar um pedido novo e os seus itens, em duas tabelas.</li>
+  <li><code>RETURNING</code>: ver na hora os <code>id</code> que o banco escolheu.</li>
+  <li>Os erros mais comuns: vírgula faltando, vírgula sobrando, linhas de tamanhos diferentes.</li>
+</ul>
+</div>
+
+<p>Como sempre no editor do guia, <strong>cada Rodar começa do banco limpo</strong>: pode inserir à vontade. Por isso cada exemplo termina com um <code>SELECT</code> para você ver as linhas novas.</p>
+
+<hr>
+
+<h2>A ideia: uma pilha de fichas de uma vez</h2>
+<p>Em vez de ir ao fichário três vezes, uma ficha por viagem, a Ana preenche três fichas na mesa e guarda <strong>a pilha inteira de uma vez</strong>. Se uma das fichas estiver rasurada, ela não guarda a pilha: corrige primeiro e guarda tudo junto. É assim que o <code>INSERT</code> com várias linhas funciona.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Uma linha por vez</th><th>Várias linhas de uma vez</th></tr>
+<tr><td><code>INSERT INTO t (a) VALUES (1);</code><br><code>INSERT INTO t (a) VALUES (2);</code><br><code>INSERT INTO t (a) VALUES (3);</code></td><td><code>INSERT INTO t (a) VALUES (1), (2), (3);</code></td></tr>
+<tr><td>Três comandos: cada um entra (ou falha) sozinho</td><td>Um comando: as três entram juntas, ou nenhuma entra</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Três categorias num INSERT só</h2>
+<p>A Aurora vai abrir três seções: Pet Shop, Automotivo e Beleza.</p>
+
+<pre class="file" data-file="tres-categorias.sql" data-resultado>INSERT INTO categorias (nome, descricao) VALUES
+  ('Pet Shop',   'Ração, brinquedos e acessórios para animais'),
+  ('Automotivo', 'Acessórios para o carro'),
+  ('Beleza',     'Cosméticos e cuidados pessoais');
+
+SELECT * FROM categorias WHERE id &gt; 6;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO categorias (nome, descricao)</dt><dd>Igual ao <code>INSERT</code> de uma linha: a tabela e a lista de colunas, escrita <strong>uma vez só</strong>. Ela vale para todas as linhas.</dd>
+  <dt>VALUES</dt><dd>Também aparece uma vez só.</dd>
+  <dt>('Pet Shop', '…'),</dt><dd>A primeira linha: uma lista de valores entre parênteses, na ordem das colunas. A <strong>vírgula depois do parêntese</strong> avisa que vem mais uma linha.</dd>
+  <dt>('Automotivo', '…'),</dt><dd>A segunda linha, também seguida de vírgula.</dd>
+  <dt>('Beleza', '…');</dt><dd>A última linha termina com <code>;</code> e <strong>sem</strong> vírgula: depois dela não vem mais nada.</dd>
+</dl>
+
+<p>O quadro mostra "3 linhas afetadas": um comando, três linhas. E os <code>id</code> saíram em sequência, 9, 10 e 11, na ordem em que as linhas foram escritas: cada uma ganhou "o maior <code>id</code> que existe, mais 1", no momento em que entrou.</p>
+
+<p>Os espaços a mais depois de <code>'Pet Shop',</code> são só para alinhar as colunas e facilitar a leitura; o SQL ignora espaços e quebras de linha fora das aspas. Uma linha por registro, com os valores alinhados, é o jeito mais fácil de conferir um cadastro grande.</p>
+
+<div class="trysql" data-goal="mudou:categorias=11">
+<p class="try-task"><strong>Experimente:</strong> o <code>INSERT</code> abaixo cadastra só a Pet Shop. Acrescente, <strong>no mesmo comando</strong>, mais duas categorias: <code>Automotivo</code> e <code>Beleza</code> (a descrição você escolhe). Lembre da vírgula entre as linhas.</p>
+<pre class="script" data-file="categorias.sql">INSERT INTO categorias (nome, descricao) VALUES
+  ('Pet Shop', 'Ração, brinquedos e acessórios para animais');
+
+SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="categorias.sql">INSERT INTO categorias (nome, descricao) VALUES
+  ('Pet Shop', 'Ração, brinquedos e acessórios para animais'),
+  ('Automotivo', 'Acessórios para o carro'),
+  ('Beleza', 'Cosméticos e cuidados pessoais');
+
+SELECT * FROM categorias;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Várias linhas, com brancos</h2>
+<p>As regras de uma linha valem para cada linha da lista. Três clientes novos, um deles sem email:</p>
+
+<pre class="file" data-file="tres-clientes.sql" data-resultado>INSERT INTO clientes (nome, email, cidade, estado) VALUES
+  ('Lívia Rocha',   'livia.rocha@exemplo.com.br',   'Teresina', 'PI'),
+  ('Joaquim Leite', NULL,                           'Picos',    'PI'),
+  ('Bianca Moraes', 'bianca.moraes@exemplo.com.br', 'Parnaíba', 'PI');
+
+SELECT * FROM clientes WHERE id &gt; 30;
+</pre>
+
+<ul>
+  <li>Todas as linhas têm <strong>quatro</strong> valores, porque a lista de colunas tem quatro. Para deixar o email do Joaquim em branco, a linha dele usa <code>NULL</code> no lugar do email; não dá para simplesmente "pular" o valor.</li>
+  <li>As colunas que não estão na lista (<code>nascimento</code> e <code>vip</code>) ficaram com <em>NULL</em> e com o padrão <code>0</code> nas <strong>três</strong> linhas.</li>
+</ul>
+
+<hr>
+
+<h2>3. Um pedido completo: duas tabelas</h2>
+<p>O cliente 27, Paulo Sérgio Andrade, que nunca tinha comprado na Aurora, fez o primeiro pedido: 2 cadernos, 5 lápis e 1 estojo, atendido pela Renata (funcionária 3). Na Aurora, um pedido mora em <strong>duas</strong> tabelas: o "cabeçalho" em <code>pedidos</code> e cada produto em <code>itens_pedido</code> (aula <a href="relacionamentos.html">Tabelas que se Relacionam</a>). Primeiro o cabeçalho, que vai ganhar o <code>id</code> 91; depois os três itens, que apontam para ele:</p>
+
+<pre class="file" data-file="pedido-novo.sql" data-resultado>INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (27, 3, '2026-10-16', 12.5);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+  (91, 1, 2, 12.35),
+  (91, 3, 5, 1.15),
+  (91, 6, 1, 19.5);
+
+SELECT * FROM pedidos WHERE id = 91;
+SELECT * FROM itens_pedido WHERE pedido_id = 91;
+</pre>
+
+<ol class="passo">
+  <li>O primeiro <code>INSERT</code> cria o pedido. O <code>entregue_em</code> ficou de fora, então o pedido nasce <em>NULL</em> nesse campo: ainda não foi entregue.</li>
+  <li>O segundo <code>INSERT</code> grava os três itens de uma vez. Cada linha diz o pedido (91), o produto (1 = caderno, 3 = lápis, 6 = estojo), a quantidade e o preço daquele dia.</li>
+  <li>Os dois <code>SELECT</code> mostram o pedido e os itens. O editor mostra um quadro para cada comando, na ordem.</li>
+</ol>
+
+<p>A ordem importa: os itens apontam para o pedido 91 (é uma chave estrangeira), então o pedido precisa existir <strong>antes</strong>. Com os itens primeiro, o SQLite do editor responderia <code>FOREIGN KEY constraint failed</code>.</p>
+
+<div class="tip">
+<strong>E se o número do pedido não fosse 91?</strong>
+<p>Aqui a Ana sabe que o próximo pedido é o 91 porque o banco do editor é sempre o mesmo. Num sistema de verdade, com muita gente comprando ao mesmo tempo, ela pediria ao banco o número que ele acabou de escolher, com o <code>RETURNING</code> da seção 6, e usaria esse número nos itens. Os programas fazem isso com parâmetros (aula <a href="parametros.html">Consultas com Parâmetros</a>).</p>
+</div>
+
+<hr>
+
+<h2>4. Um INSERT com várias linhas × vários INSERT</h2>
+<p>As duas formas cadastram as mesmas linhas quando tudo dá certo. A diferença aparece quando <strong>alguma coisa dá errado</strong>.</p>
+
+<h3>Um comando: tudo ou nada</h3>
+<p>A Ana quer cadastrar duas categorias, escolhendo os números à mão, e erra o segundo: o 8 já existe (é a Jardim).</p>
+
+<pre class="file" data-file="tudo-ou-nada.sql" data-resultado data-erro>INSERT INTO categorias (id, nome) VALUES
+  (9, 'Pet Shop'),
+  (8, 'Automotivo');
+</pre>
+
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: categorias.id</code>. E a Pet Shop, que estava certa, entrou? <strong>Não.</strong> Um comando SQL é <strong>atômico</strong> (de "átomo", o que não se divide): ou ele faz tudo, ou não faz nada. Como a segunda linha falhou, o SQLite desfez a primeira.</p>
+
+<h3>Vários comandos: cada um por si</h3>
+<p>Com dois <code>INSERT</code> separados, o primeiro já está gravado quando o segundo falha. No editor, a execução para no erro, então não dá para pôr um <code>SELECT</code> depois. No terminal, onde as mudanças ficam no arquivo, dá para ver a diferença com clareza:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> INSERT INTO categorias (id, nome) VALUES (9, 'Pet Shop'), (8, 'Automotivo');
+Runtime error: UNIQUE constraint failed: categorias.id (19)
+sqlite> SELECT id, nome FROM categorias WHERE id &gt; 7;
+8|Jardim                     « um comando só: a Pet Shop também não entrou
+sqlite> INSERT INTO categorias (id, nome) VALUES (9, 'Pet Shop');
+sqlite> INSERT INTO categorias (id, nome) VALUES (8, 'Automotivo');
+Runtime error: UNIQUE constraint failed: categorias.id (19)
+sqlite> SELECT id, nome FROM categorias WHERE id &gt; 7;
+8|Jardim
+9|Pet Shop                   « dois comandos: o primeiro ficou gravado
+sqlite> .quit</pre>
+
+<p>Qual é melhor? Depende do que você quer quando algo dá errado. Para um pedido e os seus itens, o "tudo ou nada" é o que você quer: um pedido com só metade dos itens é pior do que pedido nenhum. Para isso, junte as linhas num comando só. Quando são <strong>vários</strong> comandos que precisam dar certo juntos (como o pedido e os itens, que estão em tabelas diferentes), o SQL tem as <strong>transações</strong>, que fazem um grupo de comandos virar um "tudo ou nada": aula <a href="transacoes.html">Transações (BEGIN e COMMIT)</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Um INSERT, várias linhas</th><th>Vários INSERT</th></tr>
+<tr><td>Uma linha com erro</td><td>Nenhuma linha entra</td><td>As anteriores ficam; a com erro e as seguintes não entram</td></tr>
+<tr><td>Tabelas diferentes</td><td>Não dá: um <code>INSERT</code> só grava numa tabela</td><td>Dá</td></tr>
+<tr><td>Tamanho do SQL</td><td>Curto: tabela e colunas escritas uma vez</td><td>Repete o começo em cada linha</td></tr>
+<tr><td>Velocidade com muitas linhas</td><td>Mais rápido</td><td>Mais lento (cada comando é uma gravação; fica rápido dentro de uma transação)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. Vendo quantas linhas mudaram</h2>
+<p>O editor escreve "3 linhas afetadas". No terminal, o <code>INSERT</code> fica quieto quando dá certo; para ver a contagem, ligue o comando de ponto <code>.changes on</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> .changes on
+sqlite> INSERT INTO categorias (nome) VALUES ('Automotivo'), ('Beleza'), ('Brinquedos Educativos');
+changes: 3   total_changes: 3
+sqlite> .quit</pre>
+
+<p><code>changes: 3</code> é quanto o último comando mudou; <code>total_changes</code> é a soma desde que você abriu o <code>sqlite3</code>. Com <code>.changes on</code>, o terminal repete essa linha depois de <strong>todo</strong> comando, até de um <code>SELECT</code> (que não muda nada e mostra os mesmos números). Desligue com <code>.changes off</code>.</p>
+
+<hr>
+
+<h2>6. RETURNING: ver os ids na hora</h2>
+<p>Depois do <code>INSERT</code>, você quer saber que <code>id</code> cada linha recebeu. Em vez de um <code>SELECT</code> separado, o SQLite aceita <code>RETURNING</code> ("devolvendo") no fim do <code>INSERT</code>: ele devolve as colunas que você pedir, <strong>das linhas que acabaram de entrar</strong>.</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>INSERT INTO clientes (nome, cidade, estado) VALUES
+  ('Lívia Rocha',   'Teresina', 'PI'),
+  ('Joaquim Leite', 'Picos',    'PI')
+RETURNING id, nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>RETURNING id, nome</dt><dd>Vem depois da última linha de valores, antes do <code>;</code>. Funciona como a lista de colunas de um <code>SELECT</code>: <code>RETURNING *</code> devolve todas.</dd>
+</dl>
+
+<p>A resposta é uma tabela com as duas linhas novas: 31 e 32. É assim que um programa descobre o número do pedido recém-criado para gravar os itens. O <code>RETURNING</code> também funciona com <code>UPDATE</code> e <code>DELETE</code>, e é um ótimo aliado contra acidentes: a aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a> mostra como.</p>
+
+<hr>
+
+<h2>Formas diferentes de inserir várias linhas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>INSERT INTO t (…) VALUES (…), (…), (…);</code></td><td>Várias linhas da mesma tabela que devem entrar juntas. A forma mais comum.</td></tr>
+<tr><td>Vários <code>INSERT</code> seguidos</td><td>Linhas em tabelas diferentes (o pedido e os itens), ou quando cada linha pode entrar sozinha.</td></tr>
+<tr><td>Vários <code>INSERT</code> dentro de uma transação</td><td>Vários comandos que precisam dar certo juntos: aula <a href="transacoes.html">Transações</a>.</td></tr>
+<tr><td><code>INSERT INTO t (…) SELECT …</code></td><td>As linhas novas vêm de uma consulta em outra tabela: aula <a href="insert-select.html">INSERT INTO SELECT</a>.</td></tr>
+<tr><td><code>.import arquivo.csv tabela</code> (terminal)</td><td>Centenas ou milhares de linhas vindas de uma planilha: aula <a href="import-export.html">Importar e Exportar CSV</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Em todos estes casos, o comando inteiro é recusado: nenhuma das linhas entra.</p>
+
+<div class="cenario">
+<strong>Linhas com quantidades diferentes de valores</strong>
+<pre class="file" data-file="tamanhos.sql" data-resultado data-erro>INSERT INTO categorias (nome, descricao) VALUES
+  ('Pet Shop', 'Ração, brinquedos e acessórios para animais'),
+  ('Automotivo');
+</pre>
+<p><strong>A mensagem:</strong> <code>all VALUES must have the same number of terms</code> ("todos os VALUES precisam ter o mesmo número de termos"). A segunda linha tem um valor só, e a primeira tem dois.</p>
+<p><strong>Como consertar:</strong> todas as linhas com um valor para cada coluna da lista. Para deixar a descrição em branco, use <code>NULL</code>: <code>('Automotivo', NULL)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Faltou a vírgula entre as linhas</strong>
+<pre class="file" data-file="sem-virgula.sql" data-resultado data-erro>INSERT INTO categorias (nome) VALUES
+  ('Pet Shop')
+  ('Automotivo');
+</pre>
+<p><strong>A mensagem:</strong> <code>near "(": syntax error</code>. Depois de <code>('Pet Shop')</code>, o SQLite esperava uma vírgula (mais uma linha) ou o fim do comando, e encontrou outro parêntese.</p>
+<p><strong>Como consertar:</strong> vírgula depois de cada linha, menos a última.</p>
+</div>
+
+<div class="cenario">
+<strong>Sobrou uma vírgula no fim</strong>
+<pre class="file" data-file="virgula-sobrando.sql" data-resultado data-erro>INSERT INTO categorias (nome) VALUES
+  ('Pet Shop'),
+  ('Automotivo'),
+;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ";": syntax error</code>. A vírgula prometeu mais uma linha, e chegou o fim do comando. Acontece muito quando você apaga a última linha de uma lista e esquece a vírgula da penúltima.</p>
+<p><strong>Como consertar:</strong> a última linha termina com <code>)</code> e <code>;</code>, sem vírgula.</p>
+</div>
+
+<div class="cenario">
+<strong>O mesmo produto duas vezes no pedido</strong>
+<pre class="file" data-file="item-repetido.sql" data-resultado data-erro>INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+  (90, 1, 1, 12.35),
+  (90, 1, 2, 12.35);
+</pre>
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id</code>. Na tabela <code>itens_pedido</code>, a chave primária é o <strong>par</strong> (pedido, produto): cada produto aparece uma vez por pedido. A mensagem cita as duas colunas porque é a combinação delas que se repetiu.</p>
+<p><strong>Como consertar:</strong> uma linha por produto, com a quantidade total: <code>(90, 1, 3, 12.35)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma linha com um campo obrigatório vazio</strong>
+<pre class="file" data-file="linha-null.sql" data-resultado data-erro>INSERT INTO categorias (nome) VALUES
+  ('Pet Shop'),
+  (NULL);
+</pre>
+<p><strong>A mensagem:</strong> <code>NOT NULL constraint failed: categorias.nome</code>. Basta uma linha quebrar a regra para o comando todo ser recusado; a Pet Shop também não entra.</p>
+</div>
+
+<div class="trysql" data-goal="mudou:clientes=32">
+<p class="try-task"><strong>Missão:</strong> este cadastro de dois clientes não roda. Leia a mensagem, conserte e rode até os dois entrarem.</p>
+<pre class="script" data-file="conserte.sql">INSERT INTO clientes (nome, cidade, estado) VALUES
+  ('Lívia Rocha', 'Teresina', 'PI')
+  ('Joaquim Leite', 'Picos', 'PI'),
+;
+
+SELECT id, nome, cidade FROM clientes WHERE id &gt; 29;
+</pre>
+<pre class="solucao" data-file="conserte.sql">INSERT INTO clientes (nome, cidade, estado) VALUES
+  ('Lívia Rocha', 'Teresina', 'PI'),
+  ('Joaquim Leite', 'Picos', 'PI');
+
+SELECT id, nome, cidade FROM clientes WHERE id &gt; 29;
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li>O <code>VALUES (…), (…)</code> com várias linhas é do SQL padrão e funciona no MySQL, no PostgreSQL e no SQL Server. No <strong>SQL Server</strong>, a documentação limita um <code>INSERT … VALUES</code> a <strong>1.000 linhas</strong>; para mais, use vários comandos ou importação em massa.</li>
+  <li>O SQL Server (e o MySQL e o PostgreSQL) aceitam a palavra <code>DEFAULT</code> no lugar de um valor, para pedir o valor padrão daquela coluna numa linha. O SQLite <strong>não</strong> aceita: <code>VALUES ('Lívia Rocha', DEFAULT)</code> dá <code>near "DEFAULT": syntax error</code>. No SQLite, para usar o padrão, deixe a coluna fora da lista. Trecho só ilustrativo:
+<pre class="file" data-file="sql server (ilustrativo)">INSERT INTO clientes (nome, vip)
+VALUES ('Lívia Rocha', DEFAULT), ('Joaquim Leite', 1);
+</pre></li>
+  <li>O <code>RETURNING</code> existe também no PostgreSQL. No SQL Server, o equivalente é a cláusula <code>OUTPUT</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>INSERT INTO t (a, b) VALUES (1, 'x'), (2, 'y');</code></td><td>Duas linhas num comando</td></tr>
+<tr><td>Vírgula entre as listas</td><td>Separa as linhas; a última não leva vírgula</td></tr>
+<tr><td><code>NULL</code> numa posição</td><td>Deixa aquele campo em branco naquela linha</td></tr>
+<tr><td>Uma linha com erro</td><td>O comando inteiro é recusado (atômico)</td></tr>
+<tr><td><code>… RETURNING id, nome;</code></td><td>Devolve as linhas que acabaram de entrar</td></tr>
+<tr><td><code>.changes on</code> (terminal)</td><td>Mostra quantas linhas cada comando mudou</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite (editor)</th><th>Quer dizer</th></tr>
+<tr><td><code>all VALUES must have the same number of terms</code></td><td>Linhas com quantidades diferentes de valores</td></tr>
+<tr><td><code>near "(": syntax error</code></td><td>Faltou a vírgula entre duas linhas</td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Sobrou vírgula depois da última linha</td></tr>
+<tr><td><code>UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id</code></td><td>O mesmo par (pedido, produto) duas vezes</td></tr>
+<tr><td><code>near "DEFAULT": syntax error</code></td><td>O SQLite não aceita <code>DEFAULT</code> dentro do <code>VALUES</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A vírgula que falta</h3>
+<p>Complete com o caractere que separa as duas linhas:</p>
+<div class="ex-code">INSERT INTO categorias (nome) VALUES ('Pet Shop')<input data-answer="," aria-label="separador"> ('Beleza');</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. A maior categoria é a 8. Que <code>id</code> ganham as linhas de <code>INSERT INTO categorias (nome) VALUES ('A'), ('B'), ('C');</code>?</p>
+<label><input type="radio" name="q2"> Todas ganham o 9</label>
+<label><input type="radio" name="q2"> 9, 10 e 11, na ordem em que foram escritas</label>
+<label><input type="radio" name="q2"> 11, 10 e 9</label>
+<label><input type="radio" name="q2"> Dá erro, porque faltou o <code>id</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. Um <code>INSERT</code> com três linhas tem um erro na terceira. Quantas linhas entram?</p>
+<label><input type="radio" name="q3"> Nenhuma</label>
+<label><input type="radio" name="q3"> As duas primeiras</label>
+<label><input type="radio" name="q3"> A primeira</label>
+<label><input type="radio" name="q3"> As três, com a terceira em branco</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que o pedido novo precisa ser inserido <strong>antes</strong> dos seus itens?</p>
+<label><input type="radio" name="q4"> Porque o SQL só aceita um <code>INSERT</code> por tabela</label>
+<label><input type="radio" name="q4"> Porque os itens ficariam com <code>id</code> menor</label>
+<label><input type="radio" name="q4"> Porque cada item aponta para o pedido (chave estrangeira), e o pedido precisa existir</label>
+<label><input type="radio" name="q4"> Não precisa: a ordem não importa</label>
+</div>
+
+<h3>Missão final: o primeiro pedido da Tainá</h3>
+
+<div class="trysql" data-goal="mudou:pedidos=91;;mudou:itens_pedido=222">
+<p class="try-task"><strong>Missão:</strong> a cliente 28, Tainá Soares, fez o primeiro pedido, no dia <code>2026-10-17</code>, atendida pelo funcionário 2, com frete de <code>9.9</code>. O cabeçalho do pedido já está escrito abaixo (ele vai ganhar o número 91). Acrescente, num <strong>único</strong> <code>INSERT</code> em <code>itens_pedido</code>, os dois itens: <strong>1 Garrafa Térmica 1L</strong> (produto 15, a 54.3) e <strong>2 Cafés Torrados 500g</strong> (produto 35, a 23.85).</p>
+<pre class="script" data-file="pedido-taina.sql">INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (28, 2, '2026-10-17', 9.9);
+
+SELECT * FROM itens_pedido WHERE pedido_id = 91;
+</pre>
+<pre class="solucao" data-file="pedido-taina.sql">INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (28, 2, '2026-10-17', 9.9);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+  (91, 15, 1, 54.3),
+  (91, 35, 2, 23.85);
+
+SELECT * FROM itens_pedido WHERE pedido_id = 91;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Várias linhas num <code>INSERT</code>: <code>VALUES (…), (…), (…);</code>, com a tabela e as colunas escritas uma vez.</li>
+  <li>Vírgula entre as linhas, nenhuma depois da última. Todas as linhas com o mesmo número de valores (use <code>NULL</code> para o branco).</li>
+  <li>Os <code>id</code> automáticos saem em sequência, na ordem das linhas.</li>
+  <li>Um comando é <strong>atômico</strong>: se uma linha falha, nenhuma entra. Vários <code>INSERT</code> seguidos não são: os anteriores ao erro ficam.</li>
+  <li>Linhas em tabelas diferentes (pedido e itens) precisam de comandos separados, na ordem certa por causa das chaves estrangeiras. Para "tudo ou nada" entre vários comandos, use uma transação.</li>
+  <li><code>RETURNING</code> devolve as linhas que acabaram de entrar, com os <code>id</code> escolhidos pelo banco.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -348,7 +348,7 @@ VALUES ('Empório D'Ávila', 'Brasil');
 <pre class="file" data-file="value.sql" data-resultado data-erro>INSERT INTO categorias (nome)
 VALUE ('Pet Shop');
 </pre>
-<p><strong>A mensagem:</strong> <code>near "VALUE": syntax error</code>. É <code>VALUES</code>, no plural. Do mesmo jeito, <code>INSERT categorias …</code> sem o <code>INTO</code> dá <code>near "categorias": syntax error</code>. E dois <code>INSERT</code> seguidos sem o <code>;</code> entre eles dão <code>near "INSERT": syntax error</code>, apontando para o começo do segundo.</p>
+<p><strong>A mensagem:</strong> <code>near "VALUE": syntax error</code>. É <code>VALUES</code>, no plural. (O MySQL aceita <code>VALUE</code> como sinônimo, por isso você pode encontrá-lo em exemplos da internet; o SQLite não aceita.)Do mesmo jeito, <code>INSERT categorias …</code> sem o <code>INTO</code> dá <code>near "categorias": syntax error</code>. E dois <code>INSERT</code> seguidos sem o <code>;</code> entre eles dão <code>near "INSERT": syntax error</code>, apontando para o começo do segundo.</p>
 </div>
 
 <div class="trysql" data-goal="mudou:clientes=31">
