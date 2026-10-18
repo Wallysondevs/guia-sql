@@ -91,8 +91,11 @@
             }
             if (rc2 !== capi.SQLITE_DONE) erroMsg = capi.sqlite3_errmsg(db);
             capi.sqlite3_finalize(pStmt);
-            res.itens.push({ tipo: "select", verbo: verbo, colunas: colunas, linhas: linhas });
-            res.ultimo = res.itens[res.itens.length - 1];
+            // um SELECT que deu erro antes da 1ª linha não desenha tabela vazia (como o CLI)
+            if (!erroMsg || linhas.length) {
+              res.itens.push({ tipo: "select", verbo: verbo, colunas: colunas, linhas: linhas });
+              res.ultimo = res.itens[res.itens.length - 1];
+            }
           } else {
             rc2 = capi.sqlite3_step(pStmt);
             if (rc2 !== capi.SQLITE_DONE && rc2 !== capi.SQLITE_ROW) erroMsg = capi.sqlite3_errmsg(db);
