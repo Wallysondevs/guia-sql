@@ -97,7 +97,8 @@
           var verbo = verboDe(capi.sqlite3_sql(pStmt));
           var nCol = capi.sqlite3_column_count(pStmt);
           var rc2, erroMsg = null;
-          if (nCol > 0) {
+          // ALTER TABLE … ADD COLUMN … CHECK roda um SELECT interno do SQLite: não é resultado do aluno
+          if (nCol > 0 && !/^(ALTER|CREATE|DROP)\b/.test(verbo)) {
             var colunas = [], linhas = [], total = 0;
             for (var i = 0; i < nCol; i++) colunas.push(capi.sqlite3_column_name(pStmt, i));
             while ((rc2 = capi.sqlite3_step(pStmt)) === capi.SQLITE_ROW) {
@@ -116,8 +117,8 @@
               res.ultimo = res.itens[res.itens.length - 1];
             }
           } else {
-            rc2 = capi.sqlite3_step(pStmt);
-            if (rc2 !== capi.SQLITE_DONE && rc2 !== capi.SQLITE_ROW) erroMsg = capi.sqlite3_errmsg(db);
+            while ((rc2 = capi.sqlite3_step(pStmt)) === capi.SQLITE_ROW) { /* vai até o fim */ }
+            if (rc2 !== capi.SQLITE_DONE) erroMsg = capi.sqlite3_errmsg(db);
             capi.sqlite3_finalize(pStmt);
             if (!erroMsg) {
               if (/^(INSERT|UPDATE|DELETE|REPLACE)$/.test(verbo)) res.itens.push({ tipo: "mudanca", verbo: verbo, n: capi.sqlite3_changes(db) });
