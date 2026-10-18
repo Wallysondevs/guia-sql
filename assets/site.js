@@ -565,7 +565,9 @@ var NIVEIS = [
       var tudo = true;
       inputs.forEach(function (i) {
         var certas = respostas(i).map(norm);
-        var ok = certas.indexOf(norm(i.value)) !== -1;
+        // palavras-chave do SQL valem em qualquer caixa (select = SELECT); texto entre aspas, não
+        var v = norm(i.value);
+        var ok = certas.some(function (c) { return c === v || (!/['"]/.test(c) && c.toLowerCase() === v.toLowerCase()); });
         i.classList.toggle("ok", ok);
         i.classList.toggle("bad", !ok);
         if (!ok) tudo = false;
