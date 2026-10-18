@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções Agregadas — referência do SQLite | Guia SQL</title>
+<meta name="description" content="Referência rápida das funções agregadas do SQLite 3.50: count, sum, total, avg, min, max, group_concat, string_agg, json_group_array e json_group_object, com DISTINCT, FILTER e ORDER BY dentro da função. Resultado real de cada exemplo na Loja Aurora, o que cada uma faz com NULL e os nomes no MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções Agregadas</span></h1>
+
+<p class="intro">Uma função <strong>agregada</strong> junta muitas linhas num valor só: quantos clientes, a soma do frete, o preço médio, o produto mais caro. Sozinha, ela resume a tabela inteira; com <code>GROUP BY</code>, resume cada grupo. Esta página reúne todas as funções agregadas do SQLite 3.50, com o resultado real de cada uma na Loja Aurora. As explicações passo a passo estão em <a href="funcoes-agregadas.html">O que são Funções Agregadas</a> e nas aulas de cada função.</p>
+
+<div class="note">
+<strong>Como ler as tabelas</strong>
+<ul>
+  <li><strong>Exemplo</strong> é uma consulta completa; rode-a no editor do guia para conferir.</li>
+  <li><strong>Resultado</strong> foi colhido no editor (SQLite 3.50.4), com o banco da Loja Aurora.</li>
+  <li>Toda agregada, menos <code>count(*)</code>, <strong>ignora</strong> os <em>NULL</em>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="funcoes">As funções</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>count(*)</code></td><td>Conta as <strong>linhas</strong>, com ou sem <em>NULL</em>.</td><td><code>SELECT count(*) FROM clientes;</code></td><td><code>30</code></td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td><code>count(x)</code></td><td>Conta os valores <strong>não nulos</strong> de x.</td><td><code>SELECT count(email) FROM clientes;</code></td><td><code>27</code> (3 clientes não têm email)</td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td><code>count(DISTINCT x)</code></td><td>Conta os valores <strong>diferentes</strong>.</td><td><code>SELECT count(DISTINCT cidade) FROM clientes;</code></td><td><code>8</code></td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td><code>sum(x)</code></td><td>Soma. Se todos os valores são inteiros, o resultado é inteiro.</td><td><code>SELECT sum(estoque) FROM produtos;</code></td><td><code>3301</code></td><td><a href="sum.html">SUM()</a></td></tr>
+<tr><td></td><td>Sem nenhuma linha (ou só <em>NULL</em>): <em>NULL</em></td><td><code>SELECT sum(frete) FROM pedidos WHERE id &gt; 1000;</code></td><td><em>NULL</em></td><td></td></tr>
+<tr><td><code>total(x)</code></td><td>Soma também, mas sempre devolve número real, e <code>0.0</code> quando não há o que somar. Só existe no SQLite.</td><td><code>SELECT total(estoque) FROM produtos;</code></td><td><code>3301.0</code></td><td><a href="sum.html">SUM()</a></td></tr>
+<tr><td></td><td></td><td><code>SELECT total(frete) FROM pedidos WHERE id &gt; 1000;</code></td><td><code>0.0</code></td><td></td></tr>
+<tr><td><code>avg(x)</code></td><td>Média (<em>average</em>). Sempre devolve número real.</td><td><code>SELECT avg(preco) FROM produtos;</code></td><td><code>48.2053333333333</code></td><td><a href="avg.html">AVG()</a></td></tr>
+<tr><td></td><td>Quase sempre se usa com <code>round</code></td><td><code>SELECT round(avg(preco), 2) FROM produtos;</code></td><td><code>48.21</code></td><td></td></tr>
+<tr><td><code>min(x)</code></td><td>O menor valor.</td><td><code>SELECT min(preco) FROM produtos;</code></td><td><code>1.15</code></td><td><a href="min.html">MIN()</a></td></tr>
+<tr><td></td><td>Funciona com texto (ordem alfabética) e com datas</td><td><code>SELECT min(data) FROM pedidos;</code></td><td><code>2024-01-05</code></td><td></td></tr>
+<tr><td><code>max(x)</code></td><td>O maior valor.</td><td><code>SELECT max(preco) FROM produtos;</code></td><td><code>249.9</code></td><td><a href="max.html">MAX()</a></td></tr>
+<tr><td></td><td></td><td><code>SELECT max(data) FROM pedidos;</code></td><td><code>2026-10-14</code></td><td></td></tr>
+<tr><td><code>group_concat(x)</code></td><td>Junta os valores num texto só, separados por vírgula.</td><td><code>SELECT group_concat(nome) FROM categorias;</code></td><td><code>Papelaria,Eletrônicos,Casa e Cozinha,Livros,Brinquedos,Esporte e Lazer,Alimentos,Jardim</code></td><td><a href="group-by.html">GROUP BY</a></td></tr>
+<tr><td><code>group_concat(x, sep)</code></td><td>Com o separador que você escolher.</td><td><code>SELECT group_concat(nome, ' | ') FROM categorias;</code></td><td><code>Papelaria | Eletrônicos | Casa e Cozinha | Livros | Brinquedos | Esporte e Lazer | Alimentos | Jardim</code></td><td></td></tr>
+<tr><td><code>string_agg(x, sep)</code></td><td>Outro nome do <code>group_concat(x, sep)</code> (o separador é obrigatório). É o nome usado no PostgreSQL e no SQL Server.</td><td><code>SELECT string_agg(nome, ', ' ORDER BY nome DESC) FROM categorias;</code></td><td><code>Papelaria, Livros, Jardim, Esporte e Lazer, Eletrônicos, Casa e Cozinha, Brinquedos, Alimentos</code></td><td></td></tr>
+<tr><td><code>json_group_array(x)</code></td><td>Junta os valores numa lista JSON.</td><td><code>SELECT json_group_array(nome) FROM categorias WHERE id &lt;= 3;</code></td><td><code>["Papelaria","Eletrônicos","Casa e Cozinha"]</code></td><td><a href="json.html">JSON no SQL</a></td></tr>
+<tr><td><code>json_group_object(chave, valor)</code></td><td>Monta um objeto JSON com pares chave → valor.</td><td><code>SELECT json_group_object(id, nome) FROM categorias WHERE id &lt;= 3;</code></td><td><code>{"1":"Papelaria","2":"Eletrônicos","3":"Casa e Cozinha"}</code></td><td><a href="json.html">JSON no SQL</a></td></tr>
+</table>
+</div>
+
+<p>Três jeitos de contar, na mesma consulta. A diferença entre <code>count(*)</code> e <code>count(email)</code> são justamente os 3 clientes sem email:</p>
+
+<pre class="file" data-file="contar.sql" data-resultado>SELECT count(*) AS todos,
+       count(email) AS com_email,
+       count(DISTINCT cidade) AS cidades
+FROM clientes;
+</pre>
+
+<hr>
+
+<h2 id="modificadores">Dentro dos parênteses: DISTINCT, ORDER BY e FILTER</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>agregada(DISTINCT x)</code></td><td>Tira as repetições antes de agregar. Só com <strong>um</strong> argumento.</td><td><code>SELECT group_concat(DISTINCT estado) FROM clientes;</code></td><td><code>PI,SP,CE,PE</code></td></tr>
+<tr><td></td><td>Também em <code>avg</code>, <code>sum</code>…</td><td><code>SELECT avg(DISTINCT quantidade), avg(quantidade) FROM itens_pedido;</code></td><td><code>2.0</code> e <code>1.70454545454545</code></td></tr>
+<tr><td><code>agregada(x, sep ORDER BY y)</code></td><td>Escolhe a ordem em que os valores entram. Importa no <code>group_concat</code>, no <code>string_agg</code> e nas de JSON. Sem ele, a ordem não é garantida.</td><td><code>SELECT group_concat(nome, ', ' ORDER BY nome) FROM categorias;</code></td><td><code>Alimentos, Brinquedos, Casa e Cozinha, Eletrônicos, Esporte e Lazer, Jardim, Livros, Papelaria</code></td></tr>
+<tr><td><code>agregada(x) FILTER (WHERE condição)</code></td><td>Só as linhas que passam na condição entram na conta. Permite várias contagens diferentes numa consulta só.</td><td><code>SELECT count(*) FILTER (WHERE vip = 1) AS vips, count(*) FILTER (WHERE vip = 0) AS comuns FROM clientes;</code></td><td><code>5</code> e <code>25</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="filter.sql" data-resultado>SELECT count(*) FILTER (WHERE vip = 1) AS vips,
+       count(*) FILTER (WHERE vip = 0) AS comuns,
+       count(*) AS todos
+FROM clientes;
+</pre>
+
+<hr>
+
+<h2 id="grupos">Com GROUP BY</h2>
+<p>Sem <code>GROUP BY</code>, a agregada resume a tabela inteira numa linha. Com <code>GROUP BY</code>, ela resume <strong>cada grupo</strong>: uma linha por grupo. Os fornecedores, por estado (os dois estrangeiros têm estado <em>NULL</em> e formam um grupo próprio):</p>
+
+<pre class="file" data-file="por-estado.sql" data-resultado>SELECT estado,
+       count(*) AS fornecedores,
+       group_concat(cidade, ', ') AS cidades
+FROM fornecedores
+GROUP BY estado;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde a agregada pode aparecer</th><th>Pode?</th><th>Aula</th></tr>
+<tr><td>na lista do <code>SELECT</code></td><td>sim</td><td><a href="funcoes-agregadas.html">Funções Agregadas</a></td></tr>
+<tr><td>no <code>HAVING</code> (filtrar grupos)</td><td>sim</td><td><a href="having.html">HAVING</a></td></tr>
+<tr><td>no <code>ORDER BY</code></td><td>sim</td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td>no <code>WHERE</code></td><td><strong>não</strong>: <code>misuse of aggregate function SUM()</code></td><td><a href="ref-erros.html#agrupar">Erros Comuns</a></td></tr>
+<tr><td>no <code>GROUP BY</code></td><td><strong>não</strong>: <code>aggregate functions are not allowed in the GROUP BY clause</code></td><td><a href="ref-erros.html#agrupar">Erros Comuns</a></td></tr>
+<tr><td>com <code>OVER (…)</code></td><td>sim: vira uma <strong>função de janela</strong> (veja <a href="ref-funcoes-janela.html">Funções de Janela</a>)</td><td><a href="janelas.html">Funções de Janela</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="null">O que cada uma faz com NULL e com "nenhuma linha"</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Ignora NULL?</th><th>Sem nenhuma linha</th><th>Tipo do resultado</th></tr>
+<tr><td><code>count(*)</code></td><td>não (conta a linha)</td><td><code>0</code></td><td>inteiro</td></tr>
+<tr><td><code>count(x)</code></td><td>sim</td><td><code>0</code></td><td>inteiro</td></tr>
+<tr><td><code>sum(x)</code></td><td>sim</td><td><em>NULL</em></td><td>inteiro se todos forem inteiros; senão, real</td></tr>
+<tr><td><code>total(x)</code></td><td>sim</td><td><code>0.0</code></td><td>sempre real</td></tr>
+<tr><td><code>avg(x)</code></td><td>sim</td><td><em>NULL</em></td><td>sempre real</td></tr>
+<tr><td><code>min(x)</code>, <code>max(x)</code></td><td>sim</td><td><em>NULL</em></td><td>o do valor</td></tr>
+<tr><td><code>group_concat</code>, <code>string_agg</code></td><td>sim</td><td><em>NULL</em></td><td>texto</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="vazio.sql" data-resultado>SELECT count(*), sum(frete), total(frete), avg(frete), max(frete)
+FROM pedidos
+WHERE id &gt; 1000;
+</pre>
+
+<div class="cenario">
+<strong>Média de texto</strong>
+<p>Uma agregada numérica numa coluna de texto não dá erro: os textos que não parecem números valem 0.</p>
+<pre class="file" data-file="media-texto.sql" data-resultado>SELECT avg(nome) FROM clientes;
+</pre>
+<p>Se uma conta deu <code>0.0</code> sem sentido, confira se a coluna é mesmo numérica.</p>
+</div>
+
+<hr>
+
+<h2 id="mediana">Mediana e percentis</h2>
+<p>As funções <code>median(x)</code>, <code>percentile(x, p)</code>, <code>percentile_cont(x, p)</code> e <code>percentile_disc(x, p)</code> entraram no SQLite <strong>principal</strong> só na versão 3.51. No 3.50 do guia, elas existem <strong>no programa <code>sqlite3</code></strong> do terminal (ele as traz como extensão embutida), mas <strong>não no editor</strong> do guia, onde dão <code>no such function: median</code>. No terminal da Ana:</p>
+
+<pre class="term">sqlite&gt; SELECT median(preco) FROM produtos;
+32.5
+sqlite&gt; SELECT percentile(preco, 90), percentile_cont(preco, 0.9), percentile_disc(preco, 0.9) FROM produtos;
+95.396|95.396|89.99</pre>
+
+<dl class="anatomy">
+  <dt>median(preco)</dt><dd>A <strong>mediana</strong>: o preço do meio, quando todos estão em ordem. Metade dos produtos custa menos de 32,50, metade custa mais. Repare como é bem menor que a média (48,21): uns poucos produtos caros puxam a média para cima, mas não a mediana.</dd>
+  <dt>percentile(preco, 90)</dt><dd>O percentil 90, com <code>p</code> de 0 a 100: 90% dos preços estão abaixo dele.</dd>
+  <dt>percentile_cont(preco, 0.9)</dt><dd>O mesmo, com <code>p</code> de 0 a 1. Pode dar um valor "entre" dois preços (aqui, 95,396 não é preço de nenhum produto).</dd>
+  <dt>percentile_disc(preco, 0.9)</dt><dd>Devolve sempre um valor que existe na coluna (89,99).</dd>
+</dl>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>Quase tudo igual, com três diferenças</strong>
+<p><code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code> e <code>MAX</code> são do padrão SQL e existem em todos os bancos. As diferenças estão em juntar textos, no <code>FILTER</code> e na média de inteiros. Conferido nas documentações oficiais; trechos só para comparar.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>SQLite</th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>juntar textos</td><td><code>group_concat(x, ', ' ORDER BY x)</code> ou <code>string_agg</code></td><td><code>GROUP_CONCAT(x ORDER BY x SEPARATOR ', ')</code></td><td><code>string_agg(x, ', ' ORDER BY x)</code></td><td><code>STRING_AGG(x, ', ') WITHIN GROUP (ORDER BY x)</code></td></tr>
+<tr><td>contar só algumas linhas</td><td><code>count(*) FILTER (WHERE …)</code></td><td><code>SUM(CASE WHEN … THEN 1 ELSE 0 END)</code></td><td><code>count(*) FILTER (WHERE …)</code></td><td><code>SUM(CASE WHEN … THEN 1 ELSE 0 END)</code></td></tr>
+<tr><td>média de coluna inteira</td><td>real (<code>1.70454545454545</code>)</td><td>decimal</td><td>numeric (decimal)</td><td><strong>inteiro</strong>: <code>AVG</code> de <code>int</code> devolve <code>int</code> e corta as casas. Use <code>AVG(x * 1.0)</code>.</td></tr>
+<tr><td>soma que nunca é NULL</td><td><code>total(x)</code></td><td colspan="3"><code>COALESCE(SUM(x), 0)</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>)</td></tr>
+<tr><td>mediana</td><td><code>median(x)</code> (3.51+, ou no <code>sqlite3</code>)</td><td>—</td><td><code>percentile_cont(0.5) WITHIN GROUP (ORDER BY x)</code></td><td><code>PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY x) OVER ()</code></td></tr>
+</table>
+</div>
+<p>O jeito com <code>CASE</code> também funciona no SQLite, e serve em qualquer banco (aula <a href="case.html">CASE</a>).</p>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="trysql" data-goal="colunas:categoria_id,produtos,mais_caro;;linhas:8;;contem:3|6|249.9">
+<p class="try-task"><strong>Missão:</strong> monte um resumo do catálogo por categoria: para cada <code>categoria_id</code>, quantos produtos ela tem (coluna <code>produtos</code>) e o preço do mais caro (coluna <code>mais_caro</code>). Quer ir além? Acrescente <code>mais_barato</code> e o preço médio com 2 casas.</p>
+<pre class="script" data-file="resumo.sql">SELECT categoria_id, preco
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="resumo.sql">SELECT categoria_id,
+       count(*) AS produtos,
+       max(preco) AS mais_caro
+FROM produtos
+GROUP BY categoria_id;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>count(*)</code> conta linhas; <code>count(x)</code> conta valores não nulos; <code>count(DISTINCT x)</code> conta valores diferentes.</li>
+  <li><code>sum</code> (NULL quando não há o que somar), <code>total</code> (sempre real, nunca NULL), <code>avg</code> (sempre real), <code>min</code>, <code>max</code>.</li>
+  <li><code>group_concat(x, sep)</code> = <code>string_agg(x, sep)</code>; use <code>ORDER BY</code> dentro dos parênteses para escolher a ordem.</li>
+  <li><code>FILTER (WHERE …)</code> faz várias contagens diferentes numa consulta só.</li>
+  <li>Agregadas vão no <code>SELECT</code>, no <code>HAVING</code> e no <code>ORDER BY</code>; nunca no <code>WHERE</code>.</li>
+  <li><code>median</code> e os percentis: no terminal sim, no editor do guia (SQLite 3.50) não.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
