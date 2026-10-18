@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL JOIN — juntando duas tabelas numa consulta só | Guia SQL</title>
+<meta name="description" content="O que é um JOIN, para quem está começando: juntar cada pedido com o seu cliente numa consulta só, como o banco forma os pares e filtra com ON, tabela.coluna e apelidos de tabela, os quatro tipos de JOIN em diagramas, a forma antiga com vírgula e os erros reais: ambiguous column name, JOIN sem ON e ON nas colunas erradas.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O que é um <span class="hl">JOIN</span></h1>
+
+<p class="intro">Na aula <a href="relacionamentos.html">Tabelas que se Relacionam</a>, a Ana descobriu quem fez o pedido 7 em duas etapas: olhou o <code>cliente_id</code> na tabela de pedidos e depois procurou esse número na tabela de clientes. Para um pedido, tudo bem. Para os 90 pedidos da Loja Aurora, seriam 90 buscas. O <code>JOIN</code> (em inglês, "juntar", "unir") faz essa ponte sozinho: numa consulta só, ele junta cada linha de uma tabela com a linha certa da outra. É o comando que mais se usa em SQL depois do próprio <code>SELECT</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escrever o primeiro <code>JOIN</code>: cada pedido ao lado do nome do cliente.</li>
+  <li>Como o banco pensa um JOIN: forma todos os pares de linhas e guarda só os que a condição <code>ON</code> aprova.</li>
+  <li>Por que se escreve <code>tabela.coluna</code>, e como os <strong>apelidos de tabela</strong> (<code>p</code>, <code>c</code>) encurtam a consulta.</li>
+  <li>Os quatro tipos de JOIN (<code>INNER</code>, <code>LEFT</code>, <code>RIGHT</code>, <code>FULL</code>) em diagramas, com o que cada um faz com os clientes que nunca compraram.</li>
+  <li>A forma antiga, com vírgula e <code>WHERE</code>, que você ainda vai encontrar por aí.</li>
+  <li>Os erros mais comuns, com as mensagens reais: <code>ambiguous column name</code>, o JOIN sem <code>ON</code> e o <code>ON</code> nas colunas erradas.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>; o quadro "Resultado" é o SQLite respondendo.</p>
+
+<hr>
+
+<h2>A ideia: grampear as fichas</h2>
+<p>Pense em duas pilhas de papel: as fichas dos pedidos e as fichas dos clientes. A Ana pega o pedido 1, lê "cliente 1", procura a ficha do cliente 1 e <strong>grampeia</strong> as duas juntas. Depois o pedido 2, "cliente 2", grampeia. E assim por diante, até o último pedido. No fim, ela tem 90 conjuntos grampeados: cada um com os dados do pedido <strong>e</strong> os dados do cliente, lado a lado.</p>
+
+<p>O <code>JOIN</code> é esse grampeador. Você diz quais pilhas juntar (as tabelas) e qual regra decide quais fichas combinam (a condição <code>ON</code>, "quando"). O resultado é uma tabela nova, só para essa consulta, com colunas das duas tabelas.</p>
+
+<hr>
+
+<h2>1. O primeiro JOIN</h2>
+<p>Os 8 primeiros pedidos, cada um com o nome de quem comprou:</p>
+
+<pre class="file" data-file="primeiro-join.sql" data-resultado>SELECT pedidos.id, pedidos.data, clientes.nome
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id
+ORDER BY pedidos.id
+LIMIT 8;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT pedidos.id, pedidos.data, clientes.nome</dt><dd>As colunas do resultado, vindas das <strong>duas</strong> tabelas. O <code>pedidos.</code> e o <code>clientes.</code> na frente dizem de qual tabela é cada coluna.</dd>
+  <dt>FROM pedidos</dt><dd>A primeira tabela, a da esquerda.</dd>
+  <dt>JOIN clientes</dt><dd>A segunda tabela, a da direita, que vai ser "grampeada" na primeira.</dd>
+  <dt>ON pedidos.cliente_id = clientes.id</dt><dd>A regra do grampo: uma linha de pedido combina com uma linha de cliente <strong>quando</strong> o <code>cliente_id</code> do pedido é igual ao <code>id</code> do cliente. É a ligação da chave estrangeira com a chave primária, escrita como condição.</dd>
+  <dt>ORDER BY pedidos.id LIMIT 8</dt><dd>Só para o exemplo ficar curto: os 8 primeiros pedidos (aulas <a href="order-by.html">ORDER BY</a> e <a href="limit.html">LIMIT</a>).</dd>
+</dl>
+
+<p>Repare na linha do pedido 7: lá está o Luís Otávio Brito, a mesma resposta que deu trabalho na aula passada, agora sem copiar número nenhum. Sem o <code>LIMIT</code>, saem as 90 linhas, uma para cada pedido:</p>
+
+<pre class="file" data-file="conta-join.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id;
+</pre>
+
+<div class="trysql" data-goal="colunas:id,data,nome,cidade;;contem:Parnaíba">
+<p class="try-task"><strong>Experimente:</strong> o gerente quer saber também de que <strong>cidade</strong> é cada cliente. Acrescente a coluna <code>clientes.cidade</code> no fim do <code>SELECT</code>. O <code>ON</code> não muda: a ligação continua sendo a mesma.</p>
+<pre class="script" data-file="consulta.sql">SELECT pedidos.id, pedidos.data, clientes.nome
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id
+ORDER BY pedidos.id
+LIMIT 8;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT pedidos.id, pedidos.data, clientes.nome, clientes.cidade
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id
+ORDER BY pedidos.id
+LIMIT 8;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Como o banco pensa: todos os pares, depois o filtro</h2>
+<p>Por dentro, um JOIN funciona (pelo menos na teoria) em dois passos. Para ver os dois, a Ana pegou só os clientes 1 e 2 e só os pedidos 1, 2 e 27. Primeiro passo: <strong>todos os pares possíveis</strong>, cada cliente com cada pedido. Esse "junta tudo com tudo" tem nome, <code>CROSS JOIN</code> ("junção cruzada"):</p>
+
+<pre class="file" data-file="todos-os-pares.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido, p.cliente_id
+FROM clientes AS c
+CROSS JOIN pedidos AS p
+WHERE c.id IN (1, 2)
+  AND p.id IN (1, 2, 27);
+</pre>
+
+<p>(As letras <code>c</code> e <code>p</code> são apelidos das tabelas; a seção 3 explica.) Dois clientes vezes três pedidos dá <strong>6 pares</strong>. Alguns fazem sentido, outros não: o par "Maria Clara Mendes + pedido 1" junta a Maria com um pedido que é do José. Segundo passo: o <code>ON</code> passa por cada par e <strong>só deixa ficar</strong> os que obedecem à regra:</p>
+
+<pre class="file" data-file="so-os-certos.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido, p.cliente_id
+FROM clientes AS c
+JOIN pedidos AS p ON p.cliente_id = c.id
+WHERE c.id IN (1, 2)
+  AND p.id IN (1, 2, 27);
+</pre>
+
+<p>Dos 6 pares, sobraram 3: os que têm <code>cliente_id</code> igual ao <code>id</code> do cliente. O José ficou com os pedidos 1 e 27, a Maria com o pedido 2. Na Loja Aurora inteira, os pares possíveis entre 30 clientes e 90 pedidos são 30 × 90 = 2.700; o <code>ON</code> deixa só 90.</p>
+
+<div class="tip">
+<strong>O banco não monta mesmo os 2.700 pares</strong>
+<p>"Todos os pares, depois o filtro" é a <strong>definição</strong> do resultado, o jeito certo de pensar. Na prática, o SQLite é esperto: para cada pedido, ele vai direto ao cliente certo pela chave primária, como você iria direto à ficha 7 no arquivo. O resultado é o mesmo; só chega muito mais rápido. Como ele faz isso é assunto da aula <a href="explain.html">EXPLAIN QUERY PLAN</a>.</p>
+</div>
+
+<hr>
+
+<h2>3. tabela.coluna e os apelidos de tabela</h2>
+<p>As duas tabelas têm uma coluna <code>id</code>. Se a consulta disser só <code>id</code>, o banco não sabe se é o <code>id</code> do pedido ou o do cliente. Por isso, num JOIN, escreve-se <code>tabela.coluna</code>: <code>pedidos.id</code> é o número do pedido, <code>clientes.id</code> é o número do cliente.</p>
+
+<p>Escrever o nome da tabela toda vez cansa. Assim como uma coluna pode ganhar apelido com <code>AS</code> (aula <a href="aliases.html">Apelidos (AS)</a>), uma <strong>tabela</strong> também pode:</p>
+
+<pre class="file" data-file="apelidos.sql" data-resultado>SELECT p.id, p.data, c.nome
+FROM pedidos AS p
+JOIN clientes AS c ON p.cliente_id = c.id
+WHERE p.id &lt;= 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM pedidos AS p</dt><dd>Dentro desta consulta, a tabela <code>pedidos</code> passa a se chamar <code>p</code>.</dd>
+  <dt>JOIN clientes AS c</dt><dd>E <code>clientes</code> passa a se chamar <code>c</code>.</dd>
+  <dt>p.id, p.data, c.nome, p.cliente_id = c.id</dt><dd>Em todo o resto da consulta, usa-se o apelido. O apelido vale <strong>só nesta consulta</strong>; a tabela continua se chamando <code>pedidos</code> no banco.</dd>
+</dl>
+
+<p>O <code>AS</code> é opcional: <code>FROM pedidos p JOIN clientes c</code> funciona igual, e é assim que você vai ver na maioria dos códigos. O costume é usar a primeira letra (ou as primeiras) do nome da tabela. Este guia, daqui em diante, usa apelidos em quase todo JOIN.</p>
+
+<h3>E se eu pedir <code>SELECT *</code>?</h3>
+<p>O asterisco traz <strong>todas</strong> as colunas das <strong>duas</strong> tabelas, na ordem: primeiro as de <code>pedidos</code>, depois as de <code>clientes</code>.</p>
+
+<pre class="file" data-file="asterisco.sql" data-resultado>SELECT *
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id
+WHERE pedidos.id = 1;
+</pre>
+
+<p>São 13 colunas, e duas delas se chamam <code>id</code>: a primeira é o <code>id</code> do pedido, a sétima é o do cliente. Para olhar rapidamente, serve; numa consulta de verdade, escolha as colunas que você quer, cada uma com a tabela na frente.</p>
+
+<hr>
+
+<h2>4. Os tipos de JOIN</h2>
+<p>O <code>JOIN</code> que você usou até aqui guarda só os pares que combinam. Mas e os clientes 27, 28, 29 e 30, que nunca fizeram pedido? Eles não combinam com nenhum pedido, então simplesmente <strong>somem</strong> do resultado. Às vezes é isso que você quer; às vezes você quer justamente vê-los. Por isso existem quatro tipos de JOIN. Nos diagramas, o círculo da esquerda é a tabela do <code>FROM</code>, o da direita é a do <code>JOIN</code>, e a parte pintada é o que entra no resultado:</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:12px;margin:16px 0">
+
+<figure style="flex:1 1 200px;margin:0;padding:10px;border:1px solid var(--border);border-radius:8px;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="INNER JOIN: só a parte comum aos dois círculos está pintada" style="width:100%;max-width:220px;height:auto">
+<defs><clipPath id="venn-inner"><circle cx="75" cy="60" r="48"/></clipPath></defs>
+<circle cx="125" cy="60" r="48" clip-path="url(#venn-inner)" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="45" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">A</text>
+<text x="155" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">B</text>
+</svg>
+<figcaption><strong><code>INNER JOIN</code></strong><br>só os pares que combinam</figcaption>
+</figure>
+
+<figure style="flex:1 1 200px;margin:0;padding:10px;border:1px solid var(--border);border-radius:8px;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="LEFT JOIN: o círculo da esquerda inteiro está pintado" style="width:100%;max-width:220px;height:auto">
+<circle cx="75" cy="60" r="48" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="45" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">A</text>
+<text x="155" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">B</text>
+</svg>
+<figcaption><strong><code>LEFT JOIN</code></strong><br>tudo de A, mesmo sem par em B</figcaption>
+</figure>
+
+<figure style="flex:1 1 200px;margin:0;padding:10px;border:1px solid var(--border);border-radius:8px;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="RIGHT JOIN: o círculo da direita inteiro está pintado" style="width:100%;max-width:220px;height:auto">
+<circle cx="125" cy="60" r="48" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="45" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">A</text>
+<text x="155" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">B</text>
+</svg>
+<figcaption><strong><code>RIGHT JOIN</code></strong><br>tudo de B, mesmo sem par em A</figcaption>
+</figure>
+
+<figure style="flex:1 1 200px;margin:0;padding:10px;border:1px solid var(--border);border-radius:8px;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="FULL JOIN: os dois círculos inteiros estão pintados" style="width:100%;max-width:220px;height:auto">
+<g style="opacity:.5"><circle cx="75" cy="60" r="48" style="fill:var(--accent)"/><circle cx="125" cy="60" r="48" style="fill:var(--accent)"/></g>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="45" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">A</text>
+<text x="155" y="64" text-anchor="middle" style="fill:currentColor;font-size:13px">B</text>
+</svg>
+<figcaption><strong><code>FULL JOIN</code></strong><br>tudo de A e tudo de B</figcaption>
+</figure>
+
+</div>
+
+<p>O que acontece com quem fica "sem par"? A linha entra no resultado mesmo assim, e as colunas da outra tabela vêm <strong>vazias</strong>: <code>NULL</code>. Veja a diferença entre os dois tipos mais usados, com os clientes 25 a 30. Primeiro o <code>JOIN</code> comum (que é o <code>INNER JOIN</code>):</p>
+
+<pre class="file" data-file="inner.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido
+FROM clientes c
+JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 25
+ORDER BY c.id, p.id;
+</pre>
+
+<p>Seis linhas: os 3 pedidos do Otávio e os 3 da Mirela. Os clientes 27 a 30 sumiram, porque não têm par. Agora trocando só <code>JOIN</code> por <code>LEFT JOIN</code>:</p>
+
+<pre class="file" data-file="left.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 25
+ORDER BY c.id, p.id;
+</pre>
+
+<p>Dez linhas: as mesmas 6, mais uma para cada cliente sem pedido, com <code>pedido</code> em <code>NULL</code>. O <code>LEFT JOIN</code> garante que <strong>todo cliente</strong> (a tabela da esquerda) aparece pelo menos uma vez. Na loja inteira:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Com <code>clientes c … pedidos p</code></th><th>Linhas</th><th>Aula</th></tr>
+<tr><td><code>INNER JOIN</code> (ou só <code>JOIN</code>)</td><td>só os pedidos com o seu cliente</td><td>90</td><td><a href="inner-join.html">INNER JOIN</a></td></tr>
+<tr><td><code>LEFT JOIN</code></td><td>os 90 pares + os 4 clientes sem pedido</td><td>94</td><td><a href="left-join.html">LEFT JOIN</a></td></tr>
+<tr><td><code>RIGHT JOIN</code></td><td>todos os pedidos; como todo pedido tem cliente, ninguém sobra</td><td>90</td><td><a href="right-join.html">RIGHT JOIN</a></td></tr>
+<tr><td><code>FULL JOIN</code></td><td>todo mundo dos dois lados</td><td>94</td><td><a href="full-join.html">FULL JOIN</a></td></tr>
+<tr><td><code>CROSS JOIN</code></td><td>todos os pares, sem condição</td><td>2.700</td><td>(seção 2)</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>O diagrama é um resumo, não a regra</strong>
+<p>Os círculos ajudam a lembrar quem entra no resultado, mas não contam a história toda. Um JOIN não "sobrepõe" duas listas; ele forma <strong>pares</strong>. Por isso o José, com 4 pedidos, aparece em 4 linhas, e nenhum círculo mostra isso. Quando estiver em dúvida, volte à seção 2: todos os pares, depois o filtro do <code>ON</code>, e, nos JOINs com <code>LEFT</code>, <code>RIGHT</code> ou <code>FULL</code>, as linhas sem par voltando com <code>NULL</code> do outro lado.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever o mesmo JOIN</h2>
+<p>As três consultas abaixo dão exatamente o mesmo resultado:</p>
+
+<pre class="file" data-file="join.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id &lt;= 3;
+</pre>
+
+<pre class="file" data-file="inner-join.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p
+INNER JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id &lt;= 3;
+</pre>
+
+<pre class="file" data-file="virgula.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p, clientes c
+WHERE p.cliente_id = c.id
+  AND p.id &lt;= 3;
+</pre>
+
+<p>A terceira é a <strong>forma antiga</strong>: as tabelas separadas por vírgula no <code>FROM</code> (o que dá todos os pares, como o <code>CROSS JOIN</code>) e a condição da ligação misturada com os outros filtros no <code>WHERE</code>. Ela vem dos primeiros tempos do SQL, e você vai encontrá-la em sistemas antigos e em muitas respostas na internet. Funciona, mas tem dois problemas: a ligação fica perdida no meio dos filtros, e, se você esquecer a condição, não há erro nenhum, só milhares de pares a mais.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>JOIN … ON</code></td><td><strong>Use esta.</strong> Curta, e a ligação fica no <code>ON</code>, separada dos filtros do <code>WHERE</code>.</td></tr>
+<tr><td><code>INNER JOIN … ON</code></td><td>Igual à de cima; o <code>INNER</code> só deixa explícito o tipo. Muita gente prefere escrever, para não confundir com o <code>LEFT JOIN</code>.</td></tr>
+<tr><td><code>FROM a, b WHERE …</code></td><td>Saiba ler, mas não escreva código novo assim.</td></tr>
+<tr><td><code>CROSS JOIN</code></td><td>Só quando você quer mesmo todas as combinações (por exemplo, cada tamanho de camiseta com cada cor).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>ambiguous column name: id</code></strong>
+<p>A Ana escreveu as colunas sem dizer de qual tabela eram:</p>
+<pre class="file" data-file="ambigua.sql" data-resultado data-erro>SELECT id, nome, data
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>ambiguous column name: id</code>, "nome de coluna ambíguo: id". As duas tabelas têm uma coluna <code>id</code>, e o SQLite não adivinha qual você quer. Repare que ele não reclamou de <code>nome</code> nem de <code>data</code>: só <code>clientes</code> tem <code>nome</code>, só <code>pedidos</code> tem <code>data</code>, então não há dúvida. Mas não conte com isso: se um dia alguém criar uma coluna <code>data</code> em <code>clientes</code>, a consulta que funcionava passa a dar erro.</p>
+<p><strong>Como consertar:</strong> ponha a tabela (ou o apelido) na frente de <strong>toda</strong> coluna num JOIN: <code>SELECT pedidos.id, clientes.nome, pedidos.data</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:90;;colunas:id,nome,data">
+<p class="try-task"><strong>Missão:</strong> conserte a consulta para ela parar de dar <code>ambiguous column name</code>. A coluna <code>id</code> deve ser o número do <strong>pedido</strong>.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, nome, data
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT pedidos.id, clientes.nome, pedidos.data
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = clientes.id;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>ON</code>: 2.700 linhas</strong>
+<pre class="file" data-file="sem-on.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos
+JOIN clientes;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro. No SQLite, um <code>JOIN</code> sem <code>ON</code> vira um <code>CROSS JOIN</code>: todos os pares, 90 × 30 = 2.700 linhas, cada pedido grudado em cada cliente. Sem o <code>COUNT(*)</code>, você veria o pedido 1 aparecer 30 vezes, uma com cada cliente.</p>
+<p><strong>Como perceber:</strong> desconfie quando um JOIN devolve <strong>muito mais</strong> linhas do que a maior das tabelas. Um JOIN de pedidos com o seu cliente tem de dar no máximo uma linha por pedido.</p>
+<p><strong>Como consertar:</strong> acrescente a ligação: <code>JOIN clientes ON pedidos.cliente_id = clientes.id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>ON</code> ligando as colunas erradas</strong>
+<p>Esse é o erro mais traiçoeiro, porque o resultado <strong>parece</strong> certo. A Ana ligou o <code>id</code> do pedido com o <code>id</code> do cliente:</p>
+<pre class="file" data-file="on-errado.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.id = c.id
+WHERE p.id IN (27, 28, 29, 30);
+</pre>
+<p><strong>O que acontece:</strong> o resultado diz que o pedido 27 é do Paulo Sérgio Andrade. Mas o Paulo é um dos clientes que <strong>nunca fizeram pedido</strong>! A consulta juntou o pedido 27 com o cliente 27 só porque os números são iguais, e isso não quer dizer nada. Veja os donos de verdade, ligando pela chave estrangeira:</p>
+<pre class="file" data-file="on-certo.sql" data-resultado>SELECT p.id, p.cliente_id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id IN (27, 28, 29, 30);
+</pre>
+<p><strong>Como evitar:</strong> o <code>ON</code> liga a <strong>chave estrangeira</strong> de uma tabela com a <strong>chave primária</strong> da outra: <code>pedidos.cliente_id = clientes.id</code>. Se o <code>ON</code> tem <code>id = id</code> dos dois lados, quase sempre está errado.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou o nome da tabela depois de dar o apelido</strong>
+<pre class="file" data-file="apelido-e-nome.sql" data-resultado data-erro>SELECT p.id, clientes.nome
+FROM pedidos AS p
+JOIN clientes AS c ON p.cliente_id = c.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: clientes.nome</code>, "não existe a coluna clientes.nome". A coluna existe, sim; o problema é que, depois de <code>clientes AS c</code>, a tabela só atende pelo apelido dentro desta consulta.</p>
+<p><strong>Como consertar:</strong> use o apelido em todo lugar: <code>c.nome</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Errou o nome da tabela no <code>ON</code></strong>
+<pre class="file" data-file="singular.sql" data-resultado data-erro>SELECT pedidos.id, clientes.nome
+FROM pedidos
+JOIN clientes ON pedidos.cliente_id = cliente.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: cliente.id</code>. A tabela se chama <code>clientes</code>, no plural; <code>cliente</code> é só o começo do nome da coluna <code>cliente_id</code>. É uma confusão comum.</p>
+<p><strong>Como consertar:</strong> <code>ON pedidos.cliente_id = clientes.id</code>, ou use apelidos curtos e não erre mais o nome.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>ON</code> depois do <code>WHERE</code></strong>
+<pre class="file" data-file="on-fora.sql" data-resultado data-erro>SELECT pedidos.id, clientes.nome
+FROM pedidos
+JOIN clientes
+WHERE pedidos.id = 1
+ON pedidos.cliente_id = clientes.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ON": syntax error</code>. O <code>ON</code> faz parte do <code>JOIN</code> e vem colado nele, antes do <code>WHERE</code>.</p>
+<p><strong>Como consertar:</strong> <code>JOIN clientes ON pedidos.cliente_id = clientes.id</code> e só depois <code>WHERE pedidos.id = 1</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>JOIN sem <code>ON</code>.</strong> O MySQL faz como o SQLite: na gramática dele, a condição é opcional no <code>JOIN</code> comum, que vira um <code>CROSS JOIN</code>. Já na gramática do PostgreSQL e do SQL Server, o <code>JOIN</code> comum sempre leva uma condição (<code>ON</code>, e no PostgreSQL também <code>USING</code> ou <code>NATURAL</code>): lá, o esquecimento dá erro de sintaxe em vez de 2.700 linhas.</li>
+  <li><strong>Apelidos.</strong> <code>FROM pedidos AS p</code> e <code>FROM pedidos p</code> funcionam no MySQL, no PostgreSQL e no SQL Server.</li>
+  <li><strong>Os quatro tipos.</strong> PostgreSQL e SQL Server têm <code>INNER</code>, <code>LEFT</code>, <code>RIGHT</code> e <code>FULL</code>. O MySQL não tem <code>FULL JOIN</code>; a aula <a href="full-join.html">FULL JOIN</a> mostra como imitá-lo. O SQLite tem os quatro desde a versão 3.39.0, de 2022.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>FROM a JOIN b ON a.x = b.y</code></td><td>Junta cada linha de <code>a</code> com as linhas de <code>b</code> que obedecem à condição</td></tr>
+<tr><td><code>INNER JOIN</code></td><td>O mesmo que <code>JOIN</code>: só os pares que combinam</td></tr>
+<tr><td><code>LEFT JOIN</code> / <code>RIGHT JOIN</code> / <code>FULL JOIN</code></td><td>Também guardam as linhas sem par (de um lado, do outro ou dos dois), com <code>NULL</code> no lado que faltou</td></tr>
+<tr><td><code>CROSS JOIN</code></td><td>Todos os pares, sem condição (linhas de <code>a</code> × linhas de <code>b</code>)</td></tr>
+<tr><td><code>tabela.coluna</code></td><td>Diz de qual tabela é a coluna; obrigatório quando o nome existe nas duas</td></tr>
+<tr><td><code>FROM pedidos AS p</code> ou <code>FROM pedidos p</code></td><td>Apelido de tabela, válido só nesta consulta</td></tr>
+<tr><td><code>FROM a, b WHERE a.x = b.y</code></td><td>Forma antiga do <code>INNER JOIN</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>ambiguous column name: id</code></td><td>A coluna existe nas duas tabelas; ponha a tabela ou o apelido na frente</td></tr>
+<tr><td><code>no such column: clientes.nome</code></td><td>Você deu apelido à tabela e depois usou o nome dela (ou errou o nome)</td></tr>
+<tr><td><code>near "ON": syntax error</code></td><td>O <code>ON</code> está fora do lugar: ele vem logo depois do <code>JOIN tabela</code></td></tr>
+<tr><td>(nenhuma, mas linhas demais)</td><td>Faltou o <code>ON</code>: virou <code>CROSS JOIN</code></td></tr>
+<tr><td>(nenhuma, mas pares absurdos)</td><td>O <code>ON</code> liga as colunas erradas (por exemplo, <code>p.id = c.id</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o JOIN</h3>
+<p>Complete para juntar cada pedido com o seu cliente:</p>
+<div class="ex-code">SELECT p.id, c.nome FROM pedidos p <input data-answer="JOIN|INNER JOIN|join|inner join" aria-label="palavra-chave"> clientes c <input data-answer="ON|on" aria-label="palavra-chave"> p.cliente_id = c.id;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos pares?</h3>
+<p>A tabela <code>fornecedores</code> tem 6 linhas e <code>categorias</code> tem 8. Quantas linhas devolve <code>SELECT * FROM fornecedores CROSS JOIN categorias;</code>?</p>
+<div class="ex-code">Linhas: <input data-answer="48" aria-label="número de linhas"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A consulta <code>SELECT id FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id;</code> dá <code>ambiguous column name: id</code>. Por quê?</p>
+<label><input type="radio" name="q3"> Porque falta o <code>AS</code> nas tabelas</label>
+<label><input type="radio" name="q3"> Porque as duas tabelas têm uma coluna chamada <code>id</code>, e o SQLite não sabe qual mostrar</label>
+<label><input type="radio" name="q3"> Porque a coluna <code>id</code> não existe</label>
+<label><input type="radio" name="q3"> Porque o <code>ON</code> está escrito ao contrário</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Num <code>JOIN</code> comum entre <code>clientes</code> e <code>pedidos</code>, o que acontece com os clientes que nunca fizeram pedido?</p>
+<label><input type="radio" name="q4"> Aparecem com o pedido 0</label>
+<label><input type="radio" name="q4"> Aparecem uma vez, com <code>NULL</code> nas colunas do pedido</label>
+<label><input type="radio" name="q4"> A consulta dá erro</label>
+<label><input type="radio" name="q4"> Não aparecem: só entram os pares que combinam</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana escreveu <code>FROM pedidos p JOIN clientes c ON p.id = c.id</code>. O que há de errado?</p>
+<label><input type="radio" name="q5"> Nada: o resultado está certo</label>
+<label><input type="radio" name="q5"> Dá erro de sintaxe</label>
+<label><input type="radio" name="q5"> Junta cada pedido com o cliente de mesmo número, que não tem nada a ver com o dono do pedido; o certo é <code>p.cliente_id = c.id</code></label>
+<label><input type="radio" name="q5"> Os apelidos <code>p</code> e <code>c</code> não são permitidos</label>
+</div>
+
+<h3>Missão final: cada produto com a sua categoria</h3>
+
+<div class="trysql" data-goal="colunas:produto,categoria;;linhas:45;;contem:Mouse Sem Fio|Eletrônicos">
+<p class="try-task"><strong>Missão:</strong> a lista de produtos mostra só o número da categoria. Faça um JOIN com a tabela <code>categorias</code> para mostrar, de cada um dos 45 produtos, o nome do produto (coluna <code>produto</code>) e o nome da categoria (coluna <code>categoria</code>). As duas tabelas têm uma coluna <code>nome</code>, então use apelidos e <code>AS</code> para dar os nomes certos às colunas.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, categoria_id
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT p.nome AS produto, c.nome AS categoria
+FROM produtos p
+JOIN categorias c ON p.categoria_id = c.id;
+</pre>
+</div>
+
+<p>Esse é um <code>INNER JOIN</code>, o tipo mais usado de todos. Na próxima aula, <a href="inner-join.html">INNER JOIN</a>, você vai juntar três tabelas de uma vez, somar o que cada cliente gastou e conhecer os atalhos <code>USING</code> e <code>NATURAL JOIN</code> (e por que o segundo é perigoso).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <code>JOIN</code> junta as linhas de duas tabelas numa consulta só: <code>FROM pedidos JOIN clientes ON pedidos.cliente_id = clientes.id</code>.</li>
+  <li>Pense em dois passos: <strong>todos os pares</strong> de linhas (o <code>CROSS JOIN</code>) e depois o <strong>filtro do <code>ON</code></strong>, que deixa só os pares que combinam.</li>
+  <li>O <code>ON</code> liga a chave estrangeira de uma tabela com a chave primária da outra. <code>id = id</code> dos dois lados quase sempre é erro.</li>
+  <li>Num JOIN, escreva <code>tabela.coluna</code>, ou use apelidos de tabela (<code>pedidos p</code>, <code>clientes c</code>). Coluna sem tabela que existe nos dois lados dá <code>ambiguous column name</code>.</li>
+  <li>Há quatro tipos: <code>INNER</code> (só os pares), <code>LEFT</code> (tudo da esquerda), <code>RIGHT</code> (tudo da direita) e <code>FULL</code> (tudo dos dois). Quem fica sem par entra com <code>NULL</code> do outro lado.</li>
+  <li>No SQLite, <code>JOIN</code> sem <code>ON</code> não dá erro: vira <code>CROSS JOIN</code>, com linhas demais.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
