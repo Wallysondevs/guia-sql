@@ -32,7 +32,7 @@
 </ul>
 </div>
 
-<p>Os dados são <strong>inventados</strong> (nomes, emails, telefones, tudo fictício) e <strong>fixos</strong>: são os mesmos para todo mundo, sempre. No editor do guia, cada Rodar começa do banco limpo; no seu computador, é o <code>loja.db</code> que você criou em <a href="instalar.html#banco">Instalar o SQLite</a>. Por isso, todo resultado das aulas é o que você vai ver também.</p>
+<p>Os dados são <strong>inventados</strong> (nomes, emails, telefones, tudo fictício) e <strong>fixos</strong>: são os mesmos para todo mundo, sempre. No editor do guia, cada Rodar começa do banco limpo; no seu computador, é o <code>loja.db</code> que você criou em <a href="instalar.html#banco">Instalar o SQLite</a> (montado pelo <code>aurora.sql</code> ou baixado pronto como <a href="assets/sql/aurora.db" download="loja.db"><code>aurora.db</code></a>: dá o mesmo arquivo). Por isso, todo resultado das aulas é o que você vai ver também.</p>
 
 <hr>
 
@@ -304,6 +304,7 @@ SELECT id, nome, cargo FROM funcionarios WHERE id = 3;
 <tr><td>Editor do guia</td><td><code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td><td><code>PRAGMA table_info(produtos);</code></td><td>Durante as aulas</td></tr>
 <tr><td>Terminal <code>sqlite3</code> com o <code>loja.db</code></td><td><code>.tables</code></td><td><code>.schema produtos</code></td><td>No seu computador (aula <a href="comandos-ponto.html">Comandos de Ponto</a>)</td></tr>
 <tr><td>O arquivo <a href="assets/sql/aurora.sql"><code>aurora.sql</code></a></td><td>Os <code>CREATE TABLE</code> no começo</td><td>Dentro de cada <code>CREATE TABLE</code></td><td>Para ver todos os dados de uma vez, num editor de texto</td></tr>
+<tr><td>O banco pronto, <a href="assets/sql/aurora.db" download="loja.db"><code>aurora.db</code></a></td><td>Abra com <code>sqlite3 aurora.db</code> (ou salve como <code>loja.db</code>) e use <code>.tables</code></td><td><code>.schema</code></td><td>Para ter a loja no seu computador sem montar nada; é o mesmo arquivo que o <code>aurora.sql</code> cria (veja <a href="instalar.html#banco">Instalar o SQLite</a>)</td></tr>
 </table>
 </div>
 

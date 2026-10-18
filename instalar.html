@@ -183,12 +183,12 @@ sudo apt install sqlite3
 <pre class="term">$ cd Downloads
 $ ls -l
 total 24
--rw-r--r-- 1 ana ana 20507 out 18 10:34 aurora.sql
+-rw-r--r-- 1 ana ana 20507 out 18 11:17 aurora.sql
 $ sqlite3 loja.db &lt; aurora.sql
 $ ls -l
-total 96
--rw-r--r-- 1 ana ana 20507 out 18 10:34 aurora.sql
--rw-r--r-- 1 ana ana 73728 out 18 10:34 loja.db
+total 68
+-rw-r--r-- 1 ana ana 20507 out 18 11:17 aurora.sql
+-rw-r--r-- 1 ana ana 45056 out 18 11:17 loja.db
 $ sqlite3 loja.db "SELECT COUNT(*) FROM produtos;"
 45</pre>
 
@@ -196,9 +196,17 @@ $ sqlite3 loja.db "SELECT COUNT(*) FROM produtos;"
   <dt>cd Downloads</dt><dd>Entra na pasta onde está o <code>aurora.sql</code>.</dd>
   <dt>sqlite3 loja.db</dt><dd>Abre o banco <code>loja.db</code>. Se o arquivo não existe, o <code>sqlite3</code> o cria.</dd>
   <dt>&lt; aurora.sql</dt><dd>O sinal <code>&lt;</code> é do terminal, não do SQLite: "em vez do teclado, leia os comandos deste arquivo". O <code>sqlite3</code> executa, um por um, todos os comandos SQL do <code>aurora.sql</code> e termina. Não mostrar nada é bom sinal: deu certo.</dd>
-  <dt>loja.db, 73728</dt><dd>O banco novo, com 73.728 bytes (uns 72 KB): as 7 tabelas da loja cabem num arquivo menor que uma foto de celular.</dd>
+  <dt>loja.db, 45056</dt><dd>O banco novo, com 45.056 bytes (44 KB): as 7 tabelas da loja cabem num arquivo menor que uma foto de celular.</dd>
   <dt>sqlite3 loja.db "SELECT …;"</dt><dd>Outro jeito de usar o <code>sqlite3</code>: com o SQL entre aspas depois do nome do banco, ele roda aquele comando, mostra a resposta e termina. Os 45 produtos estão lá.</dd>
 </dl>
+
+<h3>Ou: baixe o banco pronto</h3>
+<p>Se preferir pular o passo do <code>aurora.sql</code>, o site também tem o banco já montado: <a href="assets/sql/aurora.db" download="loja.db"><code>aurora.db</code></a>. Salve com o nome <code>loja.db</code> (se o navegador salvar como <code>aurora.db</code>, renomeie). É exatamente o mesmo arquivo que o <code>sqlite3 loja.db &lt; aurora.sql</code> cria: o <code>cmp</code>, que compara dois arquivos byte a byte, não acha diferença nenhuma entre o banco que a Ana acabou de montar em <code>Downloads</code> e o <code>aurora.db</code> baixado do site, guardado como <code>~/loja.db</code>:</p>
+
+<pre class="term">$ cmp loja.db ../loja.db &amp;&amp; echo iguais
+iguais</pre>
+
+<p>(O <code>cmp</code> fica calado quando os arquivos são iguais; o <code>&amp;&amp; echo iguais</code> só escreve a palavra quando ele termina sem achar diferença.) Montar pelo <code>aurora.sql</code> tem uma vantagem: dá para abrir o arquivo num editor de texto e ver todo o SQL que criou a loja.</p>
 
 <p>No Windows, os comandos são os mesmos no Prompt de Comando (<code>cmd</code>). No PowerShell, o <code>&lt;</code> não funciona; use <code>sqlite3 loja.db ".read aurora.sql"</code>, que pede ao próprio <code>sqlite3</code> para ler o arquivo. O <code>.read</code> é um "comando de ponto", assunto de <a href="comandos-ponto.html">Comandos de Ponto</a>.</p>
 
@@ -246,7 +254,7 @@ bash: erro de sintaxe próximo ao token inesperado `('</pre>
 <pre class="term">$ sqlite3 lojaa.db "SELECT COUNT(*) FROM produtos;"
 Error: in prepare, no such table: produtos
 $ ls -l lojaa.db
--rw-r--r-- 1 ana ana 0 out 18 10:35 lojaa.db</pre>
+-rw-r--r-- 1 ana ana 0 out 18 11:17 lojaa.db</pre>
 <p><strong>O que aconteceu:</strong> um <code>a</code> a mais no nome do arquivo. O <code>sqlite3</code> não diz "arquivo não encontrado": quando o banco não existe, ele <strong>cria um novo, vazio</strong>, e a consulta falha porque, nesse banco novo, não existe tabela nenhuma. O <code>ls</code> mostra o arquivo novo, com 0 bytes. O <code>Error: in prepare</code> quer dizer que o erro aconteceu na hora de "preparar" o comando, antes de rodar. Com <code>Loja.db</code> (L maiúsculo) acontece o mesmo no Linux e no macOS, onde maiúsculas e minúsculas fazem diferença no nome dos arquivos.</p>
 <p><strong>Como consertar:</strong> apague o arquivo vazio (<code>rm lojaa.db</code>) e use o nome certo. Quando aparecer <code>no such table</code> numa tabela que você tem certeza de que existe, desconfie do nome do arquivo ou da pasta.</p>
 </div>
@@ -347,7 +355,7 @@ SELECT COUNT(*) FROM clientes;
   <li><strong>Linux</strong>: <code>sudo apt install sqlite3</code>. A versão da distribuição pode ser mais antiga (Debian 13: 3.46.1); serve para quase tudo, e o zip do sqlite.org tem a mais nova.</li>
   <li><strong>Windows</strong>: <code>winget install SQLite.SQLite</code>, ou o zip <code>sqlite-tools-win-x64-…</code> do sqlite.org (e a pasta no Path).</li>
   <li><strong>macOS</strong>: já vem; para uma versão nova, <code>brew install sqlite</code> (keg-only: chame pelo caminho do Homebrew).</li>
-  <li>O banco da loja se cria com <code>sqlite3 loja.db &lt; aurora.sql</code>. Para recomeçar do zero, apague o <code>loja.db</code> e rode de novo.</li>
+  <li>O banco da loja se cria com <code>sqlite3 loja.db &lt; aurora.sql</code> (45.056 bytes), ou se baixa pronto (<code>aurora.db</code>, o mesmo arquivo). Para recomeçar do zero, apague o <code>loja.db</code> e rode de novo.</li>
   <li>Nome de banco errado não dá "arquivo não encontrado": o <code>sqlite3</code> cria um banco vazio, e aparece <code>no such table</code>.</li>
 </ul>
 
