@@ -537,10 +537,18 @@ GROUP BY estado;
 
 <div class="cenario">
 <strong>Aspas duplas para texto</strong>
-<p>No SQLite do guia, aspas duplas são sempre nome de coluna, e o editor explica:</p>
+<p>No editor do guia, aspas duplas são sempre nome de coluna, e ele explica:</p>
 <pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE cidade = "Teresina";
 </pre>
-<p>No SQL Server, com <code>QUOTED_IDENTIFIER</code> ligado (o padrão), acontece o mesmo: <code>"Teresina"</code> é lido como nome de coluna e dá o erro 207, <code>Invalid column name 'Teresina'.</code> <strong>Texto vai entre aspas simples, nos dois.</strong></p>
+<p>Já o <code>sqlite3</code> que vem com o Debian (e com muitas outras distribuições), no terminal, é mais tolerante: quando não acha uma coluna com aquele nome, ele trata <code>"Teresina"</code> como texto e roda calado:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT nome FROM clientes WHERE cidade = "Teresina" LIMIT 2;
+José Ribamar Silva
+Maria Clara Mendes
+sqlite&gt; .quit</pre>
+<p>Não confie nisso: no dia em que alguém criar uma coluna chamada <code>Teresina</code>, a consulta muda de sentido sem avisar. E no SQL Server, com <code>QUOTED_IDENTIFIER</code> ligado (o padrão), <code>"Teresina"</code> é lido como nome de coluna e dá o erro 207, <code>Invalid column name 'Teresina'.</code> <strong>Texto vai entre aspas simples, em todos.</strong></p>
 </div>
 
 <div class="cenario">
