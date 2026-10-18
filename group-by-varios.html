@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL GROUP BY com várias colunas — grupos dentro de grupos | Guia SQL</title>
+<meta name="description" content="GROUP BY com duas ou mais colunas para quem está começando: grupos por estado e cidade, por categoria e fornecedor, por funcionário e ano; quantos grupos saem, a ordem das colunas, WHERE e HAVING juntos, a armadilha da coluna esquecida que o SQLite aceita calado, os erros reais e o ROLLUP dos outros bancos.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Agrupando por Mais de uma Coluna</span></h1>
+
+<p class="intro">Na aula <a href="group-by.html">GROUP BY</a>, a Ana descobriu quantos clientes a Loja Aurora tem em cada estado: 14 no Piauí, 7 em São Paulo, 7 no Ceará e 2 em Pernambuco. Agora o gerente quer mais detalhe: "dentro do Piauí, quantos são de Teresina e quantos são do interior?". Para responder, a Ana precisa agrupar por <strong>duas</strong> colunas ao mesmo tempo, estado e cidade. É só listar as duas no <code>GROUP BY</code>, separadas por vírgula, mas há algumas pegadinhas no caminho, e uma delas o SQLite deixa passar sem reclamar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>GROUP BY</code> com duas colunas forma <strong>um grupo para cada combinação</strong> de valores.</li>
+  <li>Quantos grupos saem, e por que esse número é igual ao de um <code>SELECT DISTINCT</code> com as mesmas colunas.</li>
+  <li>Se a ordem das colunas no <code>GROUP BY</code> muda o resultado (os grupos não mudam; a ordem das linhas, sim).</li>
+  <li>Como juntar <code>WHERE</code>, <code>HAVING</code>, <code>ORDER BY</code> e várias funções agregadas na mesma consulta.</li>
+  <li>Agrupar por três colunas e por uma expressão (o ano de uma data).</li>
+  <li>A armadilha da coluna esquecida no <code>GROUP BY</code>, que o SQLite aceita e os outros bancos recusam, e os erros reais de sintaxe.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>: o quadro "Resultado" embaixo de cada código é o SQLite respondendo. As mensagens de erro também são reais.</p>
+
+<hr>
+
+<h2>A ideia: pilhas dentro de pilhas</h2>
+<p>Imagine as 30 fichas de cliente da loja em cima da mesa. Agrupar por estado é separar as fichas em pilhas, uma por estado, e contar cada pilha. Agrupar por estado <strong>e</strong> cidade é pegar cada pilha de estado e dividi-la de novo, por cidade:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Agrupando só por estado</th><th>Agrupando por estado e cidade</th></tr>
+<tr><td>Pilha <strong>PI</strong>: 14 fichas</td><td>PI + Teresina: 10 · PI + Parnaíba: 1 · PI + Picos: 1 · PI + Oeiras: 1 · PI + Floriano: 1</td></tr>
+<tr><td>Pilha <strong>SP</strong>: 7 fichas</td><td>SP + São Paulo: 7</td></tr>
+<tr><td>Pilha <strong>CE</strong>: 7 fichas</td><td>CE + Fortaleza: 7</td></tr>
+<tr><td>Pilha <strong>PE</strong>: 2 fichas</td><td>PE + Recife: 2</td></tr>
+<tr><td><strong>4 pilhas</strong></td><td><strong>8 pilhas</strong></td></tr>
+</table>
+</div>
+
+<p>Duas fichas só caem na mesma pilha se forem iguais <strong>nas duas colunas</strong>: mesmo estado e mesma cidade. Cada combinação diferente vira um grupo, e cada grupo vira <strong>uma linha</strong> do resultado.</p>
+
+<hr>
+
+<h2>1. Relembrando: uma coluna</h2>
+<p>Este é o ponto de partida, da aula <a href="group-by.html">GROUP BY</a>: um grupo por estado.</p>
+
+<pre class="file" data-file="por-estado.sql" data-resultado>SELECT estado, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado;
+</pre>
+
+<p>Quatro linhas, uma por estado. O Piauí tem 14 clientes, mas a consulta não diz de quais cidades eles são.</p>
+
+<hr>
+
+<h2>2. Duas colunas: estado e cidade</h2>
+<p>Para dividir cada estado por cidade, a Ana acrescenta <code>cidade</code> em dois lugares: na lista do <code>SELECT</code> (para a coluna aparecer) e no <code>GROUP BY</code> (para ela entrar na formação dos grupos).</p>
+
+<pre class="file" data-file="estado-cidade.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, cidade;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT estado, cidade,</dt><dd>As duas colunas do agrupamento, para cada linha mostrar <strong>qual grupo</strong> ela representa.</dd>
+  <dt>COUNT(*) AS clientes</dt><dd>A função agregada: conta as linhas de <strong>cada grupo</strong>. O apelido <code>clientes</code> dá nome à coluna (aula <a href="aliases.html">Apelidos (AS)</a>).</dd>
+  <dt>FROM clientes</dt><dd>A tabela de onde vêm as 30 fichas.</dd>
+  <dt>GROUP BY estado, cidade</dt><dd><em>Group by</em> = "agrupe por". Com duas colunas separadas por <strong>vírgula</strong>, o grupo é formado pela <strong>combinação</strong> das duas: linhas com o mesmo estado <strong>e</strong> a mesma cidade ficam juntas.</dd>
+</dl>
+
+<p>Agora o gerente tem a resposta: dos 14 clientes do Piauí, 10 são de Teresina e 4 são do interior (Floriano, Oeiras, Parnaíba e Picos, um em cada). Repare que os números do Piauí somam 10 + 1 + 1 + 1 + 1 = 14, o mesmo total da consulta anterior. Agrupar por mais colunas <strong>não perde nem inventa</strong> linhas: só divide os mesmos clientes em pilhas menores.</p>
+
+<div class="tip">
+<strong>Por que o estado, se a cidade já diz tudo?</strong>
+<p>Na Loja Aurora, cada cidade aparece em um só estado, então agrupar só por <code>cidade</code> daria os mesmos 8 grupos. Mas no Brasil existem cidades com o mesmo nome em estados diferentes (há uma Bom Jesus no Piauí e outra no Rio Grande do Sul, por exemplo). Agrupando por estado <strong>e</strong> cidade, duas cidades homônimas nunca se misturam numa pilha só.</p>
+</div>
+
+<div class="trysql" data-goal="colunas:estado,vip,clientes;;linhas:7">
+<p class="try-task"><strong>Experimente:</strong> a coluna <code>vip</code> vale 1 para os clientes VIP e 0 para os outros. Mude a consulta para contar, em cada estado, quantos clientes são VIP e quantos não são: acrescente <code>vip</code> logo depois de <code>estado</code> no <code>SELECT</code> e no <code>GROUP BY</code>. Devem sair 7 grupos.</p>
+<pre class="script" data-file="consulta.sql">SELECT estado, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT estado, vip, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, vip;
+</pre>
+</div>
+
+<p>Por que 7 e não 8 (4 estados × 2 valores de <code>vip</code>)? Porque Pernambuco não tem nenhum cliente VIP. Isso leva à próxima seção.</p>
+
+<hr>
+
+<h2>3. Quantos grupos saem?</h2>
+<p>O <code>GROUP BY</code> só cria grupos para as combinações que <strong>existem</strong> na tabela. Não existe cliente de "PI + São Paulo", então essa pilha nunca aparece. E também não existe cliente VIP em Pernambuco, então "PE + 1" não aparece no exercício acima.</p>
+
+<p>Uma forma de conferir quantos grupos vão sair é perguntar quais combinações diferentes existem, com o <code>DISTINCT</code> (aula <a href="select-distinct.html">SELECT DISTINCT</a>):</p>
+
+<pre class="file" data-file="combinacoes.sql" data-resultado>SELECT DISTINCT estado, cidade
+FROM clientes;
+</pre>
+
+<p>As mesmas 8 combinações, só que sem a contagem e em outra ordem. A regra vale sempre: <strong>o número de linhas de um <code>GROUP BY a, b</code> é o número de combinações diferentes de <code>a</code> e <code>b</code></strong>. O <code>DISTINCT</code> mostra as combinações; o <code>GROUP BY</code> mostra as combinações <strong>e</strong> calcula alguma coisa sobre cada uma.</p>
+
+<hr>
+
+<h2>4. A ordem das colunas no GROUP BY</h2>
+<p>E se a Ana escrever <code>GROUP BY cidade, estado</code>, invertido?</p>
+
+<pre class="file" data-file="invertido.sql" data-resultado>SELECT cidade, estado, COUNT(*) AS clientes
+FROM clientes
+GROUP BY cidade, estado;
+</pre>
+
+<p>Os <strong>grupos são os mesmos</strong> 8, com as mesmas contagens: "Teresina + PI" é a mesma pilha que "PI + Teresina". O que mudou foi a <strong>ordem das linhas</strong>: desta vez saíram em ordem alfabética de cidade. Isso acontece porque, para montar os grupos, o SQLite costuma ordenar as linhas pelas colunas do <code>GROUP BY</code>, na ordem em que você as escreveu. Mas isso é um detalhe de funcionamento interno, e não uma promessa: o padrão SQL não garante ordem nenhuma sem <code>ORDER BY</code>.</p>
+
+<p>Quando a ordem importa, diga qual você quer com <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>). Aqui, estados em ordem alfabética e, dentro de cada estado, as cidades com mais clientes primeiro:</p>
+
+<pre class="file" data-file="ordenado.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, cidade
+ORDER BY estado, clientes DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>ORDER BY estado,</dt><dd>Primeiro critério: o estado, de A a Z (CE, PE, PI, SP).</dd>
+  <dt>clientes DESC</dt><dd>Desempate dentro do mesmo estado: a contagem, do maior para o menor (<em>descending</em>, "decrescente"). O <code>ORDER BY</code> pode usar o apelido <code>clientes</code> criado no <code>SELECT</code>.</dd>
+</dl>
+
+<p>Teresina, com 10, subiu para o topo do Piauí. As quatro cidades do interior empataram com 1 cliente; entre elas, a ordem não está garantida. Se quiser uma ordem fixa também para os empates, acrescente mais um critério: <code>ORDER BY estado, clientes DESC, cidade</code>.</p>
+
+<hr>
+
+<h2>5. Com WHERE, HAVING e várias contas</h2>
+<p>Tudo o que você já sabe sobre <code>GROUP BY</code> continua valendo com duas colunas. Os produtos da loja têm uma categoria (<code>categoria_id</code>) e um fornecedor (<code>fornecedor_id</code>). A Ana quer saber, só nos eletrônicos (categoria 2), quantos produtos cada fornecedor entrega e a faixa de preço de cada um:</p>
+
+<pre class="file" data-file="eletronicos.sql" data-resultado>SELECT categoria_id, fornecedor_id,
+       COUNT(*)   AS produtos,
+       MIN(preco) AS mais_barato,
+       MAX(preco) AS mais_caro
+FROM produtos
+WHERE categoria_id = 2
+GROUP BY categoria_id, fornecedor_id;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE categoria_id = 2</dt><dd>Filtra as <strong>linhas antes</strong> de agrupar: só os 7 eletrônicos entram nas pilhas.</dd>
+  <dt>GROUP BY categoria_id, fornecedor_id</dt><dd>Uma pilha para cada par categoria + fornecedor que sobrou.</dd>
+  <dt>COUNT(*), MIN(preco), MAX(preco)</dt><dd>Três contas feitas <strong>dentro de cada pilha</strong>: quantos produtos, o preço mais baixo e o mais alto (aulas <a href="min.html">MIN()</a> e <a href="max.html">MAX()</a>).</dd>
+</dl>
+
+<p>O fornecedor 3 entrega 5 eletrônicos, de 29,90 a 189,99; o fornecedor 5 entrega 2. Agora, a loja inteira: quais combinações de categoria e fornecedor têm <strong>3 produtos ou mais</strong>? Filtrar grupos é trabalho do <code>HAVING</code> (aula <a href="having.html">HAVING</a>):</p>
+
+<pre class="file" data-file="having.sql" data-resultado>SELECT categoria_id, fornecedor_id, COUNT(*) AS produtos
+FROM produtos
+GROUP BY categoria_id, fornecedor_id
+HAVING COUNT(*) &gt;= 3
+ORDER BY produtos DESC;
+</pre>
+
+<p>Sem o <code>HAVING</code>, seriam 20 combinações; com ele, sobram 7. A ordem das partes da consulta é sempre a mesma, tenha o <code>GROUP BY</code> uma coluna ou dez:</p>
+
+<ol class="passo">
+  <li><code>FROM</code>: de qual tabela vêm as linhas.</li>
+  <li><code>WHERE</code>: quais linhas entram (antes de agrupar).</li>
+  <li><code>GROUP BY</code>: como as linhas viram pilhas.</li>
+  <li><code>HAVING</code>: quais pilhas ficam (depois de agrupar).</li>
+  <li><code>SELECT</code>: o que mostrar de cada pilha.</li>
+  <li><code>ORDER BY</code>: em que ordem mostrar.</li>
+</ol>
+
+<hr>
+
+<h2>6. Três colunas (ou mais)</h2>
+<p>Não há limite prático: cada coluna nova divide as pilhas mais uma vez. Por estado, cidade <strong>e</strong> VIP:</p>
+
+<pre class="file" data-file="tres.sql" data-resultado>SELECT estado, cidade, vip, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, cidade, vip;
+</pre>
+
+<p>Teresina, que era uma pilha de 10, virou duas: 8 clientes comuns e 2 VIP. O mesmo aconteceu com Fortaleza e São Paulo. Resultado: 11 grupos. Quanto mais colunas, mais pilhas e menores elas ficam. Com colunas demais, cada pilha acaba tendo uma linha só, e o agrupamento deixa de resumir alguma coisa.</p>
+
+<hr>
+
+<h2>7. Agrupando por uma expressão: funcionário e ano</h2>
+<p>A coluna do <code>GROUP BY</code> não precisa ser uma coluna da tabela: pode ser uma <strong>conta</strong> feita em cada linha. Os pedidos têm a data no formato <code>2024-01-05</code>, e os 4 primeiros caracteres são o ano. A função <code>substr(data, 1, 4)</code> recorta esses 4 caracteres (ela tem aula própria em <a href="funcoes-texto.html">Funções de Texto</a>). Com ela, a Ana conta quantos pedidos cada funcionário atendeu em cada ano:</p>
+
+<pre class="file" data-file="func-ano.sql" data-resultado>SELECT funcionario_id,
+       substr(data, 1, 4) AS ano,
+       COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY funcionario_id, ano
+ORDER BY funcionario_id, ano;
+</pre>
+
+<dl class="anatomy">
+  <dt>substr(data, 1, 4) AS ano</dt><dd>Recorta o ano da data e chama o resultado de <code>ano</code>.</dd>
+  <dt>GROUP BY funcionario_id, ano</dt><dd>Agrupa pelo funcionário e pelo <strong>apelido</strong> <code>ano</code>. O SQLite aceita o apelido do <code>SELECT</code> no <code>GROUP BY</code>; nem todo banco aceita (veja "Nos outros bancos").</dd>
+</dl>
+
+<p>São 6 funcionários que atendem pedidos (2 a 7) e 3 anos (2024, 2025 e 2026), e todos atenderam em todos os anos: 6 × 3 = 18 grupos. Por exemplo, o funcionário 2 atendeu 6 pedidos em 2024, 5 em 2025 e 4 em 2026.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever o mesmo GROUP BY</h2>
+<p>As três consultas abaixo formam exatamente os mesmos grupos:</p>
+
+<pre class="file" data-file="nomes.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, cidade;
+</pre>
+
+<pre class="file" data-file="posicoes.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY 1, 2;
+</pre>
+
+<p>Na segunda, <code>1</code> e <code>2</code> querem dizer "a 1ª e a 2ª coluna do <code>SELECT</code>". É curto, mas frágil: se alguém inserir uma coluna no começo do <code>SELECT</code>, o agrupamento muda sem ninguém perceber. A terceira forma é a da seção 7: usar um apelido do <code>SELECT</code> no <code>GROUP BY</code>, que ajuda quando a coluna é uma expressão comprida.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Nomes das colunas</td><td><code>GROUP BY estado, cidade</code></td><td><strong>Sempre que puder.</strong> É claro e funciona em todos os bancos.</td></tr>
+<tr><td>Posições no <code>SELECT</code></td><td><code>GROUP BY 1, 2</code></td><td>Consultas rápidas, de olhar e jogar fora. Evite em consultas que vão ficar guardadas.</td></tr>
+<tr><td>Apelido do <code>SELECT</code></td><td><code>GROUP BY funcionario_id, ano</code></td><td>Quando a coluna é uma expressão (<code>substr(…)</code>). No SQL Server não funciona: lá, repita a expressão.</td></tr>
+<tr><td>Repetir a expressão</td><td><code>GROUP BY funcionario_id, substr(data, 1, 4)</code></td><td>Quando a consulta precisa rodar em qualquer banco.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A coluna esquecida no GROUP BY (o SQLite não avisa!)</strong>
+<p>A Ana pôs <code>cidade</code> no <code>SELECT</code>, mas esqueceu de pô-la no <code>GROUP BY</code>:</p>
+<pre class="file" data-file="esqueceu.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, e um resultado <strong>mentiroso</strong>. A linha "PI | Teresina | 14" parece dizer que Teresina tem 14 clientes, mas Teresina tem 10: o 14 é o Piauí inteiro. Os grupos foram formados só pelo estado (4 pilhas), e para a coluna <code>cidade</code> o SQLite pegou a cidade de <strong>uma linha qualquer</strong> de cada pilha.</p>
+<p>A documentação do SQLite chama isso de <em>bare column</em> ("coluna solta"): uma coluna que não está numa função agregada nem no <code>GROUP BY</code>. Ela diz que o valor vem de uma das linhas do grupo e que "normalmente você não sabe qual linha é usada". O SQLite permite de propósito, para alguns truques avançados; quase sempre, porém, é um esquecimento.</p>
+<p><strong>Como consertar:</strong> toda coluna do <code>SELECT</code> que não está dentro de uma função agregada (<code>COUNT</code>, <code>SUM</code>, <code>MIN</code>…) tem de estar no <code>GROUP BY</code>. Aqui: <code>GROUP BY estado, cidade</code>. Ou, se você queria mesmo o total por estado, tire <code>cidade</code> do <code>SELECT</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:8;;contem:PI|Teresina|10">
+<p class="try-task"><strong>Missão:</strong> esta consulta diz que Teresina tem 14 clientes, o que é falso. Conserte-a para que mostre a contagem certa de cada cidade (8 linhas, com Teresina valendo 10).</p>
+<pre class="script" data-file="consulta.sql">SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado, cidade;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Faltou a vírgula entre as colunas</strong>
+<pre class="file" data-file="sem-virgula.sql" data-resultado data-erro>SELECT estado, cidade, COUNT(*)
+FROM clientes
+GROUP BY estado cidade;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "cidade": syntax error</code>, "perto de <code>cidade</code>: erro de sintaxe". O SQLite leu <code>GROUP BY estado</code> e esperava, em seguida, uma vírgula, um <code>HAVING</code>, um <code>ORDER BY</code> ou o fim da consulta; encontrou outra palavra solta e parou ali. A palavra citada na mensagem é onde ele <strong>percebeu</strong> o problema; o erro de verdade é a falta da vírgula logo antes dela.</p>
+<p><strong>Como consertar:</strong> <code>GROUP BY estado, cidade</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula sobrando no fim</strong>
+<pre class="file" data-file="virgula-sobrando.sql" data-resultado data-erro>SELECT estado, cidade, COUNT(*)
+FROM clientes
+GROUP BY estado, cidade,;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ";": syntax error</code>. Depois de uma vírgula, o SQLite espera mais uma coluna; veio o ponto e vírgula. Acontece muito quando se apaga a última coluna da lista e a vírgula fica para trás.</p>
+<p><strong>Como consertar:</strong> apague a vírgula final: <code>GROUP BY estado, cidade;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>GROUP BY depois do ORDER BY</strong>
+<pre class="file" data-file="fora-de-ordem.sql" data-resultado data-erro>SELECT estado, cidade, COUNT(*)
+FROM clientes
+ORDER BY estado
+GROUP BY estado, cidade;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "GROUP": syntax error</code>. As partes de uma consulta têm ordem fixa: <code>WHERE</code>, depois <code>GROUP BY</code>, depois <code>HAVING</code>, e o <code>ORDER BY</code> por último.</p>
+<p><strong>Como consertar:</strong> troque as duas linhas de lugar: <code>GROUP BY estado, cidade</code> e só então <code>ORDER BY estado</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma função agregada dentro do GROUP BY</strong>
+<pre class="file" data-file="agregada.sql" data-resultado data-erro>SELECT estado, COUNT(*)
+FROM clientes
+GROUP BY estado, COUNT(*);
+</pre>
+<p><strong>A mensagem:</strong> <code>aggregate functions are not allowed in the GROUP BY clause</code>, "funções agregadas não são permitidas na cláusula GROUP BY". Faz sentido: o <code>COUNT(*)</code> conta as linhas de uma pilha, e as pilhas ainda nem existem enquanto o <code>GROUP BY</code> está sendo montado.</p>
+<p><strong>Como consertar:</strong> o <code>GROUP BY</code> leva só as colunas que formam os grupos (<code>GROUP BY estado</code>). As contas ficam no <code>SELECT</code>; para filtrar pelo resultado de uma conta, use <code>HAVING COUNT(*) &gt; …</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Subtotais com ROLLUP (não existe no SQLite)</strong>
+<p>Em outros bancos, <code>ROLLUP</code> acrescenta linhas de subtotal (um total por estado e um total geral). Quem copia uma consulta dessas para o SQLite recebe:</p>
+<pre class="file" data-file="rollup.sql" data-resultado data-erro>SELECT estado, cidade, COUNT(*)
+FROM clientes
+GROUP BY ROLLUP(estado, cidade);
+</pre>
+<p><strong>A mensagem:</strong> <code>no such function: ROLLUP</code>, "não existe a função ROLLUP". O SQLite não conhece <code>ROLLUP</code> e, como ele está escrito com parênteses, acha que é uma função. A forma do MySQL, <code>GROUP BY estado, cidade WITH ROLLUP</code>, dá <code>near "WITH": syntax error</code>.</p>
+<p><strong>Como fazer no SQLite:</strong> rode uma consulta para os detalhes (<code>GROUP BY estado, cidade</code>) e outra para os subtotais (<code>GROUP BY estado</code>). Juntar as duas num resultado só é assunto da aula <a href="union-all.html">UNION ALL</a>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>A coluna esquecida vira erro.</strong> O MySQL, com o modo <code>ONLY_FULL_GROUP_BY</code> (ligado por padrão), recusa a consulta da coluna esquecida com o erro 1055 ("<code>… is not in GROUP BY clause and contains nonaggregated column …</code>"). O SQL Server responde que a coluna "<code>is invalid in the select list because it is not contained in either an aggregate function or the GROUP BY clause</code>". O PostgreSQL também recusa. Só o SQLite aceita calado, por isso o cuidado é seu.</li>
+  <li><strong>Apelido no GROUP BY.</strong> O SQL Server não aceita o apelido do <code>SELECT</code> no <code>GROUP BY</code> (a documentação dele diz isso com todas as letras): repita a expressão inteira.</li>
+  <li><strong>Subtotais.</strong> PostgreSQL e SQL Server têm <code>GROUP BY ROLLUP (estado, cidade)</code>; o MySQL tem <code>GROUP BY estado, cidade WITH ROLLUP</code>. Ilustrativo, não roda no SQLite:</li>
+</ul>
+<pre class="file" data-file="rollup-postgresql.sql (ilustrativo)">SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY ROLLUP (estado, cidade);
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>GROUP BY a, b</code></td><td>Um grupo para cada combinação de <code>a</code> e <code>b</code> que existe na tabela</td></tr>
+<tr><td><code>GROUP BY a, b, c</code></td><td>Divide cada grupo de <code>a, b</code> mais uma vez, por <code>c</code></td></tr>
+<tr><td><code>GROUP BY a, substr(data, 1, 4)</code></td><td>Agrupa por uma coluna e por uma expressão</td></tr>
+<tr><td><code>GROUP BY 1, 2</code></td><td>Agrupa pela 1ª e 2ª colunas do <code>SELECT</code> (frágil)</td></tr>
+<tr><td><code>WHERE …</code></td><td>Filtra linhas <strong>antes</strong> de agrupar</td></tr>
+<tr><td><code>HAVING …</code></td><td>Filtra grupos <strong>depois</strong> de agrupar</td></tr>
+<tr><td><code>ORDER BY a, contagem DESC</code></td><td>Garante a ordem das linhas; sem ele, a ordem não é garantida</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td>(nenhuma, mas o número está errado)</td><td>Uma coluna do <code>SELECT</code> ficou fora do <code>GROUP BY</code> e fora das funções agregadas</td></tr>
+<tr><td><code>near "cidade": syntax error</code></td><td>Faltou a vírgula antes de <code>cidade</code></td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Vírgula sobrando no fim da lista</td></tr>
+<tr><td><code>near "GROUP": syntax error</code></td><td><code>GROUP BY</code> fora do lugar (depois do <code>ORDER BY</code>, por exemplo)</td></tr>
+<tr><td><code>aggregate functions are not allowed in the GROUP BY clause</code></td><td><code>COUNT</code>, <code>SUM</code>… dentro do <code>GROUP BY</code></td></tr>
+<tr><td><code>no such function: ROLLUP</code></td><td>O SQLite não tem <code>ROLLUP</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o agrupamento</h3>
+<p>Complete para contar os produtos de cada combinação de categoria e fornecedor:</p>
+<div class="ex-code">SELECT categoria_id, fornecedor_id, COUNT(*) FROM produtos <input data-answer="GROUP BY|group by" aria-label="cláusula"> categoria_id<input data-answer="," aria-label="separador"> fornecedor_id;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos grupos?</h3>
+<p>Na Loja Aurora, a consulta <code>SELECT estado, cidade, COUNT(*) FROM clientes GROUP BY estado, cidade;</code> devolve quantas linhas?</p>
+<div class="ex-code">Linhas: <input data-answer="8" aria-label="número de linhas"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que muda entre <code>GROUP BY estado, cidade</code> e <code>GROUP BY cidade, estado</code>?</p>
+<label><input type="radio" name="q3"> Os grupos: o segundo forma mais grupos</label>
+<label><input type="radio" name="q3"> As contagens: o segundo conta cada cliente duas vezes</label>
+<label><input type="radio" name="q3"> Nada nos grupos nem nas contagens; só a ordem em que as linhas podem sair</label>
+<label><input type="radio" name="q3"> O segundo dá erro, porque o estado tem de vir primeiro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana rodou <code>SELECT estado, cidade, COUNT(*) FROM clientes GROUP BY estado;</code> no SQLite. O que acontece?</p>
+<label><input type="radio" name="q4"> Erro: a coluna cidade não está no GROUP BY</label>
+<label><input type="radio" name="q4"> Roda sem erro, com 4 linhas, e a cidade de cada linha é de um cliente qualquer daquele estado</label>
+<label><input type="radio" name="q4"> Roda com 8 linhas, uma por cidade</label>
+<label><input type="radio" name="q4"> Roda com 30 linhas, uma por cliente</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana quer, por categoria e fornecedor, só as combinações com estoque total acima de 200. Onde vai a condição <code>SUM(estoque) &gt; 200</code>?</p>
+<label><input type="radio" name="q5"> No <code>WHERE</code></label>
+<label><input type="radio" name="q5"> Dentro do <code>GROUP BY</code></label>
+<label><input type="radio" name="q5"> No <code>ORDER BY</code></label>
+<label><input type="radio" name="q5"> No <code>HAVING</code>, depois do <code>GROUP BY</code></label>
+</div>
+
+<h3>Missão final: o estoque por categoria e fornecedor</h3>
+
+<div class="trysql" data-goal="colunas:categoria_id,fornecedor_id,produtos,estoque;;linhas:5">
+<p class="try-task"><strong>Missão:</strong> o comprador da loja quer uma lista com, para cada combinação de categoria e fornecedor, quantos produtos existem (coluna <code>produtos</code>) e a soma do estoque deles (coluna <code>estoque</code>). Mas só as combinações com <strong>estoque total acima de 200</strong> unidades. As colunas devem ser, nesta ordem: <code>categoria_id</code>, <code>fornecedor_id</code>, <code>produtos</code>, <code>estoque</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT categoria_id, COUNT(*) AS produtos
+FROM produtos
+GROUP BY categoria_id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT categoria_id, fornecedor_id,
+       COUNT(*) AS produtos,
+       SUM(estoque) AS estoque
+FROM produtos
+GROUP BY categoria_id, fornecedor_id
+HAVING SUM(estoque) &gt; 200
+ORDER BY estoque DESC;
+</pre>
+</div>
+
+<p>Os números de categoria e fornecedor ainda são só números: "categoria 1, fornecedor 1" não diz muito ao comprador. Para trocar esses números pelos nomes ("Papelaria", "Distribuidora Piauí Center"), é preciso buscar a informação em <strong>outra tabela</strong>. É exatamente o assunto do próximo grupo de aulas, que começa em <a href="relacionamentos.html">Tabelas que se Relacionam</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>GROUP BY a, b</code> forma <strong>um grupo para cada combinação</strong> de valores de <code>a</code> e <code>b</code>; cada grupo vira uma linha do resultado.</li>
+  <li>Só aparecem as combinações que existem. O número de grupos é o mesmo de <code>SELECT DISTINCT a, b</code>.</li>
+  <li>A ordem das colunas no <code>GROUP BY</code> não muda os grupos. Para garantir a ordem das linhas, use <code>ORDER BY</code>.</li>
+  <li><code>WHERE</code> filtra linhas antes de agrupar; <code>HAVING</code> filtra grupos depois. Várias funções agregadas podem ser calculadas no mesmo agrupamento.</li>
+  <li>Dá para agrupar por três ou mais colunas, e por expressões como <code>substr(data, 1, 4)</code>.</li>
+  <li>Toda coluna do <code>SELECT</code> fora de uma função agregada tem de estar no <code>GROUP BY</code>. O SQLite não reclama se você esquecer, e mostra um valor de uma linha qualquer; os outros bancos dão erro.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
