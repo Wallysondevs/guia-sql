@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL NOT NULL — proibir a coluna vazia | Guia SQL</title>
+<meta name="description" content="A restrição NOT NULL para quem nunca mexeu num banco de dados: como proibir que uma coluna fique vazia, o erro real NOT NULL constraint failed do SQLite no INSERT e no UPDATE, a diferença entre NULL e texto vazio, NOT NULL com DEFAULT e em ALTER TABLE, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">NOT NULL</span></h1>
+
+<p class="intro">Um cliente sem email, tudo bem: na Loja Aurora há três assim. Mas um cliente <strong>sem nome</strong>? Uma avaliação <strong>sem nota</strong>? Isso não faz sentido, e o banco pode impedir que aconteça. A regra que faz isso é o <code>NOT NULL</code> ("não nulo"): escrita no <code>CREATE TABLE</code>, ela proíbe que a coluna fique vazia. Nesta aula você vai usá-la, vai ver a mensagem real que o SQLite dá quando alguém tenta deixar a coluna vazia e vai conhecer a pegadinha do texto vazio, que não é <code>NULL</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma <strong>restrição</strong> (<em>constraint</em>) e onde ela se escreve no <code>CREATE TABLE</code>.</li>
+  <li>Como o <code>NOT NULL</code> recusa um <code>INSERT</code> que esquece a coluna, ou que manda <code>NULL</code> de propósito, e também um <code>UPDATE</code>.</li>
+  <li>A mensagem real: <code>NOT NULL constraint failed: tabela.coluna</code>.</li>
+  <li>Por que o texto vazio <code>''</code> passa pelo <code>NOT NULL</code>, e como barrá-lo também.</li>
+  <li>Como o <code>NOT NULL</code> trabalha junto com o <code>DEFAULT</code>, e o erro de acrescentar uma coluna <code>NOT NULL</code> numa tabela que já tem dados.</li>
+</ul>
+</div>
+
+<p>Se o <code>NULL</code> ainda está nebuloso, reveja antes a aula <a href="null.html">O Valor NULL</a>: <code>NULL</code> é a <strong>ausência</strong> de valor, o "não sei" ou "não informado".</p>
+
+<hr>
+
+<h2>A ideia: o campo obrigatório</h2>
+<p>Todo formulário da internet tem aquele asterisco vermelho: <strong>Nome*</strong>. Campo obrigatório. Se você tenta enviar o formulário com ele em branco, a página recusa e mostra "Preencha este campo". Os outros campos, sem asterisco, podem ficar em branco.</p>
+
+<p>O <code>NOT NULL</code> é o asterisco da coluna. A diferença é que quem confere não é a página: é o próprio banco, a cada <code>INSERT</code> e a cada <code>UPDATE</code>. Não importa se o dado veio de um site, de um aplicativo ou de alguém digitando SQL no terminal; nenhum caminho deixa a coluna vazia.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No formulário</th><th>Na tabela</th></tr>
+<tr><td>Campo com asterisco (obrigatório)</td><td>Coluna com <code>NOT NULL</code></td></tr>
+<tr><td>Campo sem asterisco (opcional)</td><td>Coluna sem <code>NOT NULL</code>: aceita <code>NULL</code></td></tr>
+<tr><td>"Preencha este campo"</td><td><code>NOT NULL constraint failed: …</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A Loja Aurora já usa <code>NOT NULL</code></h2>
+<p>Olhe de novo como foi criada a tabela <code>clientes</code>:</p>
+
+<pre class="file" data-file="clientes.sql" data-resultado>SELECT sql FROM sqlite_schema WHERE name = 'clientes';
+</pre>
+
+<dl class="anatomy">
+  <dt>nome TEXT NOT NULL</dt><dd>O nome é obrigatório. Todo cliente tem nome.</dd>
+  <dt>email TEXT</dt><dd>Sem <code>NOT NULL</code>: o email é opcional. É por isso que os clientes 7, 15 e 23 podem estar sem email.</dd>
+  <dt>cidade, estado, nascimento</dt><dd>Também opcionais.</dd>
+  <dt>vip INTEGER NOT NULL DEFAULT 0</dt><dd>Obrigatório, mas com um <strong>valor padrão</strong>: se ninguém disser, vale 0. O <code>DEFAULT</code> tem aula própria: <a href="default.html">DEFAULT</a>.</dd>
+</dl>
+
+<p>O <code>NOT NULL</code> é uma <strong>restrição</strong> (em inglês, <em>constraint</em>): uma regra presa à coluna, que o banco confere sozinho. Ela vem <strong>depois do tipo</strong>, na mesma linha da coluna. A forma geral é:</p>
+
+<pre class="file" data-file="forma geral">nome_da_coluna  TIPO  NOT NULL
+</pre>
+
+<p>Para ver de uma vez quais colunas são obrigatórias, use o <code>PRAGMA table_info</code> (aula <a href="create-table.html">CREATE TABLE</a>): a coluna <code>notnull</code> do resultado vale 1 nas obrigatórias.</p>
+
+<pre class="file" data-file="quais.sql" data-resultado>SELECT name, type, "notnull" FROM pragma_table_info('produtos');
+</pre>
+
+<p>Em <code>produtos</code>, só o <code>id</code> aparece com 0, e mesmo ele nunca fica vazio, por ser a chave primária (aula <a href="primary-key.html">PRIMARY KEY</a>). Repare nas aspas duplas em <code>"notnull"</code>: <code>NOTNULL</code> também é uma palavra do SQLite, e as aspas duplas avisam que ali é o <strong>nome</strong> de uma coluna (sem elas, dá <code>near "notnull": syntax error</code>).</p>
+
+<hr>
+
+<h2>2. Quando o <code>INSERT</code> esquece a coluna</h2>
+<p>Uma cliente nova se cadastrou, mas o sistema esqueceu de mandar o nome:</p>
+
+<pre class="file" data-file="sem-nome.sql" data-resultado data-erro>INSERT INTO clientes (email, cidade, estado)
+VALUES ('rita@exemplo.com.br', 'Teresina', 'PI');
+</pre>
+
+<dl class="anatomy">
+  <dt>NOT NULL constraint failed</dt><dd>"A restrição NOT NULL falhou": a regra de "não pode ficar vazio" foi quebrada.</dd>
+  <dt>clientes.nome</dt><dd>Onde: tabela <code>clientes</code>, coluna <code>nome</code>, separadas por ponto.</dd>
+</dl>
+
+<p>A coluna <code>nome</code> não estava na lista do <code>INSERT</code>. Uma coluna que fica de fora recebe o seu valor padrão, e o valor padrão de uma coluna sem <code>DEFAULT</code> é <code>NULL</code>. <code>NULL</code> numa coluna <code>NOT NULL</code>: recusado. A linha <strong>não</strong> entra, e a tabela continua com os 30 clientes.</p>
+
+<p>Mandar <code>NULL</code> de propósito dá o mesmo erro:</p>
+
+<pre class="file" data-file="null-explicito.sql" data-resultado data-erro>INSERT INTO clientes (nome, email)
+VALUES (NULL, 'rita@exemplo.com.br');
+</pre>
+
+<p>Com o nome, entra. As colunas opcionais que ficaram de fora viram <code>NULL</code>, e o <code>vip</code>, que tem <code>DEFAULT 0</code>, ganha 0:</p>
+
+<pre class="file" data-file="com-nome.sql" data-resultado>INSERT INTO clientes (nome, email, cidade, estado)
+VALUES ('Rita Moura', 'rita@exemplo.com.br', 'Teresina', 'PI');
+
+SELECT * FROM clientes WHERE id = 31;
+</pre>
+
+<div class="trysql" data-goal="mudou:clientes=31">
+<p class="try-task"><strong>Experimente:</strong> o cadastro do Caio deu erro. Rode, leia a mensagem e conserte o <code>INSERT</code> para que ele entre na tabela (o nome dele é <code>Caio Freitas</code>).</p>
+<pre class="script" data-file="cadastro.sql">INSERT INTO clientes (email, cidade, estado)
+VALUES ('caio.freitas@exemplo.com.br', 'Parnaíba', 'PI');
+
+SELECT * FROM clientes WHERE id = 31;
+</pre>
+<pre class="solucao" data-file="cadastro.sql">INSERT INTO clientes (nome, email, cidade, estado)
+VALUES ('Caio Freitas', 'caio.freitas@exemplo.com.br', 'Parnaíba', 'PI');
+
+SELECT * FROM clientes WHERE id = 31;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Também vale no <code>UPDATE</code></h2>
+<p>O <code>NOT NULL</code> não protege só a entrada. Se alguém tenta "apagar" o nome de um cliente que já existe, o banco recusa do mesmo jeito:</p>
+
+<pre class="file" data-file="update.sql" data-resultado data-erro>UPDATE clientes SET nome = NULL WHERE id = 5;
+</pre>
+
+<p>Já o email, que é opcional, pode ser apagado à vontade (aula <a href="update.html">UPDATE</a>):</p>
+
+<pre class="file" data-file="update-email.sql" data-resultado>UPDATE clientes SET email = NULL WHERE id = 5;
+
+SELECT nome, email FROM clientes WHERE id = 5;
+</pre>
+
+<hr>
+
+<h2>4. Criar uma tabela com <code>NOT NULL</code></h2>
+<p>Na tabela de avaliações, quais colunas são obrigatórias? Uma avaliação tem de dizer <strong>qual produto</strong> e <strong>qual nota</strong>. O comentário é opcional: muita gente só dá as estrelinhas.</p>
+
+<pre class="file" data-file="avaliacoes.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota)
+VALUES (1, 3, 5);
+
+INSERT INTO avaliacoes (id, produto_id, comentario)
+VALUES (2, 3, 'Chegou rápido');
+</pre>
+
+<p>O primeiro <code>INSERT</code> entrou ("1 linha afetada"): tem produto e nota, e o comentário ficou <code>NULL</code>, o que é permitido. O segundo foi recusado: <code>NOT NULL constraint failed: avaliacoes.nota</code>, porque esqueceu a nota.</p>
+
+<p>No terminal, a mensagem é a mesma, com o prefixo <code>Runtime error:</code> e o código <code>(19)</code> no fim (19 é o número que o SQLite usa para "uma restrição foi violada"):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER NOT NULL, nota INTEGER NOT NULL, comentario TEXT);
+sqlite&gt; INSERT INTO avaliacoes (id, produto_id, comentario) VALUES (1, 3, 'Chegou rápido');
+Runtime error: NOT NULL constraint failed: avaliacoes.nota (19)
+sqlite&gt; .quit</pre>
+
+<div class="trysql" data-goal="erro:NOT NULL constraint failed: avaliacoes\.nota">
+<p class="try-task"><strong>Experimente:</strong> esta tabela aceita uma avaliação sem nota (rode e veja o <em>NULL</em> na coluna <code>nota</code>). Mude o <code>CREATE TABLE</code> para que o banco <strong>recuse</strong> esse <code>INSERT</code>. Aqui, o erro em vermelho é a resposta certa.</p>
+<pre class="script" data-file="recusar.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, comentario)
+VALUES (1, 3, 'Chegou rápido');
+
+SELECT * FROM avaliacoes;
+</pre>
+<pre class="solucao" data-file="recusar.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER NOT NULL,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, comentario)
+VALUES (1, 3, 'Chegou rápido');
+
+SELECT * FROM avaliacoes;
+</pre>
+</div>
+
+<h3>Várias linhas: uma ruim derruba todas</h3>
+<p>Um <code>INSERT</code> com várias linhas (aula <a href="insert-varios.html">Inserindo Várias Linhas</a>) é um comando só. Se <strong>uma</strong> das linhas quebra a regra, o comando inteiro é recusado e <strong>nenhuma</strong> entra, nem as boas. A Ana conferiu no terminal:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER NOT NULL, nota INTEGER NOT NULL, comentario TEXT);
+sqlite&gt; INSERT INTO avaliacoes (id, produto_id, nota) VALUES (1, 3, 5), (2, 3, NULL), (3, 1, 4);
+Runtime error: NOT NULL constraint failed: avaliacoes.nota (19)
+sqlite&gt; SELECT count(*) FROM avaliacoes;
+0                        « nem a linha 1 nem a 3 entraram
+sqlite&gt; .quit</pre>
+
+<p>Isso é bom: você nunca fica com metade de um lote gravado e a outra metade perdida. Conserte a linha ruim e rode o lote de novo.</p>
+
+<hr>
+
+<h2>5. A pegadinha: texto vazio não é <code>NULL</code></h2>
+<p>O <code>NOT NULL</code> recusa <code>NULL</code>, e só <code>NULL</code>. Um texto vazio, <code>''</code> (duas aspas simples sem nada no meio), é um texto de verdade, com zero letras. Ele <strong>passa</strong>:</p>
+
+<pre class="file" data-file="vazio.sql" data-resultado>INSERT INTO clientes (nome) VALUES ('');
+
+SELECT id, nome, length(nome) AS letras, nome IS NULL AS e_nulo
+FROM clientes
+WHERE id = 31;
+</pre>
+
+<p>A cliente 31 entrou com um nome de zero letras, e <code>nome IS NULL</code> deu 0 ("falso"). Para o banco, a regra foi cumprida. Do mesmo jeito, passam um nome feito só de espaços (<code>'   '</code>) e até o texto <code>'NULL'</code>, entre aspas, que é só uma palavra de quatro letras.</p>
+
+<p>Para barrar também o texto vazio, junte ao <code>NOT NULL</code> uma regra <code>CHECK</code> (aula <a href="check.html">CHECK</a>):</p>
+
+<pre class="file" data-file="check.sql" data-resultado data-erro>CREATE TABLE contatos (
+    nome TEXT NOT NULL CHECK (trim(nome) &lt;&gt; '')
+);
+
+INSERT INTO contatos (nome) VALUES ('   ');
+</pre>
+
+<dl class="anatomy">
+  <dt>NOT NULL</dt><dd>Barra o <code>NULL</code>.</dd>
+  <dt>CHECK ( … )</dt><dd>"Confira": o valor só entra se a condição for verdadeira.</dd>
+  <dt>trim(nome) &lt;&gt; ''</dt><dd><code>trim()</code> tira os espaços das pontas (aula <a href="funcoes-texto.html">Funções de Texto</a>); o que sobra tem de ser diferente (<code>&lt;&gt;</code>) de vazio. Barra <code>''</code> e <code>'   '</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>6. <code>NOT NULL</code> junto com <code>DEFAULT</code></h2>
+<p>Na tabela <code>produtos</code>, o estoque é <code>INTEGER NOT NULL DEFAULT 0</code>. As duas regras se completam: se o <code>INSERT</code> não falar do estoque, entra 0, e a coluna nunca fica vazia.</p>
+
+<pre class="file" data-file="regua.sql" data-resultado>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Régua 30 cm', 1, 1, 3.5);
+
+SELECT * FROM produtos WHERE id = 46;
+</pre>
+
+<p>Mas o <code>DEFAULT</code> só entra quando a coluna é <strong>deixada de fora</strong>. Mandar <code>NULL</code> de propósito não aciona o padrão: o <code>NOT NULL</code> recusa.</p>
+
+<pre class="file" data-file="regua-null.sql" data-resultado data-erro>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+VALUES ('Régua 30 cm', 1, 1, 3.5, NULL);
+</pre>
+
+<p>E quando faltam <strong>várias</strong> colunas obrigatórias, o SQLite avisa uma por vez: a primeira que ele encontra, na ordem do <code>CREATE TABLE</code>. Conserte essa, rode de novo, e ele mostra a próxima.</p>
+
+<pre class="file" data-file="faltam-varias.sql" data-resultado data-erro>INSERT INTO produtos (nome) VALUES ('Régua 30 cm');
+</pre>
+
+<p>Aqui faltam <code>categoria_id</code>, <code>fornecedor_id</code> e <code>preco</code>, mas a mensagem fala só de <code>categoria_id</code>, a primeira delas.</p>
+
+<hr>
+
+<h2>7. <code>NOT NULL</code> numa tabela que já tem dados</h2>
+<p>A Ana quer acrescentar o telefone dos clientes, obrigatório, com <code>ALTER TABLE</code> (aula <a href="alter-table.html">ALTER TABLE</a>):</p>
+
+<pre class="file" data-file="alter.sql" data-resultado data-erro>ALTER TABLE clientes ADD COLUMN telefone TEXT NOT NULL;
+</pre>
+
+<p>"Não é possível acrescentar uma coluna <code>NOT NULL</code> com valor padrão <code>NULL</code>." Faz sentido: a tabela já tem 30 clientes. Que telefone eles teriam na coluna nova? Sem <code>DEFAULT</code>, seria <code>NULL</code>, e isso a própria regra proíbe. A saída é dar um valor padrão:</p>
+
+<pre class="file" data-file="alter-default.sql" data-resultado>ALTER TABLE clientes ADD COLUMN telefone TEXT NOT NULL DEFAULT '';
+
+SELECT id, nome, telefone FROM clientes LIMIT 3;
+</pre>
+
+<p>Funcionou, mas repare: os 30 clientes ganharam um telefone <code>''</code>, vazio. Isso é o mesmo que não ter telefone, só que disfarçado. Muitas vezes é melhor deixar a coluna opcional e preencher aos poucos.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>NOT NULL</code> depois do tipo</td><td><code>nome TEXT NOT NULL</code></td><td>Sempre: é a forma comum, igual em todos os bancos</td></tr>
+<tr><td><code>NOT NULL</code> com <code>DEFAULT</code></td><td><code>vip INTEGER NOT NULL DEFAULT 0</code></td><td>Colunas obrigatórias que têm um valor "normal" (estoque 0, não VIP)</td></tr>
+<tr><td><code>NOT NULL</code> com <code>CHECK</code></td><td><code>nome TEXT NOT NULL CHECK (trim(nome) &lt;&gt; '')</code></td><td>Quando o texto vazio também é proibido</td></tr>
+<tr><td><code>NULL</code> escrito</td><td><code>email TEXT NULL</code></td><td>Opcional: deixa claro que a coluna aceita vazio. O SQLite aceita a palavra; o efeito é o mesmo de não escrever nada</td></tr>
+<tr><td>Sem nada</td><td><code>email TEXT</code></td><td>A coluna aceita <code>NULL</code> (é o padrão)</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Quais colunas devem ser <code>NOT NULL</code>?</strong>
+<p>Pergunte: "uma linha sem este dado faz sentido?". Um pedido sem cliente, não: <code>cliente_id NOT NULL</code>. Um pedido sem data de entrega, sim, enquanto ele não foi entregue: <code>entregue_em</code> fica opcional. Na dúvida, comece com <code>NOT NULL</code>: é fácil afrouxar a regra depois, e difícil limpar uma tabela cheia de buracos.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu uma coluna obrigatória no <code>INSERT</code></strong>
+<pre class="file" data-file="errado-1.sql" data-resultado data-erro>INSERT INTO produtos (nome, categoria_id, fornecedor_id)
+VALUES ('Régua 30 cm', 1, 1);
+</pre>
+<p><strong>O que diz:</strong> <code>NOT NULL constraint failed: produtos.preco</code>. <strong>Como consertar:</strong> ponha a coluna da mensagem na lista do <code>INSERT</code>, com um valor. Se faltarem outras, o SQLite mostra a próxima quando você rodar de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Mandou <code>NULL</code> achando que o <code>DEFAULT</code> ia entrar</strong>
+<p><code>INSERT … (…, estoque) VALUES (…, NULL)</code> dá <code>NOT NULL constraint failed: produtos.estoque</code>, mesmo com <code>DEFAULT 0</code>. <strong>Como consertar:</strong> para usar o padrão, tire a coluna da lista (ou escreva o valor, <code>0</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>NOT NULL</code> "deixou passar" um nome vazio</strong>
+<p>Não deixou: <code>''</code> não é <code>NULL</code>. <strong>Como consertar:</strong> junte <code>CHECK (trim(nome) &lt;&gt; '')</code> à coluna. Para achar os vazios que já estão na tabela: <code>SELECT * FROM clientes WHERE trim(nome) = '';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas no texto</strong>
+<pre class="file" data-file="aspas.sql" data-resultado data-erro>INSERT INTO clientes (nome, email)
+VALUES ('Rita Moura', "rita@exemplo.com.br");
+</pre>
+<p><strong>O que diz:</strong> <code>no such column: "rita@exemplo.com.br" - should this be a string literal in single-quotes?</code>, "não existe a coluna…: isto deveria ser um texto entre aspas simples?". Não é um erro do <code>NOT NULL</code>, mas aparece muito num <code>INSERT</code>: aspas duplas marcam <strong>nomes</strong> de coluna. <strong>Como consertar:</strong> texto vai entre aspas simples: <code>'rita@exemplo.com.br'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Acrescentar coluna obrigatória sem padrão</strong>
+<p><code>ALTER TABLE clientes ADD COLUMN telefone TEXT NOT NULL;</code> dá <code>Cannot add a NOT NULL column with default value NULL</code>. <strong>Como consertar:</strong> dê um <code>DEFAULT</code> à coluna, ou crie-a opcional.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>NOT NULL</code> é do SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server: <code>nome VARCHAR(100) NOT NULL</code>. O que muda é o texto da mensagem de erro, que cada banco escreve do seu jeito, mas todos recusam a linha. Lembre que o <code>NOT NULL</code> só cuida do vazio: quem barra um texto numa coluna de número é o tipo, que nos outros bancos é sempre conferido e, no SQLite, só numa tabela <code>STRICT</code> (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna TIPO NOT NULL</code></td><td>A coluna não aceita <code>NULL</code> (no <code>INSERT</code> e no <code>UPDATE</code>)</td></tr>
+<tr><td><code>coluna TIPO NOT NULL DEFAULT valor</code></td><td>Obrigatória, com valor automático quando fica fora do <code>INSERT</code></td></tr>
+<tr><td><code>coluna TEXT NOT NULL CHECK (trim(coluna) &lt;&gt; '')</code></td><td>Barra também o texto vazio e o só de espaços</td></tr>
+<tr><td><code>SELECT name, "notnull" FROM pragma_table_info('t');</code></td><td>Mostra quais colunas são obrigatórias (1)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>NOT NULL constraint failed: clientes.nome</code></td><td>A coluna <code>nome</code> de <code>clientes</code> ficou vazia (esquecida ou <code>NULL</code>)</td></tr>
+<tr><td><code>Runtime error: NOT NULL constraint failed: … (19)</code></td><td>O mesmo, no terminal <code>sqlite3</code></td></tr>
+<tr><td><code>Cannot add a NOT NULL column with default value NULL</code></td><td><code>ALTER TABLE … ADD COLUMN … NOT NULL</code> sem <code>DEFAULT</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Nome obrigatório</h3>
+<p>Complete para que toda marca tenha nome:</p>
+<div class="ex-code">CREATE TABLE marcas (id INTEGER, nome TEXT <input data-answer="NOT NULL|not null" aria-label="restrição">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. A mensagem</h3>
+<p>O <code>INSERT INTO avaliacoes (id, nota) VALUES (1, 5);</code> esqueceu o <code>produto_id</code>, que é <code>NOT NULL</code>. Complete a mensagem do SQLite:</p>
+<div class="ex-code">NOT NULL constraint failed: <input data-answer="avaliacoes.produto_id" aria-label="tabela.coluna"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A coluna <code>nome</code> é <code>TEXT NOT NULL</code>. Qual destes valores é <strong>recusado</strong>?</p>
+<label><input type="radio" name="q3"> <code>''</code> (texto vazio)</label>
+<label><input type="radio" name="q3"> <code>'NULL'</code> (entre aspas)</label>
+<label><input type="radio" name="q3"> <code>NULL</code> (sem aspas)</label>
+<label><input type="radio" name="q3"> <code>'   '</code> (só espaços)</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um <code>INSERT</code> com três linhas tem uma delas com <code>NULL</code> numa coluna <code>NOT NULL</code>. Quantas linhas entram?</p>
+<label><input type="radio" name="q4"> Duas: só a errada fica de fora</label>
+<label><input type="radio" name="q4"> Nenhuma: o comando inteiro é recusado</label>
+<label><input type="radio" name="q4"> Três: a errada entra com <code>NULL</code></label>
+<label><input type="radio" name="q4"> Uma: as linhas antes do erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A coluna é <code>estoque INTEGER NOT NULL DEFAULT 0</code>. O que acontece com <code>INSERT INTO produtos (…, estoque) VALUES (…, NULL)</code>?</p>
+<label><input type="radio" name="q5"> Entra 0, o valor padrão</label>
+<label><input type="radio" name="q5"> Entra <code>NULL</code></label>
+<label><input type="radio" name="q5"> O SQLite pergunta qual valor usar</label>
+<label><input type="radio" name="q5"> Dá erro: <code>NOT NULL constraint failed: produtos.estoque</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Na tabela <code>pedidos</code>, qual coluna <strong>não</strong> deveria ser <code>NOT NULL</code>?</p>
+<label><input type="radio" name="q6"> <code>entregue_em</code>, porque o pedido pode ainda não ter sido entregue</label>
+<label><input type="radio" name="q6"> <code>cliente_id</code></label>
+<label><input type="radio" name="q6"> <code>data</code></label>
+<label><input type="radio" name="q6"> <code>funcionario_id</code></label>
+</div>
+
+<h3>Missão final: a tabela de avaliações</h3>
+
+<div class="trysql" data-goal="mudou:avaliacoes=2;;contem:produto_id|INTEGER|1;;contem:nota|INTEGER|1;;contem:comentario|TEXT|0">
+<p class="try-task"><strong>Missão:</strong> deixe obrigatórias as colunas <code>produto_id</code> e <code>nota</code> da tabela de avaliações. O <code>comentario</code> continua opcional, e as duas avaliações abaixo (uma delas sem comentário) têm de continuar entrando. O <code>PRAGMA</code> no fim mostra o 1 nas colunas obrigatórias.</p>
+<pre class="script" data-file="missao.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 3, 5, 'Chegou rápido');
+
+INSERT INTO avaliacoes (id, produto_id, nota)
+VALUES (2, 1, 4);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+<pre class="solucao" data-file="missao.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 3, 5, 'Chegou rápido');
+
+INSERT INTO avaliacoes (id, produto_id, nota)
+VALUES (2, 1, 4);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+</div>
+
+<p>Quer ir além? Acrescente no fim um terceiro <code>INSERT</code>, sem a nota, e veja a mensagem. Depois apague-o: a missão pede que as duas avaliações boas entrem.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>NOT NULL</code> é uma restrição: escrita depois do tipo (<code>nome TEXT NOT NULL</code>), ela proíbe <code>NULL</code> na coluna.</li>
+  <li>Vale no <code>INSERT</code> (coluna esquecida ou <code>NULL</code> de propósito) e no <code>UPDATE</code>. O erro real é <code>NOT NULL constraint failed: tabela.coluna</code>; no terminal, <code>Runtime error: … (19)</code>.</li>
+  <li>Se uma linha de um <code>INSERT</code> com várias linhas falha, nenhuma entra.</li>
+  <li>Texto vazio <code>''</code> não é <code>NULL</code> e passa. Para barrá-lo, junte <code>CHECK (trim(nome) &lt;&gt; '')</code>.</li>
+  <li>Com <code>DEFAULT</code>, a coluna esquecida ganha o valor padrão; mas <code>NULL</code> escrito de propósito continua recusado.</li>
+  <li>Para acrescentar uma coluna <code>NOT NULL</code> numa tabela com dados, ela precisa de um <code>DEFAULT</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
