@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL ANY e ALL — comparar com algum ou com todos | Guia SQL</title>
+<meta name="description" content="ANY, SOME e ALL em SQL para quem está começando: o que significam comparar com algum ou com todos os valores de uma subconsulta, por que o SQLite não tem esses operadores (com os erros reais) e como escrever o mesmo com MAX, MIN, IN, EXISTS e NOT EXISTS, inclusive o caso da lista vazia, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">ANY e ALL</span></h1>
+
+<p class="intro">"Este produto é mais caro que <strong>todos</strong> os da Papelaria?" "Este brinquedo é mais barato que <strong>algum</strong> livro?" São perguntas que comparam um valor com uma <strong>lista inteira</strong>. O SQL padrão tem duas palavras para isso: <code>ALL</code> ("todos") e <code>ANY</code> ("algum", também escrito <code>SOME</code>). Elas existem no MySQL, no PostgreSQL e no SQL Server, e você vai encontrá-las em muito código. Mas há um detalhe importante: <strong>o SQLite não tem <code>ANY</code> nem <code>ALL</code></strong>. Nesta aula você aprende o que elas significam, vê o erro real que o SQLite dá e aprende a escrever a mesma pergunta de um jeito que funciona em <strong>todos</strong> os bancos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que significa <code>&gt; ALL (…)</code> e <code>&gt; ANY (…)</code>, com uma comparação do dia a dia.</li>
+  <li>O erro real que o SQLite dá quando encontra <code>ANY</code> ou <code>ALL</code> numa comparação.</li>
+  <li>Os equivalentes que rodam no SQLite: <code>MAX</code> e <code>MIN</code> numa subconsulta, <code>IN</code>, <code>NOT IN</code>, <code>EXISTS</code> e <code>NOT EXISTS</code>.</li>
+  <li>O caso traiçoeiro da lista <strong>vazia</strong>, em que <code>MAX</code> e <code>ALL</code> respondem diferente.</li>
+  <li>Uma tabela para traduzir qualquer <code>ANY</code>/<code>ALL</code> que você encontrar.</li>
+</ul>
+</div>
+
+<p>Esta aula usa subconsultas: se ainda não leu, veja <a href="subconsultas.html">Subconsultas</a> e <a href="exists.html">EXISTS</a>. Os trechos com <code>ANY</code>/<code>ALL</code> marcados como <strong>ilustrativos</strong> são do MySQL, do PostgreSQL e do SQL Server e não rodam aqui; todos os outros rodam de verdade no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: mais alto que todos, mais alto que algum</h2>
+<p>Pense na fila da escola. O Pedro é <strong>mais alto que todos</strong> da turma B? Para isso ser verdade, basta ele ser mais alto que o <strong>mais alto</strong> da turma B. E ele é <strong>mais alto que algum</strong> aluno da turma B? Basta ser mais alto que o <strong>mais baixo</strong> de lá.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>No SQL padrão</th><th>Basta comparar com…</th></tr>
+<tr><td>Mais alto que <strong>todos</strong></td><td><code>altura &gt; ALL (alturas da turma B)</code></td><td>o maior: <code>MAX</code></td></tr>
+<tr><td>Mais alto que <strong>algum</strong></td><td><code>altura &gt; ANY (alturas da turma B)</code></td><td>o menor: <code>MIN</code></td></tr>
+<tr><td>Mais baixo que <strong>todos</strong></td><td><code>altura &lt; ALL (…)</code></td><td>o menor: <code>MIN</code></td></tr>
+<tr><td>Mais baixo que <strong>algum</strong></td><td><code>altura &lt; ANY (…)</code></td><td>o maior: <code>MAX</code></td></tr>
+</table>
+</div>
+
+<p>Essa tabela é o segredo da aula: quase todo <code>ANY</code>/<code>ALL</code> com <code>&gt;</code> ou <code>&lt;</code> vira uma comparação com <code>MAX</code> ou <code>MIN</code>, que o SQLite tem.</p>
+
+<hr>
+
+<h2>1. Como se escreve nos outros bancos</h2>
+<p>A Ana quer os produtos mais caros que <strong>todos</strong> os produtos da Papelaria (categoria 1). No MySQL, no PostgreSQL ou no SQL Server, ela escreveria assim:</p>
+
+<pre class="file" data-file="MySQL / PostgreSQL / SQL Server (ilustrativo)">SELECT nome, preco
+FROM produtos
+WHERE preco &gt; ALL (SELECT preco FROM produtos WHERE categoria_id = 1);
+</pre>
+
+<dl class="anatomy">
+  <dt>preco &gt; ALL ( … )</dt><dd>"O preço é maior que <strong>cada um</strong> dos valores da subconsulta." O <code>ALL</code> vem sempre logo depois de um operador de comparação (<code>&gt;</code>, <code>&lt;</code>, <code>=</code>, <code>&lt;&gt;</code>, <code>&gt;=</code>, <code>&lt;=</code>).</dd>
+  <dt>(SELECT preco FROM produtos WHERE categoria_id = 1)</dt><dd>A subconsulta: uma lista de <strong>uma coluna</strong>, os 6 preços da Papelaria.</dd>
+</dl>
+
+<p>E para "mais caro que <strong>algum</strong>", troca-se <code>ALL</code> por <code>ANY</code> (ou pelo sinônimo <code>SOME</code>):</p>
+
+<pre class="file" data-file="MySQL / PostgreSQL / SQL Server (ilustrativo)">SELECT nome, preco
+FROM produtos
+WHERE preco &gt; ANY (SELECT preco FROM produtos WHERE categoria_id = 1);
+</pre>
+
+<p>Segundo os manuais desses bancos: <code>ALL</code> é verdadeiro quando a comparação é verdadeira para <strong>todos</strong> os valores da subconsulta; <code>ANY</code> é verdadeiro quando ela é verdadeira para <strong>pelo menos um</strong>. Os manuais do MySQL e do PostgreSQL também dizem que <code>IN</code> é o mesmo que <code>= ANY</code>, e que <code>NOT IN</code> é o mesmo que <code>&lt;&gt; ALL</code>.</p>
+
+<hr>
+
+<h2>2. O que o SQLite faz com ANY e ALL</h2>
+<p>Agora a mesma consulta no editor do guia, que usa o SQLite de verdade:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; ALL (SELECT preco FROM produtos WHERE categoria_id = 1);
+</pre>
+
+<p><strong>A mensagem:</strong> <code>near "ALL": syntax error</code>, "erro de sintaxe perto de ALL". O SQLite conhece a palavra <code>ALL</code> (de <a href="union-all.html">UNION ALL</a> e de <code>SELECT ALL</code>), mas não depois de um <code>&gt;</code>. E com <code>ANY</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; ANY (SELECT preco FROM produtos WHERE categoria_id = 1);
+</pre>
+
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. Repare que o erro agora é "perto de SELECT", e não de <code>ANY</code>. Para o SQLite, <code>ANY</code> não é palavra especial nenhuma: ele leu <code>ANY (</code> como a chamada de uma função chamada <code>ANY</code>, e uma função não pode ter um <code>SELECT</code> solto como argumento. Com <code>SOME</code> acontece o mesmo. Se você puser uma lista de valores no lugar da subconsulta, o SQLite confirma a suspeita:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+WHERE preco = ANY (12.35, 2.79);
+</pre>
+
+<p><code>no such function: ANY</code>, "não existe a função ANY". No terminal do <code>sqlite3</code>, as mensagens vêm com o prefixo <code>Parse error</code> e uma seta mostrando onde o SQLite parou de entender:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT nome FROM produtos WHERE preco &gt; ALL (SELECT preco FROM produtos WHERE categoria_id = 1);
+Parse error: near "ALL": syntax error
+  SELECT nome FROM produtos WHERE preco &gt; ALL (SELECT preco FROM produtos WHERE
+                            error here ---^
+sqlite&gt; SELECT nome FROM produtos WHERE preco &gt; ANY (SELECT preco FROM produtos WHERE categoria_id = 1);
+Parse error: near "SELECT": syntax error
+  SELECT nome FROM produtos WHERE preco &gt; ANY (SELECT preco FROM produtos WHERE
+                                 error here ---^</pre>
+
+<p>A seta (<code>error here ---^</code>, "o erro está aqui") aponta para a palavra onde o SQLite desistiu: o <code>ALL</code> na primeira, o <code>SELECT</code> na segunda.</p>
+
+<hr>
+
+<h2>3. &gt; ALL vira &gt; MAX</h2>
+<p>Volte à fila da escola: ser mais caro que <strong>todos</strong> os produtos da Papelaria é o mesmo que ser mais caro que o <strong>mais caro</strong> deles. O mais caro da Papelaria:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT MAX(preco) FROM produtos WHERE categoria_id = 1;
+</pre>
+
+<p>A mochila, a 89.99. Agora a pergunta da Ana, que roda no SQLite (e em qualquer outro banco):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; (SELECT MAX(preco) FROM produtos WHERE categoria_id = 1)
+ORDER BY preco;
+</pre>
+
+<p>Cinco produtos, todos acima de 89.99: é exatamente o que <code>&gt; ALL</code> devolveria. A subconsulta virou <strong>escalar</strong> (um valor só), do tipo que você viu em <a href="subconsultas.html">Subconsultas</a>.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Luana Castelo;;contem:Marta Lustosa">
+<p class="try-task"><strong>Missão:</strong> a Ana copiou de um tutorial de MySQL uma consulta que acha quem ganha mais que <strong>todos</strong> os vendedores e vendedoras. No SQLite, ela dá erro. Rode para ver, e depois reescreva sem <code>ALL</code>, comparando com o maior salário deles.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; ALL (SELECT salario FROM funcionarios WHERE cargo LIKE 'Vendedor%');
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; (SELECT MAX(salario) FROM funcionarios WHERE cargo LIKE 'Vendedor%');
+</pre>
+</div>
+
+<hr>
+
+<h2>4. &lt; ANY vira &lt; MAX</h2>
+<p>Outra pergunta: quais brinquedos (categoria 5) são mais baratos que <strong>algum</strong> livro (categoria 4)? Na forma padrão, ilustrativa:</p>
+
+<pre class="file" data-file="MySQL / PostgreSQL / SQL Server (ilustrativo)">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+  AND preco &lt; ANY (SELECT preco FROM produtos WHERE categoria_id = 4);
+</pre>
+
+<p>Ser mais barato que <strong>algum</strong> livro é o mesmo que ser mais barato que o livro <strong>mais caro</strong>. Se você é mais barato que o mais caro, pelo menos esse você venceu:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+  AND preco &lt; (SELECT MAX(preco) FROM produtos WHERE categoria_id = 4);
+</pre>
+
+<p>Quatro brinquedos. Só o Jogo de Tabuleiro (79.99) ficou de fora, porque o livro mais caro, o Atlas, custa 58.0. E se a pergunta fosse "mais barato que <strong>todos</strong> os livros" (<code>&lt; ALL</code>)? Aí a comparação seria com o <code>MIN</code>, o livro mais barato (25.45).</p>
+
+<hr>
+
+<h2>5. = ANY é IN, &lt;&gt; ALL é NOT IN</h2>
+<p>Duas combinações têm tradução direta, e você já as conhece:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>SQL padrão (ilustrativo)</th><th>No SQLite</th><th>Lê-se</th></tr>
+<tr><td><code>id = ANY (SELECT produto_id FROM itens_pedido)</code></td><td><code>id IN (SELECT produto_id FROM itens_pedido)</code></td><td>"igual a algum da lista"</td></tr>
+<tr><td><code>id &lt;&gt; ALL (SELECT produto_id FROM itens_pedido)</code></td><td><code>id NOT IN (SELECT produto_id FROM itens_pedido)</code></td><td>"diferente de todos da lista"</td></tr>
+</table>
+</div>
+
+<p>Os produtos que nunca foram vendidos, do jeito que roda aqui:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE id NOT IN (SELECT produto_id FROM itens_pedido);
+</pre>
+
+<p>Lembre a armadilha da aula <a href="subconsultas.html">Subconsultas</a>: se a lista tiver um <code>NULL</code>, o <code>NOT IN</code> (e o <code>&lt;&gt; ALL</code>, que é a mesma coisa) não devolve nada.</p>
+
+<hr>
+
+<h2>6. A tradução que nunca falha: EXISTS e NOT EXISTS</h2>
+<p>O <code>MAX</code>/<code>MIN</code> resolve quase sempre, mas tem um caso em que ele responde diferente do <code>ALL</code>: quando a subconsulta <strong>não devolve nenhuma linha</strong>. Os manuais do MySQL e do PostgreSQL dizem que, com a lista vazia, <code>ALL</code> é <strong>verdadeiro</strong> (não existe nenhum valor que desminta a comparação) e <code>ANY</code> é <strong>falso</strong> (não existe nenhum valor que a confirme).</p>
+
+<p>Veja o <code>MAX</code> com uma categoria que não existe (a 99). A pergunta seria "brinquedos mais caros que todos os produtos da categoria 99":</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+  AND preco &gt; (SELECT MAX(preco) FROM produtos WHERE categoria_id = 99);
+</pre>
+
+<p>Nenhuma linha. Sem produtos, o <code>MAX</code> vale <code>NULL</code>, e nenhuma comparação com <code>NULL</code> é verdadeira. Já o <code>&gt; ALL</code> devolveria os 5 brinquedos. Para ter <strong>exatamente</strong> o comportamento do <code>ALL</code>, escreva a pergunta ao contrário com <code>NOT EXISTS</code>: "não existe nenhum produto da categoria 99 com preço maior ou igual ao meu":</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT b.nome, b.preco
+FROM produtos AS b
+WHERE b.categoria_id = 5
+  AND NOT EXISTS (SELECT 1
+                  FROM produtos AS x
+                  WHERE x.categoria_id = 99
+                    AND x.preco &gt;= b.preco);
+</pre>
+
+<p>Os 5 brinquedos, como o <code>ALL</code> faria. Com uma categoria que existe, a forma <code>NOT EXISTS</code> dá o mesmo que o <code>MAX</code>. Os produtos mais caros que todos da Papelaria, da seção 3:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT p.nome, p.preco
+FROM produtos AS p
+WHERE NOT EXISTS (SELECT 1
+                  FROM produtos AS pap
+                  WHERE pap.categoria_id = 1
+                    AND pap.preco &gt;= p.preco)
+ORDER BY p.preco;
+</pre>
+
+<p>Os mesmos 5 produtos. E o <code>ANY</code> vira <code>EXISTS</code>: "existe algum livro mais caro que este brinquedo":</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT b.nome, b.preco
+FROM produtos AS b
+WHERE b.categoria_id = 5
+  AND EXISTS (SELECT 1
+              FROM produtos AS l
+              WHERE l.categoria_id = 4
+                AND l.preco &gt; b.preco);
+</pre>
+
+<p>Os mesmos 4 brinquedos da seção 4.</p>
+
+<div class="tip">
+<strong>Como inverter a comparação no NOT EXISTS</strong>
+<p><code>x &gt; ALL (lista)</code> quer dizer "não existe na lista um valor que <strong>não</strong> seja menor que x", ou seja, nenhum valor <code>&gt;= x</code>. Por isso o <code>&gt;</code> virou <code>&gt;=</code> dentro do <code>NOT EXISTS</code>: é a comparação oposta. Do mesmo jeito, <code>x &lt; ALL</code> vira <code>NOT EXISTS (… valor &lt;= x)</code>.</p>
+</div>
+
+<hr>
+
+<h2>7. A tabela de tradução</h2>
+<p>Encontrou um <code>ANY</code>/<code>ALL</code> num código ou tutorial? Troque assim. Na coluna do meio, a forma curta, que serve quando a lista nunca é vazia; na da direita, a que se comporta igual ao padrão até com a lista vazia.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>SQL padrão (não roda no SQLite)</th><th>Com MAX/MIN, IN</th><th>Com EXISTS</th></tr>
+<tr><td><code>x &gt; ALL (SELECT v …)</code></td><td><code>x &gt; (SELECT MAX(v) …)</code></td><td><code>NOT EXISTS (SELECT 1 … WHERE v &gt;= x)</code></td></tr>
+<tr><td><code>x &lt; ALL (SELECT v …)</code></td><td><code>x &lt; (SELECT MIN(v) …)</code></td><td><code>NOT EXISTS (SELECT 1 … WHERE v &lt;= x)</code></td></tr>
+<tr><td><code>x &gt; ANY (SELECT v …)</code></td><td><code>x &gt; (SELECT MIN(v) …)</code></td><td><code>EXISTS (SELECT 1 … WHERE v &lt; x)</code></td></tr>
+<tr><td><code>x &lt; ANY (SELECT v …)</code></td><td><code>x &lt; (SELECT MAX(v) …)</code></td><td><code>EXISTS (SELECT 1 … WHERE v &gt; x)</code></td></tr>
+<tr><td><code>x = ANY (SELECT v …)</code></td><td><code>x IN (SELECT v …)</code></td><td><code>EXISTS (SELECT 1 … WHERE v = x)</code></td></tr>
+<tr><td><code>x &lt;&gt; ALL (SELECT v …)</code></td><td><code>x NOT IN (SELECT v …)</code></td><td><code>NOT EXISTS (SELECT 1 … WHERE v = x)</code></td></tr>
+</table>
+</div>
+
+<p>Com <code>&gt;=</code> e <code>&lt;=</code>, a ideia é a mesma: <code>x &gt;= ALL</code> vira <code>x &gt;= (SELECT MAX…)</code>, e assim por diante.</p>
+
+<div class="warning">
+<strong>E os NULL?</strong>
+<p><code>MAX</code> e <code>MIN</code> ignoram os <code>NULL</code> da lista. Já no padrão, segundo os mesmos manuais, um <code>NULL</code> na lista pode deixar o <code>ALL</code> e o <code>ANY</code> "desconhecidos" em vez de verdadeiros, e aí a linha não passa no <code>WHERE</code>. Nos dados da Loja Aurora, as colunas usadas nesta aula (<code>preco</code>, <code>salario</code>) não têm <code>NULL</code>. Na sua tabela, se a coluna puder ter <code>NULL</code>, filtre com <code>WHERE v IS NOT NULL</code> dentro da subconsulta e você não precisa se preocupar.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>ALL</code> depois de uma comparação</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; ALL (SELECT salario FROM funcionarios WHERE cargo = 'Estoquista');
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ALL": syntax error</code>. O SQLite não tem <code>ALL</code> em comparações.</p>
+<p><strong>Como consertar:</strong> <code>salario &gt; (SELECT MAX(salario) …)</code>, ou <code>NOT EXISTS</code> com a comparação invertida.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ANY</code> ou <code>SOME</code> antes de uma subconsulta</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+WHERE id = SOME (SELECT produto_id FROM itens_pedido);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. O SQLite tratou <code>SOME (</code> como uma função e não esperava um <code>SELECT</code> ali dentro.</p>
+<p><strong>Como consertar:</strong> <code>= ANY</code> e <code>= SOME</code> são o <code>IN</code>: <code>WHERE id IN (SELECT produto_id FROM itens_pedido)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Trocou MAX por MIN</strong>
+<p>A Ana queria os produtos mais caros que <strong>todos</strong> os da Papelaria e usou o <code>MIN</code>:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COUNT(*) AS produtos
+FROM produtos
+WHERE preco &gt; (SELECT MIN(preco) FROM produtos WHERE categoria_id = 1);
+</pre>
+<p><strong>O que acontece:</strong> 44 produtos, quase a loja inteira, sem erro. Ela perguntou "mais caro que <strong>algum</strong>" (o lápis, de 1.15), e não "mais caro que todos".</p>
+<p><strong>Como consertar:</strong> lembre a fila da escola. Mais que <strong>todos</strong> → compare com o extremo do outro lado (<code>&gt;</code> com <code>MAX</code>, <code>&lt;</code> com <code>MIN</code>). Mais que <strong>algum</strong> → com o extremo do mesmo lado (<code>&gt;</code> com <code>MIN</code>, <code>&lt;</code> com <code>MAX</code>).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O MySQL, o PostgreSQL e o SQL Server têm <code>ANY</code>, <code>SOME</code> e <code>ALL</code> depois de um operador de comparação, sempre com uma subconsulta de <strong>uma coluna</strong>. O manual do MySQL avisa que <code>= ANY</code> só funciona com subconsulta, não com uma lista de valores escrita à mão (para isso, use <code>IN (1, 2, 3)</code>). As traduções desta aula, com <code>MAX</code>/<code>MIN</code>, <code>IN</code> e <code>EXISTS</code>, rodam em todos esses bancos também, então são a escolha mais segura para quem escreve SQL que precisa funcionar em qualquer lugar.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>No SQLite</th></tr>
+<tr><td><code>x &gt; ALL (subconsulta)</code></td><td>Maior que todos os valores</td><td>Não existe: <code>x &gt; (SELECT MAX …)</code></td></tr>
+<tr><td><code>x &gt; ANY (subconsulta)</code></td><td>Maior que algum valor</td><td>Não existe: <code>x &gt; (SELECT MIN …)</code></td></tr>
+<tr><td><code>SOME</code></td><td>Sinônimo de <code>ANY</code></td><td>Não existe</td></tr>
+<tr><td><code>x = ANY (…)</code></td><td>Igual a algum</td><td><code>x IN (…)</code></td></tr>
+<tr><td><code>x &lt;&gt; ALL (…)</code></td><td>Diferente de todos</td><td><code>x NOT IN (…)</code></td></tr>
+<tr><td>Lista vazia</td><td><code>ALL</code> é verdadeiro, <code>ANY</code> é falso</td><td>Use <code>NOT EXISTS</code> / <code>EXISTS</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "ALL": syntax error</code></td><td><code>ALL</code> depois de comparação: não existe no SQLite</td></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td><code>ANY (SELECT …)</code> / <code>SOME (SELECT …)</code>: o SQLite leu como função</td></tr>
+<tr><td><code>no such function: ANY</code></td><td><code>ANY (valor, valor)</code>: não existe essa função</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Mais caro que todos</h3>
+<p>Complete a tradução de <code>preco &gt; ALL (SELECT preco FROM produtos WHERE categoria_id = 2)</code>:</p>
+<div class="ex-code">WHERE preco &gt; (SELECT <input data-answer="MAX(preco)|max(preco)" aria-label="função"> FROM produtos WHERE categoria_id = 2)</div>
+</div>
+
+<div class="exercise">
+<h3>2. Igual a algum</h3>
+<p>Qual operador do SQLite faz o papel de <code>= ANY</code>?</p>
+<div class="ex-code">WHERE id <input data-answer="IN|in" aria-label="operador"> (SELECT produto_id FROM itens_pedido)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que o SQLite responde a <code>WHERE preco &gt; ALL (SELECT preco FROM produtos)</code>?</p>
+<label><input type="radio" name="q3"> Nenhuma linha</label>
+<label><input type="radio" name="q3"> O produto mais caro</label>
+<label><input type="radio" name="q3"> <code>near "ALL": syntax error</code>, porque ele não tem <code>ALL</code> em comparações</label>
+<label><input type="radio" name="q3"> Todas as linhas</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. "Mais barato que <strong>algum</strong> livro" (<code>&lt; ANY</code>) é o mesmo que:</p>
+<label><input type="radio" name="q4"> mais barato que o livro mais barato (<code>&lt; MIN</code>)</label>
+<label><input type="radio" name="q4"> mais barato que o livro mais caro (<code>&lt; MAX</code>)</label>
+<label><input type="radio" name="q4"> igual a algum livro (<code>IN</code>)</label>
+<label><input type="radio" name="q4"> diferente de todos os livros (<code>NOT IN</code>)</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Se a subconsulta não devolver nenhuma linha, qual tradução de <code>x &gt; ALL (…)</code> continua dando o mesmo resultado do padrão?</p>
+<label><input type="radio" name="q5"> <code>x &gt; (SELECT MAX …)</code></label>
+<label><input type="radio" name="q5"> <code>x &gt; (SELECT MIN …)</code></label>
+<label><input type="radio" name="q5"> <code>x IN (…)</code></label>
+<label><input type="radio" name="q5"> <code>NOT EXISTS (SELECT 1 … WHERE v &gt;= x)</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. <code>NOT IN</code> é o mesmo que:</p>
+<label><input type="radio" name="q6"> <code>&lt;&gt; ALL</code></label>
+<label><input type="radio" name="q6"> <code>&lt;&gt; ANY</code></label>
+<label><input type="radio" name="q6"> <code>= ALL</code></label>
+<label><input type="radio" name="q6"> <code>NOT EXISTS</code> sem ligação</label>
+</div>
+
+<h3>Missão final: traduza o ANY</h3>
+
+<div class="trysql" data-goal="linhas:4;;contem:Bola de Vinil Colorida;;contem:Boneca de Pano Maria Flor">
+<p class="try-task"><strong>Missão:</strong> este código veio de um banco que tem <code>ANY</code> e procura os brinquedos (categoria 5) mais baratos que <strong>algum</strong> livro (categoria 4). No SQLite, ele dá erro. Reescreva-o de um jeito que funcione: com <code>MAX</code> ou com <code>EXISTS</code>, você escolhe.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+  AND preco &lt; ANY (SELECT preco FROM produtos WHERE categoria_id = 4);
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+  AND preco &lt; (SELECT MAX(preco) FROM produtos WHERE categoria_id = 4);
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>x &gt; ALL (subconsulta)</code>: maior que <strong>todos</strong>; <code>x &gt; ANY (subconsulta)</code> (ou <code>SOME</code>): maior que <strong>algum</strong>. Existem no MySQL, no PostgreSQL e no SQL Server.</li>
+  <li><strong>O SQLite não tem <code>ANY</code>, <code>SOME</code> nem <code>ALL</code> em comparações.</strong> Os erros: <code>near "ALL": syntax error</code> e <code>near "SELECT": syntax error</code>.</li>
+  <li>Traduza com <code>MAX</code>/<code>MIN</code>: mais que todos → o extremo do outro lado; mais que algum → o extremo do mesmo lado.</li>
+  <li><code>= ANY</code> é <code>IN</code>; <code>&lt;&gt; ALL</code> é <code>NOT IN</code>.</li>
+  <li>Com a lista vazia, <code>ALL</code> é verdadeiro e <code>MAX</code> vira <code>NULL</code>: para o comportamento exato do padrão, use <code>NOT EXISTS</code> (para <code>ALL</code>) e <code>EXISTS</code> (para <code>ANY</code>). Essas traduções rodam em todos os bancos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
