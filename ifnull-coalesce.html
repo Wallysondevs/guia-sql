@@ -1,0 +1,433 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL IFNULL e COALESCE — trocar NULL por um valor | Guia SQL</title>
+<meta name="description" content="IFNULL e COALESCE em SQL para quem está começando: trocar NULL por um texto ou por zero, a primeira opção não nula entre várias, o NULL que contamina contas e textos, SUM com LEFT JOIN, NULLIF para o caminho de volta, e ISNULL (SQL Server) e NVL (Oracle), com os erros reais do SQLite e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">IFNULL e COALESCE</span></h1>
+
+<p class="intro">Três clientes da Loja Aurora não têm email cadastrado: no banco, o email deles é <code>NULL</code>. Quando a Ana imprime a lista de contatos, aparece um buraco no lugar. Ela preferia ler "sem email". Em vez de escrever um <a href="case.html">CASE</a> inteiro só para isso, o SQL tem funções curtas que fazem exatamente esse trabalho: <code>IFNULL</code> ("se for nulo") e <code>COALESCE</code> ("juntar", "fundir"). As duas devolvem o valor da coluna quando ele existe e um valor <strong>reserva</strong> quando ele é <code>NULL</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>IFNULL(valor, reserva)</code>: a forma do SQLite e do MySQL.</li>
+  <li><code>COALESCE(a, b, c, …)</code>: a forma do <strong>SQL padrão</strong>, que aceita várias reservas.</li>
+  <li>Por que um <code>NULL</code> "contamina" contas e textos, e como evitar.</li>
+  <li>O caso clássico: <code>SUM</code> com <code>LEFT JOIN</code> que dá <code>NULL</code> em vez de 0.</li>
+  <li><code>NULLIF</code>, o caminho de volta: transformar um valor em <code>NULL</code>.</li>
+  <li>Os nomes nos outros bancos: <code>ISNULL</code> (SQL Server) e <code>NVL</code> (Oracle), e os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Se o <code>NULL</code> ainda é novidade, leia antes <a href="null.html">O Valor NULL</a> e <a href="is-null.html">IS NULL e IS NOT NULL</a>. Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora.</p>
+
+<hr>
+
+<h2>A ideia: o plano B</h2>
+<p>A Ana vai mandar um recado para cada cliente. A regra dela é: "mande para o email; <strong>se não tiver email</strong>, anote 'sem email' para eu ligar depois". É um plano A com um plano B. E às vezes há um plano C: "mande para o email; se não tiver, para o telefone; se não tiver nenhum dos dois, anote 'sem contato'".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Quantos planos</th><th>Quer dizer</th></tr>
+<tr><td><code>IFNULL(a, b)</code></td><td>2: o valor e uma reserva</td><td>"<code>a</code>, mas se <code>a</code> for <code>NULL</code>, <code>b</code>"</td></tr>
+<tr><td><code>COALESCE(a, b, c, …)</code></td><td>Quantos quiser</td><td>"O primeiro da lista que não for <code>NULL</code>"</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. IFNULL: o valor ou a reserva</h2>
+<p>Primeiro, os emails como estão no banco, para cinco clientes:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE id IN (5, 6, 7, 15, 23);
+</pre>
+
+<p>O Luís, o Roberto e o Henrique têm email <em>NULL</em>. Agora com <code>IFNULL</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, IFNULL(email, 'sem email') AS email
+FROM clientes
+WHERE id IN (5, 6, 7, 15, 23);
+</pre>
+
+<dl class="anatomy">
+  <dt>IFNULL( … , … )</dt><dd>Uma função com <strong>exatamente dois</strong> argumentos, separados por vírgula.</dd>
+  <dt>email</dt><dd>O primeiro: o valor que você quer mostrar. Se ele não for <code>NULL</code>, é ele que sai.</dd>
+  <dt>'sem email'</dt><dd>O segundo: a reserva, usada só quando o primeiro é <code>NULL</code>. Aqui é um texto entre aspas simples; pode ser um número, outra coluna ou uma conta.</dd>
+  <dt>AS email</dt><dd>O nome da coluna no resultado. Sem ele, o cabeçalho seria <code>IFNULL(email, 'sem email')</code>.</dd>
+</dl>
+
+<p>Os emails que existem passaram do jeito que estavam; só os <code>NULL</code> viraram "sem email". O banco <strong>não mudou</strong>: a troca acontece só na resposta. Para mudar a tabela de verdade, seria um <a href="update.html">UPDATE</a>.</p>
+
+<p>Lembra da gerente sem chefe, na aula <a href="self-join.html">Self Join</a>? O <code>LEFT JOIN</code> deixava o chefe dela <code>NULL</code>. Com <code>IFNULL</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario,
+       IFNULL(c.nome, '(ninguém)') AS chefe
+FROM funcionarios AS f
+LEFT JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+
+<div class="trysql" data-goal="linhas:7;;contem:Roberto Falcão|sem email;;contem:Rafael Monteiro|rafael.monteiro@exemplo.com.br">
+<p class="try-task"><strong>Missão:</strong> na lista dos clientes de São Paulo, um deles está sem email. Troque a coluna <code>email</code> por um <code>IFNULL</code> que mostre 'sem email' no lugar do <code>NULL</code> (mantenha os emails que existem).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, email
+FROM clientes
+WHERE cidade = 'São Paulo';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, IFNULL(email, 'sem email') AS email
+FROM clientes
+WHERE cidade = 'São Paulo';
+</pre>
+</div>
+
+<hr>
+
+<h2>2. COALESCE: o primeiro que não for NULL</h2>
+<p>O <code>COALESCE</code> faz o mesmo que o <code>IFNULL</code>, mas aceita <strong>quantos argumentos você quiser</strong> (pelo menos dois). Ele olha um por um, da esquerda para a direita, e devolve o primeiro que não for <code>NULL</code>.</p>
+
+<p>Os fornecedores estrangeiros não têm estado (o <code>estado</code> deles é <code>NULL</code>). Para uma coluna "região" que mostre o estado dos brasileiros e o país dos outros:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, cidade, estado, pais,
+       COALESCE(estado, pais) AS regiao
+FROM fornecedores;
+</pre>
+
+<p>Para os brasileiros, <code>estado</code> existe e é ele que vem. Para a Lusitana e a Pampa Sur, <code>estado</code> é <code>NULL</code>, então o <code>COALESCE</code> passa para o próximo, <code>pais</code>.</p>
+
+<p>Com três ou mais opções, a lista de planos fica explícita:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COALESCE(NULL, NULL, 'terceiro', 'quarto') AS resultado;
+</pre>
+
+<p>"terceiro": o primeiro valor não nulo da lista. O "quarto" nem chega a ser examinado. E se todos forem <code>NULL</code>, o resultado também é <code>NULL</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COALESCE(NULL, NULL) AS resultado;
+</pre>
+
+<p>Mais um uso do dia a dia, com datas: os pedidos ainda não entregues mostram "a caminho" no lugar da data de entrega:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, data, COALESCE(entregue_em, 'a caminho') AS entrega
+FROM pedidos
+WHERE id &gt;= 84;
+</pre>
+
+<hr>
+
+<h2>3. IFNULL × COALESCE: qual usar</h2>
+<p>Com dois argumentos, os dois são a mesma coisa. A documentação do SQLite diz com todas as letras: <code>ifnull()</code> "é equivalente a <code>coalesce()</code> com dois argumentos". A diferença está em onde cada um funciona:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Argumentos</th><th>SQLite</th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th><th>Oracle</th></tr>
+<tr><td><code>COALESCE(a, b, …)</code></td><td>2 ou mais</td><td>sim</td><td>sim</td><td>sim</td><td>sim</td><td>sim</td></tr>
+<tr><td><code>IFNULL(a, b)</code></td><td>exatamente 2</td><td>sim</td><td>sim</td><td>não</td><td>não</td><td>não</td></tr>
+<tr><td><code>ISNULL(a, b)</code></td><td>exatamente 2</td><td>não</td><td>outra função (veja abaixo)</td><td>não</td><td>sim</td><td>não</td></tr>
+<tr><td><code>NVL(a, b)</code></td><td>exatamente 2</td><td>não</td><td>não</td><td>não</td><td>não</td><td>sim</td></tr>
+</table>
+</div>
+
+<p><strong>Regra prática:</strong> use <code>COALESCE</code>. Ele é do SQL padrão, funciona em todos esses bancos e aceita mais de uma reserva. O <code>IFNULL</code> é ótimo de ler e você vai vê-lo muito em código de SQLite e MySQL.</p>
+
+<p>E o <a href="case.html">CASE</a>? Ele faz o mesmo, só que mais comprido. As duas consultas abaixo dão o mesmo resultado:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       CASE WHEN email IS NULL THEN 'sem email' ELSE email END AS email
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, COALESCE(email, 'sem email') AS email
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<p>Para "troque <code>NULL</code> por outro valor", use <code>COALESCE</code>/<code>IFNULL</code>. Para qualquer outra decisão, <code>CASE</code>.</p>
+
+<hr>
+
+<h2>4. O NULL que contamina</h2>
+<p>Quase toda conta ou junção de textos com um <code>NULL</code> dá <code>NULL</code>. É como uma receita com um ingrediente "desconhecido": o resultado também fica desconhecido. A Ana monta um contato juntando o email e a cidade com o operador <code>||</code> (que cola textos):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, email || ' (' || cidade || ')' AS contato
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<p>O Luís sumiu inteiro: como o email dele é <code>NULL</code>, o texto todo virou <code>NULL</code>, e a cidade, que existe, foi junto. Protegendo o pedaço que pode faltar:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, IFNULL(email, 'sem email') || ' (' || cidade || ')' AS contato
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<h3>O caso clássico: SUM com LEFT JOIN</h3>
+<p>A Ana quer quanto cada cliente já gastou em produtos, incluindo quem nunca comprou. O <a href="left-join.html">LEFT JOIN</a> mantém todos os clientes, mas quem não tem pedido não tem item nenhum para somar:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome, SUM(i.quantidade * i.preco_unitario) AS total_gasto
+FROM clientes AS c
+LEFT JOIN pedidos AS pe ON pe.cliente_id = c.id
+LEFT JOIN itens_pedido AS i ON i.pedido_id = pe.id
+WHERE c.id IN (1, 2, 27, 28)
+GROUP BY c.id, c.nome;
+</pre>
+
+<p>O Paulo e a Tainá aparecem com <em>NULL</em>: o <code>SUM</code> de "nada" é <code>NULL</code>, e não 0. Num relatório, a Ana quer ler 0. O <code>COALESCE</code> vai <strong>em volta</strong> do <code>SUM</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome, COALESCE(SUM(i.quantidade * i.preco_unitario), 0) AS total_gasto
+FROM clientes AS c
+LEFT JOIN pedidos AS pe ON pe.cliente_id = c.id
+LEFT JOIN itens_pedido AS i ON i.pedido_id = pe.id
+WHERE c.id IN (1, 2, 27, 28)
+GROUP BY c.id, c.nome;
+</pre>
+
+<div class="tip">
+<strong>Por que em volta, e não dentro?</strong>
+<p>Os valores que faltam aqui não são <code>NULL</code> dentro de uma coluna: é a soma inteira que não tem o que somar. Por isso o <code>COALESCE</code> vai fora: "a soma, ou 0 se a soma for <code>NULL</code>". O <code>COUNT</code> não precisa disso: contar "nada" já dá 0.</p>
+</div>
+
+<hr>
+
+<h2>5. NULLIF: o caminho de volta</h2>
+<p>O <code>NULLIF(a, b)</code> faz o contrário: devolve <code>NULL</code> se <code>a</code> for igual a <code>b</code>, e o próprio <code>a</code> se forem diferentes.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT NULLIF(5, 5) AS iguais,
+       NULLIF(5, 3) AS diferentes,
+       NULLIF('', '') AS texto_vazio;
+</pre>
+
+<p>Para que serve "fabricar" um <code>NULL</code>? Para aproveitar o fato de que as funções agregadas <strong>ignoram</strong> <code>NULL</code>. Na Loja Aurora, alguns pedidos tiveram frete grátis (frete 0.0). A Ana quer duas médias: a de todos os pedidos e a só dos pedidos que pagaram frete:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, frete, NULLIF(frete, 0) AS frete_pago
+FROM pedidos
+WHERE id BETWEEN 1 AND 5;
+</pre>
+
+<p>O pedido 4, de frete grátis, ficou com <code>frete_pago</code> <em>NULL</em>. Agora, com <a href="avg.html">AVG</a> e <code>COUNT</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT ROUND(AVG(frete), 2) AS media_todos,
+       ROUND(AVG(NULLIF(frete, 0)), 2) AS media_pagos,
+       COUNT(*) AS pedidos,
+       COUNT(NULLIF(frete, 0)) AS com_frete
+FROM pedidos;
+</pre>
+
+<p>A média geral é 14.49; a de quem pagou frete, 16.51. Dos 90 pedidos, 79 pagaram frete. Os fretes zerados viraram <code>NULL</code> e saíram das contas.</p>
+
+<div class="note">
+<strong>NULLIF e a divisão por zero</strong>
+<p>No SQLite, dividir por zero não dá erro: dá <code>NULL</code>.</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT 10 / 0 AS divisao;
+</pre>
+<p>O MySQL também (o próprio manual dele mostra <code>IFNULL(1/0, 10)</code> devolvendo 10). Mas há bancos em que a divisão por zero <strong>para a consulta com erro</strong>. Por isso, você vai ver muito <code>valor / NULLIF(divisor, 0)</code> em código SQL: se o divisor for 0, ele vira <code>NULL</code>, e a conta dá <code>NULL</code> em vez de erro, em qualquer banco.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Argumentos demais no IFNULL</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, IFNULL(email, 'sem', 'email')
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function IFNULL()</code>, "número errado de argumentos para a função IFNULL()". O <code>IFNULL</code> aceita exatamente dois.</p>
+<p><strong>Como consertar:</strong> para mais de uma reserva, use <code>COALESCE</code>. Aqui, provavelmente a intenção era um texto só: <code>IFNULL(email, 'sem email')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>COALESCE com um argumento só</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT COALESCE(email)
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function COALESCE()</code>. A documentação do SQLite exige pelo menos dois argumentos: sem uma reserva, não há o que fazer.</p>
+<p><strong>Como consertar:</strong> diga qual é a reserva: <code>COALESCE(email, 'sem email')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou o nome de outro banco: ISNULL e NVL</strong>
+<p>A Ana copiou um exemplo de SQL Server:</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, ISNULL(email, 'sem email')
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ISNULL": syntax error</code>. No SQLite, <code>ISNULL</code> não é função: é um operador que vem <strong>depois</strong> do valor (<code>email ISNULL</code>, o mesmo que <code>email IS NULL</code>), e responde 1 ou 0. Por isso o erro é de sintaxe. E um exemplo de Oracle:</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, NVL(email, 'sem email')
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such function: NVL</code>, "não existe a função NVL".</p>
+<p><strong>Como consertar:</strong> nos dois casos, <code>COALESCE(email, 'sem email')</code>, que funciona em todos os bancos.</p>
+</div>
+
+<div class="cenario">
+<strong>Reserva de outro tipo</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, IFNULL(nascimento, 0) AS nascimento
+FROM clientes
+WHERE id IN (8, 9);
+</pre>
+<p><strong>O que acontece:</strong> o SQLite aceita, e a coluna fica com uma data numa linha e o número 0 na outra. Para quem lê, "0" não quer dizer nada; e os outros bancos podem recusar ou converter os valores (o manual do SQL Server, por exemplo, diz que o <code>ISNULL</code> converte a reserva para o tipo do primeiro argumento).</p>
+<p><strong>Como consertar:</strong> use uma reserva do mesmo tipo e com sentido: <code>IFNULL(nascimento, 'não informado')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Procurou os NULL com IFNULL no lugar de IS NULL</strong>
+<p>Para <strong>achar</strong> quem não tem email, a função de troca não é o caminho mais claro:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COUNT(*) AS sem_email
+FROM clientes
+WHERE IFNULL(email, '') = '';
+</pre>
+<p><strong>O que acontece:</strong> funciona (3 clientes), mas mistura duas coisas: quem tem email <code>NULL</code> e quem tivesse um email vazio (<code>''</code>). E o banco tem de calcular o <code>IFNULL</code> em todas as linhas antes de comparar.</p>
+<p><strong>Como consertar:</strong> para filtrar, use <code>WHERE email IS NULL</code> (aula <a href="is-null.html">IS NULL</a>). O manual do SQL Server dá o mesmo conselho para o <code>ISNULL</code> dele: para encontrar <code>NULL</code>, use <code>IS NULL</code>. Deixe <code>IFNULL</code>/<code>COALESCE</code> para <strong>mostrar</strong> o resultado.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>PostgreSQL:</strong> tem <code>COALESCE</code> e <code>NULLIF</code>, mas não <code>IFNULL</code>. O manual diz que o <code>COALESCE</code>, do SQL padrão, "oferece o que <code>NVL</code> e <code>IFNULL</code> oferecem em outros sistemas".</li>
+  <li><strong>MySQL:</strong> tem <code>IFNULL(a, b)</code>, <code>COALESCE</code> e <code>NULLIF</code>, como o SQLite. Cuidado: o <code>ISNULL(a)</code> do MySQL tem <strong>um</strong> argumento e só responde 1 (é <code>NULL</code>) ou 0 (não é); ele não troca nada.</li>
+  <li><strong>SQL Server:</strong> <code>ISNULL(a, b)</code> "substitui <code>NULL</code> pelo valor indicado", e também tem <code>COALESCE</code> e <code>NULLIF</code>.</li>
+  <li><strong>Oracle:</strong> <code>NVL(a, b)</code>: "se <code>a</code> for nulo, devolve <code>b</code>; senão, devolve <code>a</code>". Também tem <code>COALESCE</code>.</li>
+</ul>
+<p>Trechos ilustrativos (não rodam no SQLite):</p>
+<pre class="file" data-file="SQL Server (ilustrativo)">SELECT nome, ISNULL(email, 'sem email') AS email FROM clientes;
+</pre>
+<pre class="file" data-file="Oracle (ilustrativo)">SELECT nome, NVL(email, 'sem email') AS email FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>IFNULL(a, b)</code></td><td><code>a</code>, ou <code>b</code> se <code>a</code> for <code>NULL</code> (exatamente 2 argumentos)</td></tr>
+<tr><td><code>COALESCE(a, b, c, …)</code></td><td>O primeiro argumento que não for <code>NULL</code>; <code>NULL</code> se todos forem (2 ou mais)</td></tr>
+<tr><td><code>COALESCE(SUM(x), 0)</code></td><td>Soma que mostra 0 em vez de <code>NULL</code> quando não há o que somar</td></tr>
+<tr><td><code>IFNULL(texto, '') || …</code></td><td>Evita que um <code>NULL</code> apague o texto inteiro</td></tr>
+<tr><td><code>NULLIF(a, b)</code></td><td><code>NULL</code> se <code>a = b</code>; senão, <code>a</code></td></tr>
+<tr><td><code>x / NULLIF(y, 0)</code></td><td>Divisão que dá <code>NULL</code> em vez de erro quando <code>y</code> é 0</td></tr>
+<tr><td><code>ISNULL(a, b)</code> / <code>NVL(a, b)</code></td><td>O mesmo que <code>IFNULL</code>, no SQL Server / no Oracle (não existem no SQLite)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>wrong number of arguments to function IFNULL()</code></td><td><code>IFNULL</code> com mais ou menos de 2 argumentos</td></tr>
+<tr><td><code>wrong number of arguments to function COALESCE()</code></td><td><code>COALESCE</code> com menos de 2 argumentos</td></tr>
+<tr><td><code>near "ISNULL": syntax error</code></td><td><code>ISNULL(a, b)</code> é do SQL Server; use <code>COALESCE</code></td></tr>
+<tr><td><code>no such function: NVL</code></td><td><code>NVL</code> é do Oracle; use <code>COALESCE</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A reserva</h3>
+<p>Complete para mostrar 'sem email' quando o email for <code>NULL</code>:</p>
+<div class="ex-code">SELECT nome, <input data-answer="IFNULL|ifnull|COALESCE|coalesce" aria-label="função">(email, 'sem email') FROM clientes;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Zero em vez de NULL</h3>
+<p>Complete para a soma mostrar 0 quando não houver itens:</p>
+<div class="ex-code">COALESCE(SUM(i.quantidade * i.preco_unitario), <input data-answer="0" aria-label="reserva">) AS total_gasto</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Quanto vale <code>COALESCE(NULL, 'Teresina', 'Fortaleza')</code>?</p>
+<label><input type="radio" name="q3"> NULL</label>
+<label><input type="radio" name="q3"> 'Teresina'</label>
+<label><input type="radio" name="q3"> 'Fortaleza'</label>
+<label><input type="radio" name="q3"> 'Teresina, Fortaleza'</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual destas funções é do SQL padrão e funciona no SQLite, no MySQL, no PostgreSQL, no SQL Server e no Oracle?</p>
+<label><input type="radio" name="q4"> <code>IFNULL</code></label>
+<label><input type="radio" name="q4"> <code>ISNULL</code></label>
+<label><input type="radio" name="q4"> <code>NVL</code></label>
+<label><input type="radio" name="q4"> <code>COALESCE</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que <code>email || ' (' || cidade || ')'</code> sai <code>NULL</code> para quem não tem email?</p>
+<label><input type="radio" name="q5"> Porque juntar um texto com <code>NULL</code> dá <code>NULL</code>; é preciso proteger o email com <code>IFNULL</code></label>
+<label><input type="radio" name="q5"> Porque o <code>||</code> não funciona com a cidade</label>
+<label><input type="radio" name="q5"> Porque faltou o <code>AS</code></label>
+<label><input type="radio" name="q5"> Porque o SQLite não junta textos</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Quanto vale <code>NULLIF(frete, 0)</code> num pedido de frete grátis (frete 0.0)?</p>
+<label><input type="radio" name="q6"> 0</label>
+<label><input type="radio" name="q6"> 0.0</label>
+<label><input type="radio" name="q6"> NULL</label>
+<label><input type="radio" name="q6"> Dá erro de divisão por zero</label>
+</div>
+
+<h3>Missão final: o relatório de Fortaleza</h3>
+
+<div class="trysql" data-goal="linhas:7;;contem:Rosângela Dias|0;;contem:Fernanda Carvalho|899.18">
+<p class="try-task"><strong>Missão:</strong> o relatório mostra quanto cada cliente de Fortaleza já gastou em produtos. A Rosângela, que nunca comprou, aparece com <em>NULL</em>. Faça a coluna <code>total_gasto</code> mostrar <strong>0</strong> para ela, sem mudar o valor dos outros.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.nome, SUM(i.quantidade * i.preco_unitario) AS total_gasto
+FROM clientes AS c
+LEFT JOIN pedidos AS pe ON pe.cliente_id = c.id
+LEFT JOIN itens_pedido AS i ON i.pedido_id = pe.id
+WHERE c.cidade = 'Fortaleza'
+GROUP BY c.id, c.nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.nome, COALESCE(SUM(i.quantidade * i.preco_unitario), 0) AS total_gasto
+FROM clientes AS c
+LEFT JOIN pedidos AS pe ON pe.cliente_id = c.id
+LEFT JOIN itens_pedido AS i ON i.pedido_id = pe.id
+WHERE c.cidade = 'Fortaleza'
+GROUP BY c.id, c.nome;
+</pre>
+</div>
+
+<div class="trysql">
+<p class="try-task"><strong>Livre:</strong> a lista dos clientes com algum dado faltando. Experimente trocar os <code>IFNULL</code> por <code>COALESCE</code>, ou montar uma coluna "contato" com <code>COALESCE(email, cidade)</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome,
+       IFNULL(nascimento, 'não informado') AS nascimento,
+       IFNULL(email, 'sem email') AS email
+FROM clientes
+WHERE nascimento IS NULL OR email IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>IFNULL(a, b)</code> devolve <code>a</code>, ou <code>b</code> se <code>a</code> for <code>NULL</code>. Exatamente 2 argumentos. Existe no SQLite e no MySQL.</li>
+  <li><code>COALESCE(a, b, c, …)</code> devolve o primeiro argumento que não for <code>NULL</code>. É do SQL padrão e funciona em todos os bancos: na dúvida, use ele.</li>
+  <li>A troca acontece só na resposta; a tabela continua com <code>NULL</code>.</li>
+  <li>Um <code>NULL</code> contamina contas e textos (<code>||</code>); proteja a parte que pode faltar. Em volta de um <code>SUM</code> com <code>LEFT JOIN</code>, <code>COALESCE(SUM(…), 0)</code> mostra 0.</li>
+  <li><code>NULLIF(a, b)</code> faz o caminho de volta: vira <code>NULL</code> quando <code>a = b</code>. Útil para tirar valores das médias e para evitar divisão por zero.</li>
+  <li>Nos outros bancos: <code>ISNULL(a, b)</code> no SQL Server, <code>NVL(a, b)</code> no Oracle. No MySQL, <code>ISNULL(a)</code> é outra coisa (responde 1 ou 0). Para filtrar, use sempre <code>IS NULL</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
