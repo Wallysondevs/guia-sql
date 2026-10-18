@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL IS NULL e IS NOT NULL — achar os campos vazios | Guia SQL</title>
+<meta name="description" content="IS NULL e IS NOT NULL em SQL para quem nunca mexeu num banco: achar clientes sem email, pedidos não entregues e a gerente sem chefe, combinar com AND e OR, fazer o total fechar, o IS do SQLite e o IS DISTINCT FROM do padrão, e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">IS NULL e IS NOT NULL</span></h1>
+
+<p class="intro">Na aula <a href="null.html">O Valor NULL</a>, a Ana descobriu que <code>WHERE email = NULL</code> não acha ninguém: comparar com um valor desconhecido sempre dá "não sei". Mas ela ainda precisa da lista de clientes sem email, e o entregador precisa saber quais pedidos ainda não foram entregues. Para isso o SQL tem duas perguntas especiais, que sempre têm resposta: <code>IS NULL</code> ("está em branco?") e <code>IS NOT NULL</code> ("está preenchido?"). Nesta aula você vai usá-las sozinhas, juntas com outras condições, e vai aprender a fazer o total da tabela fechar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>coluna IS NULL</code>: as linhas em que a coluna está sem valor.</li>
+  <li><code>coluna IS NOT NULL</code>: as linhas em que a coluna tem valor.</li>
+  <li>Por que o <code>IS</code> sempre responde 1 ou 0, nunca "não sei".</li>
+  <li>Como juntar <code>IS NULL</code> com <code>AND</code> e <code>OR</code>.</li>
+  <li>Como dividir uma tabela em grupos sem perder ninguém.</li>
+  <li>O <code>IS</code> e o <code>IS DISTINCT FROM</code>: comparar valores tratando <code>NULL</code> como igual a <code>NULL</code>.</li>
+  <li>Os erros mais comuns ao escrever essas condições, com as mensagens reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade, no seu navegador, contra o banco da <a href="banco-do-guia.html">Loja Aurora</a>. No quadro "Resultado", o <code>NULL</code> aparece como <em>NULL</em>, em itálico.</p>
+
+<hr>
+
+<h2>A ideia: perguntar pelo branco, não pelo valor</h2>
+<p>Volte ao fichário de papel da loja. Se alguém pergunta "o email do Luís Otávio é igual a ...?", você não tem como responder: o campo está em branco. Mas se a pergunta for "<strong>o campo de email do Luís Otávio está em branco?</strong>", a resposta é fácil: sim. Essa é a diferença entre <code>=</code> e <code>IS</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Em SQL</th><th>Para o Luís Otávio (email NULL)</th><th>Para a Fernanda (com email)</th></tr>
+<tr><td>"O email é igual a desconhecido?"</td><td><code>email = NULL</code></td><td><em>NULL</em> (não sei)</td><td><em>NULL</em> (não sei)</td></tr>
+<tr><td>"O email está em branco?"</td><td><code>email IS NULL</code></td><td><code>1</code> (sim)</td><td><code>0</code> (não)</td></tr>
+<tr><td>"O email está preenchido?"</td><td><code>email IS NOT NULL</code></td><td><code>0</code> (não)</td><td><code>1</code> (sim)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. IS NULL: quem está sem valor</h2>
+<p>A lista de clientes sem email, que a Ana queria desde a aula passada:</p>
+
+<pre class="file" data-file="sem-email.sql" data-resultado>SELECT id, nome, cidade, email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>O filtro de linhas (aula <a href="where.html">WHERE</a>): só passam as linhas em que a condição é verdadeira.</dd>
+  <dt>email</dt><dd>A coluna que você quer examinar.</dd>
+  <dt>IS NULL</dt><dd>"É nulo": verdadeiro quando a coluna <strong>não tem valor</strong> naquela linha. São duas palavras, com espaço no meio, e o <code>NULL</code> vai <strong>sem aspas</strong>.</dd>
+</dl>
+
+<p>Os três clientes: Luís Otávio Brito (7), Roberto Falcão (15) e Henrique Sales (23). Funciona com qualquer coluna. Os clientes sem data de nascimento:</p>
+
+<pre class="file" data-file="sem-nascimento.sql" data-resultado>SELECT id, nome, nascimento
+FROM clientes
+WHERE nascimento IS NULL;
+</pre>
+
+<p>E na tabela de funcionários, quem não tem chefe? Só a gerente, Marta Lustosa:</p>
+
+<pre class="file" data-file="sem-chefe.sql" data-resultado>SELECT id, nome, cargo
+FROM funcionarios
+WHERE chefe_id IS NULL;
+</pre>
+
+<div class="trysql" data-goal="linhas:5">
+<p class="try-task"><strong>Experimente:</strong> o entregador quer a lista de pedidos que <strong>ainda não foram entregues</strong> (a coluna <code>entregue_em</code> está sem valor). A consulta abaixo usa <code>= NULL</code> e não acha nada. Conserte-a.</p>
+<pre class="script" data-file="pendentes.sql">SELECT id, data, frete, entregue_em
+FROM pedidos
+WHERE entregue_em = NULL;
+</pre>
+<pre class="solucao" data-file="pendentes.sql">SELECT id, data, frete, entregue_em
+FROM pedidos
+WHERE entregue_em IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. IS NOT NULL: quem tem valor</h2>
+<p>O contrário: as linhas em que a coluna <strong>está preenchida</strong>. O gerente quer ver os pedidos de agosto de 2026 em diante que <strong>já foram entregues</strong>:</p>
+
+<pre class="file" data-file="entregues.sql" data-resultado>SELECT id, data, entregue_em
+FROM pedidos
+WHERE entregue_em IS NOT NULL
+  AND data &gt;= '2026-08-01';
+</pre>
+
+<dl class="anatomy">
+  <dt>IS NOT NULL</dt><dd>"Não é nulo": verdadeiro quando a coluna <strong>tem um valor</strong>, seja ele qual for (até um <code>0</code> ou um texto vazio <code>''</code> contam como valor).</dd>
+  <dt>AND data &gt;= '2026-08-01'</dt><dd>Uma segunda condição, ligada com <code>AND</code> (aula <a href="and.html">AND</a>): o pedido precisa ter sido entregue <strong>e</strong> ser de agosto de 2026 em diante.</dd>
+</dl>
+
+<p>Quatro pedidos, do 82 ao 85. Os pedidos de 86 a 90 também são desse período, mas ainda não chegaram, e o <code>IS NOT NULL</code> os deixou de fora. Atenção à ordem das palavras: é <code>IS NOT NULL</code>, com o <code>NOT</code> <strong>no meio</strong>.</p>
+
+<p>Também dá para escrever o mesmo com <code>NOT</code> na frente da condição inteira (aula <a href="not.html">NOT</a>). O resultado é idêntico, mas o <code>IS NOT NULL</code> é mais fácil de ler:</p>
+
+<pre class="file" data-file="not-is-null.sql" data-resultado>SELECT id, data, entregue_em
+FROM pedidos
+WHERE NOT (entregue_em IS NULL)
+  AND data &gt;= '2026-08-01';
+</pre>
+
+<hr>
+
+<h2>3. O IS sempre responde</h2>
+<p>Essa é a grande diferença para o <code>=</code>. Teste com valores soltos:</p>
+
+<pre class="file" data-file="is-responde.sql" data-resultado>SELECT NULL IS NULL, '' IS NULL, 0 IS NULL, 'NULL' IS NULL, NULL IS NOT NULL;
+</pre>
+
+<ol class="passo">
+  <li><code>NULL IS NULL</code> → <code>1</code>: sim, está em branco.</li>
+  <li><code>'' IS NULL</code> → <code>0</code>: o texto vazio é um valor; não está em branco.</li>
+  <li><code>0 IS NULL</code> → <code>0</code>: zero também é um valor.</li>
+  <li><code>'NULL' IS NULL</code> → <code>0</code>: entre aspas, <code>'NULL'</code> é uma palavra comum.</li>
+  <li><code>NULL IS NOT NULL</code> → <code>0</code>: um branco não está preenchido.</li>
+</ol>
+
+<p>Nenhuma resposta é <em>NULL</em>. Por isso o <code>IS NULL</code> funciona no <code>WHERE</code>: a pergunta "está em branco?" sempre tem um sim ou um não.</p>
+
+<hr>
+
+<h2>4. Juntando com AND e OR</h2>
+<p>A Ana vai ligar para completar o cadastro de quem está com <strong>email ou data de nascimento</strong> faltando:</p>
+
+<pre class="file" data-file="cadastro-incompleto.sql" data-resultado>SELECT id, nome, email, nascimento
+FROM clientes
+WHERE email IS NULL OR nascimento IS NULL;
+</pre>
+
+<p>Cinco clientes: os três sem email (7, 15, 23) e os dois sem nascimento (9, 21). Cada <code>IS NULL</code> é uma condição completa, com o nome da coluna antes. E se ela trocar o <code>OR</code> por <code>AND</code>?</p>
+
+<pre class="file" data-file="cadastro-and.sql" data-resultado>SELECT id, nome, email, nascimento
+FROM clientes
+WHERE email IS NULL AND nascimento IS NULL;
+</pre>
+
+<p>Nenhum. Com <code>AND</code>, o cliente precisaria estar sem email <strong>e</strong> sem nascimento ao mesmo tempo, e ninguém na Aurora está assim. A escolha entre <code>AND</code> e <code>OR</code> é a mesma das aulas <a href="and.html">AND</a> e <a href="or.html">OR</a>: o <code>IS NULL</code> é só mais uma condição.</p>
+
+<p>Com outras condições também. Quais pedidos não entregues têm frete acima de R$ 10?</p>
+
+<pre class="file" data-file="pendentes-frete.sql" data-resultado>SELECT id, cliente_id, data, frete
+FROM pedidos
+WHERE entregue_em IS NULL AND frete &gt; 10;
+</pre>
+
+<hr>
+
+<h2>5. O total que fecha</h2>
+<p>Na aula passada, os fornecedores "do Piauí" (2) mais os "de fora do Piauí" (2) davam 4, e a Aurora tem 6. Faltavam os estrangeiros, com <code>estado</code> <code>NULL</code>. Agora você sabe pedir esse terceiro grupo:</p>
+
+<pre class="file" data-file="terceiro-grupo.sql" data-resultado>SELECT nome, estado, pais
+FROM fornecedores
+WHERE estado IS NULL;
+</pre>
+
+<p>Com os três grupos, o total fecha: 2 + 2 + 2 = 6.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Grupo</th><th>Condição</th><th>Fornecedores</th></tr>
+<tr><td>No Piauí</td><td><code>estado = 'PI'</code></td><td>2 (ids 1 e 6)</td></tr>
+<tr><td>Em outro estado</td><td><code>estado &lt;&gt; 'PI'</code></td><td>2 (ids 2 e 3)</td></tr>
+<tr><td>Sem estado (estrangeiros)</td><td><code>estado IS NULL</code></td><td>2 (ids 4 e 5)</td></tr>
+</table>
+</div>
+
+<p>Para "todo mundo que não é do Piauí, inclusive quem não tem estado", junte os dois últimos com <code>OR</code>:</p>
+
+<pre class="file" data-file="fora-pi.sql" data-resultado>SELECT nome, estado, pais
+FROM fornecedores
+WHERE estado &lt;&gt; 'PI' OR estado IS NULL;
+</pre>
+
+<div class="tip">
+<strong>Um hábito que evita surpresas</strong>
+<p>Antes de escrever um <code>&lt;&gt;</code>, um <code>NOT</code> ou um <code>NOT BETWEEN</code>, pergunte: "<strong>essa coluna pode ter NULL?</strong>". Se pode, decida o que fazer com essas linhas e escreva isso no SQL (<code>OR coluna IS NULL</code> para incluir, <code>AND coluna IS NOT NULL</code> para deixar claro que ficam de fora). O <code>.schema</code> do terminal (aula <a href="comandos-ponto.html">Comandos de Ponto</a>) mostra quais colunas são <code>NOT NULL</code>, e essas nunca têm branco.</p>
+</div>
+
+<hr>
+
+<h2>6. O IS do SQLite e o IS DISTINCT FROM</h2>
+<p>Às vezes você quer comparar dois valores e tratar o branco como um valor normal: "o estado é diferente de PI, contando o branco como diferente". O SQL padrão tem para isso o <code>IS DISTINCT FROM</code> ("é diferente de", tratando <code>NULL</code> como um valor), e o SQLite entende:</p>
+
+<pre class="file" data-file="distinct-from.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE estado IS DISTINCT FROM 'PI';
+</pre>
+
+<p>Os quatro de fora do Piauí, com os estrangeiros incluídos, numa condição só. O contrário é <code>IS NOT DISTINCT FROM</code> ("é igual a, tratando <code>NULL</code> como igual a <code>NULL</code>"). No SQLite, o próprio <code>IS</code> e o <code>IS NOT</code> funcionam assim, com qualquer valor, não só com <code>NULL</code>:</p>
+
+<pre class="file" data-file="is-not-pi.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE estado IS NOT 'PI';
+</pre>
+
+<p>Compare as quatro formas de perguntar "são iguais?":</p>
+
+<pre class="file" data-file="igualdades.sql" data-resultado>SELECT NULL = NULL,
+       NULL IS NULL,
+       NULL IS NOT DISTINCT FROM NULL,
+       1 IS DISTINCT FROM NULL;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Com NULL</th><th>Onde funciona</th></tr>
+<tr><td><code>a = b</code></td><td>Dá <code>NULL</code></td><td>Todo banco</td></tr>
+<tr><td><code>a IS NULL</code></td><td>1 ou 0</td><td>Todo banco (SQL padrão)</td></tr>
+<tr><td><code>a IS NOT DISTINCT FROM b</code></td><td>1 ou 0 (<code>NULL</code> igual a <code>NULL</code>)</td><td>SQL padrão; SQLite e PostgreSQL</td></tr>
+<tr><td><code>a IS b</code> com <code>b</code> diferente de <code>NULL</code></td><td>1 ou 0</td><td>Do SQLite; não conte com ele em outros bancos</td></tr>
+</table>
+</div>
+
+<p>Para o dia a dia, guarde o <code>IS NULL</code> e o <code>IS NOT NULL</code>: eles funcionam em qualquer banco e todo mundo entende.</p>
+
+<div class="warning">
+<strong>Atalhos que só o SQLite aceita</strong>
+<p>O SQLite também entende <code>email ISNULL</code>, <code>email NOTNULL</code> e até <code>email NOT NULL</code> (sem o <code>IS</code>) no <code>WHERE</code>. Você pode encontrá-los em código antigo, mas não os use: o primeiro e o segundo não são do SQL padrão, e o terceiro se confunde com a restrição <code>NOT NULL</code> do <code>CREATE TABLE</code> (aula <a href="not-null.html">NOT NULL</a>). Escreva sempre <code>IS NULL</code> e <code>IS NOT NULL</code>.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de achar os brancos</h2>
+<p>A mesma pergunta, "fornecedores de fora do Piauí, inclusive os estrangeiros", de quatro jeitos que dão o mesmo resultado (4 linhas):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>WHERE estado &lt;&gt; 'PI' OR estado IS NULL</code></td><td>A mais clara e portátil: diz com todas as letras o que fazer com o branco. <strong>Use esta.</strong></td></tr>
+<tr><td><code>WHERE estado IS DISTINCT FROM 'PI'</code></td><td>Mais curta, do SQL padrão; funciona no SQLite e no PostgreSQL.</td></tr>
+<tr><td><code>WHERE estado IS NOT 'PI'</code></td><td>Só no SQLite.</td></tr>
+<tr><td><code>WHERE estado &lt;&gt; 'PI' OR pais &lt;&gt; 'Brasil'</code></td><td>Usa outra coluna sem <code>NULL</code>; funciona aqui porque sabemos que os estrangeiros são exatamente os sem estado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Usou <code>= NULL</code> (ou <code>== NULL</code>)</strong>
+<pre class="file" data-file="igual.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE email == NULL;
+</pre>
+<p><strong>O que acontece:</strong> zero linhas, sem erro. O SQLite aceita <code>==</code> como sinônimo de <code>=</code>, e os dois comparam valores: com <code>NULL</code>, a resposta é sempre "não sei".</p>
+<p><strong>Como consertar:</strong> <code>WHERE email IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Escreveu <code>NOT IS</code> em vez de <code>IS NOT</code></strong>
+<pre class="file" data-file="not-is.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE email NOT IS NULL;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "IS": syntax error</code> ("perto de IS: erro de sintaxe"). Depois de <code>email NOT</code>, o SQLite esperava coisas como <code>LIKE</code>, <code>IN</code> ou <code>BETWEEN</code> (<code>email NOT LIKE …</code>), e não um <code>IS</code>.</p>
+<p><strong>Como consertar:</strong> o <code>NOT</code> vai no meio: <code>email IS NOT NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o IS</strong>
+<pre class="file" data-file="sem-is.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE email NULL;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "NULL": syntax error</code>. Uma coluna seguida direto de <code>NULL</code> não é uma condição.</p>
+<p><strong>Como consertar:</strong> <code>WHERE email IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Errou a palavra NULL</strong>
+<pre class="file" data-file="nul.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE email IS NUL;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: NUL</code> ("não existe a coluna NUL"). Uma palavra que não é do SQL vira, para o SQLite, o nome de uma coluna, e a tabela não tem essa coluna. O mesmo acontece com <code>IS EMPTY</code> (<code>no such column: EMPTY</code>): "vazio" não existe em SQL; o branco é <code>NULL</code>.</p>
+<p><strong>Como consertar:</strong> <code>IS NULL</code>, com dois L.</p>
+</div>
+
+<div class="cenario">
+<strong>Pôs o NULL entre aspas</strong>
+<pre class="file" data-file="aspas.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE email IS 'NULL';
+</pre>
+<p><strong>O que acontece:</strong> zero linhas, sem erro. Com aspas, <code>'NULL'</code> é uma palavra de quatro letras, e o <code>IS</code> do SQLite compara o email com essa palavra. Nenhum email é "NULL".</p>
+<p><strong>Como consertar:</strong> sem aspas: <code>IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou a função ISNULL() de outro banco</strong>
+<pre class="file" data-file="isnull-funcao.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE ISNULL(email);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ISNULL": syntax error</code>. No MySQL, <code>ISNULL(expr)</code> é uma função que testa se o valor é <code>NULL</code>; no SQL Server, <code>ISNULL(valor, substituto)</code> faz outra coisa, troca o <code>NULL</code> por um valor. No SQLite, <code>ISNULL</code> só existe depois da coluna (<code>email ISNULL</code>), e não como função.</p>
+<p><strong>Como consertar:</strong> <code>WHERE email IS NULL</code>, que funciona nos três.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><code>IS NULL</code> e <code>IS NOT NULL</code> são do SQL padrão e funcionam igual no MySQL, no PostgreSQL e no SQL Server.</li>
+  <li><strong>PostgreSQL:</strong> tem <code>IS DISTINCT FROM</code> e <code>IS NOT DISTINCT FROM</code> como o SQLite. Também aceita <code>ISNULL</code> e <code>NOTNULL</code> depois da expressão, mas o manual os chama de "não padrão".</li>
+  <li><strong>MySQL:</strong> a igualdade que trata <code>NULL</code> como igual a <code>NULL</code> é o operador <code>&lt;=&gt;</code>; o manual diz que ele equivale ao <code>IS NOT DISTINCT FROM</code> do padrão. Trecho só ilustrativo:
+<pre class="file" data-file="mysql (ilustrativo)">SELECT 1 &lt;=&gt; 1, NULL &lt;=&gt; NULL, 1 &lt;=&gt; NULL;
+-- 1, 1, 0
+</pre></li>
+  <li><strong>SQL Server:</strong> a documentação da função <code>ISNULL</code> avisa: "não use <code>ISNULL</code> para achar valores <code>NULL</code>; use <code>IS NULL</code>".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>x IS NULL</code></td><td>1 se <code>x</code> está sem valor, 0 se tem valor</td></tr>
+<tr><td><code>x IS NOT NULL</code></td><td>1 se <code>x</code> tem valor (inclusive <code>0</code> e <code>''</code>)</td></tr>
+<tr><td><code>NOT (x IS NULL)</code></td><td>O mesmo que <code>x IS NOT NULL</code></td></tr>
+<tr><td><code>x &lt;&gt; v OR x IS NULL</code></td><td>Diferente de <code>v</code>, contando os brancos</td></tr>
+<tr><td><code>x IS DISTINCT FROM v</code></td><td>Diferente, tratando <code>NULL</code> como valor (padrão; SQLite, PostgreSQL)</td></tr>
+<tr><td><code>x IS NOT DISTINCT FROM v</code></td><td>Igual, tratando <code>NULL</code> como igual a <code>NULL</code></td></tr>
+<tr><td><code>x IS v</code>, <code>x IS NOT v</code></td><td>O mesmo, no jeito curto do SQLite</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td>0 linhas, sem erro</td><td>Usou <code>= NULL</code>, <code>== NULL</code> ou <code>'NULL'</code> entre aspas</td></tr>
+<tr><td><code>near "IS": syntax error</code></td><td>Escreveu <code>NOT IS</code>; o certo é <code>IS NOT</code></td></tr>
+<tr><td><code>near "NULL": syntax error</code></td><td>Faltou o <code>IS</code></td></tr>
+<tr><td><code>no such column: NUL</code></td><td>Palavra errada: o certo é <code>NULL</code></td></tr>
+<tr><td><code>near "ISNULL": syntax error</code></td><td><code>ISNULL()</code> como função não existe no SQLite</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os clientes sem email</h3>
+<div class="ex-code">SELECT nome FROM clientes WHERE email <input data-answer="IS" aria-label="primeira palavra"> <input data-answer="NULL" aria-label="segunda palavra">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os pedidos já entregues</h3>
+<div class="ex-code">SELECT id FROM pedidos WHERE entregue_em IS <input data-answer="NOT" aria-label="palavra do meio"> NULL;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quanto dá <code>SELECT '' IS NULL;</code>?</p>
+<label><input type="radio" name="q3"> 1, porque o texto está vazio</label>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+<label><input type="radio" name="q3"> 0, porque o texto vazio é um valor</label>
+<label><input type="radio" name="q3"> Uma mensagem de erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas condições está escrita do jeito certo e funciona em qualquer banco?</p>
+<label><input type="radio" name="q4"> <code>WHERE email NOT IS NULL</code></label>
+<label><input type="radio" name="q4"> <code>WHERE email IS NOT NULL</code></label>
+<label><input type="radio" name="q4"> <code>WHERE email &lt;&gt; NULL</code></label>
+<label><input type="radio" name="q4"> <code>WHERE email IS NOT 'NULL'</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Na Aurora, ninguém está sem email e sem nascimento ao mesmo tempo. Quantas linhas <code>WHERE email IS NULL AND nascimento IS NULL</code> devolve?</p>
+<label><input type="radio" name="q5"> 5</label>
+<label><input type="radio" name="q5"> 3</label>
+<label><input type="radio" name="q5"> 2</label>
+<label><input type="radio" name="q5"> 0</label>
+</div>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> o gerente quer os pedidos de agosto de 2026 em diante que <strong>já foram entregues</strong>. A consulta abaixo traz todos os pedidos do período, inclusive os que ainda estão a caminho. Acrescente a condição que falta.</p>
+<pre class="script" data-file="entregues.sql">SELECT id, data, entregue_em
+FROM pedidos
+WHERE data &gt;= '2026-08-01';
+</pre>
+<pre class="solucao" data-file="entregues.sql">SELECT id, data, entregue_em
+FROM pedidos
+WHERE data &gt;= '2026-08-01'
+  AND entregue_em IS NOT NULL;
+</pre>
+</div>
+
+<h3>Missão final: o cadastro incompleto</h3>
+
+<div class="trysql" data-goal="linhas:5">
+<p class="try-task"><strong>Missão:</strong> a Ana vai ligar para todos os clientes com cadastro incompleto: quem está <strong>sem email ou sem data de nascimento</strong>. A consulta abaixo só olha o email. Complete a condição para trazer os 5 clientes.</p>
+<pre class="script" data-file="incompletos.sql">SELECT id, nome, email, nascimento
+FROM clientes
+WHERE email IS NULL;
+</pre>
+<pre class="solucao" data-file="incompletos.sql">SELECT id, nome, email, nascimento
+FROM clientes
+WHERE email IS NULL OR nascimento IS NULL;
+</pre>
+</div>
+
+<p>Se você usou <code>AND</code> no lugar do <code>OR</code>, viu zero linhas: releia a seção 4.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>coluna IS NULL</code> acha as linhas em que a coluna está sem valor; <code>coluna IS NOT NULL</code>, as que têm valor.</li>
+  <li>O <code>IS</code> sempre responde 1 ou 0, nunca "não sei". Por isso funciona no <code>WHERE</code>, e o <code>= NULL</code> não.</li>
+  <li><code>0</code>, <code>''</code> e <code>'NULL'</code> são valores: para eles, <code>IS NULL</code> dá 0.</li>
+  <li><code>IS NULL</code> é uma condição como outra qualquer: combine com <code>AND</code> e <code>OR</code>, com o nome da coluna em cada uma.</li>
+  <li>Para o total fechar, conte o terceiro grupo: <code>= v</code>, <code>&lt;&gt; v</code> e <code>IS NULL</code>. Para "diferente, incluindo os brancos": <code>x &lt;&gt; v OR x IS NULL</code>.</li>
+  <li><code>IS DISTINCT FROM</code> (padrão) e o <code>IS</code> do SQLite comparam tratando <code>NULL</code> como valor. No dia a dia, prefira <code>IS NULL</code> e <code>IS NOT NULL</code>.</li>
+  <li>É <code>IS NOT NULL</code>, nunca <code>NOT IS NULL</code> (<code>near "IS": syntax error</code>).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
