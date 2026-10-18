@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL CHECK — a regra que confere cada valor | Guia SQL</title>
+<meta name="description" content="CHECK para quem nunca mexeu num banco: como criar uma regra que o banco confere em cada INSERT e UPDATE (preço positivo, desconto até 50%, data final depois da inicial), dar nome à regra, o erro real CHECK constraint failed, a pegadinha do NULL e dos tipos no SQLite, e o que não dá para pôr num CHECK.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">CHECK</span></h1>
+
+<p class="intro">A Loja Aurora vai lançar cupons de desconto, e a dona tem uma regra: nenhum cupom passa de 50%. Ela pode pedir para todo mundo "tomar cuidado"... ou pode ensinar a regra ao próprio banco. O <code>CHECK</code> ("confira", "verifique") é isso: uma condição que o banco testa <strong>em toda linha que entra ou muda</strong>. Se a condição der falso, a linha é recusada, com uma mensagem de erro. Nesta aula você vai criar regras de preço, desconto e datas para as tabelas da Ana e ver o que o SQLite responde quando alguém tenta furar a regra.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escrever um <code>CHECK</code> numa coluna e no fim da tabela.</li>
+  <li>Que condições cabem num <code>CHECK</code>: comparações, <code>BETWEEN</code>, <code>IN</code>, funções como <code>length()</code>, e regras entre duas colunas.</li>
+  <li>O erro real <code>CHECK constraint failed</code> e como dar um <strong>nome</strong> à regra para a mensagem ficar clara.</li>
+  <li>A pegadinha do <em>NULL</em>: ele passa por qualquer <code>CHECK</code>.</li>
+  <li>A pegadinha dos tipos no SQLite: um texto pode passar por uma regra de número.</li>
+  <li>O que <strong>não</strong> pode ir num <code>CHECK</code> e o que fazer no lugar.</li>
+</ul>
+</div>
+
+<p>O <code>CHECK</code> é da família das regras que você já viu: <a href="not-null.html">NOT NULL</a>, <a href="unique.html">UNIQUE</a>, <a href="primary-key.html">PRIMARY KEY</a> e <a href="foreign-key.html">FOREIGN KEY</a>. Em inglês, essas regras se chamam <em>constraints</em> ("restrições"), palavra que aparece em todas as mensagens de erro. Os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo.</p>
+
+<hr>
+
+<h2>A ideia: o fiscal na porta</h2>
+<p>Pense num fiscal na porta do estoque com uma prancheta. Na prancheta estão as regras: "preço tem de ser maior que zero", "desconto vai de 1 a 50". Cada mercadoria que entra (um <code>INSERT</code>) ou que tem a etiqueta trocada (um <code>UPDATE</code>) passa por ele. Se uma regra der "não", a mercadoria volta e ele diz qual regra foi.</p>
+
+<p>O fiscal não confere o que já está lá dentro, nem quem sai: as regras valem para o que <strong>entra</strong> e o que <strong>muda</strong>. E ele só sabe olhar a própria mercadoria; não vai até outra sala conferir outra prateleira (isso é trabalho da <a href="foreign-key.html">chave estrangeira</a>).</p>
+
+<hr>
+
+<h2>1. O primeiro CHECK</h2>
+<p>A Ana cria a tabela de cupons com a regra do desconto:</p>
+
+<pre class="file" data-file="cupons.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL CHECK (desconto &gt; 0 AND desconto &lt;= 50)
+);
+
+INSERT INTO cupons (codigo, desconto)
+VALUES ('NATAL', 15), ('BEMVINDO', 10);
+
+SELECT * FROM cupons;
+</pre>
+
+<dl class="anatomy">
+  <dt>desconto REAL NOT NULL</dt><dd>A coluna, o tipo e a regra de não ficar vazia.</dd>
+  <dt>CHECK</dt><dd>"Confira": aqui começa a regra.</dd>
+  <dt>( … )</dt><dd>Os parênteses são <strong>obrigatórios</strong>. Dentro deles vai uma condição, escrita como a de um <code>WHERE</code> (aula <a href="where.html">WHERE</a>).</dd>
+  <dt>desconto &gt; 0 AND desconto &lt;= 50</dt><dd>A condição: maior que zero <strong>e</strong> no máximo 50. Cada linha só entra se a condição der verdadeiro para ela.</dd>
+</dl>
+
+<p>Os dois cupons entraram. Agora alguém tenta criar a "Black Friday" com 70%:</p>
+
+<pre class="file" data-file="cupom-errado.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL CHECK (desconto &gt; 0 AND desconto &lt;= 50)
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('BLACK', 70);
+</pre>
+
+<p>A resposta: <code>CHECK constraint failed: desconto &gt; 0 AND desconto &lt;= 50</code>, "a regra CHECK falhou", seguida da própria condição, para você saber qual regra foi. O cupom <strong>não</strong> foi gravado. No terminal do <code>sqlite3</code>, a Ana vê a mesma mensagem com o prefixo e o código do erro:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE cupons (id INTEGER PRIMARY KEY, codigo TEXT NOT NULL, desconto REAL NOT NULL CHECK (desconto &gt; 0 AND desconto &lt;= 50));
+sqlite&gt; INSERT INTO cupons (codigo, desconto) VALUES ('BLACK', 70);
+Runtime error: CHECK constraint failed: desconto &gt; 0 AND desconto &lt;= 50 (19)
+sqlite&gt; .quit</pre>
+
+<p>Diferente da chave estrangeira, o <code>CHECK</code> <strong>não</strong> precisa ser ligado com pragma nenhum: ele vale sempre, no editor e no terminal.</p>
+
+<h3>Vale também no UPDATE</h3>
+<p>O fiscal confere a etiqueta trocada, não só a mercadoria nova:</p>
+
+<pre class="file" data-file="update.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL CHECK (desconto &gt; 0 AND desconto &lt;= 50)
+);
+INSERT INTO cupons (codigo, desconto) VALUES ('NATAL', 15);
+
+UPDATE cupons SET desconto = 60 WHERE codigo = 'NATAL';
+</pre>
+
+<div class="trysql" data-goal="erro:CHECK constraint failed">
+<p class="try-task"><strong>Experimente:</strong> esta tabela não tem regra nenhuma, e o cupom de 80% entrou sem problema. Acrescente na coluna <code>desconto</code> um <code>CHECK</code> que só aceite valores de 1 a 50 (dica: <code>BETWEEN 1 AND 50</code>, da aula <a href="between.html">BETWEEN</a>) e rode de novo. Agora o <code>INSERT</code> tem de ser recusado.</p>
+<pre class="script" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('EXAGERO', 80);
+
+SELECT * FROM cupons;
+</pre>
+<pre class="solucao" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL CHECK (desconto BETWEEN 1 AND 50)
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('EXAGERO', 80);
+
+SELECT * FROM cupons;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Que regras cabem num CHECK</h2>
+<p>Quase tudo que você escreve num <code>WHERE</code> sobre <strong>a própria linha</strong> serve. Alguns exemplos para a Loja Aurora:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>CHECK</th></tr>
+<tr><td>Preço positivo</td><td><code>CHECK (preco &gt; 0)</code></td></tr>
+<tr><td>Estoque nunca negativo</td><td><code>CHECK (estoque &gt;= 0)</code></td></tr>
+<tr><td>Só 0 ou 1 (sim/não)</td><td><code>CHECK (vip IN (0, 1))</code></td></tr>
+<tr><td>Só alguns estados</td><td><code>CHECK (estado IN ('PI', 'CE', 'MA'))</code></td></tr>
+<tr><td>Código com 4 a 12 letras</td><td><code>CHECK (length(codigo) BETWEEN 4 AND 12)</code></td></tr>
+<tr><td>Código em maiúsculas</td><td><code>CHECK (codigo = upper(codigo))</code></td></tr>
+<tr><td>Email com arroba</td><td><code>CHECK (email LIKE '%@%')</code></td></tr>
+</table>
+</div>
+
+<p>Um exemplo com uma função: o código do cupom precisa ter de 4 a 12 letras. A função <code>length()</code> ("comprimento") conta as letras (aula <a href="funcoes-texto.html">Funções de Texto</a>):</p>
+
+<pre class="file" data-file="length.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL CHECK (length(codigo) BETWEEN 4 AND 12),
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('AB', 10);
+</pre>
+
+<h3>Regra entre duas colunas: no fim da tabela</h3>
+<p>A Ana também vai cadastrar promoções, com data de início e de fim. A regra "o fim não pode ser antes do início" fala de <strong>duas</strong> colunas. Por isso ela vai no fim da tabela, depois de todas as colunas, separada por vírgula, como uma linha a mais:</p>
+
+<pre class="file" data-file="promocoes.sql" data-resultado data-erro>CREATE TABLE promocoes (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL,
+    inicio TEXT NOT NULL,
+    fim    TEXT NOT NULL,
+    CHECK (fim &gt;= inicio)
+);
+
+INSERT INTO promocoes (nome, inicio, fim)
+VALUES ('Natal', '2026-12-01', '2026-11-20');
+</pre>
+
+<p>As datas estão no formato <code>AAAA-MM-DD</code> (ano, mês, dia), o mesmo da Loja Aurora. Nesse formato, comparar como texto dá a mesma ordem que comparar como data: <code>'2026-11-20'</code> vem antes de <code>'2026-12-01'</code>. Por isso o <code>&gt;=</code> funciona (mais em <a href="datas.html">Datas e Horas</a>).</p>
+
+<p>Para o SQLite, tanto faz escrever o <code>CHECK</code> na coluna ou no fim: a documentação diz que "na prática, não faz diferença". O costume é deixar na coluna a regra que só fala dela, e no fim a que fala de várias.</p>
+
+<hr>
+
+<h2>3. Dando nome à regra</h2>
+<p>A mensagem <code>CHECK constraint failed: desconto &gt; 0 AND desconto &lt;= 50</code> é boa para quem programa, mas uma tabela com cinco regras pode gerar mensagens compridas. Dá para dar um nome à regra com <code>CONSTRAINT nome</code> ("regra nome") antes do <code>CHECK</code>:</p>
+
+<pre class="file" data-file="nome.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL,
+    CONSTRAINT desconto_valido CHECK (desconto BETWEEN 1 AND 50)
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('ZERO', 0);
+</pre>
+
+<dl class="anatomy">
+  <dt>CONSTRAINT</dt><dd>"Regra": avisa que vem um nome.</dd>
+  <dt>desconto_valido</dt><dd>O nome que você escolheu. Use minúsculas e sublinhado, como nos nomes de coluna, e diga o que a regra garante.</dd>
+  <dt>CHECK (…)</dt><dd>A regra em si, igual a antes.</dd>
+</dl>
+
+<p>Agora a mensagem é <code>CHECK constraint failed: desconto_valido</code>. Num programa, você pode procurar esse nome na mensagem e mostrar ao usuário um aviso em português: "o desconto precisa estar entre 1% e 50%".</p>
+
+<hr>
+
+<h2>4. A pegadinha do NULL</h2>
+<p>O que acontece se o desconto vier vazio, sem <code>NOT NULL</code> na coluna?</p>
+
+<pre class="file" data-file="null.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL CHECK (desconto &gt; 0)
+);
+
+INSERT INTO cupons (codigo, desconto) VALUES ('MISTERIO', NULL);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Entrou. <code>NULL &gt; 0</code> não dá nem verdadeiro nem falso: dá <em>NULL</em>, "desconhecido" (aula <a href="null.html">O Valor NULL</a>). E a regra do <code>CHECK</code> é: a linha só é recusada quando a condição dá <strong>falso</strong>. Desconhecido passa. Por isso, quase sempre, o <code>CHECK</code> anda junto com o <code>NOT NULL</code>, como na seção 1.</p>
+
+<hr>
+
+<h2>5. A pegadinha dos tipos no SQLite</h2>
+<p>No SQLite, o tipo da coluna é uma <strong>preferência</strong>, não uma lei (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Veja o que acontece com uma regra de número quando chega um texto:</p>
+
+<pre class="file" data-file="tipo.sql" data-resultado>CREATE TABLE estoque_loja (
+    produto_id INTEGER NOT NULL,
+    quantidade INTEGER NOT NULL CHECK (quantidade &gt;= 0)
+);
+
+INSERT INTO estoque_loja VALUES (1, 'muitos');
+
+SELECT quantidade, typeof(quantidade) FROM estoque_loja;
+</pre>
+
+<p>O texto <code>'muitos'</code> entrou numa coluna <code>INTEGER</code> e ainda passou pelo <code>quantidade &gt;= 0</code>. Para o SQLite, quando se compara um texto com um número, o texto é sempre "maior". Se você precisa garantir o tipo, há dois caminhos: um <code>CHECK</code> com <code>typeof()</code>, a função que diz o tipo do valor:</p>
+
+<pre class="file" data-file="typeof.sql" data-resultado data-erro>CREATE TABLE estoque_loja (
+    produto_id INTEGER NOT NULL,
+    quantidade INTEGER NOT NULL
+               CHECK (typeof(quantidade) = 'integer' AND quantidade &gt;= 0)
+);
+
+INSERT INTO estoque_loja VALUES (1, 'muitos');
+</pre>
+
+<p>Ou uma tabela <code>STRICT</code> ("rigorosa"), em que o SQLite recusa o tipo errado sozinho; ela é explicada em <a href="tipos-sqlite.html">Os Tipos no SQLite</a>.</p>
+
+<hr>
+
+<h2>6. Formas de fazer a mesma coisa</h2>
+<p>A regra "desconto de 1 a 50" pode ser escrita de vários jeitos. Todos funcionam:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Escrita</th><th>Mensagem quando falha</th><th>Quando usar</th></tr>
+<tr><td>Na coluna</td><td><code>desconto REAL CHECK (desconto BETWEEN 1 AND 50)</code></td><td>Mostra a condição</td><td>Regra que só fala daquela coluna. A mais comum.</td></tr>
+<tr><td>No fim da tabela</td><td><code>CHECK (desconto BETWEEN 1 AND 50)</code></td><td>Mostra a condição</td><td>Regras que comparam duas colunas.</td></tr>
+<tr><td>Com nome</td><td><code>CONSTRAINT desconto_valido CHECK (…)</code></td><td>Mostra o nome</td><td>Quando um programa vai ler a mensagem, ou a condição é comprida.</td></tr>
+<tr><td>Várias regras numa coluna</td><td><code>CHECK (desconto &gt;= 1) CHECK (desconto &lt;= 50)</code></td><td>Mostra a que falhou primeiro</td><td>Quando você quer saber exatamente qual limite foi furado.</td></tr>
+</table>
+</div>
+
+<p>E quando <strong>não</strong> usar <code>CHECK</code>: se a lista de valores permitidos muda com o tempo (as categorias da loja, por exemplo), não escreva a lista dentro do <code>CHECK</code>. Crie uma tabela com os valores e use uma <a href="foreign-key.html">chave estrangeira</a>: para acrescentar um valor, basta um <code>INSERT</code>, sem mexer na estrutura da tabela.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>CHECK constraint failed</strong>
+<p>A linha furou uma regra. A mensagem traz a condição ou o nome da regra. Se a linha fura duas regras ao mesmo tempo, o SQLite mostra só a primeira:</p>
+<pre class="file" data-file="duas.sql" data-resultado data-erro>CREATE TABLE produtos_novos (
+    nome    TEXT NOT NULL,
+    preco   REAL CHECK (preco &gt; 0),
+    estoque INTEGER CHECK (estoque &gt;= 0)
+);
+INSERT INTO produtos_novos VALUES ('Caneta', -1, -5);
+</pre>
+<p><strong>Como consertar:</strong> corrija o valor e rode de novo; se der outra mensagem, era a segunda regra.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu os parênteses</strong>
+<pre class="file" data-file="sem-parenteses.sql" data-resultado data-erro>CREATE TABLE cupons (
+    desconto REAL CHECK desconto &gt; 0
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "desconto": syntax error</code>, "erro de sintaxe perto de desconto". Depois de <code>CHECK</code>, o SQLite espera um parêntese.</p>
+<p><strong>Como consertar:</strong> <code>CHECK (desconto &gt; 0)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma coluna que não existe</strong>
+<pre class="file" data-file="coluna-errada.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    desconto REAL CHECK (descont &gt; 0)
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: descont</code>, "não existe a coluna descont". Faltou o <strong>o</strong>. Ao contrário da chave estrangeira, aqui o erro aparece já no <code>CREATE TABLE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Consultar outra tabela dentro do CHECK</strong>
+<p>A Ana quis garantir que o produto da promoção existe:</p>
+<pre class="file" data-file="subconsulta.sql" data-resultado data-erro>CREATE TABLE promocoes (
+    produto_id INTEGER CHECK (produto_id IN (SELECT id FROM produtos)),
+    desconto   REAL
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>subqueries prohibited in CHECK constraints</code>, "subconsultas são proibidas em regras CHECK". O <code>CHECK</code> só enxerga a própria linha.</p>
+<p><strong>Como consertar:</strong> para "este número tem de existir em outra tabela", a ferramenta certa é a chave estrangeira: <code>produto_id INTEGER REFERENCES produtos(id)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Acrescentar um CHECK numa tabela que já existe</strong>
+<p>A Ana quer proteger o preço dos produtos que já estão no banco:</p>
+<pre class="file" data-file="alter.sql" data-resultado data-erro>ALTER TABLE produtos
+ADD CONSTRAINT preco_positivo CHECK (preco &gt; 0);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "CONSTRAINT": syntax error</code>. O SQLite não deixa acrescentar uma regra a uma tabela pronta. Outros bancos deixam (veja a nota abaixo).</p>
+<p><strong>Como consertar:</strong> no SQLite, é preciso criar uma tabela nova, já com a regra, copiar os dados e trocar uma pela outra. A aula <a href="alter-table.html">ALTER TABLE</a> mostra o roteiro completo. Na Loja Aurora isso funcionaria, porque o menor preço é 1.15 e o menor estoque é 0: nenhum produto atual fura as regras.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>CHECK</code> é do SQL padrão, e a escrita <code>CHECK (condição)</code> e <code>CONSTRAINT nome CHECK (condição)</code> é a mesma no MySQL, no PostgreSQL e no SQL Server. Também neles uma condição que dá <em>NULL</em> passa. Duas diferenças (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- PostgreSQL, MySQL e SQL Server: acrescentar a regra numa tabela pronta
+ALTER TABLE produtos ADD CONSTRAINT preco_positivo CHECK (preco &gt; 0);
+
+-- MySQL: criar a regra sem que ela seja conferida
+CREATE TABLE cupons (
+    desconto DECIMAL(5,2),
+    CONSTRAINT desconto_valido CHECK (desconto BETWEEN 1 AND 50) NOT ENFORCED
+);
+</pre>
+<p>A mensagem de erro muda de banco para banco. No MySQL, se você não der nome à regra, ele mesmo cria um (do tipo <code>cupons_chk_1</code>), e é esse nome que aparece no erro: mais um motivo para dar nomes você mesmo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna TIPO CHECK (condição)</code></td><td>Regra numa coluna.</td></tr>
+<tr><td><code>CHECK (condição)</code> no fim do <code>CREATE TABLE</code></td><td>Regra da tabela; pode comparar colunas.</td></tr>
+<tr><td><code>CONSTRAINT nome CHECK (condição)</code></td><td>Regra com nome; a mensagem de erro mostra o nome.</td></tr>
+<tr><td>Quando é conferido</td><td>Em cada <code>INSERT</code> e <code>UPDATE</code>. Não no <code>SELECT</code> nem no <code>DELETE</code>.</td></tr>
+<tr><td>Condição que dá <em>NULL</em></td><td>Passa. Junte <code>NOT NULL</code> se o vazio não for aceito.</td></tr>
+<tr><td>Não pode ter</td><td>Subconsulta (<code>SELECT</code>).</td></tr>
+<tr><td>Ligar/desligar</td><td>Vale sempre. <code>PRAGMA ignore_check_constraints = ON;</code> desliga temporariamente (evite).</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>CHECK constraint failed: desconto &gt; 0</code></td><td>A linha furou a regra mostrada.</td></tr>
+<tr><td><code>CHECK constraint failed: desconto_valido</code></td><td>A linha furou a regra com esse nome.</td></tr>
+<tr><td><code>Runtime error: CHECK constraint failed: … (19)</code></td><td>O mesmo, no terminal do <code>sqlite3</code>.</td></tr>
+<tr><td><code>near "desconto": syntax error</code></td><td>Faltaram os parênteses depois de <code>CHECK</code>.</td></tr>
+<tr><td><code>subqueries prohibited in CHECK constraints</code></td><td>Não pode <code>SELECT</code> dentro do <code>CHECK</code>; use chave estrangeira.</td></tr>
+<tr><td><code>near "CONSTRAINT": syntax error</code> (no <code>ALTER TABLE</code>)</td><td>O SQLite não acrescenta regras a uma tabela pronta.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Preço positivo</h3>
+<p>Complete a regra para que o preço seja sempre maior que zero:</p>
+<div class="ex-code">preco REAL NOT NULL <input data-answer="CHECK" aria-label="palavra-chave"> (preco &gt; 0)</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só sim ou não</h3>
+<p>Complete para que a coluna <code>vip</code> só aceite 0 ou 1:</p>
+<div class="ex-code">vip INTEGER NOT NULL CHECK (vip <input data-answer="IN" aria-label="operador"> (0, 1))</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A coluna é <code>desconto REAL CHECK (desconto &gt; 0)</code>, sem <code>NOT NULL</code>. O que acontece com <code>INSERT INTO cupons (desconto) VALUES (NULL);</code>?</p>
+<label><input type="radio" name="q3"> Dá <code>CHECK constraint failed: desconto &gt; 0</code></label>
+<label><input type="radio" name="q3"> A linha entra, porque uma condição que dá <em>NULL</em> não é falsa</label>
+<label><input type="radio" name="q3"> O SQLite troca o <em>NULL</em> por 0</label>
+<label><input type="radio" name="q3"> Dá <code>NOT NULL constraint failed</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Onde a regra "a data de fim não pode ser antes da de início" precisa ser escrita?</p>
+<label><input type="radio" name="q4"> Só na coluna <code>inicio</code></label>
+<label><input type="radio" name="q4"> Num <code>WHERE</code> de cada <code>SELECT</code></label>
+<label><input type="radio" name="q4"> Não dá para fazer com <code>CHECK</code></label>
+<label><input type="radio" name="q4"> No fim da tabela (ou numa das colunas), já que o SQLite aceita os dois; o costume é no fim, por falar de duas colunas</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana escreveu <code>CHECK (categoria_id IN (SELECT id FROM categorias))</code>. O que o SQLite responde, e qual é a ferramenta certa?</p>
+<label><input type="radio" name="q5"> Funciona normalmente</label>
+<label><input type="radio" name="q5"> <code>no such table: categorias</code>; criar a tabela antes</label>
+<label><input type="radio" name="q5"> <code>subqueries prohibited in CHECK constraints</code>; usar uma chave estrangeira</label>
+<label><input type="radio" name="q5"> <code>CHECK constraint failed</code>; usar <code>UNIQUE</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Quando o <code>CHECK</code> é conferido?</p>
+<label><input type="radio" name="q6"> Em cada <code>INSERT</code> e cada <code>UPDATE</code></label>
+<label><input type="radio" name="q6"> Em cada <code>SELECT</code></label>
+<label><input type="radio" name="q6"> Só quando o <code>PRAGMA</code> certo está ligado</label>
+<label><input type="radio" name="q6"> Só no <code>CREATE TABLE</code></label>
+</div>
+
+<h3>Missão final: a promoção com datas trocadas</h3>
+
+<div class="trysql" data-goal="erro:periodo_valido">
+<p class="try-task"><strong>Missão:</strong> a tabela de promoções aceitou uma promoção que termina antes de começar. Acrescente, no fim da tabela, uma regra com o <strong>nome</strong> <code>periodo_valido</code> que exija <code>fim &gt;= inicio</code>. Rode: o <code>INSERT</code> tem de ser recusado com a mensagem <code>CHECK constraint failed: periodo_valido</code>.</p>
+<pre class="script" data-file="promocoes.sql">CREATE TABLE promocoes (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL,
+    inicio TEXT NOT NULL,
+    fim    TEXT NOT NULL
+);
+
+INSERT INTO promocoes (nome, inicio, fim)
+VALUES ('Natal', '2026-12-01', '2026-11-20');
+
+SELECT * FROM promocoes;
+</pre>
+<pre class="solucao" data-file="promocoes.sql">CREATE TABLE promocoes (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL,
+    inicio TEXT NOT NULL,
+    fim    TEXT NOT NULL,
+    CONSTRAINT periodo_valido CHECK (fim &gt;= inicio)
+);
+
+INSERT INTO promocoes (nome, inicio, fim)
+VALUES ('Natal', '2026-12-01', '2026-11-20');
+
+SELECT * FROM promocoes;
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, troque as datas do <code>INSERT</code> para <code>'2026-12-01'</code> e <code>'2026-12-24'</code> e veja a promoção entrar.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>CHECK (condição)</code> é uma regra que o banco confere em cada <code>INSERT</code> e <code>UPDATE</code>; se a condição der falso, a linha é recusada com <code>CHECK constraint failed</code>.</li>
+  <li>Os parênteses são obrigatórios. A condição se escreve como num <code>WHERE</code>: comparações, <code>BETWEEN</code>, <code>IN</code>, <code>LIKE</code>, funções.</li>
+  <li>Regra de uma coluna vai na coluna; regra que compara colunas vai no fim da tabela.</li>
+  <li><code>CONSTRAINT nome CHECK (…)</code> dá nome à regra, e a mensagem de erro passa a mostrar o nome.</li>
+  <li>Condição que dá <em>NULL</em> passa: junte <code>NOT NULL</code>. No SQLite, um texto pode passar por uma regra de número; use <code>typeof()</code> ou uma tabela <code>STRICT</code>.</li>
+  <li>Nada de subconsulta num <code>CHECK</code> (use chave estrangeira), e no SQLite não dá para acrescentar um <code>CHECK</code> com <code>ALTER TABLE</code>: é preciso recriar a tabela.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
