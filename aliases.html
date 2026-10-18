@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL AS — apelidos para colunas e tabelas | Guia SQL</title>
+<meta name="description" content="Apelidos (AS) em SQL para quem nunca mexeu num banco de dados: dar nome a uma coluna do resultado, a uma conta e a uma tabela, apelidos com espaço e acento entre aspas duplas, o AS opcional e a vírgula esquecida, onde o apelido pode ser usado (ORDER BY, WHERE) e as mensagens de erro reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Apelidos (AS)</span></h1>
+
+<p class="intro">Quando a Ana calcula o dinheiro parado no estoque com <code>preco * estoque</code>, o cabeçalho da coluna sai assim mesmo: "preco * estoque". Feio para um relatório, e difícil de usar no resto da consulta. A solução é dar um <strong>apelido</strong> à coluna com <code>AS</code> (em inglês, "como": "mostre <code>preco * estoque</code> <strong>como</strong> <code>valor_parado</code>"). O apelido muda só o nome que aparece no resultado; a tabela continua igualzinha.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Dar apelido a uma coluna do resultado com <code>AS</code>.</li>
+  <li>Dar nome a uma <strong>conta</strong> e usar esse nome no <code>ORDER BY</code>.</li>
+  <li>Apelidos com espaço e acento, entre <strong>aspas duplas</strong>, e por que não usar aspas simples.</li>
+  <li>O <code>AS</code> é opcional, e a armadilha da <strong>vírgula esquecida</strong>.</li>
+  <li>Apelidos de <strong>tabela</strong> (<code>FROM produtos AS p</code>), que você vai usar muito nos JOINs.</li>
+  <li>Onde o apelido pode ser usado (e onde o SQLite deixa, mas os outros bancos não).</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: o crachá</h2>
+<p>A funcionária se chama Luana Castelo, mas no crachá da loja está escrito "Supervisora". O crachá não muda o nome dela no RH; ele só diz como ela aparece para os clientes. O apelido de uma coluna é um crachá: no <strong>resultado</strong>, a coluna aparece com o nome que você escolheu; na <strong>tabela</strong>, ela continua com o nome de sempre.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na tabela</th><th>No SQL</th><th>No cabeçalho do resultado</th></tr>
+<tr><td><code>nome</code></td><td><code>nome AS produto</code></td><td>produto</td></tr>
+<tr><td><code>preco</code></td><td><code>preco AS valor</code></td><td>valor</td></tr>
+<tr><td>(não existe; é uma conta)</td><td><code>preco * estoque AS valor_parado</code></td><td>valor_parado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro apelido</h2>
+<p>Os livros da loja (categoria 4), com cabeçalhos que dizem o que cada coluna é:</p>
+
+<pre class="file" data-file="livros.sql" data-resultado>SELECT nome AS produto, preco AS valor
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+
+<dl class="anatomy">
+  <dt>nome</dt><dd>A coluna de verdade, da tabela <code>produtos</code>.</dd>
+  <dt>AS</dt><dd>"Como": anuncia o apelido.</dd>
+  <dt>produto</dt><dd>O apelido. É o nome que aparece no cabeçalho do resultado.</dd>
+  <dt>preco AS valor</dt><dd>Cada coluna ganha o seu próprio apelido. As que não ganham ficam com o nome original.</dd>
+</dl>
+
+<p>Repare no cabeçalho do quadro: "produto" e "valor". Os dados são exatamente os mesmos que viriam com <code>SELECT nome, preco</code>; só os nomes do cabeçalho mudaram. Nada foi alterado na tabela: na próxima consulta, a coluna continua se chamando <code>nome</code>.</p>
+
+<div class="trysql" data-goal="colunas:produto,preco">
+<p class="try-task"><strong>Experimente:</strong> faça a primeira coluna aparecer com o nome <code>produto</code>. A segunda fica como está (<code>preco</code>).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome AS produto, preco
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Dando nome a uma conta</h2>
+<p>Sem apelido, uma conta ganha como nome o próprio texto da conta:</p>
+
+<pre class="file" data-file="sem-apelido.sql" data-resultado>SELECT nome, preco * estoque
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+
+<p>O cabeçalho saiu "preco * estoque". Com um apelido, a coluna ganha um nome de verdade, e esse nome pode ser usado no <code>ORDER BY</code>:</p>
+
+<pre class="file" data-file="com-apelido.sql" data-resultado>SELECT nome, preco * estoque AS valor_parado
+FROM produtos
+WHERE categoria_id = 4
+ORDER BY valor_parado DESC;
+</pre>
+
+<p>Compare com a aula de <a href="order-by.html">ORDER BY</a>, em que a Ana precisou repetir a conta inteira (<code>ORDER BY preco * estoque DESC</code>). Com o apelido, escreve-se a conta uma vez só. Se um dia a conta mudar, você muda num lugar.</p>
+
+<p>O mesmo vale para qualquer valor calculado, até um texto fixo. Aqui, o <code>||</code> "cola" pedaços de texto (você vai vê-lo em <a href="funcoes-texto.html">Funções de Texto</a>):</p>
+
+<pre class="file" data-file="colando-texto.sql" data-resultado>SELECT nome || ' (' || cidade || ')' AS cliente
+FROM clientes
+WHERE estado = 'PE';
+</pre>
+
+<p>Sem o <code>AS cliente</code>, o cabeçalho seria <code>nome || ' (' || cidade || ')'</code>.</p>
+
+<div class="trysql" data-goal="colunas:nome,valor_parado;;out:^Carregador USB-C 20W">
+<p class="try-task"><strong>Missão:</strong> mostre o <code>nome</code> e o dinheiro parado de cada produto, com a conta apelidada de <code>valor_parado</code>, do maior valor para o menor. Use o apelido no <code>ORDER BY</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco * estoque
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco * estoque AS valor_parado
+FROM produtos
+ORDER BY valor_parado DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Apelidos com espaço e acento: aspas duplas</h2>
+<p>Para um relatório que vai para a dona da loja, a Ana quer cabeçalhos em português de verdade, com espaço e acento. Um nome assim precisa ir entre <strong>aspas duplas</strong>:</p>
+
+<pre class="file" data-file="cabecalho-bonito.sql" data-resultado>SELECT nome AS "Nome do produto", preco AS "Preço (R$)"
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+
+<p>Lembra da regra das aspas? No SQL, as <strong>aspas simples</strong> são para <strong>texto</strong> (valores, como <code>'PI'</code>), e as <strong>aspas duplas</strong> são para <strong>nomes</strong> (de coluna, de tabela, de apelido). O motor do guia segue essa regra à risca. Por isso o apelido com espaço vai entre aspas duplas.</p>
+
+<p>Sem aspas, o espaço separa as palavras, e o SQLite não entende o resto:</p>
+
+<pre class="file" data-file="sem-aspas.sql" data-resultado data-erro>SELECT nome AS Nome do produto
+FROM produtos;
+</pre>
+
+<p><code>near "do": syntax error</code>: ele aceitou <code>Nome</code> como apelido e tropeçou no "do".</p>
+
+<div class="tip">
+<strong>Para apelidos que você vai usar no SQL, prefira o simples</strong>
+<p>Um apelido com espaço precisa de aspas duplas <strong>toda vez</strong> que for usado (<code>ORDER BY "Nome do produto"</code>). Para apelidos que você vai reutilizar na consulta, use o mesmo estilo dos nomes de coluna: minúsculas, sem acento, com <code>_</code> no lugar do espaço (<code>valor_parado</code>). Deixe os cabeçalhos "bonitos" para o resultado final de um relatório.</p>
+</div>
+
+<hr>
+
+<h2>4. O AS é opcional (e a vírgula esquecida)</h2>
+<p>A palavra <code>AS</code> pode ser omitida: um nome logo depois da coluna já é entendido como apelido.</p>
+
+<pre class="file" data-file="sem-as.sql" data-resultado>SELECT nome produto, preco valor
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+
+<p>O resultado é igual ao da seção 1. Parece prático, mas é justamente isso que cria uma das armadilhas mais traiçoeiras do SQL. Veja o que acontece quando a Ana esquece uma <strong>vírgula</strong>:</p>
+
+<pre class="file" data-file="virgula-esquecida.sql" data-resultado>SELECT nome preco
+FROM produtos
+WHERE categoria_id = 4;
+</pre>
+
+<p>Nenhum erro! Mas veio <strong>uma</strong> coluna só, chamada "preco", com os <strong>nomes</strong> dos livros dentro. Sem a vírgula entre <code>nome</code> e <code>preco</code>, o SQLite entendeu "a coluna <code>nome</code>, com o apelido <code>preco</code>". O preço de verdade nem foi buscado.</p>
+
+<div class="warning">
+<strong>Escreva sempre o AS</strong>
+<p>Com o <code>AS</code> escrito, quem lê vê na hora que é um apelido. E, quando falta uma vírgula, o resultado com uma coluna a menos e um cabeçalho estranho fica mais fácil de notar. A documentação do PostgreSQL recomenda o mesmo: sempre escrever o <code>AS</code> (ou pôr o apelido entre aspas duplas).</p>
+</div>
+
+<hr>
+
+<h2>5. Apelidos de tabela</h2>
+<p>Tabelas também podem ganhar apelido, no <code>FROM</code>. Normalmente é uma letra só:</p>
+
+<pre class="file" data-file="apelido-tabela.sql" data-resultado>SELECT p.nome, p.preco
+FROM produtos AS p
+WHERE p.categoria_id = 4;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM produtos AS p</dt><dd>Nesta consulta, a tabela <code>produtos</code> passa a se chamar <code>p</code>.</dd>
+  <dt>p.nome</dt><dd>"A coluna <code>nome</code> da tabela <code>p</code>." O ponto liga a tabela à coluna.</dd>
+  <dt>p.categoria_id</dt><dd>O apelido vale na consulta inteira: no <code>SELECT</code>, no <code>WHERE</code>, no <code>ORDER BY</code>.</dd>
+</dl>
+
+<p>Com uma tabela só, o apelido não ajuda muito: <code>SELECT nome, preco FROM produtos</code> dá no mesmo. Ele brilha quando a consulta usa <strong>duas ou mais tabelas</strong> ao mesmo tempo, como nos JOINs (aula <a href="inner-join.html">INNER JOIN</a>): lá, <code>clientes</code> e <code>fornecedores</code> têm, as duas, uma coluna <code>nome</code>, e é o <code>c.nome</code> ou o <code>f.nome</code> que diz de qual tabela você está falando. No <a href="self-join.html">Self Join</a>, a mesma tabela aparece duas vezes, e o apelido é obrigatório.</p>
+
+<p>Aqui o <code>AS</code> também é opcional: <code>FROM produtos p</code> funciona igual.</p>
+
+<hr>
+
+<h2>6. Onde o apelido pode ser usado</h2>
+<p>O apelido nasce no <code>SELECT</code>. Onde mais ele vale?</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte da consulta</th><th>Apelido de coluna</th><th>Apelido de tabela</th></tr>
+<tr><td><code>SELECT</code></td><td>É onde ele é criado</td><td>Sim (<code>p.nome</code>)</td></tr>
+<tr><td><code>WHERE</code></td><td>No SQLite, sim; no padrão SQL e na maioria dos bancos, <strong>não</strong></td><td>Sim</td></tr>
+<tr><td><code>ORDER BY</code></td><td>Sim, em todos os bancos</td><td>Sim</td></tr>
+</table>
+</div>
+
+<p>O SQLite é generoso e deixa usar o apelido no <code>WHERE</code>:</p>
+
+<pre class="file" data-file="apelido-no-where.sql" data-resultado>SELECT nome, preco * estoque AS valor_parado
+FROM produtos
+WHERE valor_parado &gt; 3000;
+</pre>
+
+<p>Funciona aqui, mas <strong>não</strong> é SQL padrão e não funciona no PostgreSQL nem no MySQL. O motivo, que a documentação do MySQL explica: quando o banco avalia o <code>WHERE</code>, o valor da coluna do <code>SELECT</code> ainda pode não ter sido calculado. A ordem "de verdade" em que o banco trabalha é: <code>FROM</code> (pega a tabela) → <code>WHERE</code> (filtra) → <code>SELECT</code> (calcula as colunas e dá os apelidos) → <code>ORDER BY</code> (ordena). O apelido só "existe" a partir do <code>SELECT</code>. Para um SQL que roda em qualquer lugar, repita a conta no <code>WHERE</code>: <code>WHERE preco * estoque &gt; 3000</code>.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de dar um apelido</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Funciona no SQLite?</th><th>Observação</th></tr>
+<tr><td><code>nome AS produto</code></td><td>Sim</td><td>A forma recomendada.</td></tr>
+<tr><td><code>nome produto</code></td><td>Sim</td><td>Sem <code>AS</code>: fácil de confundir com uma vírgula esquecida.</td></tr>
+<tr><td><code>nome AS "Nome do produto"</code></td><td>Sim</td><td>Aspas duplas: o jeito padrão para nomes com espaço, acento ou maiúsculas.</td></tr>
+<tr><td><code>nome AS 'Nome do produto'</code></td><td>Sim, mas evite</td><td>Aspas simples são para texto. O SQLite aceita aqui por compatibilidade, mas o mesmo apelido em outro lugar vira texto (veja <a href="#errado">Quando dá errado</a>).</td></tr>
+<tr><td><code>preco AS preço</code></td><td>Sim, mas evite</td><td>O SQLite aceita acento sem aspas; muitos programas e bancos não. Prefira <code>preco</code> ou <code>"Preço"</code>.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Nome para usar de novo na consulta</td><td><code>AS valor_parado</code> (minúsculas, sem espaço)</td></tr>
+<tr><td>Cabeçalho de relatório</td><td><code>AS "Valor parado (R$)"</code></td></tr>
+<tr><td>Consulta com duas tabelas ou mais</td><td>Apelido curto de tabela: <code>FROM clientes AS c</code></td></tr>
+<tr><td>SQL que precisa rodar em outro banco</td><td>Apelido no <code>ORDER BY</code> pode; no <code>WHERE</code>, repita a conta</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Usou o nome da tabela depois de dar apelido a ela</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT produtos.nome
+FROM produtos AS p
+WHERE p.categoria_id = 4;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: produtos.nome</code>, "não existe a coluna produtos.nome". Depois de <code>FROM produtos AS p</code>, a tabela se chama <code>p</code> na consulta inteira; o nome antigo deixa de valer.</p>
+<p><strong>Como consertar:</strong> use o apelido em todo lugar: <code>SELECT p.nome</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido que é uma palavra do SQL</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome AS order
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "order": syntax error</code>. <code>ORDER</code> é uma palavra reservada do SQL (a do <code>ORDER BY</code>), e o SQLite acha que você começou um <code>ORDER BY</code> no lugar errado. O mesmo acontece com <code>select</code>, <code>from</code>, <code>where</code>, <code>group</code>…</p>
+<p><strong>Como consertar:</strong> escolha outro nome (<code>AS ordem</code>) ou ponha entre aspas duplas (<code>AS "order"</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido com espaço, sem aspas</strong>
+<p>Você viu na seção 3: <code>SELECT nome AS Nome do produto</code> dá <code>near "do": syntax error</code>. Apelido com espaço vai entre aspas duplas.</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido entre aspas simples: não ordena</strong>
+<pre class="file" data-file="aspas-simples.sql" data-resultado>SELECT nome AS 'produto'
+FROM produtos
+WHERE categoria_id = 4
+ORDER BY 'produto';
+</pre>
+<p><strong>O que aconteceu:</strong> nenhuma mensagem, mas os livros vieram fora de ordem alfabética (Dicionário antes de Atlas). No <code>SELECT</code>, o SQLite aceitou <code>'produto'</code> como apelido. Mas no <code>ORDER BY</code>, <code>'produto'</code> entre aspas simples é só o <strong>texto</strong> "produto", igual em todas as linhas, e ordenar por ele não muda nada.</p>
+<p><strong>Como consertar:</strong> apelido sem aspas (<code>AS produto</code> … <code>ORDER BY produto</code>) ou entre aspas duplas nos dois lugares (<code>AS "produto"</code> … <code>ORDER BY "produto"</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>A vírgula esquecida</strong>
+<p>Também sem mensagem: <code>SELECT nome preco FROM produtos</code> traz uma coluna só, chamada "preco", com os nomes dos produtos (seção 4). Se o resultado tem menos colunas do que você pediu, procure uma vírgula faltando.</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido igual ao nome de outra coluna</strong>
+<pre class="file" data-file="confuso.sql" data-resultado>SELECT preco AS nome, nome
+FROM produtos
+WHERE nome = 'Atlas Geográfico';
+</pre>
+<p><strong>O que aconteceu:</strong> funcionou, mas o resultado tem duas colunas chamadas "nome", uma com o preço e outra com o nome. E qual <code>nome</code> o <code>WHERE</code> usou? A coluna de verdade da tabela, não o apelido; por isso o Atlas foi achado. Ninguém consegue ler isso sem se confundir.</p>
+<p><strong>Como evitar:</strong> nunca dê a uma coluna o apelido que já é o nome de outra coluna da tabela.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>Apelido no WHERE:</strong> o SQLite deixa; o padrão SQL, o PostgreSQL e o MySQL, não. A documentação do PostgreSQL diz que o nome de uma coluna do resultado pode ser usado no <code>ORDER BY</code> e no <code>GROUP BY</code>, mas não no <code>WHERE</code> nem no <code>HAVING</code>. A do Oracle diz que o apelido pode ser usado só no <code>ORDER BY</code>.</li>
+  <li><strong>AS opcional:</strong> no PostgreSQL, o <code>AS</code> só pode ser omitido se o apelido não for nenhuma palavra-chave do banco, e a documentação recomenda escrever sempre o <code>AS</code>.</li>
+  <li><strong>Aspas no apelido:</strong> o MySQL usa a crase (<code>`</code>) para nomes, e aceita apelidos entre aspas simples no <code>SELECT</code>, com a mesma armadilha desta aula: em outro lugar da consulta, o mesmo nome entre aspas simples vira texto. O SQL Server também aceita colchetes: <code>[Nome do produto]</code>. Ilustrativo (não roda no SQLite):</li>
+</ul>
+<pre class="file" data-file="outros.sql">-- MySQL: crase para nomes com espaço
+SELECT nome AS `Nome do produto` FROM produtos;
+
+-- SQL Server: colchetes
+SELECT nome AS [Nome do produto] FROM produtos;
+
+-- Em todos (o padrão SQL): aspas duplas
+SELECT nome AS "Nome do produto" FROM produtos;
+</pre>
+<p>No MySQL, as aspas duplas para nomes só valem com o modo <code>ANSI_QUOTES</code> ligado; sem ele, o MySQL trata <code>"…"</code> como texto.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna AS apelido</code></td><td>Mostra a coluna com outro nome no resultado</td></tr>
+<tr><td><code>conta AS apelido</code></td><td>Dá nome a um valor calculado (<code>preco * estoque AS valor_parado</code>)</td></tr>
+<tr><td><code>coluna AS "Com espaço"</code></td><td>Apelido com espaço, acento ou maiúsculas</td></tr>
+<tr><td><code>coluna apelido</code></td><td>O mesmo, sem <code>AS</code> (evite)</td></tr>
+<tr><td><code>FROM tabela AS t</code></td><td>Apelido de tabela; as colunas viram <code>t.coluna</code></td></tr>
+<tr><td><code>ORDER BY apelido</code></td><td>Ordena pelo apelido (vale em todos os bancos)</td></tr>
+<tr><td><code>WHERE apelido …</code></td><td>Só no SQLite; nos outros, repita a conta</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "do": syntax error</code></td><td>Apelido com espaço sem aspas duplas</td></tr>
+<tr><td><code>near "order": syntax error</code></td><td>Apelido que é palavra reservada</td></tr>
+<tr><td><code>no such column: produtos.nome</code></td><td>Usou o nome da tabela depois de dar apelido a ela</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra do apelido</h3>
+<p>Complete para a coluna <code>salario</code> aparecer como <code>pagamento</code>:</p>
+<div class="ex-code">SELECT nome, salario <input data-answer="AS" aria-label="palavra do apelido"> pagamento FROM funcionarios;</div>
+</div>
+
+<div class="exercise">
+<h3>2. As aspas certas</h3>
+<p>Que tipo de aspas o apelido com espaço precisa? Escreva o símbolo:</p>
+<div class="ex-code">SELECT nome AS <input data-answer="&quot;" aria-label="aspas de abertura">Nome do cliente" FROM clientes;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quantas colunas tem o resultado de <code>SELECT nome preco FROM produtos;</code>?</p>
+<label><input type="radio" name="q3"> Duas: nome e preco</label>
+<label><input type="radio" name="q3"> Nenhuma: dá erro de sintaxe</label>
+<label><input type="radio" name="q3"> Uma, chamada "preco", com os nomes dos produtos</label>
+<label><input type="radio" name="q3"> Uma, chamada "nome", com os preços</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Depois de <code>FROM clientes AS c</code>, como se escreve a coluna <code>cidade</code>?</p>
+<label><input type="radio" name="q4"> <code>clientes.cidade</code></label>
+<label><input type="radio" name="q4"> <code>c.cidade</code></label>
+<label><input type="radio" name="q4"> <code>c(cidade)</code></label>
+<label><input type="radio" name="q4"> <code>cidade.c</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Em qual parte da consulta o apelido de uma coluna pode ser usado em <strong>todos</strong> os bancos?</p>
+<label><input type="radio" name="q5"> No <code>ORDER BY</code></label>
+<label><input type="radio" name="q5"> No <code>WHERE</code></label>
+<label><input type="radio" name="q5"> No <code>FROM</code></label>
+<label><input type="radio" name="q5"> Em nenhuma: só no cabeçalho</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana deu um apelido à coluna <code>nome</code> com <code>AS produto</code>. O que acontece com a tabela <code>produtos</code>?</p>
+<label><input type="radio" name="q6"> A coluna passa a se chamar <code>produto</code> para sempre</label>
+<label><input type="radio" name="q6"> A tabela ganha uma coluna nova, <code>produto</code></label>
+<label><input type="radio" name="q6"> Os dados da coluna são copiados</label>
+<label><input type="radio" name="q6"> Nada: o apelido só muda o nome no resultado desta consulta</label>
+</div>
+
+<h3>Missão final: a lista dos VIPs</h3>
+
+<div class="trysql" data-goal="colunas:cliente,cidade,uf;;linhas:5">
+<p class="try-task"><strong>Missão:</strong> a Ana vai imprimir a lista dos 5 clientes VIP. Ela quer o cabeçalho <code>cliente</code> no lugar de <code>nome</code> e <code>uf</code> no lugar de <code>estado</code>, nessa ordem: <code>cliente</code>, <code>cidade</code>, <code>uf</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, estado
+FROM clientes
+WHERE vip = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome AS cliente, cidade, estado AS uf
+FROM clientes
+WHERE vip = 1;
+</pre>
+</div>
+
+<p>Quer ir além? Acrescente <code>ORDER BY cliente</code> para a lista sair em ordem alfabética, usando o apelido.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>AS</code> ("como") dá um apelido a uma coluna ou tabela. Ele muda só o nome no resultado; a tabela não é alterada.</li>
+  <li>Use apelidos para dar nome a contas (<code>preco * estoque AS valor_parado</code>) e use o apelido no <code>ORDER BY</code>.</li>
+  <li>Apelido com espaço, acento ou maiúsculas vai entre <strong>aspas duplas</strong>. Aspas simples são para texto.</li>
+  <li>O <code>AS</code> é opcional, mas escreva sempre: sem ele, uma vírgula esquecida (<code>SELECT nome preco</code>) vira um apelido sem nenhum aviso.</li>
+  <li>Apelido de tabela: <code>FROM produtos AS p</code>, e as colunas viram <code>p.nome</code>. Depois do apelido, o nome antigo da tabela deixa de valer na consulta.</li>
+  <li>O SQLite aceita apelido de coluna no <code>WHERE</code>; os outros bancos, não. Para um SQL que roda em qualquer lugar, use o apelido só no <code>ORDER BY</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
