@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: Notas da Escola — médias, situação, boletim e ranking | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: o banco de notas de uma turma, versão por versão. Alunos, disciplinas e notas por bimestre, médias com AVG, aprovado, recuperação ou reprovado com CASE, o boletim em colunas, a prova que faltou com CROSS JOIN e COALESCE, o melhor de cada disciplina com PARTITION BY e as regras com CHECK, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Notas da Escola</span></h1>
+
+<p class="intro">A Lúcia, amiga da Ana, é professora numa escola municipal de Teresina. No fim de cada bimestre ela passa uma tarde com a planilha: soma as notas, divide, confere quem passou, quem vai para a recuperação, e monta o boletim de cada aluno à mão. Neste projeto você constrói o <strong>banco de notas</strong> da turma dela e faz o SQL trabalhar: médias, situação de cada aluno, o boletim em colunas, o melhor de cada matéria e até o aluno que faltou a uma prova. Tudo em versões, cada uma com uma missão no editor.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A modelar alunos, disciplinas e notas, com uma chave primária de <strong>três</strong> colunas.</li>
+  <li>A calcular médias por aluno e por disciplina com <code>AVG</code> e <code>GROUP BY</code>.</li>
+  <li>A transformar a média em "aprovado", "recuperação" ou "reprovado" com <code>CASE</code>.</li>
+  <li>A montar o boletim com uma coluna por disciplina (a "tabela cruzada").</li>
+  <li>A achar a prova que faltou com <code>CROSS JOIN</code> e decidir quanto ela vale com <code>COALESCE</code>.</li>
+  <li>A achar o melhor aluno de cada disciplina com <code>RANK() OVER (PARTITION BY …)</code> e a proteger as notas com <code>CHECK</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: da planilha às três tabelas</h2>
+<p>A planilha da Lúcia tem uma linha por aluno e uma coluna por prova: "Mat 1º bim", "Mat 2º bim", "Port 1º bim"… Parece prático, mas cada matéria nova é uma coluna nova, e cada bimestre também. Num banco, a gente guarda cada <strong>nota</strong> como uma linha, dizendo de quem é, de que matéria e de que bimestre:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>Uma linha é…</th><th>Exemplo</th></tr>
+<tr><td><code>alunos</code></td><td>um aluno da turma</td><td>1, Bianca Reis</td></tr>
+<tr><td><code>disciplinas</code></td><td>uma matéria</td><td>1, Matemática</td></tr>
+<tr><td><code>notas</code></td><td>uma nota de um aluno, numa matéria, num bimestre</td><td>aluno 1, disciplina 1, bimestre 1, nota 8.5</td></tr>
+</table>
+</div>
+
+<p>Com uma nota por linha, uma matéria nova é só mais uma linha em <code>disciplinas</code>; nenhuma tabela muda de forma. E o boletim "em colunas" da planilha não se perde: na versão 4 você vai ver que o SQL monta essas colunas na hora de consultar.</p>
+
+<div class="tip">
+<strong>Como as caixas deste projeto funcionam</strong>
+<p>A escola é um banco novo. O editor, a cada Rodar, começa do zero (com a Loja Aurora carregada, que aqui não atrapalha: ela não tem tabelas com estes nomes). Por isso toda caixa começa com a <strong>montagem</strong>: os <code>CREATE TABLE</code> e os <code>INSERT</code> da turma, sempre iguais. A consulta da versão vem depois do comentário <code>-- a consulta</code>.</p>
+</div>
+
+<hr>
+
+<h2>Versão 1: a turma no banco</h2>
+<p>Cinco alunos, três disciplinas e as notas dos dois primeiros bimestres:</p>
+
+<pre class="file" data-file="escola-v1.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina, n.bimestre, n.nota
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+WHERE a.id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>nota REAL NOT NULL</dt><dd>Nota com casa decimal (7.5, 8.5), por isso <code>REAL</code>. Toda linha de <code>notas</code> tem uma nota: uma prova que não aconteceu simplesmente <strong>não tem linha</strong>.</dd>
+  <dt>PRIMARY KEY (aluno_id, disciplina_id, bimestre)</dt><dd>Uma chave de <strong>três colunas</strong>: o mesmo aluno, na mesma matéria, no mesmo bimestre, só pode ter uma nota. Nenhuma das três sozinha identifica a linha (aula <a href="primary-key.html">PRIMARY KEY</a>).</dd>
+  <dt>REFERENCES alunos(id), REFERENCES disciplinas(id)</dt><dd>As chaves estrangeiras: não dá para lançar nota de um aluno que não existe (aula <a href="foreign-key.html">FOREIGN KEY</a>).</dd>
+  <dt>INSERT INTO notas VALUES (1,1,1,8.5), …</dt><dd>Cada parêntese é aluno, disciplina, bimestre e nota, nessa ordem. A linha do Felipe (aluno 4) tem um buraco de propósito: ele faltou à prova de Português do 2º bimestre.</dd>
+  <dt>WHERE a.id = 1</dt><dd>A consulta mostra só as 6 notas da Bianca. São 29 notas no total: 5 alunos × 3 matérias × 2 bimestres seriam 30, menos a prova que o Felipe perdeu.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:5;;contem:Felipe Araújo|5.5">
+<p class="try-task"><strong>Missão:</strong> a coordenação pediu as notas de <strong>Matemática do 2º bimestre</strong> de toda a turma. Troque o filtro da consulta: mostre o nome do aluno e a nota, da maior para a menor.</p>
+<pre class="script" data-file="escola-v1.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina, n.bimestre, n.nota
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+WHERE a.id = 1;
+</pre>
+<pre class="solucao" data-file="escola-v1.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, n.nota
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+WHERE d.nome = 'Matemática' AND n.bimestre = 2
+ORDER BY n.nota DESC;
+</pre>
+</div>
+
+<p>Filtrar por <code>d.nome = 'Matemática'</code> ou por <code>n.disciplina_id = 1</code> dá o mesmo resultado. Pelo nome fica mais legível; pelo número não quebra se alguém renomear a disciplina para "Matemática Básica".</p>
+
+<hr>
+
+<h2>Versão 2: as médias</h2>
+<p>A média de cada aluno em cada matéria é a média das notas dos bimestres. É um <code>AVG</code> agrupado por <strong>duas</strong> coisas, aluno e disciplina (aulas <a href="avg.html">AVG()</a> e <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>):</p>
+
+<pre class="file" data-file="escola-v2.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina,
+       AVG(n.nota) AS media,
+       COUNT(*)    AS provas
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>GROUP BY a.id, d.id</dt><dd>Um grupo para cada par aluno + disciplina: 5 × 3 = 15 grupos, 15 linhas.</dd>
+  <dt>AVG(n.nota)</dt><dd>A média das notas do grupo. A Bianca tirou 8.5 e 9.0 em Matemática: média 8.75.</dd>
+  <dt>COUNT(*) AS provas</dt><dd>Quantas notas entraram na média. Repare no Felipe em Português: <strong>1</strong> prova só, e média 6.0. O <code>AVG</code> não sabe que faltou uma; ele divide pelo que tem. A versão 5 trata disso.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:5;;contem:Bianca Reis|8.5">
+<p class="try-task"><strong>Missão:</strong> a Lúcia quer a <strong>média geral</strong> de cada aluno, juntando todas as matérias: uma linha por aluno, com o nome e a média arredondada em 2 casas (aula <a href="funcoes-numericas.html">Funções Numéricas</a>), da maior para a menor.</p>
+<pre class="script" data-file="escola-v2.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina, AVG(n.nota) AS media
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id;
+</pre>
+<pre class="solucao" data-file="escola-v2.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, ROUND(AVG(n.nota), 2) AS media
+FROM notas n
+JOIN alunos a ON a.id = n.aluno_id
+GROUP BY a.id
+ORDER BY media DESC;
+</pre>
+</div>
+
+<p>A Bianca lidera, com 8.5. Um detalhe que vale uma conversa com a coordenação: a média do Felipe sai 6.1 porque o <code>AVG</code> fez a média das <strong>5</strong> notas que ele tem. Se a regra da escola for "média das médias de cada matéria", a conta é outra, e dá 6.08. Os dois números são "a média do Felipe"; o SQL faz qualquer um, mas alguém precisa dizer qual é o oficial.</p>
+
+<hr>
+
+<h2>Versão 3: aprovado, recuperação ou reprovado</h2>
+<p>A regra da escola: média 7 ou mais, <strong>aprovado</strong>; de 5 até menos de 7, <strong>recuperação</strong>; abaixo de 5, <strong>reprovado</strong>. Transformar número em palavra, por faixas, é o trabalho do <code>CASE</code> (aula <a href="case.html">CASE</a>):</p>
+
+<pre class="file" data-file="escola-v3.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina,
+       AVG(n.nota) AS media,
+       CASE
+           WHEN AVG(n.nota) &gt;= 7 THEN 'aprovado'
+           WHEN AVG(n.nota) &gt;= 5 THEN 'recuperação'
+           ELSE 'reprovado'
+       END AS situacao
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>CASE WHEN … THEN … END</dt><dd>Testa as condições <strong>de cima para baixo</strong> e para na primeira verdadeira.</dd>
+  <dt>WHEN AVG(n.nota) &gt;= 7</dt><dd>A primeira faixa. Quem tem 7 ou mais para aqui.</dd>
+  <dt>WHEN AVG(n.nota) &gt;= 5</dt><dd>Só chega aqui quem tem menos de 7, então não precisa escrever "e menor que 7": a ordem já garante.</dd>
+  <dt>ELSE 'reprovado'</dt><dd>Quem não passou em nenhuma condição: menos de 5.</dd>
+</dl>
+
+<p>Repare na Eduarda em Matemática e Ciências: média 7.0, exatamente no limite, e <strong>aprovada</strong>, por causa do <code>&gt;=</code>. Com <code>&gt;</code> ela iria para a recuperação. Em regra de nota, o sinal é tudo.</p>
+
+<div class="trysql" data-goal="linhas:5;;contem:Gabriela Sá|Ciências|6.75|recuperação">
+<p class="try-task"><strong>Missão:</strong> a lista que a coordenação quer ver é a dos que <strong>não</strong> passaram direto: só as linhas em recuperação ou reprovado. O filtro é sobre uma média, então vai no <code>HAVING</code> (aula <a href="having.html">HAVING</a>). Mantenha as colunas <code>aluno</code>, <code>disciplina</code>, <code>media</code> e <code>situacao</code>.</p>
+<pre class="script" data-file="escola-v3.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina,
+       AVG(n.nota) AS media,
+       CASE
+           WHEN AVG(n.nota) &gt;= 7 THEN 'aprovado'
+           WHEN AVG(n.nota) &gt;= 5 THEN 'recuperação'
+           ELSE 'reprovado'
+       END AS situacao
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id;
+</pre>
+<pre class="solucao" data-file="escola-v3.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina,
+       AVG(n.nota) AS media,
+       CASE
+           WHEN AVG(n.nota) &gt;= 7 THEN 'aprovado'
+           WHEN AVG(n.nota) &gt;= 5 THEN 'recuperação'
+           ELSE 'reprovado'
+       END AS situacao
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id
+HAVING AVG(n.nota) &lt; 7;
+</pre>
+</div>
+
+<p>Cinco casos: o Diego em Matemática (recuperação) e Ciências (reprovado), o Felipe em Matemática (reprovado) e Português (recuperação), e a Gabriela em Ciências (recuperação). Também funciona <code>HAVING situacao &lt;&gt; 'aprovado'</code>, usando o apelido; o SQLite aceita apelido no <code>HAVING</code>, mas nem todo banco aceita, e o <code>AVG(n.nota) &lt; 7</code> funciona em todos.</p>
+
+<hr>
+
+<h2>Versão 4: o boletim em colunas</h2>
+<p>A família não quer 15 linhas; quer o boletim de sempre, <strong>uma linha por aluno e uma coluna por matéria</strong>. O truque é pôr um <code>CASE</code> <strong>dentro</strong> do <code>AVG</code>: em cada coluna, só as notas daquela matéria entram na conta.</p>
+
+<pre class="file" data-file="escola-v4.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno,
+       AVG(CASE WHEN n.disciplina_id = 1 THEN n.nota END) AS matematica,
+       AVG(CASE WHEN n.disciplina_id = 2 THEN n.nota END) AS portugues
+FROM notas n
+JOIN alunos a ON a.id = n.aluno_id
+GROUP BY a.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>CASE WHEN n.disciplina_id = 1 THEN n.nota END</dt><dd>Para uma nota de Matemática, devolve a nota. Para qualquer outra, como não há <code>ELSE</code>, devolve <code>NULL</code>.</dd>
+  <dt>AVG( … )</dt><dd>O <code>AVG</code> <strong>ignora os NULL</strong>. Então ele faz a média só das notas de Matemática do aluno. É esse "ignorar NULL" que faz o truque funcionar (aula <a href="null.html">O Valor NULL</a>).</dd>
+  <dt>GROUP BY a.id</dt><dd>Agora o grupo é só o aluno: uma linha cada.</dd>
+</dl>
+
+<p>Esse formato se chama <strong>tabela cruzada</strong> (ou <em>pivot</em>): as linhas de uma coluna viram colunas. Alguns bancos têm um comando próprio para isso; o <code>CASE</code> dentro da agregação funciona em todos.</p>
+
+<div class="trysql" data-goal="colunas:aluno,matematica,portugues,ciencias;;linhas:5">
+<p class="try-task"><strong>Missão:</strong> o boletim está sem <strong>Ciências</strong> (disciplina 3). Acrescente a coluna <code>ciencias</code> e arredonde as três médias em 1 casa decimal com <code>ROUND(…, 1)</code>.</p>
+<pre class="script" data-file="escola-v4.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno,
+       AVG(CASE WHEN n.disciplina_id = 1 THEN n.nota END) AS matematica,
+       AVG(CASE WHEN n.disciplina_id = 2 THEN n.nota END) AS portugues
+FROM notas n
+JOIN alunos a ON a.id = n.aluno_id
+GROUP BY a.id;
+</pre>
+<pre class="solucao" data-file="escola-v4.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno,
+       ROUND(AVG(CASE WHEN n.disciplina_id = 1 THEN n.nota END), 1) AS matematica,
+       ROUND(AVG(CASE WHEN n.disciplina_id = 2 THEN n.nota END), 1) AS portugues,
+       ROUND(AVG(CASE WHEN n.disciplina_id = 3 THEN n.nota END), 1) AS ciencias
+FROM notas n
+JOIN alunos a ON a.id = n.aluno_id
+GROUP BY a.id;
+</pre>
+</div>
+
+<p>O preço desse formato: cada matéria nova pede uma linha nova no <code>SELECT</code>. O banco continua guardando uma nota por linha (fácil de crescer); só a <strong>apresentação</strong> é em colunas.</p>
+
+<hr>
+
+<h2>Versão 5: a prova que faltou</h2>
+<p>O Felipe faltou à prova de Português do 2º bimestre e não fez segunda chamada. A regra da escola: prova não feita vale <strong>zero</strong>. Mas o <code>AVG</code> não enxerga o que não existe: para ele, o Felipe tem média 6.0 em Português, com uma prova só.</p>
+
+<p>Primeiro, é preciso <strong>achar</strong> as provas que faltam. Para isso, monte a lista de todas as provas que <em>deveriam</em> existir (cada aluno × cada disciplina × cada bimestre) e veja quais não têm nota. O <code>CROSS JOIN</code> faz todas as combinações (aula <a href="joins.html">O que é um JOIN</a>):</p>
+
+<pre class="file" data-file="escola-v5.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH bimestres(b) AS (VALUES (1), (2))
+SELECT a.nome AS aluno, d.nome AS disciplina, bimestres.b AS bimestre
+FROM alunos a
+CROSS JOIN disciplinas d
+CROSS JOIN bimestres
+LEFT JOIN notas n
+       ON n.aluno_id = a.id
+      AND n.disciplina_id = d.id
+      AND n.bimestre = bimestres.b
+WHERE n.nota IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH bimestres(b) AS (VALUES (1), (2))</dt><dd>Uma tabelinha provisória de uma coluna, <code>b</code>, com os valores 1 e 2. O <code>VALUES</code> cria linhas sem precisar de <code>CREATE TABLE</code> (aula <a href="with-cte.html">CTE (WITH)</a>).</dd>
+  <dt>alunos CROSS JOIN disciplinas CROSS JOIN bimestres</dt><dd>Todas as combinações: 5 × 3 × 2 = 30 provas que deveriam existir.</dd>
+  <dt>LEFT JOIN notas n ON … AND … AND …</dt><dd>Para cada prova esperada, procura a nota. As três condições ficam no <code>ON</code>, para não sumir com ninguém (aula <a href="left-join.html">LEFT JOIN</a>).</dd>
+  <dt>WHERE n.nota IS NULL</dt><dd>Fica só com as provas sem nota.</dd>
+</dl>
+
+<p>Uma linha: Felipe Araújo, Português, 2º bimestre. Agora, com a mesma grade completa, a falta pode virar zero: <code>COALESCE(n.nota, 0)</code> devolve a nota quando ela existe, e 0 quando é <code>NULL</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>).</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:Felipe Araújo|Português|3.0">
+<p class="try-task"><strong>Missão:</strong> calcule as médias do <strong>Felipe</strong> (aluno 4) em cada disciplina com a regra da escola: prova que falta vale zero. Use a grade completa da caixa, troque o <code>WHERE</code> por <code>WHERE a.id = 4</code>, agrupe por disciplina e faça a média de <code>COALESCE(n.nota, 0)</code>. Mostre <code>aluno</code>, <code>disciplina</code> e <code>media</code>.</p>
+<pre class="script" data-file="escola-v5.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH bimestres(b) AS (VALUES (1), (2))
+SELECT a.nome AS aluno, d.nome AS disciplina, bimestres.b AS bimestre
+FROM alunos a
+CROSS JOIN disciplinas d
+CROSS JOIN bimestres
+LEFT JOIN notas n
+       ON n.aluno_id = a.id
+      AND n.disciplina_id = d.id
+      AND n.bimestre = bimestres.b
+WHERE n.nota IS NULL;
+</pre>
+<pre class="solucao" data-file="escola-v5.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH bimestres(b) AS (VALUES (1), (2))
+SELECT a.nome AS aluno, d.nome AS disciplina,
+       AVG(COALESCE(n.nota, 0)) AS media
+FROM alunos a
+CROSS JOIN disciplinas d
+CROSS JOIN bimestres
+LEFT JOIN notas n
+       ON n.aluno_id = a.id
+      AND n.disciplina_id = d.id
+      AND n.bimestre = bimestres.b
+WHERE a.id = 4
+GROUP BY a.id, d.id;
+</pre>
+</div>
+
+<p>Em Português, a média do Felipe cai de 6.0 para 3.0: de recuperação para reprovado. Uma decisão de regra (zero ou "não conta") mudou a situação do aluno; por isso essa regra tem de estar escrita, e o SQL tem de seguir a escrita. Compare as três formas de tratar a falta:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>SQL</th><th>Felipe em Português</th></tr>
+<tr><td>A falta não conta (média do que existe)</td><td><code>AVG(n.nota)</code> direto em <code>notas</code></td><td>6.0 (recuperação)</td></tr>
+<tr><td>A falta vale zero</td><td>grade completa + <code>AVG(COALESCE(n.nota, 0))</code></td><td>3.0 (reprovado)</td></tr>
+<tr><td>Só mostrar quem tem falta</td><td>grade completa + <code>WHERE n.nota IS NULL</code></td><td>aparece na lista</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Versão 6: o melhor de cada disciplina</h2>
+<p>Na festa de fim de ano, a escola premia a maior média de cada matéria. "A maior" de cada grupo é um ranking que <strong>recomeça</strong> em cada disciplina: <code>RANK() OVER (PARTITION BY …)</code> (aulas <a href="partition-by.html">PARTITION BY</a> e <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>).</p>
+
+<pre class="file" data-file="escola-v6.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH medias AS (
+    SELECT a.nome AS aluno, d.nome AS disciplina, AVG(n.nota) AS media
+    FROM notas n
+    JOIN alunos a      ON a.id = n.aluno_id
+    JOIN disciplinas d ON d.id = n.disciplina_id
+    GROUP BY a.id, d.id
+)
+SELECT disciplina, aluno, media,
+       RANK() OVER (PARTITION BY disciplina ORDER BY media DESC) AS posicao
+FROM medias
+ORDER BY disciplina, posicao;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH medias AS ( … )</dt><dd>As 15 médias da versão 2, com nome.</dd>
+  <dt>PARTITION BY disciplina</dt><dd>Divide as linhas em três "turmas" de ranking, uma por disciplina. A contagem volta a 1 em cada uma.</dd>
+  <dt>ORDER BY media DESC</dt><dd>Dentro de cada disciplina, a maior média fica com o 1.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:3;;contem:Matemática|Gabriela Sá|9.75">
+<p class="try-task"><strong>Missão:</strong> deixe só os premiados: uma linha por disciplina, com <code>disciplina</code>, <code>aluno</code> e <code>media</code> de quem ficou em 1º lugar. O <code>WHERE</code> não enxerga o <code>RANK</code> da mesma consulta; ponha o ranking dentro de mais um <code>WITH</code> (ou de uma subconsulta) e filtre <code>posicao = 1</code> por fora.</p>
+<pre class="script" data-file="escola-v6.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH medias AS (
+    SELECT a.nome AS aluno, d.nome AS disciplina, AVG(n.nota) AS media
+    FROM notas n
+    JOIN alunos a      ON a.id = n.aluno_id
+    JOIN disciplinas d ON d.id = n.disciplina_id
+    GROUP BY a.id, d.id
+)
+SELECT disciplina, aluno, media,
+       RANK() OVER (PARTITION BY disciplina ORDER BY media DESC) AS posicao
+FROM medias
+ORDER BY disciplina, posicao;
+</pre>
+<pre class="solucao" data-file="escola-v6.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH medias AS (
+    SELECT a.nome AS aluno, d.nome AS disciplina, AVG(n.nota) AS media
+    FROM notas n
+    JOIN alunos a      ON a.id = n.aluno_id
+    JOIN disciplinas d ON d.id = n.disciplina_id
+    GROUP BY a.id, d.id
+),
+ranking AS (
+    SELECT disciplina, aluno, media,
+           RANK() OVER (PARTITION BY disciplina ORDER BY media DESC) AS posicao
+    FROM medias
+)
+SELECT disciplina, aluno, media
+FROM ranking
+WHERE posicao = 1;
+</pre>
+</div>
+
+<p>A Gabriela leva Matemática (9.75), a Eduarda, Português (9.25), e a Bianca, Ciências (9.25). Se dois alunos empatassem na maior média, o <code>RANK</code> daria 1 aos dois, e os dois apareceriam: é justo com quem empatou. Com <code>ROW_NUMBER()</code>, só um sairia, escolhido sem critério.</p>
+
+<hr>
+
+<h2>Versão 7: notas que o banco não aceita</h2>
+<p>Um erro de digitação clássico: a Lúcia quis lançar 7.5 e digitou 75. O banco de hoje aceita, e a média da Bianca em Matemática vira 41.75. Uma regra <code>CHECK</code> faz o banco recusar qualquer nota fora de 0 a 10 (aula <a href="check.html">CHECK</a>).</p>
+
+<div class="trysql" data-goal="erro:CHECK constraint failed: nota BETWEEN 0 AND 10">
+<p class="try-task"><strong>Missão:</strong> rode como está: o 75 entra, e a média da Bianca em Matemática fica absurda. Acrescente <code>CHECK (nota BETWEEN 0 AND 10)</code> à coluna <code>nota</code> da tabela e rode de novo: o banco tem de <strong>recusar</strong> o 75 (aula <a href="between.html">BETWEEN</a>).</p>
+<pre class="script" data-file="escola-v7.sql">CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL,
+    disciplina_id INTEGER NOT NULL,
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES (1, 1, 1, 8.5);
+INSERT INTO notas VALUES (1, 1, 2, 75);   -- era para ser 7.5
+
+SELECT aluno_id, disciplina_id, AVG(nota) AS media
+FROM notas
+GROUP BY aluno_id, disciplina_id;
+</pre>
+<pre class="solucao" data-file="escola-v7.sql">CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL,
+    disciplina_id INTEGER NOT NULL,
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL CHECK (nota BETWEEN 0 AND 10),
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES (1, 1, 1, 8.5);
+INSERT INTO notas VALUES (1, 1, 2, 75);   -- era para ser 7.5
+
+SELECT aluno_id, disciplina_id, AVG(nota) AS media
+FROM notas
+GROUP BY aluno_id, disciplina_id;
+</pre>
+</div>
+
+<p>A mensagem é <code>CHECK constraint failed: nota BETWEEN 0 AND 10</code>. De quebra, essa mesma regra barra outro erro, que você vai ver a seguir: a nota digitada com vírgula.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A nota com vírgula</strong>
+<p>Na planilha, a Lúcia escreve "7,5". Copiando para o SQL, sem a regra da versão 7:</p>
+<pre class="file" data-file="virgula.sql" data-resultado>CREATE TABLE notas (aluno_id INTEGER, nota REAL NOT NULL);
+INSERT INTO notas VALUES (1, '7,5'), (1, 8.0);
+
+SELECT nota, typeof(nota) AS tipo FROM notas;
+SELECT SUM(nota) AS soma FROM notas;
+</pre>
+<p><strong>O que aconteceu:</strong> sem mensagem nenhuma, <code>'7,5'</code> ficou guardado como <strong>texto</strong> (<code>typeof</code> diz <code>text</code>): com vírgula, o SQLite não reconhece um número e guarda o que recebeu (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Nas contas, ele aproveita só o começo do texto, o 7. A soma deu 15.0 em vez de 15.5.</p>
+<p><strong>Como consertar:</strong> em SQL, o separador decimal é sempre o <strong>ponto</strong>: <code>7.5</code>. E o <code>CHECK (nota BETWEEN 0 AND 10)</code> da versão 7 recusa o texto <code>'7,5'</code> também, porque, para o SQLite, um texto nunca está "entre" dois números.</p>
+</div>
+
+<div class="cenario">
+<strong>A média que perdeu a metade</strong>
+<p>Na planilha antiga, havia uma coluna para cada bimestre, e a média se fazia "na mão": <code>(nota1 + nota2) / 2</code>. Com notas inteiras:</p>
+<pre class="file" data-file="divisao-inteira.sql" data-resultado>SELECT (7 + 8) / 2   AS inteiros,
+       (7 + 8) / 2.0 AS com_ponto,
+       CAST(7 + 8 AS REAL) / 2 AS com_cast;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>(7 + 8) / 2</code> deu <strong>7</strong>, não 7.5. Quando os dois lados da divisão são inteiros, o SQLite faz divisão <strong>inteira</strong> e joga a parte decimal fora, sem avisar. Um aluno com 7 e 8 ficaria com 7, no limite, quando merecia 7.5.</p>
+<p><strong>Como consertar:</strong> divida por <code>2.0</code>, converta com <code>CAST(… AS REAL)</code>, ou use <code>AVG</code>, que sempre devolve número com decimais. Guardar a nota como <code>REAL</code>, como neste projeto, já evita o problema na maioria das contas (aula <a href="funcoes-numericas.html">Funções Numéricas</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>A nota lançada duas vezes</strong>
+<pre class="file" data-file="nota-repetida.sql" data-resultado data-erro>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a Lúcia relançou a nota da Bianca, de Matemática, 1º bimestre
+INSERT INTO notas VALUES (1, 1, 1, 6.0);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>UNIQUE constraint failed: notas.aluno_id, notas.disciplina_id, notas.bimestre</code>. A chave de três colunas fez o trabalho: já existe nota da Bianca em Matemática no 1º bimestre.</p>
+<p><strong>Como consertar:</strong> se a ideia era <strong>corrigir</strong> a nota, é um <code>UPDATE</code>: <code>UPDATE notas SET nota = 6.0 WHERE aluno_id = 1 AND disciplina_id = 1 AND bimestre = 1;</code> (aula <a href="update.html">UPDATE</a>). Sem a chave, a nota repetida entraria, e a média viraria a de três provas.</p>
+</div>
+
+<div class="cenario">
+<strong>Agrupou por aluno e mostrou a disciplina</strong>
+<pre class="file" data-file="coluna-solta.sql" data-resultado>-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome, d.nome AS disciplina, ROUND(AVG(n.nota), 2) AS media
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id;
+</pre>
+<p><strong>O que aconteceu:</strong> a tabela diz "Matemática" em todas as linhas, mas as médias são as gerais, das três matérias. O <code>GROUP BY</code> é só por aluno; a coluna <code>disciplina</code> ficou "solta", e o SQLite pôs um valor qualquer do grupo. Ninguém avisou, e o resultado mente.</p>
+<p><strong>Como consertar:</strong> toda coluna do <code>SELECT</code> fora de uma agregação tem de estar no <code>GROUP BY</code>. Ou agrupe por <code>a.id, d.id</code> (média por matéria), ou tire a coluna <code>disciplina</code> (média geral). O PostgreSQL e o SQL Server recusariam esta consulta com erro.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>A divisão inteira não é só do SQLite: o PostgreSQL e o SQL Server também fazem <code>15 / 2 = 7</code> com inteiros. O MySQL é a exceção: lá, <code>/</code> sempre dá decimal (<code>7.5000</code>), e a divisão inteira tem operador próprio, <code>DIV</code>. A tabela cruzada com <code>CASE</code> dentro do <code>AVG</code> funciona nos quatro; o SQL Server tem também o operador <code>PIVOT</code>, e o PostgreSQL, a extensão <code>tablefunc</code>. Mais em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa da escola</th><th>SQL</th></tr>
+<tr><td>Uma nota por aluno, matéria e bimestre</td><td><code>PRIMARY KEY (aluno_id, disciplina_id, bimestre)</code></td></tr>
+<tr><td>Média por aluno e matéria</td><td><code>AVG(n.nota) … GROUP BY a.id, d.id</code></td></tr>
+<tr><td>Situação por faixas</td><td><code>CASE WHEN AVG(n.nota) &gt;= 7 THEN 'aprovado' WHEN … ELSE … END</code></td></tr>
+<tr><td>Filtrar pela média</td><td><code>HAVING AVG(n.nota) &lt; 7</code></td></tr>
+<tr><td>Boletim em colunas</td><td><code>AVG(CASE WHEN n.disciplina_id = 1 THEN n.nota END) AS matematica</code></td></tr>
+<tr><td>Todas as provas esperadas</td><td><code>alunos CROSS JOIN disciplinas CROSS JOIN bimestres</code></td></tr>
+<tr><td>Falta vale zero</td><td><code>AVG(COALESCE(n.nota, 0))</code></td></tr>
+<tr><td>O melhor de cada matéria</td><td><code>RANK() OVER (PARTITION BY disciplina ORDER BY media DESC)</code></td></tr>
+<tr><td>Nota só de 0 a 10</td><td><code>nota REAL NOT NULL CHECK (nota BETWEEN 0 AND 10)</code></td></tr>
+<tr><td>Dividir sem perder decimais</td><td><code>(a + b) / 2.0</code> ou <code>AVG</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A coluna do boletim</h3>
+<p>Complete para a coluna de Português (disciplina 2) do boletim:</p>
+<div class="ex-code">AVG(CASE WHEN n.disciplina_id = 2 <input data-answer="THEN|then" aria-label="palavra-chave"> n.nota END) AS portugues</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem perder o meio ponto</h3>
+<p>Complete para a divisão dar 7.5:</p>
+<div class="ex-code">SELECT (7 + 8) / <input data-answer="2.0|2." aria-label="divisor">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que a tabela <code>notas</code> guarda uma nota por linha, em vez de uma coluna para cada matéria e bimestre?</p>
+<label><input type="radio" name="q3"> Porque o SQLite aceita no máximo 4 colunas</label>
+<label><input type="radio" name="q3"> Porque assim as consultas ficam mais curtas</label>
+<label><input type="radio" name="q3"> Porque matéria ou bimestre novo vira linha nova, sem mudar a forma da tabela</label>
+<label><input type="radio" name="q3"> Porque não dá para fazer média de colunas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. O <code>CASE</code> tem <code>WHEN media &gt;= 7 THEN 'aprovado'</code> e depois <code>WHEN media &gt;= 5 THEN 'recuperação'</code>. Que situação ganha uma média 8?</p>
+<label><input type="radio" name="q4"> aprovado, porque o CASE para na primeira condição verdadeira</label>
+<label><input type="radio" name="q4"> recuperação, porque 8 também é maior que 5</label>
+<label><input type="radio" name="q4"> as duas</label>
+<label><input type="radio" name="q4"> NULL</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O Felipe tem uma nota 6.0 em Português e faltou à outra prova. Quanto dá <code>AVG(n.nota)</code> direto na tabela <code>notas</code>?</p>
+<label><input type="radio" name="q5"> 3.0</label>
+<label><input type="radio" name="q5"> NULL</label>
+<label><input type="radio" name="q5"> 0</label>
+<label><input type="radio" name="q5"> 6.0, porque o AVG divide só pelas notas que existem</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Que valor fica guardado se você inserir <code>'7,5'</code> numa coluna <code>REAL</code> sem <code>CHECK</code>?</p>
+<label><input type="radio" name="q6"> O número 7.5</label>
+<label><input type="radio" name="q6"> O texto '7,5', que nas contas vale 7</label>
+<label><input type="radio" name="q6"> NULL</label>
+<label><input type="radio" name="q6"> Dá erro e nada é guardado</label>
+</div>
+
+<h3>Desafio: o resultado final da turma</h3>
+
+<div class="trysql" data-goal="linhas:3;;contem:aprovado|10;;contem:reprovado|2">
+<p class="try-task"><strong>Missão:</strong> a direção quer um número só por situação: quantas médias (aluno + matéria) ficaram em cada uma. Monte uma consulta com as colunas <code>situacao</code> e <code>quantos</code>, uma linha por situação. Dica: ponha a consulta da versão 3 num <code>WITH</code> e agrupe por <code>situacao</code> do lado de fora.</p>
+<pre class="script" data-file="desafio.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+SELECT a.nome AS aluno, d.nome AS disciplina, AVG(n.nota) AS media
+FROM notas n
+JOIN alunos a      ON a.id = n.aluno_id
+JOIN disciplinas d ON d.id = n.disciplina_id
+GROUP BY a.id, d.id;
+</pre>
+<pre class="solucao" data-file="desafio.sql">-- montagem da escola (igual em toda caixa)
+CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO alunos VALUES (1, 'Bianca Reis'), (2, 'Diego Martins'),
+    (3, 'Eduarda Lopes'), (4, 'Felipe Araújo'), (5, 'Gabriela Sá');
+CREATE TABLE disciplinas (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO disciplinas VALUES (1, 'Matemática'), (2, 'Português'), (3, 'Ciências');
+CREATE TABLE notas (
+    aluno_id      INTEGER NOT NULL REFERENCES alunos(id),
+    disciplina_id INTEGER NOT NULL REFERENCES disciplinas(id),
+    bimestre      INTEGER NOT NULL,
+    nota          REAL NOT NULL,
+    PRIMARY KEY (aluno_id, disciplina_id, bimestre)
+);
+INSERT INTO notas VALUES
+(1,1,1,8.5), (1,1,2,9.0), (1,2,1,7.0), (1,2,2,8.0), (1,3,1,9.5), (1,3,2,9.0),
+(2,1,1,5.0), (2,1,2,6.0), (2,2,1,6.5), (2,2,2,7.5), (2,3,1,4.0), (2,3,2,5.0),
+(3,1,1,7.0), (3,1,2,7.0), (3,2,1,9.0), (3,2,2,9.5), (3,3,1,8.0), (3,3,2,6.0),
+(4,1,1,3.5), (4,1,2,5.5), (4,2,1,6.0),               (4,3,1,7.5), (4,3,2,8.0),
+(5,1,1,10.0),(5,1,2,9.5), (5,2,1,8.5), (5,2,2,9.0), (5,3,1,6.5), (5,3,2,7.0);
+-- a consulta
+WITH situacoes AS (
+    SELECT CASE
+               WHEN AVG(n.nota) &gt;= 7 THEN 'aprovado'
+               WHEN AVG(n.nota) &gt;= 5 THEN 'recuperação'
+               ELSE 'reprovado'
+           END AS situacao
+    FROM notas n
+    GROUP BY n.aluno_id, n.disciplina_id
+)
+SELECT situacao, COUNT(*) AS quantos
+FROM situacoes
+GROUP BY situacao;
+</pre>
+</div>
+
+<p>De 15 médias, 10 aprovadas, 3 em recuperação e 2 reprovadas. Com a regra da falta valendo zero (versão 5), seria uma recuperação a menos e uma reprovação a mais.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Guarde <strong>uma nota por linha</strong> (aluno, disciplina, bimestre, nota), com chave primária nas três primeiras colunas. O formato "uma coluna por matéria" fica para a consulta.</li>
+  <li><code>AVG</code> com <code>GROUP BY a.id, d.id</code> dá a média por matéria; só <code>GROUP BY a.id</code>, a média geral. Toda coluna fora da agregação vai no <code>GROUP BY</code>.</li>
+  <li><code>CASE WHEN … THEN … END</code> transforma a média em situação; a ordem dos <code>WHEN</code> e o sinal (<code>&gt;=</code> ou <code>&gt;</code>) decidem os casos de limite.</li>
+  <li>O boletim em colunas é <code>AVG(CASE WHEN … THEN nota END)</code>, que funciona porque <code>AVG</code> ignora <code>NULL</code>.</li>
+  <li>O que <strong>não existe</strong> não entra no <code>AVG</code>: para achar e contar a prova que faltou, monte a grade com <code>CROSS JOIN</code>, junte com <code>LEFT JOIN</code> e decida com <code>COALESCE</code>.</li>
+  <li>Proteja as notas com <code>CHECK (nota BETWEEN 0 AND 10)</code>, use ponto como separador decimal e cuidado com a divisão de inteiros: <code>15 / 2 = 7</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
