@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL no PostgreSQL — o psql e o SQL do PostgreSQL lado a lado com o SQLite | Guia SQL</title>
+<meta name="description" content="SQL no PostgreSQL para quem aprendeu com o SQLite: instalar, criar o usuário e o banco, o psql e os comandos de barra (\dt, \d, \x, \pset), LIMIT e FETCH FIRST, nomes em minúsculas e aspas duplas, GENERATED AS IDENTITY e SERIAL, ||, datas com date + 7 e to_char, boolean de verdade, ILIKE, ON CONFLICT e MERGE, RETURNING, tipos rígidos e os erros reais em português, rodados num PostgreSQL 17 com a Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL no <span class="hl">PostgreSQL</span></h1>
+
+<p class="intro">O <strong>PostgreSQL</strong> (diz-se "póstgres-quiu-él", e quase todo mundo o chama só de "Postgres") é um banco de dados de código aberto, gratuito, mantido por uma comunidade, e é a escolha de muitas empresas e de muitos programadores para sistemas novos. A Ana montou um PostgreSQL no notebook e carregou nele a Loja Aurora, para ver o que muda em relação ao SQLite. A boa notícia: o PostgreSQL é o banco que segue mais de perto o SQL padrão, então quase tudo o que você aprendeu funciona igual, e várias coisas (<code>||</code>, <code>LIMIT</code>, <code>ON CONFLICT</code>, <code>RETURNING</code>) são escritas exatamente como no SQLite. As diferenças estão nos <strong>tipos</strong>, que lá são rigorosos, em algumas funções e no programa de terminal, o <code>psql</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como instalar o PostgreSQL, criar o seu usuário e o seu banco, e abrir o <code>psql</code>.</li>
+  <li>Os comandos de barra do <code>psql</code> (<code>\dt</code>, <code>\d</code>, <code>\x</code>, <code>\pset null</code>, <code>\q</code>), o "irmão" dos comandos de ponto do <code>sqlite3</code>.</li>
+  <li>O que é igual ao SQLite (<code>LIMIT</code>, <code>||</code>, <code>ON CONFLICT</code>, <code>RETURNING</code>) e o que muda: nomes em minúsculas, <code>GENERATED AS IDENTITY</code>, datas, booleanos, <code>ILIKE</code>, <code>MERGE</code>.</li>
+  <li>Por que o PostgreSQL recusa coisas que o SQLite aceita: tipos rígidos, <code>GROUP BY</code> estrito, divisão por zero.</li>
+  <li>As mensagens de erro reais, em português, e o que fazer com cada uma, inclusive a "transação interrompida".</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>O que roda de verdade nesta página</strong>
+<p>Os quadros "Resultado" rodam o <strong>SQLite</strong> no seu navegador, como em todo o guia. As sessões de terminal do <code>psql</code> (as que começam com <code>loja=&gt;</code>) também são <strong>reais</strong>: saíram de um <strong>PostgreSQL 17</strong> na máquina da Ana, com os mesmos dados da Loja Aurora. Como o computador da Ana está em português, as mensagens do PostgreSQL saem em português. Os comandos de instalação, que pedem a senha de administrador, aparecem como <strong>ilustrativos</strong>; eles e as regras citadas foram conferidos na documentação oficial (postgresql.org).</p>
+</div>
+
+<hr>
+
+<h2>A ideia: o primo mais rigoroso</h2>
+<p>Se o SQLite é aquele amigo que aceita tudo ("você quis dizer texto? então tá"), o PostgreSQL é o professor que corrige a prova com caneta vermelha: um texto onde devia ir número, uma coluna esquecida no <code>GROUP BY</code>, um estado com três letras, e ele recusa, com uma mensagem que explica o que houve. Dá um pouco mais de trabalho no começo e evita muitos dados errados depois.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>SQLite</th><th>PostgreSQL</th></tr>
+<tr><td>Como funciona</td><td>o banco é um arquivo, aberto pelo próprio programa</td><td>um <strong>servidor</strong> sempre ligado; os programas (como o <code>psql</code>) se conectam a ele</td></tr>
+<tr><td>Usuários</td><td>não há: quem abre o arquivo, usa</td><td>cada conexão entra com um usuário do banco, com as suas permissões</td></tr>
+<tr><td>Tipos</td><td>flexíveis (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>)</td><td>rígidos: cada coluna aceita só o seu tipo</td></tr>
+<tr><td>Programa de terminal</td><td><code>sqlite3</code></td><td><code>psql</code></td></tr>
+<tr><td>Comandos do programa</td><td>de ponto: <code>.tables</code>, <code>.schema</code></td><td>de barra: <code>\dt</code>, <code>\d</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Instalar e criar o seu banco</h2>
+<p>No Debian e no Ubuntu, o PostgreSQL vem nos repositórios da própria distribuição. A página de download do PostgreSQL indica um comando só (ilustrativo; precisa da senha de administrador):</p>
+
+<pre class="file" data-file="terminal (ilustrativo)">sudo apt install postgresql
+</pre>
+
+<p>No Windows, a página oficial de download aponta o instalador interativo da EDB. Depois de instalar, falta uma coisa: no PostgreSQL, os usuários do banco são <strong>separados</strong> dos usuários do computador. A documentação explica que, para criar a primeira conta, é preciso agir como o usuário do sistema sob o qual o PostgreSQL foi instalado, que costuma se chamar <code>postgres</code>. Os programas <code>createuser</code> e <code>createdb</code> fazem o serviço (ilustrativo):</p>
+
+<pre class="file" data-file="terminal (ilustrativo)">sudo -u postgres createuser ana
+sudo -u postgres createdb -O ana loja
+</pre>
+
+<dl class="anatomy">
+  <dt>sudo -u postgres</dt><dd>Roda o comando seguinte como o usuário <code>postgres</code> do sistema, o "dono" do servidor.</dd>
+  <dt>createuser ana</dt><dd>Cria, <strong>dentro do PostgreSQL</strong>, um usuário chamado <code>ana</code>. Com o mesmo nome do usuário do computador, o <code>psql</code> já sabe quem você é e não precisa de <code>-U</code>.</dd>
+  <dt>createdb -O ana loja</dt><dd>Cria o banco <code>loja</code>, com a Ana como dona (<code>-O</code>, de <em>owner</em>). Um servidor guarda vários bancos; normalmente, um para cada projeto.</dd>
+</dl>
+
+<p>Para ter a Loja Aurora lá, a Ana criou as tabelas com os tipos do PostgreSQL (seção 9) e carregou os mesmos dados do guia. A partir daqui, tudo é real.</p>
+
+<hr>
+
+<h2>2. O psql e os comandos de barra</h2>
+<p>O <code>psql</code> é o programa de terminal do PostgreSQL. Ele se abre com o nome do banco:</p>
+
+<pre class="term">$ psql loja
+psql (17.11 (Debian 17.11-0+deb13u1))
+Digite "help" para obter ajuda.
+
+loja=&gt; \dt
+           Lista de relações
+ Esquema |     Nome     |  Tipo  | Dono
+---------+--------------+--------+------
+ public  | categorias   | tabela | ana
+ public  | clientes     | tabela | ana
+ public  | fornecedores | tabela | ana
+ public  | funcionarios | tabela | ana
+ public  | itens_pedido | tabela | ana
+ public  | pedidos      | tabela | ana
+ public  | produtos     | tabela | ana
+(7 linhas)
+
+loja=&gt; \q</pre>
+
+<dl class="anatomy">
+  <dt>loja=&gt;</dt><dd>O prompt: o nome do banco e <code>=&gt;</code>. A documentação explica que, para um superusuário do banco, o sinal é <code>#</code> (<code>loja=#</code>) em vez de <code>&gt;</code>.</dd>
+  <dt>\dt</dt><dd>"Descreva as tabelas" (<em>describe tables</em>): o <code>.tables</code> do <code>sqlite3</code>. O <code>public</code> é o <strong>esquema</strong>, uma espécie de pasta dentro do banco; quem não cria outras usa sempre o <code>public</code>.</dd>
+  <dt>\q</dt><dd>Sai do <code>psql</code> (<em>quit</em>), como o <code>.quit</code>.</dd>
+</dl>
+
+<p>Assim como os comandos de ponto, os comandos de barra são do <strong>programa</strong> <code>psql</code>, não do SQL: não levam <code>;</code> e não funcionam em outros programas. Já as consultas SQL, sim, terminam em <code>;</code>, como no <code>sqlite3</code>. Daqui em diante, as sessões mostram só o que a Ana digitou dentro do <code>psql</code>. O <code>\d produtos</code> é o <code>.schema produtos</code>, bem mais detalhado:</p>
+
+<pre class="term">loja=&gt; \d produtos
+                                       Tabela "public.produtos"
+    Coluna     |          Tipo          | Ordenação | Pode ser nulo |              Padrão
+---------------+------------------------+-----------+---------------+----------------------------------
+ id            | integer                |           | not null      | generated by default as identity
+ nome          | character varying(100) |           | not null      |
+ categoria_id  | integer                |           | not null      |
+ fornecedor_id | integer                |           | not null      |
+ preco         | numeric(10,2)          |           | not null      |
+ estoque       | integer                |           | not null      | 0
+ descontinuado | boolean                |           | not null      | false
+Índices:
+    "produtos_pkey" PRIMARY KEY, btree (id)
+Restrições de chave estrangeira:
+    "produtos_categoria_id_fkey" FOREIGN KEY (categoria_id) REFERENCES categorias(id)
+    "produtos_fornecedor_id_fkey" FOREIGN KEY (fornecedor_id) REFERENCES fornecedores(id)
+Referenciada por:
+    TABLE "itens_pedido" CONSTRAINT "itens_pedido_produto_id_fkey" FOREIGN KEY (produto_id) REFERENCES produtos(id)</pre>
+
+<p>Ele mostra as colunas com os tipos, quem pode ser nulo, os valores padrão, o índice da chave primária, as chaves estrangeiras que saem da tabela e as que <strong>chegam</strong> nela ("Referenciada por"). Repare que o PostgreSQL deu nomes às restrições sozinho, como <code>produtos_pkey</code>.</p>
+
+<h3>Mostrar o NULL e virar a tabela de lado</h3>
+<p>Dois ajustes do <code>psql</code> que ajudam muito. Por padrão, ele mostra o <code>NULL</code> como <strong>nada</strong>, e a documentação admite que isso "pode ser facilmente confundido com um texto vazio". O <code>\pset null</code> escolhe o que mostrar no lugar. E o <code>\x</code> liga a "exibição expandida", uma coluna por linha, ótima para tabelas largas:</p>
+
+<pre class="term">loja=&gt; \pset null '(nulo)'
+A exibição de nulos é "(nulo)".
+loja=&gt; SELECT id, nome, email FROM clientes WHERE id IN (6, 7);
+ id |       nome        |             email
+----+-------------------+--------------------------------
+  6 | Rafael Monteiro   | rafael.monteiro@exemplo.com.br
+  7 | Luís Otávio Brito | (nulo)
+(2 linhas)
+
+loja=&gt; \x
+A exibição expandida está ativada.
+loja=&gt; SELECT * FROM fornecedores WHERE id = 2;
+-[ RECORD 1 ]-------------
+id       | 2
+nome     | Loja D'Água
+cidade   | Fortaleza
+estado   | CE
+pais     | Brasil
+telefone | (85) 98712-3344
+
+loja=&gt; \x
+A exibição expandida está desativada.</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th><code>sqlite3</code></th><th><code>psql</code></th></tr>
+<tr><td>Abrir o banco</td><td><code>sqlite3 loja.db</code></td><td><code>psql loja</code> (ou <code>psql -U usuario -h servidor loja</code>)</td></tr>
+<tr><td>Listar as tabelas</td><td><code>.tables</code></td><td><code>\dt</code></td></tr>
+<tr><td>Ver a estrutura de uma tabela</td><td><code>.schema produtos</code></td><td><code>\d produtos</code></td></tr>
+<tr><td>Como mostrar o NULL</td><td><code>.nullvalue (nulo)</code></td><td><code>\pset null '(nulo)'</code></td></tr>
+<tr><td>Uma coluna por linha</td><td><code>.mode line</code></td><td><code>\x</code></td></tr>
+<tr><td>Rodar um arquivo .sql</td><td><code>.read arquivo.sql</code></td><td><code>\i arquivo.sql</code></td></tr>
+<tr><td>Ajuda dos comandos</td><td><code>.help</code></td><td><code>\?</code></td></tr>
+<tr><td>Sair</td><td><code>.quit</code></td><td><code>\q</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Limitar linhas: igual ao SQLite</h2>
+<p>Aqui não há o que traduzir. A "página 2" dos produtos mais caros, no SQLite:</p>
+
+<pre class="file" data-file="pagina2.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3 OFFSET 3;
+</pre>
+
+<p>No PostgreSQL, o mesmo texto, e também a forma do padrão SQL, com <code>FETCH FIRST</code>:</p>
+
+<pre class="term">loja=&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 3 OFFSET 3;
+          nome          | preco
+------------------------+--------
+ Faqueiro Inox 24 peças | 119.40
+ Teclado Compacto       |  99.00
+ Mochila Escolar Azul   |  89.99
+(3 linhas)
+
+loja=&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC OFFSET 3 ROWS FETCH FIRST 3 ROWS ONLY;
+          nome          | preco
+------------------------+--------
+ Faqueiro Inox 24 peças | 119.40
+ Teclado Compacto       |  99.00
+ Mochila Escolar Azul   |  89.99
+(3 linhas)</pre>
+
+<p>Repare nos preços: <code>119.40</code> e <code>99.00</code>, com duas casas, enquanto o SQLite mostra <code>119.4</code> e <code>99.0</code>. No PostgreSQL da Ana, o preço é <code>numeric(10,2)</code>, um número exato com 2 casas decimais. A forma do MySQL, <code>LIMIT 3, 3</code>, o PostgreSQL recusa e explica:</p>
+
+<pre class="term">loja=&gt; SELECT nome FROM produtos LIMIT 3, 3;
+ERRO:  sintaxe LIMIT #,# não tem suporte
+LINHA 1: SELECT nome FROM produtos LIMIT 3, 3;
+                                   ^
+DICA:  Use cláusulas LIMIT e OFFSET separadas.</pre>
+
+<p>Repare no formato das mensagens: a linha <code>ERRO:</code>, a <code>LINHA 1:</code> com a consulta, a setinha <code>^</code> apontando o lugar exato e, às vezes, uma <code>DICA:</code>. Leia sempre a dica.</p>
+
+<hr>
+
+<h2>4. Nomes: minúsculas, e aspas que mudam tudo</h2>
+<p>No PostgreSQL, um nome escrito <strong>sem</strong> aspas é convertido para minúsculas. A documentação diz: "nomes sem aspas são sempre convertidos para minúsculas", e <code>FOO</code>, <code>foo</code> e <code>"foo"</code> são o mesmo nome. Por isso <code>Nome</code> funciona. Mas <strong>com</strong> aspas duplas, o nome vale letra por letra:</p>
+
+<pre class="term">loja=&gt; SELECT Nome FROM clientes WHERE id = 1;
+        nome
+--------------------
+ José Ribamar Silva
+(1 linha)
+
+loja=&gt; SELECT "Nome" FROM clientes WHERE id = 1;
+ERRO:  coluna "Nome" não existe
+LINHA 1: SELECT "Nome" FROM clientes WHERE id = 1;
+                ^
+DICA:  Talvez você queira fazer referência à coluna "clientes.nome".</pre>
+
+<p>A lição é a mesma do guia inteiro: nomes de tabelas e colunas em <strong>minúsculas</strong>, sem espaço e sem acento, e você nunca vai precisar de aspas. (A documentação lembra que o padrão SQL manda converter para <strong>maiúsculas</strong>, e que o PostgreSQL faz o contrário; quem escreve tudo em minúsculas não sente a diferença.)</p>
+
+<p>E aspas duplas para texto? No PostgreSQL, como no editor do guia, elas são nome de coluna:</p>
+
+<pre class="term">loja=&gt; SELECT nome FROM clientes WHERE cidade = "Teresina";
+ERRO:  coluna "Teresina" não existe
+LINHA 1: SELECT nome FROM clientes WHERE cidade = "Teresina";
+                                                  ^</pre>
+
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE cidade = "Teresina";
+</pre>
+
+<p>O editor recusa do mesmo jeito. (O <code>sqlite3</code> do Debian, no terminal, aceita <code>"Teresina"</code> como texto quando não existe coluna com esse nome; não conte com isso.) <strong>Texto vai entre aspas simples.</strong></p>
+
+<hr>
+
+<h2>5. Maiúsculas no LIKE: ILIKE</h2>
+<p>No PostgreSQL, o <code>LIKE</code> <strong>diferencia</strong> maiúsculas de minúsculas: <code>'josé%'</code> não acha "José". Para comparar sem ligar para isso, existe o <code>ILIKE</code> (o "i" é de <em>insensitive</em>), que, segundo a documentação, faz a comparação "de acordo com o idioma ativo" e não faz parte do padrão SQL: é uma extensão do PostgreSQL. Com o idioma em português, ele acerta até as letras acentuadas:</p>
+
+<pre class="term">loja=&gt; SELECT nome FROM clientes WHERE nome LIKE 'josé%';
+ nome
+------
+(0 linha)
+
+loja=&gt; SELECT nome FROM clientes WHERE nome ILIKE 'JOSÉ%';
+        nome
+--------------------
+ José Ribamar Silva
+(1 linha)</pre>
+
+<p>No SQLite é diferente: o <code>LIKE</code> já ignora maiúsculas, mas só nas letras sem acento (aula <a href="like.html">LIKE</a>), e não existe <code>ILIKE</code>:</p>
+
+<pre class="file" data-file="like-acento.sql" data-resultado>SELECT nome FROM clientes WHERE nome LIKE 'josé%';
+SELECT nome FROM clientes WHERE nome LIKE 'JOSÉ%';
+</pre>
+
+<div class="trysql" data-goal="linhas:2;;contem:Ana Carvalho Lima">
+<p class="try-task"><strong>Experimente:</strong> a Ana copiou esta consulta do PostgreSQL, que procura as clientes chamadas Ana. No SQLite, ela dá erro. Troque a palavra que só o PostgreSQL conhece pela do SQLite (aqui funciona, porque "ana" não tem acento).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM clientes WHERE nome ILIKE 'ana%';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Numeração automática: GENERATED AS IDENTITY (e o velho SERIAL)</h2>
+<p>O jeito do padrão SQL, que o PostgreSQL recomenda, é a coluna de identidade. A Ana criou uma tabela de avisos para testar:</p>
+
+<pre class="term">loja=&gt; CREATE TABLE avisos (id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, texto TEXT NOT NULL);
+CREATE TABLE
+loja=&gt; INSERT INTO avisos (texto) VALUES ('Loja fecha às 18h') RETURNING id;
+ id
+----
+  1
+(1 linha)
+
+INSERT 0 1
+loja=&gt; INSERT INTO avisos (id, texto) VALUES (10, 'Promoção de papelaria');
+ERRO:  não é possível inserir um valor diferente de DEFAULT na coluna "id"
+DETALHE:  Column "id" is an identity column defined as GENERATED ALWAYS.
+DICA:  Use OVERRIDING SYSTEM VALUE to override.</pre>
+
+<dl class="anatomy">
+  <dt>GENERATED ALWAYS AS IDENTITY</dt><dd>"Gerado sempre, como identidade": o banco numera, e <strong>só</strong> o banco. Escolher o <code>id</code> na mão dá o erro acima. (O <code>DETALHE</code> e a <code>DICA</code> saíram em inglês: nem toda mensagem do PostgreSQL tem tradução.)</dd>
+  <dt>GENERATED BY DEFAULT AS IDENTITY</dt><dd>"Gerado por padrão": o banco numera se você não disser nada, mas aceita um <code>id</code> escolhido. É o que a Loja Aurora usa no PostgreSQL (veja no <code>\d produtos</code> lá em cima).</dd>
+  <dt>INSERT 0 1</dt><dd>A resposta do <code>psql</code> a um <code>INSERT</code>: o 1 é o número de linhas inseridas (o 0 é um resto histórico e é sempre 0).</dd>
+</dl>
+
+<p>Em códigos mais antigos, você vai ver <code>id SERIAL PRIMARY KEY</code>. A documentação descreve o <code>serial</code> como "um jeito específico do PostgreSQL" de criar uma coluna que se numera sozinha, e aponta a coluna de identidade como o jeito do padrão SQL. No SQLite, o equivalente é o <code>INTEGER PRIMARY KEY</code> (aula <a href="auto-increment.html">AUTOINCREMENT</a>).</p>
+
+<hr>
+
+<h2>7. RETURNING, ON CONFLICT e MERGE</h2>
+<p>Três recursos que o SQLite pegou emprestados do PostgreSQL, então a escrita é a mesma.</p>
+
+<h3>RETURNING</h3>
+<p>Devolve as linhas que o comando mexeu. No SQLite:</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>INSERT INTO categorias (nome, descricao)
+VALUES ('Pet', 'Produtos para animais')
+RETURNING id, nome;
+</pre>
+
+<p>No PostgreSQL, o mesmo texto, e também num <code>UPDATE</code>. Compare o preço:</p>
+
+<pre class="term">loja=&gt; INSERT INTO categorias (nome, descricao) VALUES ('Pet', 'Produtos para animais') RETURNING id, nome;
+ id | nome
+----+------
+  9 | Pet
+(1 linha)
+
+INSERT 0 1
+loja=&gt; UPDATE produtos SET preco = preco * 1.1 WHERE id = 1 RETURNING id, nome, preco;
+ id |           nome            | preco
+----+---------------------------+-------
+  1 | Caderno Pautado 96 folhas | 13.59
+(1 linha)
+
+UPDATE 1</pre>
+
+<pre class="file" data-file="returning-update.sql" data-resultado>UPDATE produtos
+SET preco = preco * 1.1
+WHERE id = 1
+RETURNING id, nome, preco;
+</pre>
+
+<p>O SQLite guardou <code>13.585</code>; o PostgreSQL, <code>13.59</code>. A coluna <code>numeric(10,2)</code> só tem duas casas, e o valor foi arredondado ao ser gravado. Para dinheiro, é isso que você quer.</p>
+
+<h3>ON CONFLICT: o UPSERT</h3>
+<p>"Insere, e se já existe, atualiza". Igual nos dois, inclusive o <code>excluded</code>, a "tabela especial" que, diz a documentação, representa a linha que se tentou inserir (no PostgreSQL, a Ana escreveu <code>EXCLUDED</code> em maiúsculas, que é o mesmo nome):</p>
+
+<pre class="file" data-file="upsert.sql" data-resultado>INSERT INTO categorias (id, nome, descricao)
+VALUES (8, 'Jardim e Quintal', 'Ferramentas e artigos de jardinagem')
+ON CONFLICT (id) DO UPDATE SET nome = excluded.nome;
+SELECT * FROM categorias WHERE id = 8;
+</pre>
+
+<pre class="term">loja=&gt; INSERT INTO categorias (id, nome, descricao) VALUES (8, 'Jardim e Quintal', 'Ferramentas e artigos de jardinagem') ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome;
+INSERT 0 1
+loja=&gt; SELECT * FROM categorias WHERE id = 8;
+ id |       nome       |              descricao
+----+------------------+-------------------------------------
+  8 | Jardim e Quintal | Ferramentas e artigos de jardinagem
+(1 linha)</pre>
+
+<h3>MERGE</h3>
+<p>O PostgreSQL também tem o <code>MERGE</code> do padrão SQL (desde a versão 15), o mesmo comando que o SQL Server usa (aula <a href="sql-server.html">SQL no SQL Server</a>). O SQLite não tem:</p>
+
+<pre class="term">loja=&gt; MERGE INTO categorias AS destino USING (VALUES (8, 'Jardim e Quintal', 'Ferramentas e artigos de jardinagem')) AS origem (id, nome, descricao) ON destino.id = origem.id WHEN MATCHED THEN UPDATE SET nome = origem.nome WHEN NOT MATCHED THEN INSERT (nome, descricao) VALUES (origem.nome, origem.descricao);
+MERGE 1</pre>
+
+<p><code>MERGE 1</code>: uma linha mexida (a categoria 8 existia, então foi o <code>WHEN MATCHED</code>). Para o UPSERT simples, o <code>ON CONFLICT</code> é mais curto; o <code>MERGE</code> serve quando há várias regras (atualizar umas, inserir outras, apagar outras). Desde o PostgreSQL 17, o <code>MERGE</code> também aceita <code>RETURNING</code>.</p>
+
+<hr>
+
+<h2>8. Textos e datas</h2>
+
+<h3>Juntar textos</h3>
+<p><code>||</code> e <code>concat()</code> funcionam como no SQLite: com <code>||</code>, um <code>NULL</code> deixa tudo <code>NULL</code>; o <code>concat()</code>, segundo a documentação, ignora os argumentos <code>NULL</code>. O cliente 7 não tem email:</p>
+
+<pre class="file" data-file="concatenar.sql" data-resultado>SELECT nome || ' - ' || email AS com_barras,
+       concat(nome, ' - ', email) AS com_concat
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<pre class="term">loja=&gt; SELECT nome || ' - ' || email AS com_barras, concat(nome, ' - ', email) AS com_concat FROM clientes WHERE id IN (6, 7);
+                    com_barras                    |                    com_concat
+--------------------------------------------------+--------------------------------------------------
+ Rafael Monteiro - rafael.monteiro@exemplo.com.br | Rafael Monteiro - rafael.monteiro@exemplo.com.br
+                                                  | Luís Otávio Brito -
+(2 linhas)</pre>
+
+<p>A célula vazia na segunda linha é o <code>NULL</code> (nesta sessão a Ana não tinha ligado o <code>\pset null</code>). Para juntar os textos de um grupo, os dois bancos têm <code>string_agg(nome, ', ')</code> (no SQLite, desde a versão 3.44, que também tem o antigo <code>group_concat</code>).</p>
+
+<h3>Datas</h3>
+<p>No PostgreSQL, <code>data</code> é do tipo <code>date</code>, uma data de verdade, e as contas ficam mais curtas: somar um número a uma data soma <strong>dias</strong>, e subtrair duas datas dá o número de dias entre elas (a tabela de operadores da documentação diz: <code>date + integer → date</code> e <code>date - date → integer</code>):</p>
+
+<pre class="term">loja=&gt; SELECT id, data, data + 7 AS prazo, entregue_em - data AS dias, extract(year FROM data) AS ano, to_char(data, 'DD/MM/YYYY') AS data_br FROM pedidos WHERE id = 1;
+ id |    data    |   prazo    | dias | ano  |  data_br
+----+------------+------------+------+------+------------
+  1 | 2024-01-05 | 2024-01-12 |    5 | 2024 | 05/01/2024
+(1 linha)
+
+loja=&gt; SELECT data, data + INTERVAL '1 month' AS um_mes_depois FROM pedidos WHERE id = 1;
+    data    |    um_mes_depois
+------------+---------------------
+ 2024-01-05 | 2024-02-05 00:00:00
+(1 linha)</pre>
+
+<p>O mesmo no SQLite, que guarda a data como texto e usa funções:</p>
+
+<pre class="file" data-file="datas.sql" data-resultado>SELECT id, data,
+       date(data, '+7 days')                     AS prazo,
+       julianday(entregue_em) - julianday(data)  AS dias,
+       strftime('%Y', data)                      AS ano,
+       strftime('%d/%m/%Y', data)                AS data_br
+FROM pedidos
+WHERE id = 1;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>PostgreSQL</th></tr>
+<tr><td>Somar 7 dias</td><td><code>date(d, '+7 days')</code></td><td><code>d + 7</code> ou <code>d + INTERVAL '7 days'</code></td></tr>
+<tr><td>Somar um mês</td><td><code>date(d, '+1 month')</code></td><td><code>d + INTERVAL '1 month'</code> (o resultado vira data e hora)</td></tr>
+<tr><td>Dias entre datas</td><td><code>julianday(b) - julianday(a)</code> (dá <code>5.0</code>)</td><td><code>b - a</code> (dá <code>5</code>, um inteiro)</td></tr>
+<tr><td>Ano</td><td><code>strftime('%Y', d)</code> (texto)</td><td><code>extract(year FROM d)</code> (número)</td></tr>
+<tr><td>Formato brasileiro</td><td><code>strftime('%d/%m/%Y', d)</code></td><td><code>to_char(d, 'DD/MM/YYYY')</code></td></tr>
+<tr><td>Hoje</td><td><code>date('now')</code></td><td><code>current_date</code></td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="linhas:17;;contem:85|2026-09-08">
+<p class="try-task"><strong>Experimente:</strong> no PostgreSQL, a Ana achou os pedidos que levaram mais de 7 dias para chegar com <code>WHERE entregue_em - data &gt; 7</code>. No SQLite, subtrair dois textos de data não dá dias (ela tentou: a consulta abaixo não acha nada). Troque a conta pela do SQLite, com <code>julianday()</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, data, entregue_em
+FROM pedidos
+WHERE entregue_em - data &gt; 7;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, data, entregue_em
+FROM pedidos
+WHERE julianday(entregue_em) - julianday(data) &gt; 7;
+</pre>
+</div>
+
+<hr>
+
+<h2>9. Tipos rígidos: boolean, numeric, varchar</h2>
+<p>Na Loja Aurora do PostgreSQL, a Ana usou tipos que o SQLite não tem de verdade:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>No SQLite</th><th>No PostgreSQL</th></tr>
+<tr><td><code>id</code></td><td><code>INTEGER PRIMARY KEY</code></td><td><code>INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY</code></td></tr>
+<tr><td><code>nome</code></td><td><code>TEXT</code></td><td><code>VARCHAR(100)</code> (ou <code>TEXT</code>, que também existe lá)</td></tr>
+<tr><td><code>estado</code></td><td><code>TEXT</code></td><td><code>CHAR(2)</code></td></tr>
+<tr><td><code>preco</code></td><td><code>REAL</code></td><td><code>NUMERIC(10,2)</code></td></tr>
+<tr><td><code>data</code></td><td><code>TEXT</code></td><td><code>DATE</code></td></tr>
+<tr><td><code>vip</code></td><td><code>INTEGER</code> (0 ou 1)</td><td><code>BOOLEAN</code></td></tr>
+</table>
+</div>
+
+<p>E o PostgreSQL faz valer cada tipo:</p>
+
+<pre class="term">loja=&gt; SELECT COUNT(*) FROM clientes WHERE vip;
+ count
+-------
+     5
+(1 linha)
+
+loja=&gt; SELECT COUNT(*) FROM clientes WHERE vip = 1;
+ERRO:  operador não existe: boolean = integer
+LINHA 1: SELECT COUNT(*) FROM clientes WHERE vip = 1;
+                                                 ^
+DICA:  Nenhum operador corresponde ao nome e tipo de dados dos argumentos fornecidos. Talvez seja necessário adicionar uma conversão de tipo de dados explícita.
+loja=&gt; UPDATE clientes SET estado = 'PIA' WHERE id = 1;
+ERRO:  valor é muito longo para tipo character(2)
+loja=&gt; SELECT estado + 1 FROM clientes LIMIT 1;
+ERRO:  operador não existe: character + integer
+LINHA 1: SELECT estado + 1 FROM clientes LIMIT 1;
+                       ^
+DICA:  Nenhum operador corresponde ao nome e tipo de dados dos argumentos fornecidos. Talvez seja necessário adicionar uma conversão de tipo de dados explícita.</pre>
+
+<dl class="anatomy">
+  <dt>WHERE vip</dt><dd>Com uma coluna <code>boolean</code>, a condição pode ser a própria coluna: "onde vip é verdadeiro". Também vale <code>WHERE vip = true</code>.</dd>
+  <dt>operador não existe: boolean = integer</dt><dd>Um booleano não se compara com um número. No SQLite, <code>vip = 1</code> é o normal.</dd>
+  <dt>valor é muito longo para tipo character(2)</dt><dd>O estado tem 2 letras, e o PostgreSQL não guarda 3. A documentação explica que tentar guardar um texto mais longo que o tamanho declarado é erro.</dd>
+  <dt>operador não existe: character + integer</dt><dd>Somar número com texto não existe. (Um texto <strong>escrito</strong> na consulta, como <code>'12' + 1</code>, o PostgreSQL ainda converte e dá 13; uma coluna de texto, não.)</dd>
+</dl>
+
+<p>No SQLite, as mesmas coisas passam caladas:</p>
+
+<pre class="file" data-file="tipos-no-sqlite.sql" data-resultado>SELECT COUNT(*) AS vips FROM clientes WHERE vip = 1;
+UPDATE clientes SET estado = 'PIA' WHERE id = 1 RETURNING id, estado;
+SELECT estado + 1 AS soma FROM clientes LIMIT 1;
+</pre>
+
+<p>O SQLite gravou "PIA" num campo de estado e calculou <code>'PI' + 1 = 1</code> sem reclamar. O rigor do PostgreSQL parece chato, mas é isso que impede um estado de três letras de entrar no cadastro.</p>
+
+<h3>Divisão</h3>
+<pre class="term">loja=&gt; SELECT 7 / 2 AS inteiros, 7 / 2.0 AS com_decimal;
+ inteiros |    com_decimal
+----------+--------------------
+        3 | 3.5000000000000000
+(1 linha)
+
+loja=&gt; SELECT 1 / 0;
+ERRO:  divisão por zero</pre>
+
+<pre class="file" data-file="divisao.sql" data-resultado>SELECT 7 / 2 AS inteiros, 7 / 2.0 AS com_decimal, 1 / 0 AS por_zero;
+</pre>
+
+<p>Inteiro dividido por inteiro corta a parte quebrada nos dois (a documentação do PostgreSQL: a divisão de inteiros "trunca o resultado em direção a zero"). A diferença é a divisão por zero: erro no PostgreSQL, <code>NULL</code> no SQLite. E o <code>7 / 2.0</code> do PostgreSQL sai com muitas casas, porque é um <code>numeric</code>.</p>
+
+<hr>
+
+<h2>10. GROUP BY estrito (com uma exceção esperta)</h2>
+<p>A coluna "solta" no <code>GROUP BY</code>, que o SQLite aceita mostrando um valor qualquer (aula <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>), o PostgreSQL recusa:</p>
+
+<pre class="term">loja=&gt; SELECT estado, cidade, COUNT(*) FROM clientes GROUP BY estado;
+ERRO:  coluna "clientes.cidade" deve aparecer na cláusula GROUP BY ou ser usada em uma função de agregação
+LINHA 1: SELECT estado, cidade, COUNT(*) FROM clientes GROUP BY estad...
+                        ^</pre>
+
+<p>Mas há uma exceção que a documentação explica: se você agrupa pela <strong>chave primária</strong> de uma tabela, as outras colunas daquela tabela podem aparecer sem estar no <code>GROUP BY</code>, porque cada <code>id</code> tem um nome só, uma cidade só, e não há dúvida sobre qual valor mostrar (a documentação chama isso de dependência funcional). Por isso esta consulta funciona:</p>
+
+<pre class="term">loja=&gt; SELECT c.id, c.nome, c.cidade, COUNT(p.id) AS pedidos FROM clientes c LEFT JOIN pedidos p ON p.cliente_id = c.id WHERE c.id &gt;= 28 GROUP BY c.id;
+ id |      nome      |  cidade   | pedidos
+----+----------------+-----------+---------
+ 29 | Elias Furtado  | Teresina  |       0
+ 30 | Rosângela Dias | Fortaleza |       0
+ 28 | Tainá Soares   | São Paulo |       0
+(3 linhas)</pre>
+
+<p>(Repare na ordem 29, 30, 28: sem <code>ORDER BY</code>, nenhum banco promete ordem.) Para a consulta funcionar em qualquer banco, ponha no <code>GROUP BY</code> todas as colunas que aparecem soltas: <code>GROUP BY c.id, c.nome, c.cidade</code>.</p>
+
+<hr>
+
+<h2>11. A transação interrompida</h2>
+<p>Esta é uma diferença que pega todo mundo que vem do SQLite. Dentro de uma transação (aula <a href="transacoes.html">Transações</a>), se um comando dá erro, o PostgreSQL <strong>interrompe a transação inteira</strong>: ele não aceita mais nada até você desfazê-la. Veja o prompt mudar:</p>
+
+<pre class="term">loja=&gt; BEGIN;
+BEGIN
+loja=*&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 1;
+UPDATE 1
+loja=*&gt; SELECT nome FROM produto WHERE id = 1;
+ERRO:  relação "produto" não existe
+LINHA 1: SELECT nome FROM produto WHERE id = 1;
+                          ^
+loja=!&gt; SELECT estoque FROM produtos WHERE id = 1;
+ERRO:  transação atual foi interrompida, comandos ignorados até o fim do bloco de transação
+loja=!&gt; ROLLBACK;
+ROLLBACK
+loja=&gt; SELECT estoque FROM produtos WHERE id = 1;
+ estoque
+---------
+     120
+(1 linha)</pre>
+
+<dl class="anatomy">
+  <dt>loja=*&gt;</dt><dd>O <code>*</code> no prompt quer dizer "dentro de uma transação" (a documentação do <code>psql</code> explica os sinais).</dd>
+  <dt>relação "produto" não existe</dt><dd>Um erro de digitação: a tabela é <code>produtos</code>. ("Relação" é como o PostgreSQL chama tabelas e coisas parecidas.)</dd>
+  <dt>loja=!&gt;</dt><dd>O <code>!</code> quer dizer "transação com falha". A partir daqui, até um comando certo é recusado, com "transação atual foi interrompida, comandos ignorados até o fim do bloco de transação".</dd>
+  <dt>ROLLBACK</dt><dd>Desfaz a transação (aula <a href="rollback.html">ROLLBACK e Savepoints</a>). O estoque voltou a 120: o <code>UPDATE</code> do começo também foi desfeito.</dd>
+</dl>
+
+<p>A Ana fez o mesmo no <code>sqlite3</code>, para comparar:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 1;
+sqlite&gt; SELECT nome FROM produto WHERE id = 1;
+Parse error: no such table: produto
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 1;
+119
+sqlite&gt; ROLLBACK;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 1;
+120
+sqlite&gt; .quit</pre>
+
+<p>No SQLite, o comando errado falhou sozinho e a transação continuou: o <code>SELECT</code> seguinte rodou e mostrou o estoque já com o <code>UPDATE</code> (119). No PostgreSQL, depois de um erro é tudo ou nada. Quando ver o <code>!</code> no prompt, digite <code>ROLLBACK;</code> e comece de novo.</p>
+
+<hr>
+
+<h2>Formas que funcionam nos dois</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>Escreva assim</th><th>Por quê</th></tr>
+<tr><td>Limitar e paginar</td><td><code>LIMIT n OFFSET m</code></td><td>igual nos dois</td></tr>
+<tr><td>Juntar textos</td><td><code>||</code> ou <code>concat()</code></td><td>igual nos dois</td></tr>
+<tr><td>Valor no lugar de NULL</td><td><code>coalesce(x, y)</code></td><td>padrão SQL; o <code>ifnull</code> do SQLite não existe no PostgreSQL</td></tr>
+<tr><td>Inserir ou atualizar</td><td><code>INSERT … ON CONFLICT (…) DO UPDATE SET … = excluded.…</code></td><td>igual nos dois</td></tr>
+<tr><td>Saber o id criado</td><td><code>… RETURNING id</code></td><td>igual nos dois</td></tr>
+<tr><td>VIP</td><td><code>WHERE vip = true</code></td><td>funciona com <code>boolean</code> no PostgreSQL e com 0/1 no SQLite</td></tr>
+<tr><td>GROUP BY</td><td>todas as colunas soltas no <code>GROUP BY</code></td><td>o SQLite aceita tudo; o PostgreSQL, não</td></tr>
+<tr><td>Nomes</td><td>minúsculos, sem aspas</td><td>as aspas duplas mudam o sentido no PostgreSQL</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As mensagens abaixo são reais, do PostgreSQL 17 da Ana, em português. Ao lado, o que o SQLite diria.</p>
+
+<div class="cenario">
+<strong><code>relação "cliente" não existe</code></strong>
+<pre class="term">loja=&gt; SELECT nome FROM cliente;
+ERRO:  relação "cliente" não existe
+LINHA 1: SELECT nome FROM cliente;
+                          ^</pre>
+<p>A tabela se chama <code>clientes</code>. No SQLite: <code>no such table: cliente</code>. Se o nome está certo e o erro continua, confira se você abriu o banco certo (<code>psql loja</code>) e se não criou a tabela com aspas e maiúsculas (<code>"Clientes"</code>).</p>
+</div>
+
+<div class="cenario">
+<strong><code>erro de sintaxe em ou próximo a "3"</code>: o TOP do SQL Server</strong>
+<pre class="term">loja=&gt; SELECT TOP 3 nome FROM produtos;
+ERRO:  erro de sintaxe em ou próximo a "3"
+LINHA 1: SELECT TOP 3 nome FROM produtos;
+                    ^</pre>
+<p>O PostgreSQL leu <code>TOP</code> como o nome de uma coluna e tropeçou no <code>3</code>. É a mesma reação do SQLite (<code>near "3": syntax error</code>). <strong>Como consertar:</strong> <code>… ORDER BY … LIMIT 3</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>operador não existe</code></strong>
+<p>Visto na seção 9: você comparou ou somou tipos diferentes (<code>boolean = integer</code>, <code>character + integer</code>). Leia a <code>DICA</code>: "talvez seja necessário adicionar uma conversão de tipo de dados explícita". Às vezes a solução é comparar com o tipo certo (<code>vip = true</code>); às vezes é converter com <code>CAST(x AS integer)</code> ou com <code>x::integer</code>, a forma histórica do PostgreSQL (o <code>CAST</code> é a do padrão SQL).</p>
+</div>
+
+<div class="cenario">
+<strong><code>deve aparecer na cláusula GROUP BY</code></strong>
+<p>Visto na seção 10. <strong>Como consertar:</strong> ponha a coluna no <code>GROUP BY</code>, numa função de agregação, ou agrupe pela chave primária da tabela dela.</p>
+</div>
+
+<div class="cenario">
+<strong><code>transação atual foi interrompida</code></strong>
+<p>Visto na seção 11: um comando anterior, na mesma transação, deu erro. <strong>Como consertar:</strong> <code>ROLLBACK;</code> e refaça a transação, já sem o erro.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma função do SQLite que não existe lá</strong>
+<pre class="term">loja=&gt; SELECT ifnull(NULL, 'x');
+ERRO:  função ifnull(unknown, unknown) não existe
+LINHA 1: SELECT ifnull(NULL, 'x');
+                ^
+DICA:  Nenhuma função corresponde com o nome e os tipos de argumentos informados. Você precisa adicionar conversões de tipo explícitas.
+loja=&gt; SELECT julianday('2024-01-05');
+ERRO:  função julianday(unknown) não existe
+LINHA 1: SELECT julianday('2024-01-05');
+                ^
+DICA:  Nenhuma função corresponde com o nome e os tipos de argumentos informados. Você precisa adicionar conversões de tipo explícitas.</pre>
+<p>Funções como <code>ifnull()</code>, <code>julianday()</code>, <code>strftime()</code> e <code>date(d, '+7 days')</code> são do SQLite. A <code>DICA</code> fala em conversões de tipo porque o PostgreSQL também diferencia funções pelo tipo dos argumentos; aqui o problema é mais simples: a função não existe. No PostgreSQL, use <code>coalesce()</code>, a subtração de datas, <code>extract()</code>/<code>to_char()</code> e <code>d + 7</code> (seção 8). O caminho inverso também vale: <code>ILIKE</code>, <code>extract()</code> e <code>to_char()</code> não existem no SQLite.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida: SQLite × PostgreSQL</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>PostgreSQL</th></tr>
+<tr><td>Programa de terminal</td><td><code>sqlite3 loja.db</code></td><td><code>psql loja</code></td></tr>
+<tr><td>Listar tabelas / estrutura</td><td><code>.tables</code> / <code>.schema t</code></td><td><code>\dt</code> / <code>\d t</code></td></tr>
+<tr><td>Limitar</td><td><code>LIMIT 3 OFFSET 3</code></td><td>igual, ou <code>OFFSET 3 ROWS FETCH FIRST 3 ROWS ONLY</code></td></tr>
+<tr><td>Nome com maiúscula</td><td>tanto faz</td><td>sem aspas vira minúsculo; com aspas vale letra por letra</td></tr>
+<tr><td>LIKE sem ligar para maiúsculas</td><td><code>LIKE</code> (só letras sem acento)</td><td><code>ILIKE</code></td></tr>
+<tr><td>Numeração automática</td><td><code>INTEGER PRIMARY KEY</code></td><td><code>GENERATED … AS IDENTITY</code> (ou <code>SERIAL</code>)</td></tr>
+<tr><td>Juntar textos</td><td><code>||</code>, <code>concat()</code></td><td><code>||</code>, <code>concat()</code></td></tr>
+<tr><td>Trocar NULL</td><td><code>ifnull</code>, <code>coalesce</code></td><td><code>coalesce</code></td></tr>
+<tr><td>Somar dias</td><td><code>date(d, '+7 days')</code></td><td><code>d + 7</code></td></tr>
+<tr><td>Dias entre datas</td><td><code>julianday(b) - julianday(a)</code></td><td><code>b - a</code></td></tr>
+<tr><td>Ano / formato BR</td><td><code>strftime('%Y', d)</code> / <code>strftime('%d/%m/%Y', d)</code></td><td><code>extract(year FROM d)</code> / <code>to_char(d, 'DD/MM/YYYY')</code></td></tr>
+<tr><td>Booleano</td><td>0 / 1</td><td><code>boolean</code>: <code>true</code> / <code>false</code></td></tr>
+<tr><td>Dinheiro</td><td><code>REAL</code></td><td><code>NUMERIC(10,2)</code></td></tr>
+<tr><td>UPSERT</td><td><code>ON CONFLICT … DO UPDATE</code></td><td>igual, e também <code>MERGE</code></td></tr>
+<tr><td>Devolver o que mudou</td><td><code>RETURNING</code></td><td><code>RETURNING</code></td></tr>
+<tr><td>1 / 0</td><td><code>NULL</code></td><td><code>ERRO: divisão por zero</code></td></tr>
+<tr><td>Erro dentro de uma transação</td><td>desfaz só o comando</td><td>interrompe a transação: <code>ROLLBACK</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os comandos de barra</h3>
+<p>No <code>psql</code>, qual comando lista as tabelas do banco (o <code>.tables</code> do <code>sqlite3</code>)?</p>
+<div class="ex-code"><input data-answer="\dt" aria-label="comando"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem ligar para maiúsculas</h3>
+<p>Complete a consulta do PostgreSQL que acha "José Ribamar Silva" mesmo escrita em maiúsculas:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE nome <input data-answer="ILIKE|ilike" aria-label="operador"> 'JOSÉ%';</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. No PostgreSQL, a coluna <code>vip</code> é <code>boolean</code>. Qual destas condições dá erro?</p>
+<label><input type="radio" name="q3"> <code>WHERE vip</code></label>
+<label><input type="radio" name="q3"> <code>WHERE vip = 1</code></label>
+<label><input type="radio" name="q3"> <code>WHERE vip = true</code></label>
+<label><input type="radio" name="q3"> <code>WHERE NOT vip</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O prompt do <code>psql</code> virou <code>loja=!&gt;</code> e nenhum comando funciona. O que fazer?</p>
+<label><input type="radio" name="q4"> Sair e entrar de novo é a única saída</label>
+<label><input type="radio" name="q4"> Digitar <code>COMMIT;</code> para salvar o que deu certo</label>
+<label><input type="radio" name="q4"> Digitar <code>ROLLBACK;</code>: a transação falhou, e é preciso desfazê-la</label>
+<label><input type="radio" name="q4"> Digitar <code>\q</code> e apagar o banco</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. No PostgreSQL, <code>SELECT "Nome" FROM clientes;</code> dá <code>coluna "Nome" não existe</code>, mas <code>SELECT Nome FROM clientes;</code> funciona. Por quê?</p>
+<label><input type="radio" name="q5"> Sem aspas, o nome vira minúsculo (<code>nome</code>, que existe); com aspas, ele vale letra por letra (<code>Nome</code>, que não existe)</label>
+<label><input type="radio" name="q5"> Aspas duplas são proibidas no PostgreSQL</label>
+<label><input type="radio" name="q5"> O PostgreSQL não aceita nomes com maiúscula</label>
+<label><input type="radio" name="q5"> A coluna se chama <code>NOME</code></label>
+</div>
+
+<h3>Missão final: traduza do PostgreSQL para o SQLite</h3>
+
+<div class="trysql" data-goal="colunas:ano,pedidos;;linhas:3;;contem:2026|26">
+<p class="try-task"><strong>Missão:</strong> no PostgreSQL, a Ana contou os pedidos de cada ano com a consulta abaixo. No SQLite, a função <code>extract</code> não existe. Reescreva para o SQLite, mantendo as colunas <code>ano</code> e <code>pedidos</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT extract(year FROM data) AS ano, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY ano
+ORDER BY ano;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT strftime('%Y', data) AS ano, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY ano
+ORDER BY ano;
+</pre>
+</div>
+
+<p>32 pedidos em 2024, 32 em 2025 e 26 em 2026 (até outubro). Com isso você viu os dois bancos com servidor mais usados ao lado do SQLite. A aula <a href="dialetos.html">As Diferenças entre os Bancos</a> reúne os quatro numa tabela só, e <a href="sql-nas-linguagens.html">SQL nas Linguagens</a> mostra como um programa conversa com eles.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O PostgreSQL é um banco com servidor, gratuito e de código aberto, e o que mais segue o SQL padrão. No Debian/Ubuntu, <code>apt install postgresql</code>; depois, <code>createuser</code> e <code>createdb</code> como o usuário <code>postgres</code>, e <code>psql loja</code>.</li>
+  <li>No <code>psql</code>, os comandos de barra (<code>\dt</code>, <code>\d tabela</code>, <code>\x</code>, <code>\pset null</code>, <code>\i</code>, <code>\q</code>) fazem o papel dos comandos de ponto do <code>sqlite3</code>.</li>
+  <li>Iguais ao SQLite: <code>LIMIT</code>/<code>OFFSET</code>, <code>||</code>, <code>concat()</code>, <code>ON CONFLICT</code>, <code>RETURNING</code>, <code>string_agg</code>.</li>
+  <li>Diferentes: nomes sem aspas viram minúsculos; <code>ILIKE</code>; <code>GENERATED AS IDENTITY</code>; datas com <code>d + 7</code>, <code>b - a</code>, <code>extract</code>, <code>to_char</code>; <code>boolean</code> de verdade; <code>MERGE</code>.</li>
+  <li>O PostgreSQL é rigoroso: tipos não se misturam (<code>operador não existe</code>), textos não passam do tamanho, <code>GROUP BY</code> sem colunas soltas (salvo agrupando pela chave primária), divisão por zero é erro.</li>
+  <li>Um erro dentro de uma transação a interrompe inteira (<code>loja=!&gt;</code>): digite <code>ROLLBACK;</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
