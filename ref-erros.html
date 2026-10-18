@@ -141,12 +141,11 @@ Parse error: ambiguous column name: id
 FROM clientes
 WHERE nome = "Ana Carvalho Lima";
 </pre>
-<p>O SQLite leu <code>"Ana Carvalho Lima"</code> como o <strong>nome de uma coluna</strong> e não achou coluna nenhuma com esse nome. A própria mensagem dá a dica: <em>should this be a string literal in single-quotes?</em>, "isto não deveria ser um texto entre aspas simples?". No terminal, a seta aponta para as aspas:</p>
+<p>O SQLite leu <code>"Ana Carvalho Lima"</code> como o <strong>nome de uma coluna</strong> e não achou coluna nenhuma com esse nome. A própria mensagem dá a dica: <em>should this be a string literal in single-quotes?</em>, "isto não deveria ser um texto entre aspas simples?". Essa é a mensagem do <strong>editor do guia</strong>. No terminal, o <code>sqlite3</code> do Debian não reclama:</p>
 <pre class="term">sqlite&gt; SELECT nome FROM clientes WHERE nome = "Ana Carvalho Lima";
-Parse error: no such column: "Ana Carvalho Lima" - should this be a string literal in single-quotes?
-  SELECT nome FROM clientes WHERE nome = "Ana Carvalho Lima";
-                           error here ---^</pre>
-<p><strong>Atenção:</strong> o editor do guia e o terminal da Ana usam um SQLite configurado como o padrão do SQL manda (a opção <code>DQS=0</code>). Muitos programas antigos usam um SQLite "tolerante", que, quando não acha a coluna, aceita o texto entre aspas duplas sem reclamar. Não conte com isso: além de fora do padrão, se um dia existir uma coluna com aquele nome, a consulta passa a comparar com a coluna, sem erro nenhum. Use sempre aspas simples para texto.</p>
+Ana Carvalho Lima
+sqlite&gt; </pre>
+<p><strong>Atenção:</strong> o editor do guia usa um SQLite configurado como o padrão do SQL manda (a opção <code>DQS=0</code>). O <code>sqlite3</code> que vem no Debian (e em muitas outras distribuições) é "tolerante": quando não acha a coluna, aceita o texto entre aspas duplas sem reclamar. Não conte com isso: além de fora do padrão, se um dia existir uma coluna com aquele nome, a consulta passa a comparar com a coluna, sem erro nenhum (a aula <a href="where.html">WHERE</a> mostra isso acontecendo). Use sempre aspas simples para texto.</p>
 </div>
 
 <h3>O comando que não termina, no terminal</h3>
