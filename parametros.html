@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Consultas com Parâmetros — ?, ?1 e :nome | Guia SQL</title>
+<meta name="description" content="Consultas com parâmetros (prepared statements) para quem está começando: o espaço reservado ? posicional, o ?1 numerado e o :nome nomeado, por que o valor vai por fora e nunca vira SQL, o .parameter set do sqlite3, exemplos rodando de verdade em Python, o apóstrofo que passa a funcionar, os erros reais e as formas dos outros bancos ($1 no PostgreSQL, :nome e ? no PDO).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Consultas com <span class="hl">Parâmetros</span></h1>
+
+<p class="intro">Na aula <a href="sql-injection.html">SQL Injection</a> você viu o perigo de colar o texto digitado por alguém dentro do SQL. A solução — e também o jeito mais limpo de escrever consultas num programa — é a <strong>consulta com parâmetros</strong>: você deixa um <strong>espaço reservado</strong> no SQL (um <code>?</code> ou um <code>:nome</code>) e entrega o valor <strong>por fora</strong>. O banco monta a consulta primeiro e só depois encaixa o valor, tratando-o sempre como dado, nunca como comando. É isso que os programadores chamam de <em>prepared statement</em> ("comando preparado"). Nesta aula você vê as três formas de espaço reservado, rodando de verdade no terminal do SQLite e em programas Python da Ana.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um espaço reservado e por que o valor "vai por fora".</li>
+  <li>As três formas: <code>?</code> (posicional), <code>?1</code> (numerado) e <code>:nome</code> (nomeado).</li>
+  <li>Como experimentar parâmetros no próprio <code>sqlite3</code>, com <code>.parameter set</code>.</li>
+  <li>Parâmetros em Python, com um e com vários valores.</li>
+  <li>Por que o apóstrofo de <code>Loja D'Água</code> passa a funcionar sozinho.</li>
+  <li>O que um parâmetro <strong>não</strong> pode substituir (nome de coluna, de tabela) e as formas dos outros bancos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o formulário com um campo em branco</h2>
+<p>Pense num formulário já impresso da Loja Aurora, com o texto fixo e um só campo para preencher:</p>
+
+<pre class="file" data-file="formulário">Listar os clientes do estado: [        ]</pre>
+
+<p>O texto do formulário é sempre o mesmo. O que muda é só o que vai no campo: hoje <code>PI</code>, amanhã <code>CE</code>. O campo em branco é o <strong>espaço reservado</strong>; o valor que você escreve nele é o <strong>parâmetro</strong>. Ninguém que preencha o campo consegue mudar o texto impresso do formulário — e é exatamente essa separação que protege a consulta.</p>
+
+<p>No SQL, o espaço reservado é um <code>?</code> (ou um <code>:nome</code>). Repare que ele fica <strong>sem aspas</strong>, mesmo quando o valor é texto:</p>
+
+<pre class="file" data-file="a ideia, em SQL">SELECT nome, cidade FROM clientes WHERE estado = ?;
+                                                    ↑
+                               o campo em branco: o valor entra por fora</pre>
+
+<hr>
+
+<h2>1. Experimentando no próprio sqlite3</h2>
+<p>Antes de ir para um programa, dá para sentir como funciona dentro do próprio terminal do <code>sqlite3</code> (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>). O comando de ponto <code>.parameter set</code> guarda um valor para um espaço reservado nomeado; depois, toda consulta que usar aquele nome recebe o valor:</p>
+
+<pre class="term" data-cwd="~">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> .mode box
+sqlite> .parameter set :uf 'PI'
+sqlite> SELECT nome, cidade FROM clientes WHERE estado = :uf LIMIT 3;
+┌────────────────────┬──────────┐
+│        nome        │  cidade  │
+├────────────────────┼──────────┤
+│ José Ribamar Silva │ Teresina │
+│ Maria Clara Mendes │ Teresina │
+│ Conceição Prado    │ Teresina │
+└────────────────────┴──────────┘
+sqlite> .parameter list
+:uf 'PI'
+sqlite> .parameter unset :uf</pre>
+
+<dl class="anatomy">
+  <dt>.parameter set :uf 'PI'</dt><dd>Guarda o valor <code>PI</code> para o espaço reservado chamado <code>:uf</code>. É um comando de ponto, só do programa <code>sqlite3</code> (não é SQL).</dd>
+  <dt>WHERE estado = :uf</dt><dd>Na consulta, o <code>:uf</code> é o espaço reservado. O <code>sqlite3</code> encaixa o <code>PI</code> guardado na hora de rodar.</dd>
+  <dt>.parameter list</dt><dd>Mostra os valores guardados.</dd>
+  <dt>.parameter unset :uf</dt><dd>Esquece o valor.</dd>
+</dl>
+
+<div class="warning">
+<strong>Isso é do terminal, não do editor do guia</strong>
+<p>Os comandos de ponto (<code>.parameter</code>, <code>.mode</code>…) existem só no programa <code>sqlite3</code>. No <strong>editor do guia</strong> (as caixas "Experimente") não há como guardar um valor para um espaço reservado; por isso, lá, um <code>?</code> ou um <code>:uf</code> fica <strong>vazio</strong> — você vai ver isso em <a href="#errado">Quando dá errado</a>. Para experimentar parâmetros de verdade, use o terminal ou um programa, como nas próximas seções.</p>
+</div>
+
+<hr>
+
+<h2>2. Parâmetros em Python: o <code>?</code> posicional</h2>
+<p>Num programa, o valor costuma vir de fora (de um formulário, da linha de comando). A Ana usa a biblioteca <code>sqlite3</code> do Python. A forma mais comum de espaço reservado é o <code>?</code>, e o valor vai num <strong>segundo argumento</strong>, numa lista à parte:</p>
+
+<pre class="file" data-file="um.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+uf = "PI"
+sql = "SELECT nome, cidade FROM clientes WHERE estado = ? LIMIT 3"
+for linha in con.execute(sql, (uf,)):
+    print(linha)
+</pre>
+
+<dl class="anatomy">
+  <dt>estado = ?</dt><dd>O espaço reservado. O SQL é fixo: não muda com o valor. Sem aspas em volta do <code>?</code>.</dd>
+  <dt>con.execute(sql, (uf,))</dt><dd>O valor vai no segundo argumento, numa <strong>tupla</strong> (uma lista de valores). O <code>(uf,)</code> tem uma vírgula porque é uma tupla de um item só.</dd>
+  <dt>a ordem</dt><dd>O primeiro <code>?</code> recebe o primeiro valor da lista, o segundo <code>?</code> o segundo, e assim por diante. Por isso o <code>?</code> se chama <strong>posicional</strong>.</dd>
+</dl>
+
+<pre class="term">$ python3 um.py
+('José Ribamar Silva', 'Teresina')
+('Maria Clara Mendes', 'Teresina')
+('Conceição Prado', 'Teresina')</pre>
+
+<h3>Vários valores</h3>
+<p>Quando a consulta precisa de mais de um valor, você põe mais de um <code>?</code> e passa a lista na mesma ordem. Aqui, a Ana procura produtos numa faixa de preço:</p>
+
+<pre class="file" data-file="faixa.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+barato, caro = 20, 25
+sql = "SELECT nome, preco FROM produtos WHERE preco &gt;= ? AND preco &lt;= ? ORDER BY preco"
+for linha in con.execute(sql, (barato, caro)):
+    print(linha)
+</pre>
+
+<pre class="term">$ python3 faixa.py
+('Garrafa Squeeze 700ml', 21.75)
+('Avental de Cozinha', 22.9)
+('Café Torrado 500g', 23.85)
+('Cabo HDMI 2 metros', 24.75)</pre>
+
+<p>O primeiro <code>?</code> virou <code>20</code>; o segundo, <code>25</code>. Repare que, para números, você não põe aspas em lugar nenhum — nem no SQL, nem no valor.</p>
+
+<hr>
+
+<h2>3. O <code>:nome</code> nomeado</h2>
+<p>Com muitos <code>?</code>, é fácil se perder na ordem. A forma <strong>nomeada</strong> resolve isso: cada espaço reservado ganha um nome (<code>:uf</code>, <code>:lim</code>), e você passa os valores com esses nomes, numa estrutura chave→valor (em Python, um dicionário). A ordem deixa de importar:</p>
+
+<pre class="file" data-file="nomeado.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+valores = {"uf": "CE", "lim": 2}
+sql = "SELECT nome, cidade FROM clientes WHERE estado = :uf LIMIT :lim"
+for linha in con.execute(sql, valores):
+    print(linha)
+</pre>
+
+<pre class="term">$ python3 nomeado.py
+('Carlos Eduardo Lima', 'Fortaleza')
+('Fernanda Carvalho', 'Fortaleza')</pre>
+
+<dl class="anatomy">
+  <dt>:uf e :lim</dt><dd>Espaços reservados <strong>nomeados</strong>: dois-pontos seguidos de um nome.</dd>
+  <dt>{"uf": "CE", "lim": 2}</dt><dd>Os valores por nome. No dicionário o nome vai <strong>sem</strong> os dois-pontos (<code>"uf"</code>), e no SQL <strong>com</strong> (<code>:uf</code>).</dd>
+</dl>
+
+<div class="note">
+<strong>O <code>?1</code> numerado</strong>
+<p>O SQLite ainda aceita uma terceira forma: <code>?</code> seguido de um número — <code>?1</code>, <code>?2</code>… —, em que o número diz qual valor da lista usar. A documentação oficial do SQLite descreve as formas assim: <code>?</code> (posicional), <code>?NNN</code> (numerado, "guarda o lugar do NNN-ésimo parâmetro") e <code>:nome</code>, <code>@nome</code>, <code>$nome</code> (nomeados). A vantagem do <code>?1</code> é poder repetir o <strong>mesmo</strong> valor em dois lugares da consulta (<code>WHERE a = ?1 OR b = ?1</code>) sem passá-lo duas vezes. Na prática, a maioria dos programas usa só o <code>?</code> ou o <code>:nome</code>; a própria documentação do SQLite desaconselha o <code>?</code> sem número quando há muitos, "porque é fácil errar a contagem", e sugere as formas nomeadas ou o <code>?NNN</code>.</p>
+</div>
+
+<hr>
+
+<h2>4. De quebra: o apóstrofo que passa a funcionar</h2>
+<p>Lembra do fornecedor <code>Loja D'Água</code>, que quebrava a busca feita por colagem (aula <a href="sql-injection.html">SQL Injection</a>)? Com parâmetro, o apóstrofo deixa de ser problema: como o valor vai por fora e é tratado como dado, o banco o guarda e procura certinho, sem você precisar dobrar aspa nenhuma:</p>
+
+<pre class="file" data-file="nome.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+alvo = "Loja D'Água"
+linha = con.execute(
+    "SELECT id, nome, cidade FROM fornecedores WHERE nome = ?",
+    (alvo,),
+).fetchone()
+print(linha)
+</pre>
+
+<pre class="term">$ python3 nome.py
+(2, "Loja D'Água", 'Fortaleza')</pre>
+
+<p>O apóstrofo de <code>D'Água</code> foi tratado como uma letra qualquer do texto. É essa a diferença: no parâmetro, o valor nunca "se mistura" com o SQL. (No editor do guia, para escrever esse nome <strong>à mão</strong>, você ainda dobra a aspa — <code>'Loja D''Água'</code> —, como na aula <a href="where.html">WHERE</a>; o parâmetro é quem faz esse trabalho por você nos programas.)</p>
+
+<hr>
+
+<h2>5. O que um parâmetro NÃO pode substituir</h2>
+<p>Um espaço reservado guarda o lugar de <strong>um valor</strong> — um texto, um número, uma data. Ele <strong>não</strong> pode guardar o lugar de um nome de coluna, de um nome de tabela, nem de uma palavra-chave. A documentação do SQLite diz que parâmetros sem valor viram <code>NULL</code>; então, se você puser um <code>?</code> onde deveria haver um nome de coluna, não dá erro de "proibido" — a consulta só não faz o que você queria.</p>
+
+<p>Se o que varia no seu programa é a <strong>coluna da ordenação</strong> ou o <strong>nome de uma tabela</strong>, use uma <strong>lista de permitidos</strong>: compare o que veio de fora com uma lista fixa que você escreveu e recuse o resto. Nunca cole um nome vindo de fora.</p>
+
+<pre class="file" data-file="ordenar.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+coluna = "preco"                       # viria de fora
+permitidas = {"nome", "preco", "estoque"}
+if coluna not in permitidas:           # a lista de permitidos
+    raise ValueError("coluna não permitida")
+
+sql = f"SELECT nome, preco FROM produtos ORDER BY {coluna} LIMIT 3"
+for linha in con.execute(sql):
+    print(linha)
+</pre>
+
+<p>Aqui o nome da coluna só entra no SQL <strong>depois</strong> de passar pela lista <code>permitidas</code>. O valor de busca continuaria indo por parâmetro; a lista de permitidos é só para a parte que o parâmetro não cobre.</p>
+
+<hr>
+
+<h2>6. As formas, lado a lado</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como escreve no SQL</th><th>Como passa o valor (Python)</th><th>Quando usar</th></tr>
+<tr><td>Posicional</td><td><code>WHERE estado = ?</code></td><td>uma tupla, na ordem: <code>(uf,)</code></td><td>Poucos valores; o mais comum.</td></tr>
+<tr><td>Numerado</td><td><code>WHERE estado = ?1</code></td><td>pela posição; repete o <code>?1</code> para reusar o valor</td><td>Quando o mesmo valor aparece em dois lugares.</td></tr>
+<tr><td>Nomeado</td><td><code>WHERE estado = :uf</code></td><td>um dicionário: <code>{"uf": uf}</code></td><td>Muitos valores; o nome deixa claro o que é cada um.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>No editor do guia, o espaço reservado fica vazio</strong>
+<p>Como o editor não tem como receber valores por fora, um <code>?</code> ou um <code>:uf</code> fica sem valor — e, segundo a própria documentação do SQLite, um parâmetro sem valor vira <code>NULL</code>. A comparação <code>estado = NULL</code> nunca é verdadeira (aula <a href="is-null.html">IS NULL</a>), então a consulta volta <strong>vazia</strong>, sem dar erro:</p>
+<pre class="file" data-file="editor-param.sql" data-resultado>SELECT nome, cidade FROM clientes WHERE estado = :uf LIMIT 3;
+</pre>
+<p>Zero linhas. Não é um erro do seu SQL; é só que, aqui, não há quem preencha o campo. No terminal (seção 1) ou num programa (seções 2 e 3), com o valor preenchido, a mesma consulta devolve as linhas.</p>
+</div>
+
+<div class="cenario">
+<strong>Número de valores diferente do número de espaços</strong>
+<p>Num programa, se a consulta tem dois <code>?</code> e você passa um valor só, a biblioteca reclama antes mesmo de ir ao banco:</p>
+<pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute(
+    'SELECT nome FROM clientes WHERE estado = ? AND vip = ?', ('PI',))"
+sqlite3.ProgrammingError: Incorrect number of bindings supplied. The current statement uses 2, and there are 1 supplied.</pre>
+<p>"Número incorreto de valores: o comando usa 2 e foram passados 1." Conte os <code>?</code> e os valores: têm de bater.</p>
+</div>
+
+<div class="cenario">
+<strong>Pôr o <code>?</code> entre aspas</strong>
+<p>Um erro comum é escrever <code>'?'</code>, com aspas, achando que "é texto". Aí o <code>?</code> deixa de ser espaço reservado e vira a <strong>letra</strong> ponto de interrogação; não sobra nenhum espaço para o valor, e a biblioteca avisa que recebeu um valor a mais:</p>
+<pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute(
+    \"SELECT nome FROM clientes WHERE estado = '?'\", ('PI',))"
+sqlite3.ProgrammingError: Incorrect number of bindings supplied. The current statement uses 0, and there are 1 supplied.</pre>
+<p>"O comando usa 0 espaços reservados e foi passado 1 valor." A regra: o espaço reservado vai <strong>sem aspas</strong>, mesmo para texto. Quem cuida das aspas é a biblioteca.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>Cada biblioteca tem a sua marca de espaço reservado</strong>
+<ul>
+  <li><strong>PostgreSQL</strong> usa valores <strong>numerados com cifrão</strong>: <code>$1</code>, <code>$2</code>… A documentação oficial do <code>PREPARE</code> mostra <code>SELECT * FROM users WHERE usrid = $1</code> e, depois, <code>EXECUTE … (1)</code> para passar o valor.</li>
+  <li><strong>PHP (PDO)</strong>, que vale para MySQL, PostgreSQL e SQLite, aceita as duas formas que você viu aqui: o <code>?</code> posicional e o <code>:nome</code> nomeado. A documentação avisa que <strong>não</strong> se misturam as duas no mesmo comando, e que você deve ligar todo valor vindo do usuário por parâmetro, "nunca incluir o dado direto na consulta".</li>
+  <li>A regra que vale em <strong>todos</strong>: a mesma do SQLite. A documentação do PDO diz que um parâmetro representa "apenas um literal de dado completo" — nunca um nome de coluna, de tabela ou um pedaço de palavra-chave. Para isso, lista de permitidos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>?</code></td><td>Espaço reservado posicional; o valor vai por fora, na ordem.</td></tr>
+<tr><td><code>?1</code>, <code>?2</code></td><td>Espaço reservado numerado; o número diz qual valor usar (e dá para repetir).</td></tr>
+<tr><td><code>:nome</code></td><td>Espaço reservado nomeado; o valor vai por nome, a ordem não importa.</td></tr>
+<tr><td><code>.parameter set :nome valor</code></td><td>No <code>sqlite3</code>, guarda um valor para um espaço reservado nomeado.</td></tr>
+<tr><td>Lista de permitidos</td><td>Para nome de coluna/tabela, que o parâmetro não cobre.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que o espaço reservado (<code>?</code> ou <code>:nome</code>) protege contra SQL Injection?</p>
+<label><input type="radio" name="q1"> Porque ele proíbe a palavra <code>OR</code></label>
+<label><input type="radio" name="q1"> Porque o valor vai por fora e é sempre tratado como dado, nunca como SQL</label>
+<label><input type="radio" name="q1"> Porque ele só funciona com números</label>
+<label><input type="radio" name="q1"> Porque esconde a consulta do banco</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. No SQL, como você escreve o espaço reservado para um valor de texto?</p>
+<label><input type="radio" name="q2"> Entre aspas simples: <code>'?'</code></label>
+<label><input type="radio" name="q2"> Entre aspas duplas: <code>"?"</code></label>
+<label><input type="radio" name="q2"> Sem aspas: <code>= ?</code> — a biblioteca cuida das aspas</label>
+<label><input type="radio" name="q2"> Com um cifrão antes: <code>$?</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. O que um parâmetro <strong>não</strong> pode substituir?</p>
+<label><input type="radio" name="q3"> Um texto com apóstrofo</label>
+<label><input type="radio" name="q3"> Um número</label>
+<label><input type="radio" name="q3"> Uma data</label>
+<label><input type="radio" name="q3"> O nome de uma coluna ou de uma tabela</label>
+</div>
+
+<div class="exercise">
+<h3>4. O espaço reservado nomeado</h3>
+<p>Complete a consulta para procurar clientes de um estado passado pelo nome <code>uf</code>:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE estado = <input data-answer=":uf" aria-label="espaço reservado nomeado">;</div>
+</div>
+
+<h3>Experimente: a consulta que o parâmetro monta</h3>
+<p>No editor não dá para preencher um parâmetro, então aqui você escreve o resultado da "montagem": a consulta com o valor <strong>já</strong> no lugar. É o que o banco executa depois de encaixar o parâmetro.</p>
+
+<div class="trysql" data-goal="colunas:nome,preco;;linhas:4">
+<p class="try-task"><strong>Missão:</strong> o programa da seção 2 usou <code>WHERE preco &gt;= ? AND preco &lt;= ?</code> com os valores <code>20</code> e <code>25</code>. Escreva a consulta com esses dois valores já no lugar dos <code>?</code>, ordenando por <code>preco</code>. Devem vir 4 produtos.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco FROM produtos WHERE preco &gt;= ? AND preco &lt;= ? ORDER BY preco;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco FROM produtos WHERE preco &gt;= 20 AND preco &lt;= 25 ORDER BY preco;
+</pre>
+</div>
+
+<h3>Missão final</h3>
+<div class="trysql" data-goal="linhas:14;;contem:José Ribamar Silva">
+<p class="try-task"><strong>Missão:</strong> o programa da seção 1 procurou os clientes do estado guardado em <code>:uf</code>, que era <code>PI</code>. Escreva a consulta com o valor <code>PI</code> já no lugar do <code>:uf</code> (não esqueça as aspas simples: é texto). Devem vir 14 clientes.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade FROM clientes WHERE estado = :uf;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade FROM clientes WHERE estado = 'PI';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>consulta com parâmetros</strong> deixa um espaço reservado no SQL e entrega o valor por fora; o banco trata o valor sempre como dado. É a defesa contra SQL Injection e o jeito limpo de escrever consultas num programa.</li>
+  <li>As formas: <code>?</code> (posicional), <code>?1</code> (numerado) e <code>:nome</code> (nomeado). O espaço reservado vai <strong>sem aspas</strong>, mesmo para texto.</li>
+  <li>No terminal, dá para experimentar com <code>.parameter set :nome valor</code>. No editor do guia o campo fica vazio (vira <code>NULL</code>), porque não há como preenchê-lo.</li>
+  <li>Em Python, o valor vai no segundo argumento de <code>execute</code>: uma tupla para o <code>?</code>, um dicionário para o <code>:nome</code>.</li>
+  <li>O apóstrofo de <code>Loja D'Água</code> funciona sozinho num parâmetro: o valor nunca se mistura com o SQL.</li>
+  <li>Um parâmetro guarda o lugar de um <strong>valor</strong>, nunca de um nome de coluna/tabela; para isso, lista de permitidos. Nos outros bancos: <code>$1</code> no PostgreSQL; <code>?</code> e <code>:nome</code> no PDO.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
