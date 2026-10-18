@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL DEFAULT — o valor padrão de uma coluna | Guia SQL</title>
+<meta name="description" content="DEFAULT para quem nunca mexeu num banco de dados: dar um valor automático à coluna que fica fora do INSERT, números, textos, a data de hoje com CURRENT_DATE, expressões entre parênteses, DEFAULT VALUES, NOT NULL com DEFAULT e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">DEFAULT</span></h1>
+
+<p class="intro">Quando a Loja Aurora cadastra um produto novo e ninguém diz quantos há no estoque, o estoque começa em <strong>0</strong>. Quando entra um cliente novo, ele começa como <strong>não VIP</strong>. Ninguém precisa escrever isso em cada <code>INSERT</code>: o banco preenche sozinho. Quem faz isso é o <code>DEFAULT</code> ("padrão"), a restrição que dá a uma coluna um <strong>valor padrão</strong>, usado sempre que o <code>INSERT</code> deixa a coluna de fora. Nesta aula você vai criar valores padrão com números, textos e a data de hoje, e vai ver quando o padrão <strong>não</strong> entra, que é onde mora a confusão.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escrever <code>DEFAULT valor</code> no <code>CREATE TABLE</code>, e quando o banco usa esse valor.</li>
+  <li>Os tipos de valor padrão: número, texto, <code>NULL</code>, e as palavras <code>CURRENT_DATE</code>, <code>CURRENT_TIME</code> e <code>CURRENT_TIMESTAMP</code>.</li>
+  <li>Valores padrão calculados, com uma expressão entre parênteses.</li>
+  <li>O <code>INSERT … DEFAULT VALUES</code>, que cria uma linha só com os padrões.</li>
+  <li>A dupla <code>NOT NULL DEFAULT</code>, e o <code>DEFAULT</code> no <code>ALTER TABLE</code>.</li>
+  <li>Os erros reais: padrão sem parênteses, padrão que olha outra coluna, <code>NULL</code> que não vira padrão.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o formulário já preenchido</h2>
+<p>Sabe aquele formulário em que o campo "País" já vem marcado com <strong>Brasil</strong>? Você pode trocar, mas, se não mexer, vai Brasil. E o campo "Quantidade" do carrinho de compras, que já vem com <strong>1</strong>? É a mesma ideia: um valor que vale quando ninguém diz outro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No formulário</th><th>Na tabela</th></tr>
+<tr><td>"País" já vem com Brasil</td><td><code>pais TEXT DEFAULT 'Brasil'</code></td></tr>
+<tr><td>"Quantidade" já vem com 1</td><td><code>quantidade INTEGER DEFAULT 1</code></td></tr>
+<tr><td>A pessoa troca o valor</td><td>O <code>INSERT</code> informa a coluna: vale o que ele mandou</td></tr>
+<tr><td>A pessoa não mexe</td><td>O <code>INSERT</code> deixa a coluna de fora: vale o <code>DEFAULT</code></td></tr>
+</table>
+</div>
+
+<p>Sem <code>DEFAULT</code>, a coluna esquecida fica com <code>NULL</code>. Na verdade, é isso mesmo: <strong>toda coluna tem um padrão</strong>, e quando você não escreve nenhum, o padrão é <code>NULL</code>.</p>
+
+<hr>
+
+<h2>1. O primeiro <code>DEFAULT</code></h2>
+<p>A tabela <code>pedidos</code> da Loja Aurora tem <code>frete REAL NOT NULL DEFAULT 0</code>. Um pedido novo, sem falar do frete:</p>
+
+<pre class="file" data-file="pedido.sql" data-resultado>INSERT INTO pedidos (cliente_id, funcionario_id, data)
+VALUES (27, 3, '2026-10-18');
+
+SELECT * FROM pedidos WHERE id = 91;
+</pre>
+
+<p>O pedido 91 entrou com frete <code>0.0</code> (o padrão 0, guardado como número com decimais porque a coluna é <code>REAL</code>) e <code>entregue_em</code> <em>NULL</em> (a coluna não tem <code>DEFAULT</code>, então o padrão dela é <code>NULL</code>). E o <code>id</code> 91 veio de onde? Da chave primária, que se numera sozinha: assunto da aula <a href="primary-key.html">PRIMARY KEY</a>.</p>
+
+<p>Agora uma tabela nova, com vários padrões:</p>
+
+<pre class="file" data-file="avaliacoes.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL DEFAULT 5,
+    comentario TEXT    DEFAULT 'Sem comentário',
+    aprovada   INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT INTO avaliacoes (id, produto_id) VALUES (1, 3);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<dl class="anatomy">
+  <dt>DEFAULT 5</dt><dd>Um número: se o <code>INSERT</code> não disser a nota, ela vale 5.</dd>
+  <dt>DEFAULT 'Sem comentário'</dt><dd>Um texto, entre <strong>aspas simples</strong>, como todo texto em SQL.</dd>
+  <dt>NOT NULL DEFAULT 0</dt><dd>As duas regras juntas: a coluna é obrigatória, mas nunca vai faltar, porque tem um padrão. É o par mais comum (aula <a href="not-null.html">NOT NULL</a>).</dd>
+  <dt>(id, produto_id)</dt><dd>O <code>INSERT</code> só falou de duas colunas; as outras três receberam os seus padrões.</dd>
+</dl>
+
+<p>A forma geral é sempre a mesma: o <code>DEFAULT</code> vem depois do tipo, junto das outras restrições, e a ordem entre elas não importa (<code>NOT NULL DEFAULT 0</code> e <code>DEFAULT 0 NOT NULL</code> dão no mesmo).</p>
+
+<pre class="file" data-file="forma geral">nome_da_coluna  TIPO  [NOT NULL]  DEFAULT valor
+</pre>
+
+<p>E quando o <code>INSERT</code> informa a coluna? Aí vale o que ele mandou, e o padrão é ignorado:</p>
+
+<pre class="file" data-file="informado.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL DEFAULT 5,
+    comentario TEXT    DEFAULT 'Sem comentário'
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 3, 2, 'A ponta quebra fácil');
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<div class="trysql" data-goal="mudou:entregas=1;;contem:pendente">
+<p class="try-task"><strong>Experimente:</strong> toda entrega nova da loja começa com a situação <code>pendente</code>. Rode e veja: como o <code>INSERT</code> não fala da coluna <code>situacao</code>, ela ficou <em>NULL</em>. Dê à coluna o valor padrão <code>'pendente'</code>, sem mexer no <code>INSERT</code>.</p>
+<pre class="script" data-file="entregas.sql">CREATE TABLE entregas (
+    id        INTEGER,
+    pedido_id INTEGER NOT NULL,
+    situacao  TEXT
+);
+
+INSERT INTO entregas (id, pedido_id) VALUES (1, 86);
+
+SELECT * FROM entregas;
+</pre>
+<pre class="solucao" data-file="entregas.sql">CREATE TABLE entregas (
+    id        INTEGER,
+    pedido_id INTEGER NOT NULL,
+    situacao  TEXT DEFAULT 'pendente'
+);
+
+INSERT INTO entregas (id, pedido_id) VALUES (1, 86);
+
+SELECT * FROM entregas;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A data de hoje: <code>CURRENT_DATE</code></h2>
+<p>"Quando esta avaliação foi feita?" É o caso clássico de valor padrão: a data do momento em que a linha entrou. O SQLite tem três palavras especiais para isso:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>Formato</th><th>Exemplo</th></tr>
+<tr><td><code>CURRENT_DATE</code></td><td><code>AAAA-MM-DD</code></td><td><code>2026-10-18</code></td></tr>
+<tr><td><code>CURRENT_TIME</code></td><td><code>HH:MM:SS</code></td><td><code>13:53:14</code></td></tr>
+<tr><td><code>CURRENT_TIMESTAMP</code></td><td><code>AAAA-MM-DD HH:MM:SS</code></td><td><code>2026-10-18 13:53:14</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="hoje.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    criada_em  TEXT NOT NULL DEFAULT CURRENT_DATE
+);
+
+INSERT INTO avaliacoes (id, produto_id) VALUES (1, 3);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>O quadro mostra a data de <strong>hoje</strong>, o dia em que você está lendo esta página: o SQLite calculou na hora em que o <code>INSERT</code> rodou, no seu navegador. Rode amanhã e verá outra data.</p>
+
+<div class="warning">
+<strong>O horário é o de Greenwich (UTC), não o do Brasil</strong>
+<p>A documentação do SQLite diz: esses valores são a data e a hora atuais em <strong>UTC</strong> (o "horário universal", o de Londres no inverno). O Brasil (o horário de Brasília) está 3 horas atrás. A Ana viu isso no terminal: a avaliação gravou <code>13:53</code>, mas no relógio do notebook dela eram <code>10:53</code>. Para mostrar no horário local, converta na consulta com <code>datetime(…, 'localtime')</code>:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, criada_em TEXT DEFAULT CURRENT_TIMESTAMP);
+sqlite&gt; INSERT INTO avaliacoes (id, produto_id) VALUES (1, 3);
+sqlite&gt; SELECT * FROM avaliacoes;
+1|3|2026-10-18 13:53:14           « guardado em UTC
+sqlite&gt; SELECT datetime(criada_em, 'localtime') FROM avaliacoes;
+2026-10-18 10:53:14               « o mesmo instante, no fuso do notebook
+sqlite&gt; .quit</pre>
+<p>Perto da meia-noite isso pesa até no <code>CURRENT_DATE</code>: às 22h no Brasil, em UTC já é o dia seguinte. Guardar em UTC é uma boa prática (todos os registros ficam na mesma régua); só lembre de converter na hora de mostrar. Mais em <a href="datas.html">Datas e Horas</a>.</p>
+</div>
+
+<hr>
+
+<h2>3. Padrões calculados: a expressão entre parênteses</h2>
+<p>E se o padrão precisa de uma conta? Um cupom de desconto, por exemplo, que vale por 30 dias a partir de hoje. A função <code>date('now', '+30 days')</code> (aula <a href="funcoes-data.html">Funções de Data</a>) calcula essa data. Para usar uma <strong>expressão</strong> como padrão, ela vai entre <strong>parênteses</strong>:</p>
+
+<pre class="file" data-file="cupom.sql" data-resultado>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL DEFAULT 10,
+    validade TEXT NOT NULL DEFAULT (date('now', '+30 days'))
+);
+
+INSERT INTO cupons (codigo) VALUES ('AURORA10');
+
+SELECT codigo, desconto, validade &gt; date('now') AS ainda_vale FROM cupons;
+</pre>
+
+<dl class="anatomy">
+  <dt>DEFAULT ( … )</dt><dd>Os parênteses dizem "isto é uma expressão: calcule". O SQLite calcula uma vez para <strong>cada linha</strong> inserida.</dd>
+  <dt>date('now', '+30 days')</dt><dd>A data de hoje mais 30 dias, no formato <code>AAAA-MM-DD</code>.</dd>
+  <dt>validade &gt; date('now')</dt><dd>Só para conferir: a validade é depois de hoje, então dá 1 ("verdadeiro"). (Mostrar a data em si daria um valor diferente a cada dia.)</dd>
+</dl>
+
+<p>Sem os parênteses, o SQLite não entende (veja em <a href="#errado">Quando dá errado</a>). Os valores "simples" (um número, um texto entre aspas, <code>NULL</code>, <code>TRUE</code>, <code>CURRENT_DATE</code>…) não precisam de parênteses.</p>
+
+<h3>O padrão não pode olhar outras colunas</h3>
+<p>A Ana tentou um preço promocional que fosse, por padrão, 90% do preço normal:</p>
+
+<pre class="file" data-file="promo.sql" data-resultado data-erro>CREATE TABLE ofertas (
+    produto_id  INTEGER NOT NULL,
+    preco       REAL NOT NULL,
+    preco_promo REAL DEFAULT (preco * 0.9)
+);
+</pre>
+
+<p>"O valor padrão da coluna <code>preco_promo</code> não é constante." A expressão de um <code>DEFAULT</code> pode usar funções e contas, mas <strong>não pode</strong> citar colunas (nem a da própria linha), nem fazer consultas a outras tabelas. O padrão é decidido antes de a linha existir. Para "90% do preço", calcule no <code>INSERT</code> ou na consulta (<code>SELECT preco * 0.9 …</code>).</p>
+
+<hr>
+
+<h2>4. <code>DEFAULT VALUES</code>: uma linha só de padrões</h2>
+<p>Se <strong>todas</strong> as colunas têm um padrão que serve, existe um atalho: <code>INSERT INTO tabela DEFAULT VALUES</code>, sem lista de colunas e sem <code>VALUES (…)</code>.</p>
+
+<pre class="file" data-file="default-values.sql" data-resultado>CREATE TABLE contadores (
+    visitas  INTEGER NOT NULL DEFAULT 0,
+    situacao TEXT    NOT NULL DEFAULT 'aberto'
+);
+
+INSERT INTO contadores DEFAULT VALUES;
+INSERT INTO contadores DEFAULT VALUES;
+
+SELECT * FROM contadores;
+</pre>
+
+<p>Duas linhas iguais, só com os padrões. Uma coluna sem <code>DEFAULT</code> receberia <code>NULL</code> (e, se fosse <code>NOT NULL</code>, o comando daria erro). Na prática, é um comando raro; ele aparece mais em tabelas cujo <code>id</code> se numera sozinho.</p>
+
+<hr>
+
+<h2>5. <code>DEFAULT</code> numa tabela que já existe</h2>
+<p>A Loja Aurora vai começar a marcar os produtos em promoção. A coluna nova entra com <code>ALTER TABLE</code> (aula <a href="alter-table.html">ALTER TABLE</a>), e o <code>DEFAULT</code> preenche os 45 produtos que já existem:</p>
+
+<pre class="file" data-file="alter.sql" data-resultado>ALTER TABLE produtos ADD COLUMN em_promocao INTEGER NOT NULL DEFAULT 0;
+
+SELECT id, nome, em_promocao FROM produtos LIMIT 3;
+</pre>
+
+<p>Todos ganharam 0. Sem o <code>DEFAULT</code>, essa coluna <code>NOT NULL</code> não poderia nem ser criada (o erro está na aula <a href="not-null.html">NOT NULL</a>). Mas há um limite: no <code>ALTER TABLE</code>, o SQLite só aceita padrões <strong>constantes</strong>. A data de hoje não serve:</p>
+
+<pre class="file" data-file="alter-hoje.sql" data-resultado data-erro>ALTER TABLE produtos ADD COLUMN cadastrado_em TEXT DEFAULT CURRENT_TIMESTAMP;
+</pre>
+
+<p>"Não é possível acrescentar uma coluna com padrão não constante." A saída é acrescentar a coluna com um padrão fixo (ou sem padrão) e preencher depois com um <code>UPDATE</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes de usar o padrão</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Deixar a coluna fora do <code>INSERT</code></td><td><code>INSERT INTO avaliacoes (id, produto_id) VALUES (1, 3);</code></td><td>O jeito normal: o padrão entra sozinho</td></tr>
+<tr><td><code>DEFAULT VALUES</code></td><td><code>INSERT INTO contadores DEFAULT VALUES;</code></td><td>Todas as colunas com o padrão</td></tr>
+<tr><td>Escrever o valor</td><td><code>INSERT INTO avaliacoes (id, produto_id, nota) VALUES (1, 3, 5);</code></td><td>Quando você quer deixar claro o valor, mesmo que seja igual ao padrão</td></tr>
+<tr><td><code>DEFAULT</code> dentro do <code>VALUES</code></td><td><code>VALUES (1, 3, DEFAULT)</code></td><td><strong>Não</strong> funciona no SQLite (dá erro de sintaxe); funciona no PostgreSQL, no MySQL e no SQL Server</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor padrão</th><th>Exemplo</th><th>Precisa de parênteses?</th></tr>
+<tr><td>Número</td><td><code>DEFAULT 0</code>, <code>DEFAULT -1</code>, <code>DEFAULT 4.5</code></td><td>Não</td></tr>
+<tr><td>Texto</td><td><code>DEFAULT 'pendente'</code></td><td>Não</td></tr>
+<tr><td>Verdadeiro/falso</td><td><code>DEFAULT TRUE</code> (vira 1)</td><td>Não</td></tr>
+<tr><td><code>NULL</code></td><td><code>DEFAULT NULL</code> (o mesmo que não escrever)</td><td>Não</td></tr>
+<tr><td>Data e hora atuais (UTC)</td><td><code>DEFAULT CURRENT_DATE</code>, <code>DEFAULT CURRENT_TIMESTAMP</code></td><td>Não</td></tr>
+<tr><td>Expressão</td><td><code>DEFAULT (date('now', '+30 days'))</code></td><td><strong>Sim</strong></td></tr>
+</table>
+</div>
+
+<p>Para ver o padrão de cada coluna, o <code>PRAGMA table_info</code> mostra na coluna <code>dflt_value</code> (de <em>default value</em>), exatamente como foi escrito:</p>
+
+<pre class="file" data-file="ver-padroes.sql" data-resultado>SELECT name, "notnull", dflt_value FROM pragma_table_info('produtos');
+</pre>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Mandou <code>NULL</code> esperando o padrão</strong>
+<p>O padrão só entra quando a coluna fica <strong>de fora</strong>. Um <code>NULL</code> escrito no <code>INSERT</code> é um valor como outro qualquer, e ele ganha do padrão:</p>
+<pre class="file" data-file="null-ganha.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    comentario TEXT DEFAULT 'Sem comentário'
+);
+
+INSERT INTO avaliacoes (id, produto_id, comentario) VALUES (1, 3, NULL);
+
+SELECT * FROM avaliacoes;
+</pre>
+<p>O comentário ficou <em>NULL</em>, não "Sem comentário". Se a coluna for <code>NOT NULL</code>, é pior: erro. Na tabela <code>pedidos</code>, o frete é <code>NOT NULL DEFAULT 0</code>:</p>
+<pre class="file" data-file="null-erro.sql" data-resultado data-erro>INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (27, 3, '2026-10-18', NULL);
+</pre>
+<p><strong>Como consertar:</strong> para usar o padrão, tire a coluna da lista do <code>INSERT</code>. Isso costuma acontecer em programas que montam o <code>INSERT</code> sempre com todas as colunas e mandam <code>NULL</code> nas que o usuário não preencheu.</p>
+</div>
+
+<div class="cenario">
+<strong><code>INSERT</code> sem lista de colunas</strong>
+<pre class="file" data-file="sem-lista.sql" data-resultado data-erro>CREATE TABLE entregas (id INTEGER, situacao TEXT DEFAULT 'pendente');
+
+INSERT INTO entregas VALUES (1);
+</pre>
+<p><strong>O que diz:</strong> <code>table entregas has 2 columns but 1 values were supplied</code>. Sem a lista de colunas, o <code>INSERT</code> precisa de um valor para <strong>cada</strong> coluna, e o padrão não "completa" o que faltou. <strong>Como consertar:</strong> <code>INSERT INTO entregas (id) VALUES (1);</code>. Escrever a lista de colunas é sempre uma boa prática.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma função como padrão, sem parênteses</strong>
+<pre class="file" data-file="sem-parenteses.sql" data-resultado data-erro>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL,
+    validade TEXT DEFAULT date('now', '+30 days')
+);
+</pre>
+<p><strong>O que diz:</strong> <code>near "(": syntax error</code>. Depois do <code>DEFAULT</code>, o SQLite esperava um valor simples, leu <code>date</code> e tropeçou no parêntese. <strong>Como consertar:</strong> ponha a expressão inteira entre parênteses: <code>DEFAULT (date('now', '+30 days'))</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A palavra <code>DEFAULT</code> dentro do <code>VALUES</code></strong>
+<pre class="file" data-file="default-values-erro.sql" data-resultado data-erro>CREATE TABLE entregas (id INTEGER, situacao TEXT DEFAULT 'pendente');
+
+INSERT INTO entregas (id, situacao) VALUES (1, DEFAULT);
+</pre>
+<p><strong>O que diz:</strong> <code>near "DEFAULT": syntax error</code>. Quem vem do PostgreSQL ou do MySQL estranha, porque lá isso funciona. <strong>Como consertar:</strong> no SQLite, tire a coluna da lista: <code>INSERT INTO entregas (id) VALUES (1);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um padrão que não combina com o tipo</strong>
+<pre class="file" data-file="padrao-errado.sql" data-resultado>CREATE TABLE notas (id INTEGER, nota INTEGER DEFAULT 'cinco');
+
+INSERT INTO notas (id) VALUES (1);
+
+SELECT nota, typeof(nota) FROM notas;
+</pre>
+<p><strong>O que acontece:</strong> o <code>CREATE TABLE</code> não confere se o padrão combina com o tipo, e a tabela normal guarda o texto <code>'cinco'</code> numa coluna <code>INTEGER</code> (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Numa tabela <code>STRICT</code>, o erro aparece no primeiro <code>INSERT</code>: <code>cannot store TEXT value in INTEGER column notas.nota</code>. <strong>Como evitar:</strong> confira que o padrão é do mesmo tipo da coluna.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>DEFAULT</code> é do SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server: <code>frete DECIMAL(10,2) NOT NULL DEFAULT 0</code>. Duas diferenças úteis:</p>
+<ul>
+  <li>Os três aceitam a palavra <code>DEFAULT</code> no lugar de um valor, dentro do <code>VALUES</code>, para pedir o padrão de uma coluna (trecho ilustrativo, não roda no SQLite):</li>
+</ul>
+<pre class="file" data-file="postgresql.sql (ilustrativo)">INSERT INTO entregas (id, situacao) VALUES (1, DEFAULT);
+</pre>
+<ul>
+  <li><code>INSERT INTO tabela DEFAULT VALUES</code> existe também no PostgreSQL e no SQL Server. No MySQL, a forma documentada é <code>INSERT INTO tabela () VALUES ();</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna TIPO DEFAULT valor</code></td><td>Valor usado quando o <code>INSERT</code> deixa a coluna de fora</td></tr>
+<tr><td><code>coluna TIPO NOT NULL DEFAULT valor</code></td><td>Obrigatória, com padrão</td></tr>
+<tr><td><code>DEFAULT CURRENT_DATE</code> / <code>CURRENT_TIME</code> / <code>CURRENT_TIMESTAMP</code></td><td>Data, hora ou data e hora do momento do <code>INSERT</code>, em UTC</td></tr>
+<tr><td><code>DEFAULT (expressão)</code></td><td>Padrão calculado a cada linha; sem citar colunas</td></tr>
+<tr><td><code>INSERT INTO t DEFAULT VALUES;</code></td><td>Uma linha só com os padrões</td></tr>
+<tr><td><code>SELECT name, dflt_value FROM pragma_table_info('t');</code></td><td>Mostra o padrão de cada coluna</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "(": syntax error</code></td><td>Uma expressão no <code>DEFAULT</code> sem parênteses</td></tr>
+<tr><td><code>default value of column [x] is not constant</code></td><td>O padrão cita uma coluna (ou faz uma consulta)</td></tr>
+<tr><td><code>Cannot add a column with non-constant default</code></td><td><code>ALTER TABLE … ADD COLUMN</code> com <code>CURRENT_TIMESTAMP</code> ou expressão</td></tr>
+<tr><td><code>near "DEFAULT": syntax error</code></td><td><code>DEFAULT</code> dentro do <code>VALUES</code>, que o SQLite não aceita</td></tr>
+<tr><td><code>NOT NULL constraint failed: t.c</code></td><td>Mandou <code>NULL</code> numa coluna <code>NOT NULL</code>, mesmo que ela tenha padrão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. País padrão</h3>
+<p>Complete para que o país dos fornecedores novos seja <code>Brasil</code> quando ninguém informar:</p>
+<div class="ex-code">pais TEXT NOT NULL <input data-answer="DEFAULT|default" aria-label="palavra"> <input data-answer="'Brasil'" aria-label="valor"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A data de hoje</h3>
+<p>Complete com a palavra que dá a data de hoje (sem a hora):</p>
+<div class="ex-code">criada_em TEXT DEFAULT <input data-answer="CURRENT_DATE|current_date" aria-label="palavra"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A coluna é <code>comentario TEXT DEFAULT 'Sem comentário'</code>. O <code>INSERT</code> manda <code>NULL</code> nela. O que fica guardado?</p>
+<label><input type="radio" name="q3"> <code>'Sem comentário'</code></label>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+<label><input type="radio" name="q3"> Um texto vazio</label>
+<label><input type="radio" name="q3"> Dá erro</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Qual destes <code>DEFAULT</code> dá erro no SQLite?</p>
+<label><input type="radio" name="q4"> <code>DEFAULT 0</code></label>
+<label><input type="radio" name="q4"> <code>DEFAULT CURRENT_TIMESTAMP</code></label>
+<label><input type="radio" name="q4"> <code>DEFAULT date('now')</code></label>
+<label><input type="radio" name="q4"> <code>DEFAULT (date('now'))</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Em que fuso horário o <code>CURRENT_TIMESTAMP</code> do SQLite grava a hora?</p>
+<label><input type="radio" name="q5"> UTC</label>
+<label><input type="radio" name="q5"> O horário de Brasília</label>
+<label><input type="radio" name="q5"> O fuso configurado no computador</label>
+<label><input type="radio" name="q5"> Nenhum: ele grava só a data</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que <code>preco_promo REAL DEFAULT (preco * 0.9)</code> dá erro?</p>
+<label><input type="radio" name="q6"> Porque falta o <code>NOT NULL</code></label>
+<label><input type="radio" name="q6"> Porque <code>0.9</code> deveria ser <code>0,9</code></label>
+<label><input type="radio" name="q6"> Porque expressões não podem ter parênteses</label>
+<label><input type="radio" name="q6"> Porque um padrão não pode citar outra coluna</label>
+</div>
+
+<h3>Missão final: avaliações com padrões</h3>
+
+<div class="trysql" data-goal="mudou:avaliacoes=2;;contem:aprovada|INTEGER|1|0|;;out:criada_em\|TEXT\|1\|(CURRENT_DATE|current_date)\|">
+<p class="try-task"><strong>Missão:</strong> toda avaliação nova começa <strong>não aprovada</strong> (a coluna <code>aprovada</code> vale 0) e guarda a <strong>data em que foi feita</strong> (a coluna <code>criada_em</code>, com a data de hoje). As duas colunas são obrigatórias. Complete o <code>CREATE TABLE</code> com <code>NOT NULL</code> e o <code>DEFAULT</code> certo em cada uma; os <code>INSERT</code> não falam delas, e têm de continuar funcionando.</p>
+<pre class="script" data-file="missao.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    aprovada   INTEGER,
+    criada_em  TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota) VALUES (1, 3, 5);
+INSERT INTO avaliacoes (id, produto_id, nota) VALUES (2, 10, 4);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+<pre class="solucao" data-file="missao.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    aprovada   INTEGER NOT NULL DEFAULT 0,
+    criada_em  TEXT NOT NULL DEFAULT CURRENT_DATE
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota) VALUES (1, 3, 5);
+INSERT INTO avaliacoes (id, produto_id, nota) VALUES (2, 10, 4);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+</div>
+
+<p>Depois de cumprir, troque o <code>PRAGMA</code> por <code>SELECT * FROM avaliacoes;</code> para ver as duas avaliações com o 0 e a data de hoje.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>DEFAULT valor</code> dá à coluna um valor padrão, usado quando o <code>INSERT</code> a deixa de fora. Sem <code>DEFAULT</code>, o padrão é <code>NULL</code>.</li>
+  <li>O padrão pode ser um número, um texto entre aspas simples, <code>NULL</code>, <code>TRUE</code>/<code>FALSE</code>, <code>CURRENT_DATE</code>, <code>CURRENT_TIME</code> ou <code>CURRENT_TIMESTAMP</code> (em UTC), ou uma expressão entre parênteses que não cite colunas.</li>
+  <li><code>NULL</code> escrito no <code>INSERT</code> não aciona o padrão: fica <code>NULL</code> (ou dá erro, se a coluna for <code>NOT NULL</code>).</li>
+  <li><code>INSERT INTO t DEFAULT VALUES;</code> cria uma linha só com padrões. O SQLite não aceita <code>DEFAULT</code> dentro do <code>VALUES</code>.</li>
+  <li>No <code>ALTER TABLE … ADD COLUMN</code>, o padrão preenche as linhas antigas, mas tem de ser constante.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
