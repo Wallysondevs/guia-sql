@@ -199,12 +199,39 @@ function rodarNativo(sql) {
   if (r.error) return { falhou: r.error.message };
   return { stdout: (r.stdout || "").replace(/\n$/, ""), stderr: (r.stderr || "").replace(/\n+$/, ""), status: r.status };
 }
+// a saída que o sqlite3 do terminal escreveria para o mesmo resultado: igual à canônica, só que o
+// EXPLAIN QUERY PLAN vira a árvore do CLI ("QUERY PLAN" / "`--SCAN pedidos"). null = não dá para comparar.
+function canonicoDoCli(res) {
+  const out = [];
+  for (const it of res.itens) {
+    if (it.tipo !== "select") continue;
+    if (it.verbo === "EXPLAIN" && it.colunas.join(",") === "id,parent,notused,detail") {
+      const rows = it.linhas.map((l) => ({ id: l[0], parent: l[1], detail: l[3] }));
+      out.push("QUERY PLAN");
+      const nivel = (pid, prefixo) => {
+        const filhos = rows.filter((r) => r.parent === pid);
+        filhos.forEach((r, k) => {
+          const ult = k === filhos.length - 1;
+          out.push(prefixo + (ult ? "`--" : "|--") + r.detail);
+          nivel(r.id, prefixo + (ult ? "   " : "|  "));
+        });
+      };
+      nivel("0", "");
+    } else if (it.verbo === "EXPLAIN") return null; // EXPLAIN puro: o CLI usa um formato próprio
+    else it.linhas.forEach((l) => out.push(l.map((v) => (v === null ? "" : v)).join("|")));
+  }
+  return out.join("\n");
+}
+
 function compararNativo(sql, res) {
   if (res.erro && res.erro.msg === "interrupted") return null; // a trava do editor; o nativo não tem
+  if (/^[ \t]*\./m.test(sql)) return null;                      // comando de ponto: diferença conhecida
+  const esperado = canonicoDoCli(res);
+  if (esperado === null) return null;
   const n = rodarNativo(sql);
   if (n.falhou) return { motivo: "não consegui rodar o sqlite3 nativo: " + n.falhou };
   const difs = [];
-  if (n.stdout !== res.canonico) difs.push("saída diferente");
+  if (n.stdout !== esperado) difs.push("saída diferente");
   const errNat = n.tempo || n.status !== 0;
   if (!!res.erro !== errNat) difs.push(res.erro ? "o editor deu erro e o nativo não" : "o nativo deu erro e o editor não");
   else if (res.erro && n.stderr.indexOf(res.erro.msg) < 0) difs.push("mensagem de erro diferente");
@@ -220,19 +247,21 @@ Mantido pelo \`tools/testar-missoes.js --nativo\`. O editor (\`assets/sql/sqlite
 (DQS=0, FTS5, math, dbstat…). Por isso a saída canônica (\`.mode list\`, NULL vazio) deve ser
 idêntica; qualquer diferença aparece abaixo, na seção da página.
 
-## Diferenças conhecidas (esperadas, não aparecem como diferença)
+## Diferenças conhecidas (esperadas)
 | Assunto | Editor do guia | sqlite3 no terminal |
 |---|---|---|
 | Mensagem de erro | a mensagem crua: \`no such table: cliente\` | \`Parse error: no such table: cliente\` (ou \`Runtime error: …\`; com stdin de arquivo: \`Parse error near line 2: …\`), às vezes com a seta \`^--- error here\` |
 | Chaves estrangeiras | ligadas: o \`aurora.sql\` faz \`PRAGMA foreign_keys = ON;\` | \`sqlite3 loja.db\` começa com \`foreign_keys\` **desligado** (\`PRAGMA foreign_keys;\` → 0): um INSERT com FK inválida passa. O \`--nativo\` carrega o \`aurora.sql\`, então não vê esta diferença |
 | Código do erro | só a mensagem | erros de execução às vezes ganham o código: \`Runtime error: UNIQUE constraint failed: categorias.id (19)\` |
-| Comandos de ponto (\`.tables\`) | não existem: erro de sintaxe | funcionam (são do programa sqlite3) |
+| Comandos de ponto (\`.tables\`) | não existem: erro de sintaxe | funcionam (são do programa sqlite3). O testador não compara SQL com linha começando por \`.\` |
 | \`random()\`, \`datetime('now')\` | muda a cada Rodar | muda a cada execução (a comparação dá diferença; não use em página) |
+| \`EXPLAIN QUERY PLAN\` | tabela com as colunas \`id\`, \`parent\`, \`notused\`, \`detail\` | árvore: \`QUERY PLAN\` e, embaixo, \`\` \`--SCAN pedidos \`\` (o testador converte a tabela do editor em árvore antes de comparar; \`EXPLAIN\` puro não é comparado) |
+| Extensões que só o programa sqlite3 traz | não existem: \`no such table: generate_series\`, \`no such function: REGEXP\`, \`median\`, \`percentile\`, \`base64\`, \`sha3\`, \`decimal_add\`, \`readfile\`… | funcionam: o shell \`sqlite3\` embute essas extensões; a biblioteca SQLite (a do editor, a dos apps) não. **Aparecem como diferença de verdade**: não use em \`.trysql\`/\`data-resultado\` (no editor só com \`data-erro\`, mostrando o erro) |
 | SQL sem fim | interrompido em ~4 s com \`interrupted\` | roda até alguém apertar Ctrl+C |
 | Tabela grande | desenha até 500 linhas (as metas contam todas) | mostra todas |
 | Cabeçalho e formato | tabela HTML com cabeçalho | \`.mode list\` sem cabeçalho, até mudar com \`.mode\`/\`.headers\` |
 
-O testador compara a mensagem de erro só pelo miolo (a do editor tem de aparecer dentro da do terminal).
+O testador desconta as diferenças de formato (mensagem de erro, comandos de ponto, \`EXPLAIN QUERY PLAN\`, a trava): compara a mensagem de erro só pelo miolo (a do editor tem de aparecer dentro da do terminal). As extensões só do terminal aparecem como diferença de verdade.
 
 ## Diferenças encontradas
 <!-- AUTO: cada página tem a sua seção, reescrita a cada --nativo. Página sem diferença não aparece. -->
@@ -255,6 +284,8 @@ function cerca(s) { const n = Math.max(3, ...(String(s).match(/`+/g) || [""]).ma
 function gravarDiferencas(pagina, lista) {
   travar(() => {
     let txt = fs.existsSync(DIFERENCAS) ? fs.readFileSync(DIFERENCAS, "utf8") : CABECALHO_DIF;
+    const marca = txt.indexOf("<!-- AUTO:");          // o cabeçalho sempre sai da versão atual do testador
+    if (marca >= 0) txt = CABECALHO_DIF + txt.slice(txt.indexOf("\n", marca) + 1);
     const abre = "<!-- pagina:" + pagina + " -->", fecha = "<!-- /pagina:" + pagina + " -->";
     const a = txt.indexOf(abre), f = txt.indexOf(fecha);
     if (a >= 0 && f > a) txt = txt.slice(0, a).replace(/\n+$/, "\n") + txt.slice(f + fecha.length).replace(/^\n+/, "\n");
@@ -292,9 +323,12 @@ function testarPagina(arq, motor) {
     if (res.erro && res.erro.seed) throw new Error(res.erro.msg);
     if (ms > 1500 && !(res.erro && res.erro.msg === "interrupted"))
       itens.push({ grav: "aviso", linha: onde.linha, msg: onde.nome + ": levou " + ms + " ms para rodar (a trava do editor é " + SQLSim.tempoMax + " ms)" });
-    for (const it of res.itens)
-      if (it.tipo === "select" && it.linhas.length > 500)
-        itens.push({ grav: "aviso", linha: onde.linha, msg: onde.nome + ": um SELECT devolveu " + it.linhas.length + " linhas (o editor só desenha 500)" });
+    for (const it of res.itens) {
+      const n = it.total != null ? it.total : (it.linhas || []).length;
+      if (it.tipo === "select" && n > 500)
+        itens.push({ grav: "aviso", linha: onde.linha, msg: onde.nome + ": um SELECT devolveu " + n + " linhas (o editor só desenha 500" +
+          (n > it.linhas.length ? "; e só guarda as " + it.linhas.length + " primeiras para as metas out:/contem:" : "") + ")" });
+    }
     if (nativo) {
       nDifComparados++;
       const d = compararNativo(sql, res);
@@ -344,7 +378,7 @@ function testarPagina(arq, motor) {
     if (fi.every((x) => x.ok)) { ok = false; fal('o SQL inicial JÁ cumpre a meta "' + goal + '" (a missão não pede nada; mude o inicial ou a meta)'); }
     fs_.filter((x) => !x.ok).forEach((x) => { ok = false; fal('a solução NÃO cumpre "' + x.meta + '": ' + x.motivo); });
     if (ok) itens.push({ grav: "ok", linha: L, msg: nome + ' (missão "' + curto(goal) + '"): o inicial falha (' +
-      curto(fi.filter((x) => !x.ok).map((x) => x.motivo).join("; ")) + "), a solução cumpre" });
+      curto([...new Set(fi.filter((x) => !x.ok).map((x) => x.motivo))].join("; ")) + "), a solução cumpre" });
   });
 
   resultados.forEach((r, k) => {

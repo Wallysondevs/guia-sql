@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorial SQL — aprenda banco de dados do zero, como numa escola | Guia SQL</title>
+<meta name="description" content="Curso de SQL do zero ao avançado, em português, para quem nunca mexeu num banco de dados: SELECT, WHERE, JOIN, GROUP BY, criação de tabelas, transações e modelagem, com o SQLite de verdade rodando no seu navegador, um banco de exemplo (a Loja Aurora), missões, projetos e exercícios. Saídas conferidas no sqlite3 real.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="hero">
+<h1>Tutorial SQL</h1>
+<p>Aprenda <strong>SQL do zero</strong>, como numa escola: cada comando é explicado pedaço por pedaço, você vê a resposta de verdade do banco de dados logo embaixo e pratica num editor aqui mesmo na página. Quem responde é o <strong>SQLite</strong>, o banco de dados mais usado do mundo, rodando <strong>dentro do seu navegador</strong>. Você não precisa instalar nada para começar, em qualquer sistema: Windows, macOS, Linux ou até um Chromebook.</p>
+<a class="btn btn-lg" href="introducao.html">Comece pelo Nível 1 &#10095;</a>
+</div>
+
+<div class="pager"></div>
+
+<h2>Experimente agora</h2>
+<p>A caixa abaixo é o editor <strong>Experimente</strong> do guia. Em cima fica o comando SQL; clique em <strong>Rodar ▶</strong> e a resposta do banco aparece embaixo, como uma tabela. O banco é o da <strong>Loja Aurora</strong>, uma loja de departamentos inventada para o guia. Pode mexer à vontade: cada Rodar começa com a loja inteira de novo.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Pen Drive 32GB">
+<p class="try-task"><strong>Missão:</strong> rode o comando como está e veja os produtos que custam menos de 5 reais. Depois, a Ana quer saber quais produtos estão <strong>em falta</strong>: troque a última linha, <code>WHERE preco &lt; 5;</code>, por <code>WHERE estoque = 0;</code> e rode de novo.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE estoque = 0;
+</pre>
+</div>
+
+<p>O que aconteceu: você fez uma <strong>pergunta</strong> ao banco de dados, numa língua que ele entende. Lida em voz alta, ela diz: "selecione (<code>SELECT</code>) o nome e o preço, da (<code>FROM</code>) tabela de produtos, onde (<code>WHERE</code>) o estoque é zero". O banco procurou entre os 45 produtos da loja e devolveu os 2 que combinam: o <strong>Pen Drive 32GB</strong> e o <strong>Carrinho de Fricção</strong>. Essa língua é o <strong>SQL</strong>, e é isso que este guia ensina. A aula <a href="o-que-e-sql.html">O que é SQL</a> conta essa história com calma.</p>
+
+<p>Se você digitou algo errado, viu um quadro vermelho com uma mensagem em inglês, como <code>no such column: estoq</code> ("não existe a coluna <code>estoq</code>"). O banco não adivinha: ele diz exatamente o que não entendeu. Todas as aulas mostram os erros mais comuns, com a mensagem real e o jeito de consertar.</p>
+
+<h3>Mais uma pergunta</h3>
+<p>Quantos pedidos a loja já recebeu? O <code>count(*)</code> ("conte as linhas") responde. Depois troque <code>pedidos</code> por <code>clientes</code> nas duas vezes em que aparece e descubra quantos clientes a loja tem.</p>
+
+<div class="trysql">
+<pre class="script" data-file="consulta.sql">SELECT count(*) AS pedidos FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>O que é este guia</h2>
+<p>Quase todo programa que guarda informação usa um <strong>banco de dados</strong>: o aplicativo do banco guarda as suas transações, a loja on-line guarda os produtos e os pedidos, o celular guarda os contatos e as mensagens. E a língua que se usa para conversar com esses bancos é o <strong>SQL</strong> (<em>Structured Query Language</em>, "linguagem de consulta estruturada"), criada nos anos 1970 e até hoje a mesma no essencial.</p>
+
+<p>Quem aprende SQL consegue:</p>
+<ul>
+  <li>tirar respostas de uma montanha de dados: "quais clientes compraram este mês?", "qual produto vende mais?";</li>
+  <li>somar, contar e fazer médias, como numa planilha, mas com milhões de linhas;</li>
+  <li>juntar informações de várias tabelas: o pedido, o cliente que comprou e os produtos de cada pedido;</li>
+  <li>criar o seu próprio banco, com as tabelas, as regras e as ligações entre elas;</li>
+  <li>trabalhar com qualquer linguagem de programação (PHP, Python, Java…), porque todas falam com o banco em SQL;</li>
+  <li>passar para o MySQL, o PostgreSQL ou o SQL Server sem começar do zero: o SQL é quase o mesmo.</li>
+</ul>
+
+<p>O guia é para quem <strong>nunca mexeu num banco de dados</strong>. Ele começa do zero absoluto (o que é uma tabela? o que é uma linha?) e vai até transações, funções de janela, modelagem e segurança. O banco usado nas aulas é o <strong>SQLite</strong>: ele é pequeno, não precisa de servidor e está dentro de todo celular e navegador. O SQL que você aprende aqui é o <strong>SQL padrão</strong>; quando outros bancos fazem diferente, uma nota "Nos outros bancos" mostra o jeito deles. A aula <a href="bancos-famosos.html">Os Bancos Famosos</a> compara os principais.</p>
+
+<hr>
+
+<h2>O banco das aulas: a Loja Aurora</h2>
+<p>Todas as aulas usam o mesmo banco: o da <strong>Loja Aurora</strong>, uma loja de departamentos (fictícia) de Teresina, no Piauí, que vende de lápis a pen drives. Ele tem 7 tabelas: <strong>categorias</strong>, <strong>produtos</strong>, <strong>fornecedores</strong>, <strong>clientes</strong>, <strong>funcionarios</strong>, <strong>pedidos</strong> e <strong>itens_pedido</strong>. A dona é a Ana, que você vai acompanhar aula a aula, das primeiras consultas até os relatórios do fim do ano. A aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a> apresenta cada tabela:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT * FROM categorias;
+</pre>
+
+<hr>
+
+<h2>Como as aulas funcionam</h2>
+<p>Nenhum SQL aparece "seco". Toda aula segue o mesmo caminho:</p>
+<ol class="passo">
+  <li><strong>A ideia primeiro.</strong> Antes do código, você entende o problema que ele resolve, com uma comparação do dia a dia: um caderno de fichas, uma planilha, o estoque da lojinha.</li>
+  <li><strong>Anatomia.</strong> Cada parte de um comando novo é separada e explicada.</li>
+  <li><strong>O resultado real.</strong> Embaixo de cada exemplo, um quadro <strong>Resultado</strong> com a resposta do SQLite, calculada na hora pelo seu navegador. Nenhuma tabela foi digitada à mão.</li>
+  <li><strong>Experimente.</strong> Pelo menos duas caixas por aula para você mudar o SQL e ver a resposta, muitas com uma <strong>missão</strong> que confere sozinha se você acertou.</li>
+  <li><strong>Várias formas de fazer.</strong> Quase sempre há mais de um jeito de escrever a mesma pergunta, e uma tabela "qual usar" mostra quando escolher cada um.</li>
+  <li><strong>Quando dá errado.</strong> O SQL com erro e a mensagem real do SQLite, traduzida e explicada.</li>
+  <li><strong>Exercícios e resumo.</strong> Perguntas com correção na hora e uma lista curta do que levar da aula.</li>
+</ol>
+
+<h3>Exemplo: a anatomia de uma consulta</h3>
+<p>Veja como as aulas desmontam um comando. Primeiro o SQL, com o resultado embaixo:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco FROM produtos WHERE preco &lt; 5;
+</pre>
+
+<p>Agora cada parte:</p>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>"Selecione": o começo de toda pergunta ao banco. Diz que você quer <strong>ler</strong> dados (aula <a href="select.html">SELECT</a>).</dd>
+  <dt>nome, preco</dt><dd>As <strong>colunas</strong> que você quer ver, separadas por vírgula. Na resposta, elas viram o cabeçalho da tabela.</dd>
+  <dt>FROM produtos</dt><dd>"Da tabela produtos": <strong>onde</strong> o banco vai procurar.</dd>
+  <dt>WHERE preco &lt; 5</dt><dd>"Onde o preço é menor que 5": o <strong>filtro</strong>. Só passam as linhas em que isso é verdade (aula <a href="where.html">WHERE</a>).</dd>
+  <dt>;</dt><dd>O ponto e vírgula fecha o comando. Com ele, você pode escrever vários comandos seguidos.</dd>
+</dl>
+
+<p>As palavras em maiúsculas (<code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>) são do SQL; as minúsculas (<code>nome</code>, <code>preco</code>, <code>produtos</code>) são os nomes que a loja deu às suas tabelas e colunas. O banco aceitaria tudo em minúsculas, mas escrever assim deixa claro, de relance, o que é comando e o que é nome.</p>
+
+<h3>Exemplo: o terminal</h3>
+<p>Além do editor, as aulas mostram o <strong>terminal</strong> da máquina fictícia do guia: um computador chamado <code>notebook</code>, da usuária <code>ana</code>. Lá, o banco da loja é o arquivo <code>loja.db</code>, e quem conversa com ele é o programa <code>sqlite3</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db "SELECT nome, preco FROM produtos WHERE preco &lt; 5;"
+Caneta Esferográfica Azul|2.79
+Lápis Grafite HB|1.15
+Marca-texto Amarelo|4.9</pre>
+
+<p>A resposta é a mesma do quadro de cima, num formato mais simples: uma linha por produto, com as colunas separadas por <code>|</code>. O motor é o mesmo SQLite nos dois lugares, então tudo o que você aprende no editor vale no terminal. A aula <a href="simulador.html">O Editor do Guia</a> mostra as diferenças, e <a href="instalar.html">Instalar o SQLite</a> ensina a pôr o <code>sqlite3</code> no seu computador.</p>
+
+<hr>
+
+<h2>Escolha sua trilha</h2>
+<p>O guia tem três níveis, uma seção de projetos e uma de referência. Os níveis foram pensados para serem feitos em ordem: cada aula usa o que as anteriores ensinaram.</p>
+<div class="trilhas">
+  <div class="trilha n1">
+    <h3>Nível 1 · Iniciante</h3>
+    <p>SQL do zero.</p>
+    <ul>
+      <li><a href="introducao.html">Começando</a>: o que é um banco de dados e o SQL, os bancos famosos, instalar o SQLite e o terminal</li>
+      <li><a href="select.html">Lendo Dados</a>: <code>SELECT</code>, <code>WHERE</code>, <code>AND</code>/<code>OR</code>, <code>ORDER BY</code>, <code>LIMIT</code></li>
+      <li><a href="like.html">Filtros Espertos</a>: <code>LIKE</code>, <code>IN</code>, <code>BETWEEN</code> e o valor <code>NULL</code></li>
+      <li><a href="insert.html">Mudando Dados</a>: <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code> e o perigo do <code>WHERE</code> esquecido</li>
+      <li><a href="funcoes-agregadas.html">Contando e Somando</a>: <code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code></li>
+    </ul>
+    <a class="btn" href="introducao.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n2">
+    <h3>Nível 2 · Intermediário</h3>
+    <p>Relacionando tabelas.</p>
+    <ul>
+      <li><a href="group-by.html">Agrupando</a>: <code>GROUP BY</code> e <code>HAVING</code></li>
+      <li><a href="relacionamentos.html">Juntando Tabelas</a>: os <code>JOIN</code> e o <code>UNION</code></li>
+      <li><a href="subconsultas.html">Subconsultas</a>, <code>EXISTS</code>, <code>CASE</code> e <code>COALESCE</code></li>
+      <li><a href="create-table.html">Criando Tabelas</a>: tipos, <code>PRIMARY KEY</code>, <code>FOREIGN KEY</code>, <code>ALTER TABLE</code></li>
+      <li><a href="indices.html">Organizando o Banco</a>: índices, views, datas, funções, CSV e backup</li>
+    </ul>
+    <a class="btn" href="group-by.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha n3">
+    <h3>Nível 3 · Avançado</h3>
+    <p>Consultas de gente grande.</p>
+    <ul>
+      <li><a href="transacoes.html">Transações</a>: <code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code> e as garantias ACID</li>
+      <li><a href="with-cte.html">Consultas Poderosas</a>: <code>WITH</code>, funções de janela, JSON e busca de texto</li>
+      <li><a href="explain.html">Desempenho</a>: <code>EXPLAIN</code>, índices na prática, <code>PRAGMA</code> e <code>VACUUM</code></li>
+      <li><a href="modelagem.html">Modelagem</a> e <a href="sql-injection.html">Segurança</a>: normalização, diagramas, SQL injection e parâmetros</li>
+      <li><a href="dialetos.html">Os Dialetos</a>: MySQL, PostgreSQL, SQL Server e o SQL dentro das linguagens</li>
+    </ul>
+    <a class="btn" href="transacoes.html">Começar &#10095;</a>
+  </div>
+  <div class="trilha proj">
+    <h3>Projetos</h3>
+    <p>Bancos completos, construídos passo a passo.</p>
+    <ul>
+      <li><a href="projeto-loja.html">A Loja Aurora completa</a> e os <a href="projeto-relatorios.html">relatórios da loja</a></li>
+      <li><a href="projeto-biblioteca.html">Biblioteca</a> e <a href="projeto-escola.html">notas da escola</a></li>
+      <li><a href="projeto-financas.html">Controle de gastos</a></li>
+      <li><a href="projeto-csv.html">Da planilha ao banco</a></li>
+    </ul>
+    <a class="btn" href="projeto-loja.html">Ver projetos &#10095;</a>
+  </div>
+  <div class="trilha ref">
+    <h3>Referência</h3>
+    <p>Consulta rápida para quando você já sabe o que procura.</p>
+    <ul>
+      <li><a href="ref-palavras-chave.html">Palavras-chave</a> e <a href="ref-tipos.html">tipos de dados</a></li>
+      <li>Funções de <a href="ref-funcoes-texto.html">texto</a>, <a href="ref-funcoes-numericas.html">números</a>, <a href="ref-funcoes-data.html">datas</a>, <a href="ref-funcoes-agregadas.html">agregadas</a> e <a href="ref-funcoes-janela.html">de janela</a></li>
+      <li><a href="ref-comandos-ponto.html">Comandos de ponto</a> e <a href="ref-pragmas.html">PRAGMAs</a></li>
+      <li><a href="ref-erros.html">Erros comuns</a>, traduzidos</li>
+    </ul>
+    <a class="btn" href="ref-palavras-chave.html">Consultar &#10095;</a>
+  </div>
+</div>
+
+<hr>
+
+<h2>Como estudar</h2>
+<p>SQL se aprende perguntando, como quem aprende a pesquisar numa biblioteca. Para cada aula, siga estes quatro passos:</p>
+<ol class="passo">
+  <li><strong>Leia com calma.</strong> Leia a ideia, a anatomia e o resultado. Não pule a parte "Quando dá errado": quem entende a mensagem de erro conserta o problema em segundos.</li>
+  <li><strong>Mexa nos exemplos.</strong> Em toda caixa Experimente, mude um número, troque uma coluna, apague um pedaço de propósito e veja o que o banco responde. Não tem como estragar nada: cada Rodar começa com a loja inteira.</li>
+  <li><strong>Faça as missões.</strong> As caixas com <strong>Missão</strong> conferem sozinhas se você acertou. Tente de verdade antes de abrir a solução; se abrir, digite a solução você mesmo em vez de só olhar.</li>
+  <li><strong>Repita no seu computador.</strong> Quando chegar às aulas do terminal, instale o <code>sqlite3</code> e refaça as consultas num banco seu. Algumas coisas (os comandos de ponto, importar uma planilha, o backup) só existem lá.</li>
+</ol>
+
+<div class="tip">
+<strong>A regra de ouro</strong>
+<p>Ler não basta: digite cada consulta. Copiar e colar ensina pouco; digitar faz você reparar em cada vírgula, cada aspa e cada ponto e vírgula. Comece pela aula <a href="introducao.html">O que é um Banco de Dados</a> e, antes de ir longe, dê uma olhada em <a href="simulador.html">O Editor do Guia</a>: ela mostra tudo o que as caixas Experimente sabem fazer.</p>
+</div>
+
+<hr>
+
+<h2>Como ler este guia</h2>
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>Elemento</th><th>O que significa</th></tr></thead>
+<tbody>
+<tr><td>Caixa com <code>consulta.sql</code> no canto</td><td>Um comando SQL. O nome no canto é só um rótulo (arquivos com SQL costumam terminar em <code>.sql</code>).</td></tr>
+<tr><td>Quadro <strong>Resultado</strong> embaixo do código</td><td>A resposta do SQLite para aquele comando, calculada pelo seu navegador na hora. Não é uma imagem.</td></tr>
+<tr><td><em>NULL</em> em itálico numa tabela</td><td>"Sem valor": aquele registro não tem nada naquela coluna (aula <a href="null.html">O Valor NULL</a>).</td></tr>
+<tr><td>Caixa <strong>Quando dá errado</strong></td><td>SQL com um erro colocado de propósito, com a mensagem real do SQLite em vermelho.</td></tr>
+<tr><td><code>ana@notebook:~$</code></td><td>O prompt do terminal: usuária <code>ana</code>, na máquina <code>notebook</code>, na pasta pessoal (<code>~</code>). O que vem depois é o comando digitado.</td></tr>
+<tr><td><code>sqlite&gt;</code></td><td>O prompt do programa <code>sqlite3</code>: ele está esperando um comando SQL ou um comando de ponto.</td></tr>
+<tr><td>Linhas sem prompt</td><td>A resposta do computador.</td></tr>
+<tr><td><span class="t-a">← etiqueta</span></td><td>Uma explicação do guia sobre aquela linha. Não aparece no terminal real.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<strong>Versão de referência: SQLite 3.50</strong>
+<p>O guia ensina o <strong>SQL padrão</strong> usando o <strong>SQLite 3.50.4</strong>. O editor das aulas é o SQLite oficial compilado para rodar no navegador (WebAssembly), e as saídas de terminal foram conferidas no programa <code>sqlite3</code> da mesma versão, num Linux em português do Brasil. Como os dois são o mesmo motor, toda resposta bate. As mensagens de erro saem em inglês, exatamente como o SQLite as escreve, e as aulas as explicam em português.</p>
+</div>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

@@ -27,7 +27,8 @@ pronto().then(({ sqlite3, seed, SQLSim }) => {
       if (it.tipo === "select") {
         console.log("colunas: " + it.colunas.join(" | "));
         it.linhas.forEach((l) => console.log(l.map((v) => (v === null ? "NULL" : v)).join("|")));
-        console.log("(" + it.linhas.length + (it.linhas.length === 1 ? " linha)" : " linhas)"));
+        const n = it.total != null ? it.total : it.linhas.length;
+        console.log("(" + n + (n === 1 ? " linha)" : " linhas)") + (n > it.linhas.length ? " — só as " + it.linhas.length + " primeiras guardadas" : ""));
       } else if (it.tipo === "mudanca") console.log(it.verbo + ": " + it.n + (it.n === 1 ? " linha afetada" : " linhas afetadas"));
       else console.log(it.verbo + ": ok");
     });

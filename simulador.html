@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL O Editor do Guia — como usar as caixas Experimente | Guia SQL</title>
+<meta name="description" content="Como usar o editor Experimente do Guia SQL: o SQLite de verdade rodando no seu navegador, o botão Rodar e o Ctrl+Enter, Restaurar, Ver solução, o banco Loja Aurora que volta limpo a cada Rodar, vários comandos numa caixa, as mensagens de erro reais, as missões e o que muda quando você abre o mesmo banco no terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">O Editor do Guia</span></h1>
+
+<p class="intro">Em toda aula deste guia aparecem caixas <strong>Experimente</strong>: você escreve um comando SQL, clica em <strong>Rodar</strong> e vê a resposta do banco de dados logo embaixo, como uma tabela. Quem responde não é uma imitação: é o <strong>SQLite de verdade</strong>, o mesmo programa que está dentro do seu celular, rodando dentro do seu navegador. Não precisa instalar nada. Nesta página você conhece cada parte do editor, descobre por que pode apagar o que quiser sem medo e aprende o que muda quando você abre o mesmo banco no terminal.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As partes de uma caixa Experimente: o código, o botão <strong>Rodar</strong>, o resultado, <strong>Restaurar</strong> e <strong>Ver solução</strong>.</li>
+  <li>Como ler a tabela de resultado, o total de linhas e o <em>NULL</em> em itálico.</li>
+  <li>Por que o banco da Loja Aurora volta <strong>limpo</strong> a cada Rodar.</li>
+  <li>Como rodar vários comandos de uma vez, separados por <code>;</code>.</li>
+  <li>Como aparecem os erros, e por que eles vêm em inglês.</li>
+  <li>O que o editor <strong>não</strong> faz: comandos de ponto, SQL sem fim, tabelas gigantes.</li>
+  <li>Como funcionam as <strong>missões</strong> e como abrir o mesmo banco no terminal.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: uma cópia da loja só para você</h2>
+<p>Imagine que a Ana, dona da Loja Aurora, contrata um ajudante novo. Ela não vai deixar o ajudante treinar no caixa de verdade, com o dinheiro do dia. Ela tira uma <strong>cópia</strong> do caderno da loja e diz: "treine nesta cópia; pode rabiscar, apagar, errar à vontade". Quando a cópia fica toda rabiscada, ela tira outra, novinha.</p>
+<p>O editor do guia faz exatamente isso. Cada vez que você clica em <strong>Rodar</strong>, ele:</p>
+<ol class="passo">
+  <li>cria um banco de dados <strong>novo</strong>, na memória do seu navegador;</li>
+  <li>enche esse banco com os dados da <strong>Loja Aurora</strong>: categorias, produtos, clientes, pedidos… (a aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a> apresenta cada tabela);</li>
+  <li>roda o SQL que está na caixa;</li>
+  <li>desenha a resposta embaixo e joga a cópia fora.</li>
+</ol>
+<p>Tudo isso acontece no seu computador, em uma fração de segundo. Nada do que você digita sai do seu navegador, e nada fica gravado.</p>
+
+<hr>
+
+<h2>As partes da caixa</h2>
+<p>Esta é uma caixa livre, sem missão. Clique em <strong>Rodar ▶</strong>:</p>
+
+<div class="trysql">
+<pre class="script" data-file="consulta.sql">SELECT * FROM categorias;
+</pre>
+</div>
+
+<p>Apareceu uma tabela com as 8 categorias da loja. O comando <code>SELECT * FROM categorias</code> quer dizer "selecione (<em>select</em>) todas as colunas (<code>*</code>) da (<em>from</em>) tabela <code>categorias</code>". Você vai aprender o <code>SELECT</code> com calma na aula <a href="select.html">SELECT</a>; por enquanto, repare nas partes da caixa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>Parte</th><th>O que faz</th></tr></thead>
+<tbody>
+<tr><td>📄 <code>consulta.sql</code></td><td>O nome do "arquivo" da caixa. É só um rótulo: <code>.sql</code> é a terminação dos arquivos com comandos SQL.</td></tr>
+<tr><td>O código</td><td>A área em que você digita, com os números das linhas do lado. Pode apagar, mudar e escrever o que quiser.</td></tr>
+<tr><td><strong>Rodar ▶</strong></td><td>Manda o SQL para o SQLite e desenha a resposta embaixo.</td></tr>
+<tr><td><strong>Restaurar</strong></td><td>Volta ao código original da caixa e apaga o resultado. Use quando se perder.</td></tr>
+<tr><td><strong>Ver solução</strong></td><td>Só aparece nas missões. Pergunta antes ("Trocar o seu SQL pela solução?") e, se você confirmar, troca o seu código pela resposta e roda.</td></tr>
+<tr><td>A tabela</td><td>A resposta do banco: o cabeçalho com o nome de cada coluna e uma linha da tabela para cada registro encontrado.</td></tr>
+<tr><td><strong>8 linhas</strong></td><td>Embaixo da tabela, quantos registros vieram.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Atalhos do teclado</h3>
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>Tecla</th><th>O que faz</th></tr></thead>
+<tbody>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Roda o SQL, igual ao botão Rodar (no Mac, <kbd>⌘</kbd>+<kbd>Enter</kbd>).</td></tr>
+<tr><td><kbd>Tab</kbd></td><td>Põe dois espaços no lugar do cursor, para alinhar o SQL.</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Sai do editor (o <kbd>Tab</kbd> volta a andar pela página).</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Experimente agora na caixa de cima: troque <code>categorias</code> por <code>fornecedores</code> e aperte <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Depois clique em <strong>Restaurar</strong> para voltar ao começo.</p>
+
+<hr>
+
+<h2>O quadro "Resultado" embaixo do código</h2>
+<p>Nas aulas, muitos exemplos são só para ler. Mesmo assim, o guia roda cada um <strong>de verdade</strong>, no mesmo SQLite, e desenha a resposta num quadro <strong>Resultado</strong> logo embaixo. Nenhuma tabela deste guia foi digitada à mão:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT * FROM fornecedores;
+</pre>
+
+<p>Repare em duas linhas: a <strong>Lusitana Comércio</strong> (de Portugal) e a <strong>Pampa Sur</strong> (da Argentina) não têm estado, porque estado (UF) só existe no Brasil. Nesse lugar, o quadro mostra <em>NULL</em>, em itálico. <code>NULL</code> é o jeito de o banco dizer "aqui não tem valor nenhum", e ele é tão importante que tem aula própria: <a href="null.html">O Valor NULL</a>.</p>
+<p>Quer mexer num desses exemplos? Clique em <strong>copiar</strong>, no canto do código, e cole numa caixa Experimente.</p>
+
+<hr>
+
+<h2>Pode apagar: o banco volta limpo a cada Rodar</h2>
+<p>A caixa abaixo faz uma coisa que, num banco de verdade, daria um belo susto: o <code>DELETE</code> ("apague") apaga <strong>todos</strong> os itens de <strong>todos</strong> os pedidos da loja. Depois, o <code>SELECT count(*)</code> conta quantos sobraram. Rode:</p>
+
+<div class="trysql">
+<pre class="script" data-file="sem-medo.sql">DELETE FROM itens_pedido;
+SELECT count(*) AS total FROM itens_pedido;
+</pre>
+</div>
+
+<p>O editor mostrou duas respostas, uma para cada comando: <strong>DELETE: 220 linhas afetadas</strong> (os 220 itens foram apagados) e uma tabela com <code>total</code> = <strong>0</strong>. Agora apague a primeira linha, deixe só o <code>SELECT</code> e rode de novo: o total volta a ser <strong>220</strong>. O <code>DELETE</code> aconteceu numa cópia, e a cópia foi jogada fora. Cada Rodar começa do zero, com a loja inteira.</p>
+
+<div class="tip">
+<strong>Por que isso é bom</strong>
+<p>Você pode testar <code>DELETE</code>, <code>UPDATE</code> e <code>DROP TABLE</code> sem medo de "quebrar" os exemplos das próximas aulas. E o resultado é sempre o mesmo: o que você vê aqui é o que o texto da aula descreve. A contrapartida é que nada fica guardado: se quiser ver o efeito de um comando, o comando e o <code>SELECT</code> que confere precisam estar <strong>na mesma caixa</strong>, rodando juntos.</p>
+</div>
+
+<hr>
+
+<h2>Vários comandos numa caixa</h2>
+<p>Uma caixa pode ter quantos comandos você quiser. O que separa um comando do outro é o <strong>ponto e vírgula</strong> (<code>;</code>) no fim de cada um. O editor roda os comandos na ordem e mostra uma resposta para cada um:</p>
+
+<pre class="file" data-file="varios.sql" data-resultado>INSERT INTO categorias (nome, descricao) VALUES ('Música', 'Instrumentos e partituras');
+UPDATE produtos SET preco = 2.00 WHERE nome = 'Lápis Grafite HB';
+SELECT id, nome FROM categorias;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>Tipo de comando</th><th>O que o editor mostra</th></tr></thead>
+<tbody>
+<tr><td><code>SELECT</code> (consultar)</td><td>Uma tabela com o resultado e o total de linhas.</td></tr>
+<tr><td><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code> (mudar dados)</td><td>Quantas linhas o comando mudou: "INSERT: 1 linha afetada".</td></tr>
+<tr><td><code>CREATE TABLE</code>, <code>DROP TABLE</code> e outros</td><td>Só um "ok": "CREATE TABLE: ok".</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Não se preocupe com o <code>INSERT</code> e o <code>UPDATE</code> agora: cada um tem a sua aula (<a href="insert.html">INSERT INTO</a> e <a href="update.html">UPDATE</a>). Por enquanto, o que importa é ver que a categoria nova, <strong>Música</strong>, aparece na tabela com o número 9: o <code>SELECT</code> rodou <strong>depois</strong> do <code>INSERT</code>, na mesma cópia do banco.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Errar faz parte, e o editor mostra o erro do jeito que ele é: num quadro vermelho, com a mensagem <strong>real</strong> do SQLite. As mensagens vêm em inglês porque o SQLite "fala" inglês; as aulas traduzem e explicam cada uma.</p>
+
+<div class="cenario">
+<strong>O nome da tabela no singular</strong>
+<pre class="file" data-file="erro.sql" data-resultado data-erro>SELECT * FROM categoria;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such table: categoria</code> quer dizer "não existe a tabela <code>categoria</code>". A tabela se chama <code>categorias</code>, no plural. Para o banco, uma letra a menos já é outro nome.</p>
+<p><strong>Como consertar:</strong> escreva o nome exato: <code>SELECT * FROM categorias;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um erro no meio de vários comandos</strong>
+<pre class="file" data-file="erro-no-meio.sql" data-resultado data-erro>SELECT count(*) AS produtos FROM produtos;
+SELECT count(*) AS clientes FROM cliente;
+SELECT count(*) AS pedidos FROM pedidos;
+</pre>
+<p><strong>O que aconteceu:</strong> o primeiro comando rodou e mostrou a tabela dele. O segundo tem o mesmo erro do exemplo de cima (<code>cliente</code> sem o "s") e o editor <strong>parou ali</strong>: o terceiro comando nem chegou a rodar. Quando um comando dá erro, tudo o que vem depois dele espera você consertar.</p>
+<p><strong>Como consertar:</strong> leia a mensagem, corrija o comando que ela aponta (<code>clientes</code>) e rode de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Um comando de ponto no editor</strong>
+<pre class="file" data-file="ponto.sql" data-resultado data-erro>.tables
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near ".": syntax error</code>, "erro de sintaxe perto do <code>.</code>". Comandos que começam com ponto, como <code>.tables</code> (liste as tabelas), <strong>não são SQL</strong>: são atalhos do programa <code>sqlite3</code>, que você usa no terminal. O editor só entende SQL, então para ele o ponto é um erro de digitação.</p>
+<p><strong>Como consertar:</strong> no editor, use só SQL. Os comandos de ponto têm aula própria, <a href="comandos-ponto.html">Comandos de Ponto</a>, e funcionam no terminal (veja <a href="#terminal">mais abaixo</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Um SQL que não termina nunca</strong>
+<p>O comando abaixo conta 1, 2, 3… para sempre (você vai entendê-lo na aula <a href="cte-recursiva.html">CTE Recursiva</a>). Clique em <strong>Rodar</strong> e espere uns segundos: enquanto o SQLite trabalha, a página fica parada.</p>
+<div class="trysql" data-erro>
+<pre class="script" data-file="sem-fim.sql">WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n)
+SELECT count(*) FROM n;
+</pre>
+</div>
+<p><strong>O que aconteceu:</strong> para a sua página não travar de vez, o editor dá <strong>4 segundos</strong> a cada Rodar. Passou disso, ele interrompe o SQLite, que responde <code>interrupted</code> ("interrompido"), e o guia explica em português logo embaixo.</p>
+<p><strong>Como consertar:</strong> todo SQL que repete precisa de um fim. Aqui, um <code>LIMIT 10</code> logo depois de <code>FROM n</code>, antes do parêntese que fecha, faz a contagem parar em 10. Experimente na caixa.</p>
+</div>
+
+<hr>
+
+<h2>O que o editor não faz</h2>
+<p>O editor roda o SQLite de verdade, mas ele é uma caixa de treino dentro de uma página. Algumas coisas ficam de fora:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>No editor</th><th>Por quê, e onde fazer</th></tr></thead>
+<tbody>
+<tr><td>Comandos de ponto (<code>.tables</code>, <code>.schema</code>, <code>.mode</code>, <code>.import</code>…) dão erro</td><td>São do programa <code>sqlite3</code>, não do SQL. Use no terminal: aula <a href="comandos-ponto.html">Comandos de Ponto</a>.</td></tr>
+<tr><td>Nada fica salvo</td><td>Cada Rodar parte do banco limpo. Para guardar dados de verdade, crie o seu próprio arquivo de banco no terminal.</td></tr>
+<tr><td>SQL que passa de 4 segundos é interrompido</td><td>Para a página não travar. Nenhum exemplo do guia chega perto disso.</td></tr>
+<tr><td>A tabela mostra no máximo 500 linhas</td><td>Para a página não ficar enorme. O total embaixo continua certo: "600 linhas (mostrando as 500 primeiras)". Nenhuma tabela da Loja Aurora passa de 220 linhas.</td></tr>
+<tr><td><code>random()</code> e a data de hoje (<code>date('now')</code>) mudam a cada Rodar</td><td>É o que eles fazem também num banco de verdade: sorteiam um número novo ou leem o relógio do seu computador.</td></tr>
+</tbody>
+</table>
+</div>
+
+<hr>
+
+<h2>As missões</h2>
+<p>Muitas caixas têm uma <strong>Missão</strong>: uma tarefa escrita em cima do código, como "mostre só os fornecedores do Brasil". Embaixo da caixa fica uma linha de status, que confere sozinha a sua resposta a cada Rodar:</p>
+<ul>
+  <li><strong>Missão em andamento…</strong> enquanto a resposta ainda não está certa, seguida de <strong>Ainda falta:</strong> e do que o guia está esperando, com uma pista entre parênteses;</li>
+  <li><strong>✔ Missão cumprida!</strong>, em verde, quando você acerta. Depois de cumprida, ela fica cumprida, mesmo que você continue mexendo no código.</li>
+</ul>
+<p>O guia não compara o seu código letra por letra com a resposta: ele <strong>roda</strong> o seu SQL e confere o resultado. Por isso, quase sempre existe mais de um jeito certo. Estas são as conferências que as missões usam:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>O "Ainda falta" diz…</th><th>O que você precisa fazer</th></tr></thead>
+<tbody>
+<tr><td>o último SELECT deve devolver 6 linhas</td><td>O último <code>SELECT</code> da caixa precisa trazer exatamente esse número de linhas.</td></tr>
+<tr><td>as colunas do último SELECT devem ser nome, cidade</td><td>As colunas precisam ter esses nomes, nessa ordem.</td></tr>
+<tr><td>a saída deve conter "Teresina"</td><td>Esse texto precisa aparecer em algum lugar da resposta.</td></tr>
+<tr><td>a saída precisa casar com /…/</td><td>A resposta precisa ter um formato exato (o que vem entre as barras é uma "expressão regular", um molde de texto).</td></tr>
+<tr><td>a tabela "notas" deve existir depois de rodar</td><td>O seu SQL precisa criar essa tabela.</td></tr>
+<tr><td>a tabela "categorias" deve ficar com 9 linhas</td><td>Depois de rodar, a tabela precisa ter esse número de linhas (você inseriu ou apagou o que devia?).</td></tr>
+<tr><td>o comando deve dar um erro</td><td>Às vezes a missão é <strong>provocar</strong> um erro, para você aprender a reconhecê-lo.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Quando o seu SQL dá erro, a pista mostra a mensagem do SQLite, porque nenhuma outra conferência passa enquanto houver erro. Faça a primeira missão:</p>
+
+<div class="trysql" data-goal="linhas:6;;colunas:nome,cidade">
+<p class="try-task"><strong>Missão:</strong> o código tenta mostrar o nome e a cidade das categorias, mas categoria não tem cidade! Troque a tabela <code>categorias</code> por <code>fornecedores</code> e rode para ver o nome e a cidade dos 6 fornecedores da loja.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade FROM categorias;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade FROM fornecedores;
+</pre>
+</div>
+
+<p>Rodou antes de trocar? Então viu o erro <code>no such column: cidade</code> ("não existe a coluna <code>cidade</code>"), na tabela e na pista. Isso é normal: as missões são feitas para você errar, ler a mensagem e consertar. Se travar de vez, use <strong>Ver solução</strong>; mas tente antes, e depois de ver a solução, digite-a você mesmo.</p>
+
+<hr>
+
+<h2 id="terminal">O mesmo banco no terminal</h2>
+<p>O editor é ótimo para aprender, mas no trabalho de verdade o SQLite roda como um programa no computador: o <strong><code>sqlite3</code></strong>, que você usa no <strong>terminal</strong> (a janela de texto onde se digitam comandos). Nas aulas, o terminal aparece assim, com a usuária <code>ana</code> no computador <code>notebook</code>. A aula <a href="instalar.html">Instalar o SQLite</a> mostra como colocar o <code>sqlite3</code> no seu computador, e <a href="shell-sqlite.html">O Terminal do SQLite</a> ensina a usá-lo.</p>
+<p>O banco do editor é montado a partir de um arquivo de texto com os comandos SQL da loja: o <a href="assets/sql/aurora.sql" download><code>aurora.sql</code></a> (clique para baixar). Com ele salvo na sua pasta pessoal, um comando cria o mesmo banco num arquivo de verdade, e outro confere que os 45 produtos estão lá:</p>
+
+<pre class="term">$ sqlite3 minha-loja.db &lt; aurora.sql     « cria o arquivo minha-loja.db e roda os comandos do aurora.sql nele
+$ sqlite3 minha-loja.db "SELECT count(*) FROM produtos;"
+45</pre>
+
+<p>Nas aulas, a Ana já tem esse banco pronto, num arquivo chamado <code>loja.db</code>. Veja a mesma consulta do editor, um erro e um comando de ponto, agora no terminal:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT * FROM fornecedores;
+1|Distribuidora Piauí Center|Teresina|PI|Brasil|(86) 99821-4455
+2|Loja D'Água|Fortaleza|CE|Brasil|(85) 98712-3344
+3|Atlântico Importados|São Paulo|SP|Brasil|(11) 97654-8899
+4|Lusitana Comércio|Porto||Portugal|+351 22 123 4567
+5|Pampa Sur|Buenos Aires||Argentina|+54 11 4321 8765
+6|Norte Suprimentos|Teresina|PI|Brasil|(86) 99344-2211
+sqlite&gt; SELECT nome FROM cliente;
+Parse error: no such table: cliente
+sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  produtos
+clientes      funcionarios  pedidos
+sqlite&gt; .quit</pre>
+
+<p>Os dados são os mesmos, mas o jeito de mostrar muda. Compare:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<thead><tr><th>Assunto</th><th>No editor do guia</th><th>No terminal (<code>sqlite3 loja.db</code>)</th></tr></thead>
+<tbody>
+<tr><td>Resultado</td><td>Tabela com cabeçalho</td><td>Uma linha por registro, valores separados por <code>|</code>, sem cabeçalho (dá para mudar com <code>.mode</code>)</td></tr>
+<tr><td><code>NULL</code></td><td><em>NULL</em> em itálico</td><td>Nada: <code>Porto||Portugal</code></td></tr>
+<tr><td>Mensagem de erro</td><td><code>Erro do SQLite: no such table: cliente</code></td><td><code>Parse error: no such table: cliente</code> (às vezes com uma setinha <code>^--- error here</code> apontando o lugar)</td></tr>
+<tr><td>Comandos de ponto</td><td>Erro de sintaxe</td><td>Funcionam</td></tr>
+<tr><td>O que você muda</td><td>Some no próximo Rodar</td><td>Fica gravado no arquivo <code>loja.db</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Repare na mensagem de erro: o miolo, <code>no such table: cliente</code>, é idêntico nos dois, porque o motor é o mesmo SQLite 3.50.4. O terminal só acrescenta uma etiqueta na frente: <code>Parse error</code> ("erro de análise") quando o SQLite nem entendeu o comando, <code>Runtime error</code> ("erro na execução") quando entendeu mas deu errado ao executar.</p>
+
+<div class="warning">
+<strong>No terminal, apagar é para valer</strong>
+<p>No editor, um <code>DELETE</code> some no próximo Rodar. No terminal, ele é gravado no arquivo na hora, e não tem botão Restaurar. Antes de testar comandos que mudam dados, faça uma cópia do arquivo (aula <a href="dump-backup.html">Backup</a>) ou treine numa cópia, como o <code>minha-loja.db</code> de cima.</p>
+</div>
+
+<div class="note">
+<strong>Uma diferença escondida: as chaves estrangeiras</strong>
+<p>O banco do editor liga a conferência de <strong>chaves estrangeiras</strong> (as ligações entre tabelas, como "todo item de pedido aponta para um produto que existe"). Por isso, no editor, <code>DELETE FROM produtos;</code> dá o erro <code>FOREIGN KEY constraint failed</code>: o banco não deixa apagar produtos que estão em pedidos. No terminal, o <code>sqlite3</code> começa com essa conferência <strong>desligada</strong>, e o mesmo comando apaga os 45 produtos sem reclamar. Na aula <a href="foreign-key.html">FOREIGN KEY</a> você aprende a ligá-la com <code>PRAGMA foreign_keys = ON;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A tecla</h3>
+<p>Além do botão Rodar, qual combinação de teclas roda o SQL da caixa? Escreva no formato <code>Tecla+Tecla</code>.</p>
+<div class="ex-code"><input data-answer="Ctrl+Enter|ctrl+enter|CTRL+ENTER|Ctrl + Enter|ctrl + enter" aria-label="atalho"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O separador</h3>
+<p>Qual sinal separa um comando SQL do outro, quando a caixa tem vários?</p>
+<div class="ex-code"><input data-answer=";" aria-label="sinal"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Você rodou <code>DELETE FROM clientes;</code> numa caixa e, na caixa seguinte, rodou <code>SELECT count(*) FROM clientes;</code>. Quantos clientes aparecem?</p>
+<label><input type="radio" name="q3"> 0, porque você apagou todos</label>
+<label><input type="radio" name="q3"> Dá erro, porque a tabela foi apagada</label>
+<label><input type="radio" name="q3"> 30: cada Rodar começa com a Loja Aurora inteira</label>
+<label><input type="radio" name="q3"> Depende de quanto tempo passou</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Você digitou <code>.tables</code> numa caixa Experimente e recebeu <code>near ".": syntax error</code>. Por quê?</p>
+<label><input type="radio" name="q4"> O banco da Loja Aurora não tem tabelas</label>
+<label><input type="radio" name="q4"> <code>.tables</code> é um comando do programa <code>sqlite3</code>, não SQL; o editor só roda SQL</label>
+<label><input type="radio" name="q4"> Faltou o ponto e vírgula no fim</label>
+<label><input type="radio" name="q4"> O editor está com defeito</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. No editor, uma tabela aparece com <em>NULL</em> em itálico numa célula. O que isso quer dizer?</p>
+<label><input type="radio" name="q5"> Que aquele registro não tem valor nessa coluna</label>
+<label><input type="radio" name="q5"> Que o valor é o número zero</label>
+<label><input type="radio" name="q5"> Que o texto "NULL" foi digitado no cadastro</label>
+<label><input type="radio" name="q5"> Que deu erro naquela célula</label>
+</div>
+
+<div class="trysql" data-goal="erro:no such table">
+<p class="try-task"><strong>Missão final:</strong> desta vez, a missão é <strong>errar de propósito</strong>. Faça o SQLite responder <code>no such table</code> ("não existe a tabela"): mude o nome da tabela para um que não existe na loja e rode.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM produto;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>As caixas <strong>Experimente</strong> rodam o <strong>SQLite de verdade</strong> no seu navegador. Escreva o SQL e clique em <strong>Rodar ▶</strong> (ou <kbd>Ctrl</kbd>+<kbd>Enter</kbd>).</li>
+  <li>Cada Rodar cria uma cópia <strong>nova</strong> da Loja Aurora: pode apagar e mudar à vontade, nada fica gravado. Para ver o efeito de um comando, ponha o <code>SELECT</code> que confere na mesma caixa.</li>
+  <li>Vários comandos numa caixa: separe com <code>;</code>. O editor mostra uma resposta para cada um, na ordem, e para no primeiro erro.</li>
+  <li><strong>Restaurar</strong> volta ao código original; <strong>Ver solução</strong>, nas missões, pede confirmação e mostra a resposta.</li>
+  <li>Os erros aparecem em vermelho, com a mensagem real do SQLite, em inglês. No terminal, a mesma mensagem ganha uma etiqueta: <code>Parse error:</code> ou <code>Runtime error:</code>.</li>
+  <li>O editor só entende SQL: comandos de ponto (<code>.tables</code>) são do terminal. SQL que passa de 4 segundos é interrompido, e a tabela mostra até 500 linhas.</li>
+  <li>As missões rodam o seu SQL e conferem o resultado; quase sempre há mais de um jeito certo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

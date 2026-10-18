@@ -19,7 +19,7 @@
    ===================================================================== */
 (function (global) {
   "use strict";
-  var S = { versao: "1", seedUrl: "assets/sql/aurora.sql", tempoMax: 4000 };
+  var S = { versao: "1", seedUrl: "assets/sql/aurora.sql", tempoMax: 4000, maxGuardar: 20000 };
   var EH_NAVEGADOR = typeof document !== "undefined";
 
   /* =====================================================================
@@ -82,9 +82,11 @@
           var nCol = capi.sqlite3_column_count(pStmt);
           var rc2, erroMsg = null;
           if (nCol > 0) {
-            var colunas = [], linhas = [];
+            var colunas = [], linhas = [], total = 0;
             for (var i = 0; i < nCol; i++) colunas.push(capi.sqlite3_column_name(pStmt, i));
             while ((rc2 = capi.sqlite3_step(pStmt)) === capi.SQLITE_ROW) {
+              // conta todas as linhas, mas só guarda as primeiras (um SQL sem fim gera milhões até a trava)
+              if (++total > S.maxGuardar) continue;
               var linha = [];
               for (var c = 0; c < nCol; c++)
                 linha.push(capi.sqlite3_column_type(pStmt, c) === capi.SQLITE_NULL ? null : capi.sqlite3_column_text(pStmt, c));
@@ -94,7 +96,7 @@
             capi.sqlite3_finalize(pStmt);
             // um SELECT que deu erro antes da 1ª linha não desenha tabela vazia (como o CLI)
             if (!erroMsg || linhas.length) {
-              res.itens.push({ tipo: "select", verbo: verbo, colunas: colunas, linhas: linhas });
+              res.itens.push({ tipo: "select", verbo: verbo, colunas: colunas, linhas: linhas, total: total });
               res.ultimo = res.itens[res.itens.length - 1];
             }
           } else {
@@ -227,9 +229,10 @@
           if (a.re.test(res.canonico)) r.ok = true; else r.motivo = "a saída de hoje não casa";
           break;
         case "linhas":
+          var nl = ult ? (ult.total != null ? ult.total : ult.linhas.length) : 0;
           if (!ult) r.motivo = "não houve SELECT";
-          else if (ult.linhas.length === a.n) r.ok = true;
-          else r.motivo = "veio " + ult.linhas.length + (ult.linhas.length === 1 ? " linha" : " linhas");
+          else if (nl === a.n) r.ok = true;
+          else r.motivo = "veio " + nl + (nl === 1 ? " linha" : " linhas");
           break;
         case "colunas":
           if (!ult) r.motivo = "não houve SELECT";
@@ -331,7 +334,7 @@
       h += "</tr>";
     });
     h += "</tbody></table></div>";
-    var n = it.linhas.length;
+    var n = it.total != null ? it.total : it.linhas.length;
     h += '<p class="sql-n">' + (n === 1 ? "1 linha" : n + " linhas") +
       (n > MAX_LINHAS_VISIVEIS ? " (mostrando as " + MAX_LINHAS_VISIVEIS + " primeiras)" : "") + "</p>";
     return h;
