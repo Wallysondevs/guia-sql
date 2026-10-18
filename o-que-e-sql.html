@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O que é SQL — a língua dos bancos de dados | Guia SQL</title>
+<meta name="description" content="O que é SQL, para quem nunca escreveu uma consulta: a língua para conversar com o banco de dados, de onde ela veio, a primeira consulta parte por parte, os quatro tipos de comando (ler, mudar, criar, controlar), as regras de escrita e os primeiros erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O que é <span class="hl">SQL</span></h1>
+
+<p class="intro">Na aula anterior você viu que um banco de dados é cuidado por um programa, o SGBD, como um depósito cuidado por um estoquista. Para pedir alguma coisa a esse estoquista, você precisa falar a língua dele. Essa língua é o <strong>SQL</strong>. Ela é pequena, parece inglês escrito devagar e, com meia dúzia de palavras, já responde perguntas de verdade sobre a Loja Aurora. Nesta aula você vai ler a sua primeira consulta parte por parte e entender o que o SQL sabe fazer.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que quer dizer <strong>SQL</strong> e como se fala.</li>
+  <li>Por que o SQL é uma língua de <strong>pedidos</strong>: você diz <em>o que</em> quer, e o banco descobre <em>como</em> buscar.</li>
+  <li>A primeira consulta, parte por parte: <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code> e o ponto e vírgula.</li>
+  <li>Os quatro tipos de comando: ler, mudar, criar e controlar.</li>
+  <li>As regras de escrita: maiúsculas, espaços, quebras de linha e aspas.</li>
+  <li>Que o SQL é um <strong>padrão</strong>, com pequenos "sotaques" em cada banco.</li>
+  <li>Os primeiros erros reais: palavra escrita errada, aspas duplas e a vírgula esquecida.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: pedir no balcão, não entrar na cozinha</h2>
+<p>Numa lanchonete, você chega ao balcão e diz: "um misto-quente e um suco de laranja sem açúcar". Você não explica à cozinheira onde fica o queijo, qual frigideira usar, nem em que ordem ligar o fogão. Você diz <strong>o que</strong> quer; ela sabe <strong>como</strong> fazer.</p>
+
+<p>O SQL funciona assim. Você não escreve "abra a tabela de produtos, leia a primeira linha, veja se o preço é menor que 5, guarde, passe para a próxima…". Você escreve o pedido:</p>
+
+<pre class="file" data-file="baratos.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 5;
+</pre>
+
+<p>"Selecione o nome e o preço, dos produtos, onde o preço é menor que 5." O SGBD decide sozinho o melhor caminho para achar essas linhas, e o quadro mostra a resposta: três produtos da Loja Aurora custam menos de R$ 5,00. Línguas que funcionam assim se chamam <strong>declarativas</strong> (você <em>declara</em> o resultado que quer). A maioria das linguagens de programação, como Python ou C, é o contrário: nelas você dá o passo a passo.</p>
+
+<hr>
+
+<h2>1. O nome: Structured Query Language</h2>
+<p><strong>SQL</strong> é a sigla de <em>Structured Query Language</em>, "linguagem estruturada de consulta". Uma <strong>consulta</strong> (<em>query</em>) é um pedido feito ao banco.</p>
+
+<ul>
+  <li><strong>Como se fala:</strong> no Brasil, quase todo mundo diz as letras: "ésse-quê-éle". Em inglês você vai ouvir as duas formas, "es-kiu-el" e "síquel". As duas estão certas.</li>
+  <li><strong>De onde veio:</strong> em 1970, o pesquisador Edgar F. Codd, da IBM, publicou a ideia do banco <strong>relacional</strong>, feito de tabelas. Logo depois, também na IBM, Donald Chamberlin e Raymond Boyce criaram uma língua para conversar com esses bancos, chamada primeiro de SEQUEL (daí a pronúncia "síquel") e depois de SQL.</li>
+  <li><strong>Um padrão:</strong> o SQL virou norma oficial nos Estados Unidos (ANSI) em 1986 e no mundo (ISO) em 1987, e a norma ganha revisões até hoje. É por isso que o mesmo <code>SELECT</code> funciona no SQLite, no MySQL, no PostgreSQL e no SQL Server.</li>
+</ul>
+
+<p>Mais de 50 anos depois, o SQL continua sendo a língua dos bancos de dados. Aprender SQL uma vez serve para a vida toda, em qualquer empresa.</p>
+
+<hr>
+
+<h2>2. A primeira consulta, parte por parte</h2>
+<p>Volte à consulta dos produtos baratos. Ela tem três partes e um ponto final:</p>
+
+<pre class="file" data-file="baratos.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT nome, preco</dt><dd><code>SELECT</code> quer dizer "selecione". Depois dele vêm as <strong>colunas</strong> que você quer ver, separadas por vírgula. O resultado vai ter exatamente essas duas colunas, nessa ordem.</dd>
+  <dt>FROM produtos</dt><dd><code>FROM</code> quer dizer "de". Diz de qual <strong>tabela</strong> os dados vêm: a "gaveta" dos produtos.</dd>
+  <dt>WHERE preco &lt; 5</dt><dd><code>WHERE</code> quer dizer "onde". É o <strong>filtro</strong>: só entram as linhas em que o preço é menor (<code>&lt;</code>) que 5. Sem o <code>WHERE</code>, viriam os 45 produtos. É opcional.</dd>
+  <dt>;</dt><dd>O ponto e vírgula <strong>termina</strong> o comando, como o ponto final de uma frase. No editor deste guia ele pode faltar no último comando; no terminal do SQLite, sem ele o comando não roda (você vai ver isso em <a href="shell-sqlite.html">O Terminal do SQLite</a>).</dd>
+</dl>
+
+<p>As palavras em maiúsculas (<code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>) são <strong>palavras-chave</strong>: fazem parte da língua SQL e têm sentido fixo. As em minúsculas (<code>nome</code>, <code>preco</code>, <code>produtos</code>) são <strong>nomes</strong> que quem criou o banco escolheu. Cada uma dessas palavras-chave tem aula própria: <a href="select.html">SELECT</a> e <a href="where.html">WHERE</a>.</p>
+
+<div class="trysql" data-goal="linhas:2">
+<p class="try-task"><strong>Experimente:</strong> rode a consulta como está e veja os três produtos com preço menor que 5. Depois troque o <code>5</code> por <code>3</code> e rode de novo. Quantos produtos custam menos de R$ 3,00?</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 3;
+</pre>
+</div>
+
+<p>Brinque mais: troque o <code>&lt;</code> por <code>&gt;</code> ("maior que") e o número por <code>200</code> para achar o produto mais caro da loja. Cada vez que você clica em <strong>Rodar</strong>, o banco volta ao estado original: nada que você fizer aqui estraga a Loja Aurora.</p>
+
+<hr>
+
+<h2>3. O que dá para fazer com SQL</h2>
+<p>Perguntar é só uma parte. Com SQL você também muda os dados, cria tabelas novas e controla quem pode mexer em quê. Os comandos se dividem em quatro famílias:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Família</th><th>Para quê</th><th>Comandos principais</th><th>Na loja</th></tr>
+<tr><td><strong>Ler</strong> (consultas)</td><td>Perguntar ao banco</td><td><code>SELECT</code></td><td>"Quais produtos acabaram?"</td></tr>
+<tr><td><strong>Mudar os dados</strong></td><td>Pôr, alterar e tirar linhas</td><td><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code></td><td>Cadastrar um cliente, mudar um preço, apagar um pedido cancelado</td></tr>
+<tr><td><strong>Criar a estrutura</strong></td><td>Criar, mudar e apagar tabelas</td><td><code>CREATE</code>, <code>ALTER</code>, <code>DROP</code></td><td>Criar a tabela de avisos da loja</td></tr>
+<tr><td><strong>Controlar</strong></td><td>Agrupar mudanças com segurança; dar permissões</td><td><code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code>; <code>GRANT</code>, <code>REVOKE</code></td><td>Registrar uma venda inteira ou nada; deixar o estagiário só ler</td></tr>
+</table>
+</div>
+
+<p>Em livros e vagas de emprego, essas famílias aparecem com siglas em inglês: <strong>DQL</strong> (<em>Data Query Language</em>, ler), <strong>DML</strong> (<em>Data Manipulation Language</em>, mudar os dados), <strong>DDL</strong> (<em>Data Definition Language</em>, criar a estrutura), <strong>DCL</strong> e <strong>TCL</strong> (<em>Data Control</em> e <em>Transaction Control Language</em>, controlar). Não precisa decorar; só saiba que elas existem.</p>
+
+<p>Veja uma de cada. Primeiro, <strong>mudar os dados</strong>: a loja abriu uma categoria nova, a de produtos para animais. O <code>INSERT</code> ("insira") põe uma linha nova, e o <code>SELECT</code> logo depois mostra a tabela já com ela:</p>
+
+<pre class="file" data-file="nova-categoria.sql" data-resultado>INSERT INTO categorias (nome, descricao)
+VALUES ('Pet', 'Ração e acessórios para animais');
+
+SELECT * FROM categorias;
+</pre>
+
+<p>Repare nas duas respostas: o <code>INSERT</code> não devolve uma tabela, devolve "1 linha afetada", o recado de que deu certo. O <code>SELECT</code> mostra as 9 categorias, e a Pet ganhou o id 9 sozinha. Agora um <code>UPDATE</code> ("atualize"): a caneta azul subiu de preço.</p>
+
+<pre class="file" data-file="novo-preco.sql" data-resultado>UPDATE produtos
+SET preco = 2.99
+WHERE id = 2;
+
+SELECT id, nome, preco FROM produtos WHERE id = 2;
+</pre>
+
+<p>E, por fim, <strong>criar a estrutura</strong>: uma tabela nova, que não existia no banco, para os avisos do mural da loja.</p>
+
+<pre class="file" data-file="avisos.sql" data-resultado>CREATE TABLE avisos (
+  id    INTEGER PRIMARY KEY,
+  texto TEXT
+);
+
+INSERT INTO avisos (texto) VALUES ('Promoção de volta às aulas');
+
+SELECT * FROM avisos;
+</pre>
+
+<p>Três comandos, três respostas: "CREATE TABLE: ok", "1 linha afetada" e a tabela com o aviso. Cada um tem aula própria mais adiante: <a href="insert.html">INSERT INTO</a>, <a href="update.html">UPDATE</a>, <a href="delete.html">DELETE</a>, <a href="create-table.html">CREATE TABLE</a> e <a href="transacoes.html">Transações</a>. Por enquanto, o importante é saber que <strong>tudo isso é SQL</strong>.</p>
+
+<div class="warning">
+<strong>No banco de verdade, mudar é para valer</strong>
+<p>No editor deste guia, cada Rodar começa do banco limpo, então o preço da caneta volta a 2.79 e a tabela de avisos some. Num banco de verdade, um <code>UPDATE</code> ou <code>DELETE</code> fica gravado. Um <code>DELETE</code> sem <code>WHERE</code> apaga a tabela inteira, sem perguntar "tem certeza?". Esse perigo tem uma aula só para ele: <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>.</p>
+</div>
+
+<hr>
+
+<h2>4. As regras de escrita</h2>
+<p>O SQL é tolerante com a forma e exigente com os nomes e as aspas. Quatro regras resolvem quase tudo:</p>
+
+<ol class="passo">
+  <li><strong>Maiúsculas e minúsculas nas palavras-chave tanto faz.</strong> <code>SELECT</code>, <code>select</code> e <code>Select</code> são a mesma palavra. O costume, que este guia segue, é escrever as palavras-chave em MAIÚSCULAS e os nomes em minúsculas: o olho separa logo o que é da língua e o que é do seu banco.</li>
+  <li><strong>Espaços e quebras de linha tanto faz.</strong> Pode escrever tudo numa linha ou uma parte por linha. Consultas grandes ficam muito mais fáceis de ler com uma parte por linha.</li>
+  <li><strong>O ponto e vírgula separa os comandos.</strong> Vários comandos na mesma caixa? Um <code>;</code> no fim de cada um.</li>
+  <li><strong>Texto vai entre aspas simples:</strong> <code>'PI'</code>, <code>'Lápis Grafite HB'</code>. Números vão sem aspas: <code>5</code>, <code>2.99</code>, com <strong>ponto</strong> como separador decimal, nunca vírgula.</li>
+</ol>
+
+<p>Estas três consultas são a mesma pergunta, e dão a mesma resposta:</p>
+
+<pre class="file" data-file="minusculas.sql" data-resultado>select nome, preco from produtos where preco &lt; 5;
+</pre>
+
+<pre class="file" data-file="uma-linha.sql" data-resultado>SELECT nome, preco FROM produtos WHERE preco &lt; 5;
+</pre>
+
+<pre class="file" data-file="uma-parte-por-linha.sql" data-resultado>SELECT nome,
+       preco
+  FROM produtos
+ WHERE preco &lt; 5;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito de escrever</th><th>Funciona?</th><th>Quando usar</th></tr>
+<tr><td>Tudo em minúsculas</td><td>Sim</td><td>Testes rápidos; mas fica difícil separar a língua dos nomes</td></tr>
+<tr><td>Tudo numa linha, palavras-chave em MAIÚSCULAS</td><td>Sim</td><td>Consultas curtas, como as primeiras deste guia</td></tr>
+<tr><td>Uma parte por linha, palavras-chave em MAIÚSCULAS</td><td>Sim</td><td><strong>O padrão</strong> para qualquer consulta com mais de uma parte; é o jeito do guia</td></tr>
+</table>
+</div>
+
+<p>Agora o texto entre aspas simples. Quais clientes moram no Piauí?</p>
+
+<pre class="file" data-file="piaui.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+
+<p>O <code>'PI'</code> está entre aspas simples porque é um <strong>texto</strong> que você quer comparar. Sem as aspas, o banco acharia que <code>PI</code> é o nome de uma coluna. E com aspas duplas, também! Isso é tão comum que ganhou um caso em <a href="#errado">Quando dá errado</a>.</p>
+
+<hr>
+
+<h2>5. Um padrão, vários sotaques</h2>
+<p>O português do Brasil e o de Portugal são a mesma língua, com algumas palavras diferentes ("ônibus" e "autocarro"). O SQL é igual: o <code>SELECT … FROM … WHERE</code> é o mesmo em todo banco, mas cada SGBD tem os seus "regionalismos" e as suas funções extras. Este guia ensina o SQL padrão usando o SQLite e avisa, numa caixa como esta, quando os outros bancos fazem diferente:</p>
+
+<div class="note">
+<strong>Nos outros bancos: "só os 5 primeiros"</strong>
+<p>Pedir só as primeiras linhas do resultado é o exemplo clássico de sotaque. No SQLite, e também no MySQL e no PostgreSQL, usa-se <code>LIMIT</code> no fim (aula <a href="limit.html">LIMIT e OFFSET</a>):</p>
+<pre class="file" data-file="sqlite-mysql-postgresql.sql" data-resultado>SELECT nome, preco FROM produtos LIMIT 5;
+</pre>
+<p>O SQL Server não tem <code>LIMIT</code>; usa <code>TOP</code> logo depois do <code>SELECT</code>. E a norma oficial (desde a revisão de 2008) tem uma terceira forma, <code>FETCH FIRST</code>, que o PostgreSQL também aceita. Os dois trechos abaixo são <strong>ilustrativos</strong>: o SQLite não os entende, por isso não têm o quadro de resultado.</p>
+<pre class="file" data-file="sql-server.sql">SELECT TOP (5) nome, preco FROM produtos;
+</pre>
+<pre class="file" data-file="padrao-postgresql.sql">SELECT nome, preco FROM produtos FETCH FIRST 5 ROWS ONLY;
+</pre>
+<p>Fontes: documentação do <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/top-transact-sql">TOP no SQL Server</a> e do <a href="https://www.postgresql.org/docs/current/sql-select.html">SELECT no PostgreSQL</a>. As diferenças entre os bancos têm um grupo inteiro de aulas no Nível 3, a começar por <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As mensagens do SQLite vêm em inglês. Abaixo, cada uma é a mensagem real que o seu navegador recebeu, com a tradução e o conserto.</p>
+
+<div class="cenario">
+<strong>Palavra-chave escrita errada</strong>
+<pre class="file" data-file="selec.sql" data-resultado data-erro>SELEC nome FROM produtos;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "SELEC": syntax error</code> quer dizer "perto de <code>SELEC</code>: erro de sintaxe". <strong>Sintaxe</strong> é a gramática da língua. O banco não conhece a palavra <code>SELEC</code> e avisa onde se perdeu: logo no começo.</p>
+<p><strong>Como consertar:</strong> <code>SELECT</code>, com T. Quando aparecer <code>near "…": syntax error</code>, olhe a palavra entre aspas e a que vem logo antes dela: o erro está ali.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto entre aspas duplas</strong>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE nome = "Lápis Grafite HB";
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: "Lápis Grafite HB" - should this be a string literal in single-quotes?</code>, ou seja: "não existe a coluna <code>"Lápis Grafite HB"</code>; isto deveria ser um texto entre aspas simples?". No SQL padrão, <strong>aspas duplas</strong> servem para <strong>nomes</strong> (de tabela, de coluna), e <strong>aspas simples</strong> servem para <strong>texto</strong>. Com aspas duplas, o banco foi procurar uma coluna chamada Lápis Grafite HB. O próprio SQLite dá a dica do conserto.</p>
+<p><strong>Como consertar:</strong> aspas simples: <code>WHERE nome = 'Lápis Grafite HB'</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:1">
+<p class="try-task"><strong>Missão:</strong> a Ana quer o preço do lápis, mas a consulta dá erro. Rode, leia a mensagem e conserte as aspas.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE nome = "Lápis Grafite HB";
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE nome = 'Lápis Grafite HB';
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Texto sem aspas nenhuma</strong>
+<pre class="file" data-file="sem-aspas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE estado = PI;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: PI</code>. Sem aspas, <code>PI</code> é lido como um nome, e não há coluna com esse nome na tabela de clientes.</p>
+<p><strong>Como consertar:</strong> <code>WHERE estado = 'PI'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A vírgula esquecida (sem mensagem de erro!)</strong>
+<pre class="file" data-file="sem-virgula.sql" data-resultado>SELECT nome preco
+FROM produtos
+LIMIT 3;
+</pre>
+<p><strong>O que aconteceu:</strong> o pior tipo de erro, o que não dá erro. A Ana queria duas colunas, nome e preço, mas esqueceu a vírgula. O SQL entendeu outra coisa: "mostre a coluna <code>nome</code> com o <strong>apelido</strong> <code>preco</code>". O resultado tem uma coluna só, com o título "preco" e os <strong>nomes</strong> dos produtos dentro. Apelidos são úteis e têm aula própria (<a href="aliases.html">Apelidos (AS)</a>), mas aqui ele apareceu por engano.</p>
+<p><strong>Como consertar:</strong> <code>SELECT nome, preco</code>. Moral: além de ver se deu erro, <strong>olhe o resultado</strong>. As colunas são as que você pediu?</p>
+</div>
+
+<div class="cenario">
+<strong>Partes fora de ordem</strong>
+<pre class="file" data-file="ordem.sql" data-resultado data-erro>FROM produtos SELECT nome;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "FROM": syntax error</code>. Em português, "dos produtos, selecione o nome" ainda dá para entender; em SQL, não. As partes têm ordem fixa: <code>SELECT</code>, depois <code>FROM</code>, depois <code>WHERE</code>.</p>
+<p><strong>Como consertar:</strong> <code>SELECT nome FROM produtos;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra-chave</th><th>Tradução</th><th>O que faz</th></tr>
+<tr><td><code>SELECT</code></td><td>selecione</td><td>Escolhe as colunas do resultado</td></tr>
+<tr><td><code>FROM</code></td><td>de</td><td>Diz de qual tabela os dados vêm</td></tr>
+<tr><td><code>WHERE</code></td><td>onde</td><td>Filtra as linhas (opcional)</td></tr>
+<tr><td><code>INSERT INTO … VALUES</code></td><td>insira em … os valores</td><td>Põe uma linha nova</td></tr>
+<tr><td><code>UPDATE … SET</code></td><td>atualize … definindo</td><td>Muda valores de linhas que já existem</td></tr>
+<tr><td><code>DELETE FROM</code></td><td>apague de</td><td>Tira linhas</td></tr>
+<tr><td><code>CREATE TABLE</code></td><td>crie a tabela</td><td>Cria uma tabela nova</td></tr>
+<tr><td><code>;</code></td><td>ponto final</td><td>Termina um comando</td></tr>
+<tr><td><code>'texto'</code></td><td>aspas simples</td><td>Um valor de texto</td></tr>
+<tr><td><code>"nome"</code></td><td>aspas duplas</td><td>Um nome de tabela ou coluna (nunca texto)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "SELEC": syntax error</code></td><td>A gramática quebrou perto dessa palavra: palavra errada, parte fora de ordem, vírgula sobrando…</td></tr>
+<tr><td><code>no such column: PI</code></td><td>Não existe essa coluna: nome errado, ou texto sem aspas</td></tr>
+<tr><td><code>no such column: "…" - should this be a string literal in single-quotes?</code></td><td>Texto entre aspas duplas; troque por simples</td></tr>
+<tr><td><code>no such table: produto</code></td><td>Não existe essa tabela (veja <a href="introducao.html">O que é um Banco de Dados</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra que seleciona</h3>
+<p>Complete a consulta que mostra o nome de todos os clientes:</p>
+<div class="ex-code"><input data-answer="SELECT" aria-label="palavra-chave"> nome FROM clientes;</div>
+</div>
+
+<div class="exercise">
+<h3>2. De qual tabela?</h3>
+<p>Complete com a palavra-chave que diz de onde vêm os dados:</p>
+<div class="ex-code">SELECT nome, cargo <input data-answer="FROM" aria-label="palavra-chave"> funcionarios;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destas linhas compara um texto do jeito certo?</p>
+<label><input type="radio" name="q3"> <code>WHERE cidade = "Teresina"</code></label>
+<label><input type="radio" name="q3"> <code>WHERE cidade = Teresina</code></label>
+<label><input type="radio" name="q3"> <code>WHERE cidade = 'Teresina'</code></label>
+<label><input type="radio" name="q3"> <code>WHERE 'cidade' = "Teresina"</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>select nome from produtos;</code> e <code>SELECT nome FROM produtos;</code>:</p>
+<label><input type="radio" name="q4"> A primeira dá erro, porque as palavras-chave precisam estar em maiúsculas</label>
+<label><input type="radio" name="q4"> Dão o mesmo resultado; maiúsculas nas palavras-chave são só costume</label>
+<label><input type="radio" name="q4"> A segunda dá erro, porque a tabela está em minúsculas</label>
+<label><input type="radio" name="q4"> Dão resultados diferentes</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana escreveu <code>SELECT nome preco FROM produtos;</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> Erro de sintaxe, por causa da vírgula que falta</label>
+<label><input type="radio" name="q5"> Duas colunas, nome e preço</label>
+<label><input type="radio" name="q5"> Só a coluna do preço</label>
+<label><input type="radio" name="q5"> Uma coluna com os nomes dos produtos, mas com o título "preco"</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Cadastrar um cliente novo é um comando de qual família?</p>
+<label><input type="radio" name="q6"> Mudar os dados (<code>INSERT</code>)</label>
+<label><input type="radio" name="q6"> Ler (<code>SELECT</code>)</label>
+<label><input type="radio" name="q6"> Criar a estrutura (<code>CREATE</code>)</label>
+<label><input type="radio" name="q6"> Controlar (<code>GRANT</code>)</label>
+</div>
+
+<h3>Missão final: os clientes do Ceará</h3>
+
+<div class="trysql" data-goal="linhas:7;;colunas:nome,cidade">
+<p class="try-task"><strong>Missão:</strong> esta consulta mostra o nome e a cidade dos clientes do Piauí (a sigla do estado é <code>PI</code>). Mude-a para mostrar o nome e a cidade dos clientes do <strong>Ceará</strong>, cuja sigla é <code>CE</code>. Cuidado com as aspas. Quantos são, e de que cidade?</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE estado = 'CE';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>SQL</strong> (<em>Structured Query Language</em>) é a língua para conversar com bancos de dados relacionais. Nasceu na IBM nos anos 1970 e é um padrão oficial desde 1986/1987.</li>
+  <li>É uma língua <strong>declarativa</strong>: você diz o que quer ("os produtos com preço menor que 5"), e o banco decide como buscar.</li>
+  <li>A consulta básica: <code>SELECT</code> colunas <code>FROM</code> tabela <code>WHERE</code> filtro <code>;</code>.</li>
+  <li>Quatro famílias de comandos: ler (<code>SELECT</code>), mudar os dados (<code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>), criar a estrutura (<code>CREATE</code>, <code>ALTER</code>, <code>DROP</code>) e controlar (<code>BEGIN</code>, <code>COMMIT</code>, <code>GRANT</code>…).</li>
+  <li>Palavras-chave em MAIÚSCULAS e nomes em minúsculas é costume, não regra. Espaços e quebras de linha são livres. Texto vai entre <strong>aspas simples</strong>; aspas duplas são para nomes.</li>
+  <li>Todo banco fala o mesmo SQL básico, com pequenos sotaques (<code>LIMIT</code> × <code>TOP</code> × <code>FETCH FIRST</code>).</li>
+  <li>Leia a mensagem de erro (<code>syntax error</code>, <code>no such column</code>) e também o resultado: uma vírgula esquecida não dá erro, mas muda a resposta.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
