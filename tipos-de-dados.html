@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Tipos de Dados — INTEGER, DECIMAL, VARCHAR, DATE, BOOLEAN | Guia SQL</title>
+<meta name="description" content="Os tipos de dados do SQL para quem nunca mexeu num banco: inteiros, decimais exatos e aproximados, texto com e sem tamanho, datas, verdadeiro/falso e binários, com os nomes no SQL padrão, no MySQL, no PostgreSQL, no SQL Server e no SQLite, e os erros clássicos de escolher o tipo errado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Tipos de Dados</span></h1>
+
+<p class="intro">Na aula <a href="create-table.html">CREATE TABLE</a>, cada coluna ganhou um <strong>tipo</strong>: <code>INTEGER</code>, <code>REAL</code>, <code>TEXT</code>. O tipo diz <strong>que tipo de valor</strong> a coluna guarda: um número inteiro, um preço, um nome, uma data, um "sim ou não". Nesta aula você vai conhecer os tipos do SQL, com os nomes que eles têm no SQL padrão e em cada um dos bancos famosos, e vai ver por que escolher o tipo certo evita contas erradas, datas fora de ordem e CEPs que perdem o zero da frente.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Para que serve o tipo de uma coluna: o que ele muda nas contas, na ordenação e na proteção dos dados.</li>
+  <li>Os <strong>inteiros</strong> (<code>SMALLINT</code>, <code>INTEGER</code>, <code>BIGINT</code>) e a divisão que "come" as casas decimais.</li>
+  <li>Os números com casas decimais: os <strong>exatos</strong> (<code>DECIMAL</code>/<code>NUMERIC</code>) e os <strong>aproximados</strong> (<code>REAL</code>, <code>DOUBLE PRECISION</code>), e por que <code>0.1 + 0.2</code> não é <code>0.3</code>.</li>
+  <li>Os textos: <code>CHAR(n)</code>, <code>VARCHAR(n)</code> e <code>TEXT</code>.</li>
+  <li>As datas e horas (<code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>), o verdadeiro/falso (<code>BOOLEAN</code>) e os binários.</li>
+  <li>Como cada banco chama cada tipo, e qual tipo escolher para cada dado da Loja Aurora.</li>
+</ul>
+</div>
+
+<p>Um aviso antes de começar: o <strong>SQLite</strong>, o banco que roda no editor do guia, é bem mais "relaxado" com os tipos do que os outros bancos. Ele aceita todos os nomes desta aula, mas trata vários deles do seu jeito. Nesta aula você vê o mapa geral; a próxima, <a href="tipos-sqlite.html">Os Tipos no SQLite</a>, mostra em detalhe o que o SQLite faz com cada um.</p>
+
+<hr>
+
+<h2>A ideia: os campos de um formulário</h2>
+<p>Pense na ficha de cadastro de cliente, em papel, que a Loja Aurora usava antes do computador:</p>
+
+<pre class="file" data-file="ficha de cadastro">Nome: ______________________________
+Nascimento: __/__/____
+CEP: [ ][ ][ ][ ][ ]-[ ][ ][ ]
+Quer receber ofertas?  ( ) sim  ( ) não
+Limite de crédito: R$ ________,__
+</pre>
+
+<p>Cada campo já diz o que cabe nele. Na data, três espaços: dia, mês, ano. No CEP, oito quadradinhos para algarismos. Nas ofertas, só duas respostas possíveis. No limite de crédito, reais e centavos. Ninguém escreve "abacaxi" no campo da data.</p>
+
+<p>O tipo de uma coluna é esse "formato do campo". Ele serve para três coisas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para quê</th><th>Exemplo</th></tr>
+<tr><td><strong>Proteger</strong>: recusar o valor que não cabe</td><td>Num banco rígido como o PostgreSQL, um texto numa coluna de número dá erro</td></tr>
+<tr><td><strong>Calcular e comparar certo</strong></td><td>Como número, 9 vem antes de 10; como texto, <code>'10'</code> vem antes de <code>'9'</code></td></tr>
+<tr><td><strong>Guardar com economia</strong></td><td>Um inteiro pequeno ocupa menos espaço que um texto longo</td></tr>
+</table>
+</div>
+
+<p>A segunda linha da tabela parece estranha? Veja com os seus olhos. O mesmo "10 é menor que 9?", uma vez com textos (entre aspas) e outra com números:</p>
+
+<pre class="file" data-file="texto-ou-numero.sql" data-resultado>SELECT '10' &lt; '9' AS como_texto,
+       10 &lt; 9     AS como_numero;
+</pre>
+
+<p>Como texto, a resposta é <code>1</code> ("verdadeiro"): o banco compara letra por letra, como num dicionário, e o caractere <code>1</code> vem antes do <code>9</code>. Como número, a resposta é <code>0</code> ("falso"), a resposta certa. O valor é o mesmo; quem muda o resultado é o tipo.</p>
+
+<hr>
+
+<h2>1. Números inteiros</h2>
+<p>Inteiro é número sem casas decimais: quantidade em estoque, número do pedido, idade. O SQL padrão tem três tamanhos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Faixa (no PostgreSQL)</th><th>Espaço</th><th>Bom para</th></tr>
+<tr><td><code>SMALLINT</code></td><td>-32.768 a 32.767</td><td>2 bytes</td><td>Números pequenos: nota de 1 a 5, ano</td></tr>
+<tr><td><code>INTEGER</code> (ou <code>INT</code>)</td><td>cerca de -2,1 bilhões a 2,1 bilhões</td><td>4 bytes</td><td>O dia a dia: <code>id</code>, <code>estoque</code>, <code>quantidade</code></td></tr>
+<tr><td><code>BIGINT</code></td><td>cerca de -9,2 a 9,2 quintilhões</td><td>8 bytes</td><td>Números enormes: contadores de visitas de um site gigante</td></tr>
+</table>
+</div>
+
+<p>Um número fora da faixa dá erro nesses bancos (a documentação do PostgreSQL diz: tentar guardar um valor fora da faixa resulta em erro). Na dúvida, use <code>INTEGER</code>: é o que a Loja Aurora usa em todos os <code>id</code>, no <code>estoque</code> e na <code>quantidade</code>.</p>
+
+<h3>A divisão de inteiros</h3>
+<p>Inteiro com inteiro dá inteiro, até na divisão. A Ana quer dividir 7 caixas entre 2 lojas:</p>
+
+<pre class="file" data-file="divisao.sql" data-resultado>SELECT 7 / 2   AS inteiros,
+       7 / 2.0 AS com_decimal,
+       7.0 / 2 AS tambem_com_decimal;
+</pre>
+
+<dl class="anatomy">
+  <dt>7 / 2</dt><dd>Os dois são inteiros, então a conta é de inteiros: o resultado é <code>3</code>, e o "meio" que sobrou é jogado fora (não é arredondado: é cortado).</dd>
+  <dt>7 / 2.0</dt><dd>Basta um dos dois ter casa decimal para a conta virar de número com decimais: <code>3.5</code>.</dd>
+  <dt>7.0 / 2</dt><dd>Tanto faz qual dos dois: <code>3.5</code> de novo.</dd>
+</dl>
+
+<p>Esse comportamento é o mesmo no PostgreSQL e no SQL Server (a documentação da Microsoft diz: inteiro dividido por inteiro dá um inteiro, com a parte decimal cortada). O MySQL é exceção: lá, <code>3/5</code> dá <code>0.60</code>, e a divisão inteira tem um operador próprio, <code>DIV</code>. No SQLite, ao dividir duas colunas <code>INTEGER</code> (como <code>estoque / quantidade</code>), lembre-se de multiplicar uma delas por <code>1.0</code>.</p>
+
+<div class="trysql" data-goal="contem:3.5">
+<p class="try-task"><strong>Experimente:</strong> a conta abaixo deveria dar a metade de 7, mas o resultado veio <code>3</code>. Mude <strong>um</strong> dos números para que a resposta seja <code>3.5</code>.</p>
+<pre class="script" data-file="metade.sql">SELECT 7 / 2 AS metade;
+</pre>
+<pre class="solucao" data-file="metade.sql">SELECT 7 / 2.0 AS metade;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Números com casas decimais: exatos e aproximados</h2>
+<p>Preço, frete, salário, peso. Aqui o SQL tem <strong>duas famílias</strong>, e a diferença entre elas é importante:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Família</th><th>Tipos</th><th>Como guarda</th><th>Bom para</th></tr>
+<tr><td><strong>Exatos</strong></td><td><code>DECIMAL(p, s)</code>, <code>NUMERIC(p, s)</code></td><td>Algarismo por algarismo, como você escreveria no papel</td><td>Dinheiro, e tudo que precisa bater no centavo</td></tr>
+<tr><td><strong>Aproximados</strong> (de "ponto flutuante")</td><td><code>REAL</code>, <code>DOUBLE PRECISION</code>, <code>FLOAT</code></td><td>Em binário, com uma aproximação muito boa, mas aproximação</td><td>Medidas científicas, coordenadas, médias: onde um erro na 15ª casa não importa</td></tr>
+</table>
+</div>
+
+<h3><code>DECIMAL(p, s)</code>: precisão e escala</h3>
+<p>Os dois números entre parênteses dizem o tamanho do número:</p>
+
+<dl class="anatomy">
+  <dt>DECIMAL</dt><dd>O tipo exato. <code>NUMERIC</code> é outro nome para a mesma coisa (no PostgreSQL e no SQL Server, os dois são idênticos).</dd>
+  <dt>p</dt><dd>A <strong>precisão</strong>: quantos algarismos o número tem <strong>no total</strong>, somando os de antes e os de depois da vírgula.</dd>
+  <dt>s</dt><dd>A <strong>escala</strong>: quantos desses algarismos ficam <strong>depois</strong> da vírgula.</dd>
+</dl>
+
+<p>O exemplo da documentação do PostgreSQL: o número <code>23.5141</code> tem precisão 6 (seis algarismos) e escala 4 (quatro depois do ponto). Para dinheiro, o comum é <code>DECIMAL(10, 2)</code>: dez algarismos no total, dois de centavos, ou seja, até 99.999.999,99 reais. Nos bancos que levam o tipo a sério, um número com algarismos demais antes da vírgula dá erro, e casas a mais depois da vírgula são arredondadas.</p>
+
+<div class="tip">
+<strong>Vírgula ou ponto?</strong>
+<p>No Brasil, escrevemos 1,15 com vírgula. No SQL, as casas decimais vão sempre com <strong>ponto</strong>: <code>1.15</code>. A vírgula, no SQL, separa uma coisa da outra (colunas, valores). Escreva <code>1,15</code> num <code>INSERT</code> e o banco vai entender <strong>dois</strong> valores: 1 e 15.</p>
+</div>
+
+<h3>O problema dos aproximados</h3>
+<p>Os tipos aproximados guardam o número em binário (zeros e uns), e alguns números que são "redondos" para nós, como 0,1, não têm uma escrita exata em binário, do mesmo jeito que 1/3 não tem uma escrita exata em decimal (0,3333…). O resultado é este:</p>
+
+<pre class="file" data-file="flutuante.sql" data-resultado>SELECT 0.1 + 0.2       AS soma,
+       0.1 + 0.2 = 0.3 AS igual,
+       0.1 + 0.2 - 0.3 AS diferenca;
+</pre>
+
+<dl class="anatomy">
+  <dt>soma</dt><dd>Na tela aparece <code>0.3</code>, porque o SQLite arredonda na hora de <strong>mostrar</strong>.</dd>
+  <dt>igual</dt><dd>Mas a comparação com <code>0.3</code> dá <code>0</code>, "falso": por dentro, a soma não é exatamente 0,3.</dd>
+  <dt>diferenca</dt><dd>A sobra é minúscula: <code>5.55111512312578e-17</code>, ou seja, 0,0000000000000000555… (o <code>e-17</code> quer dizer "vezes 10 elevado a -17"). Pequena, mas basta para um <code>WHERE total = 0.3</code> não achar nada.</dd>
+</dl>
+
+<p>Num relatório de vendas com milhares de linhas somadas, essas sobras se acumulam. É por isso que os bancos têm <code>DECIMAL</code> e que bancos e lojas o usam para dinheiro.</p>
+
+<div class="warning">
+<strong>E no SQLite?</strong>
+<p>O SQLite <strong>aceita</strong> escrever <code>DECIMAL(10, 2)</code> numa coluna, mas não tem um tipo decimal exato: o valor é guardado como número aproximado do mesmo jeito. Veja: a coluna é <code>DECIMAL(10,2)</code> e a soma continua não batendo:</p>
+<pre class="file" data-file="decimal-sqlite.sql" data-resultado>CREATE TABLE fretes (valor DECIMAL(10,2));
+INSERT INTO fretes VALUES (0.1), (0.2);
+
+SELECT sum(valor) AS soma, sum(valor) = 0.3 AS igual FROM fretes;
+</pre>
+<p>Por isso a Loja Aurora usa <code>REAL</code> nos preços (é o que o SQLite faz de qualquer jeito) e arredonda os totais com <code>round(…, 2)</code> (aula <a href="funcoes-numericas.html">Funções Numéricas</a>). A outra saída, muito usada em sistemas de pagamento, é guardar os valores <strong>em centavos</strong>, numa coluna <code>INTEGER</code>: inteiros são sempre exatos.</p>
+<pre class="file" data-file="centavos.sql" data-resultado>CREATE TABLE fretes (valor_centavos INTEGER);
+INSERT INTO fretes VALUES (10), (20);
+
+SELECT sum(valor_centavos)         AS centavos,
+       sum(valor_centavos) / 100.0 AS em_reais,
+       sum(valor_centavos) = 30    AS igual
+FROM fretes;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Texto: <code>CHAR</code>, <code>VARCHAR</code> e <code>TEXT</code></h2>
+<p>Nome, email, cidade, comentário. Três tipos, que diferem no <strong>tamanho</strong>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>O que é</th><th>Exemplo</th></tr>
+<tr><td><code>CHAR(n)</code></td><td>Texto de tamanho <strong>fixo</strong>: sempre <code>n</code> caracteres (os que faltam viram espaços)</td><td><code>estado CHAR(2)</code>: <code>'PI'</code>, <code>'CE'</code></td></tr>
+<tr><td><code>VARCHAR(n)</code></td><td>Texto de tamanho <strong>variável</strong>, com um <strong>máximo</strong> de <code>n</code> caracteres. Nome completo: <code>CHARACTER VARYING</code></td><td><code>nome VARCHAR(100)</code></td></tr>
+<tr><td><code>TEXT</code></td><td>Texto de qualquer tamanho. Não é do SQL padrão, mas o PostgreSQL, o MySQL e o SQLite têm</td><td><code>comentario TEXT</code></td></tr>
+</table>
+</div>
+
+<p>O <code>n</code> do <code>VARCHAR(n)</code> funciona como os quadradinhos do formulário: se o texto passar do limite, os bancos rígidos <strong>recusam</strong>. No PostgreSQL, o exemplo da documentação é este (ilustrativo, não roda no SQLite):</p>
+
+<pre class="file" data-file="postgresql.sql (ilustrativo)">CREATE TABLE test2 (b varchar(5));
+INSERT INTO test2 VALUES ('too long');
+-- ERROR:  value too long for type character varying(5)
+</pre>
+
+<p>"Valor longo demais para o tipo <code>character varying(5)</code>." O MySQL faz o mesmo no modo estrito (que faz parte do modo padrão do MySQL 8.4); fora do modo estrito, ele corta o texto e só dá um aviso.</p>
+
+<p>Já o SQLite <strong>ignora</strong> o número entre parênteses. A Ana criou a coluna do estado com <code>VARCHAR(2)</code> e escreveu o nome inteiro, sem querer:</p>
+
+<pre class="file" data-file="varchar-sqlite.sql" data-resultado>CREATE TABLE enderecos (uf VARCHAR(2));
+INSERT INTO enderecos VALUES ('Piauí');
+
+SELECT uf, length(uf) AS letras FROM enderecos;
+</pre>
+
+<p>Os cinco caracteres entraram sem reclamação. No SQLite, <code>VARCHAR(2)</code>, <code>VARCHAR(255)</code> e <code>TEXT</code> dão no mesmo. Se você quer um limite de verdade no SQLite, ele se faz com a restrição <a href="check.html">CHECK</a> (por exemplo, <code>CHECK (length(uf) = 2)</code>).</p>
+
+<div class="note">
+<strong>Por que tanta gente escreve <code>VARCHAR(255)</code>?</strong>
+<p>Mesmo no SQLite, que ignora o número, vale escrever um tamanho que faça sentido (<code>VARCHAR(100)</code> para nome, <code>CHAR(2)</code> para UF): ele documenta a sua intenção e já deixa a tabela pronta se um dia ela for para o MySQL ou o PostgreSQL. O <code>255</code> é só um costume que passa de projeto em projeto; não precisa copiá-lo, escolha o tamanho pelo dado.</p>
+</div>
+
+<h3>Número que não é número</h3>
+<p>CEP, telefone, CPF: são feitos de algarismos, mas <strong>não são números</strong>. Ninguém soma dois CEPs. E o pior: como número, o zero da frente desaparece. Veja o CEP <code>04567-000</code>, de São Paulo, guardado numa coluna <code>INTEGER</code>:</p>
+
+<pre class="file" data-file="cep-numero.sql" data-resultado>CREATE TABLE enderecos (cliente_id INTEGER, cep INTEGER);
+INSERT INTO enderecos VALUES (5, '04567000');
+
+SELECT * FROM enderecos;
+</pre>
+
+<p>Saiu <code>4567000</code>: o zero sumiu, e o CEP agora tem sete algarismos. Com <code>TEXT</code> (ou <code>CHAR(8)</code>), ele fica intacto:</p>
+
+<pre class="file" data-file="cep-texto.sql" data-resultado>CREATE TABLE enderecos (cliente_id INTEGER, cep TEXT);
+INSERT INTO enderecos VALUES (5, '04567000');
+
+SELECT * FROM enderecos;
+</pre>
+
+<p>A regra prática: <strong>se você não vai fazer conta com ele, é texto</strong>. Por isso o <code>telefone</code> dos fornecedores da Loja Aurora é <code>TEXT</code>: além do zero, ele tem parênteses, espaços, hífen e o <code>+351</code> do fornecedor de Portugal.</p>
+
+<hr>
+
+<h2>4. Data e hora</h2>
+<p>Data do pedido, data de entrega, nascimento. O SQL padrão tem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Escrita</th></tr>
+<tr><td><code>DATE</code></td><td>Só a data</td><td><code>'2026-10-14'</code></td></tr>
+<tr><td><code>TIME</code></td><td>Só a hora</td><td><code>'14:30:00'</code></td></tr>
+<tr><td><code>TIMESTAMP</code></td><td>Data e hora juntas</td><td><code>'2026-10-14 14:30:00'</code></td></tr>
+</table>
+</div>
+
+<p>Repare na ordem: <strong>ano-mês-dia</strong> (o formato ISO 8601), e não dia/mês/ano como escrevemos no Brasil. É o formato que todos os bancos entendem. Cada banco tem os seus nomes extras: o MySQL tem <code>DATETIME</code>; o SQL Server, <code>datetime2</code>; o PostgreSQL, <code>timestamp with time zone</code> (data e hora com fuso).</p>
+
+<p>O SQLite, de novo, é diferente: ele <strong>não tem</strong> tipo de data. As datas ficam guardadas como texto, no formato ISO, e as funções de data (aula <a href="funcoes-data.html">Funções de Data</a>) sabem fazer conta com esse texto. Os pedidos da Loja Aurora são assim:</p>
+
+<pre class="file" data-file="datas.sql" data-resultado>SELECT id, data, date(data, '+7 days') AS uma_semana_depois
+FROM pedidos
+ORDER BY data DESC
+LIMIT 3;
+</pre>
+
+<p>Por que o ISO e não o nosso formato? Porque o texto ISO <strong>se ordena como data</strong>: comparar <code>'2026-10-02'</code> com <code>'2026-10-14'</code> letra por letra dá a mesma resposta que comparar as datas. Com dia/mês/ano, não:</p>
+
+<pre class="file" data-file="ordem-datas.sql" data-resultado>SELECT '2026-10-02' &lt; '2026-10-14' AS iso,
+       '02/10/2026' &lt; '14/09/2026' AS brasileiro;
+</pre>
+
+<p>As duas perguntas deram <code>1</code> ("verdadeiro"). A primeira está certa: 2 de outubro vem antes de 14 de outubro. A segunda está <strong>errada</strong>: 2 de outubro vem <strong>depois</strong> de 14 de setembro, mas como texto, <code>'02…'</code> vem antes de <code>'14…'</code>. Um <code>ORDER BY</code> numa coluna com datas brasileiras sairia todo embaralhado.</p>
+
+<hr>
+
+<h2>5. Verdadeiro ou falso: <code>BOOLEAN</code></h2>
+<p>"É VIP?", "Foi entregue?", "Está descontinuado?". Perguntas de sim ou não. O tipo do SQL padrão para isso é o <code>BOOLEAN</code> ("booleano", em homenagem ao matemático George Boole), com os valores <code>TRUE</code> ("verdadeiro") e <code>FALSE</code> ("falso"). Mas cada banco faz de um jeito:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Como guarda o sim/não</th></tr>
+<tr><td>PostgreSQL</td><td>Tem o <code>boolean</code> de verdade, com três estados: verdadeiro, falso e "desconhecido" (<code>NULL</code>). Mostra os valores como <code>t</code> e <code>f</code></td></tr>
+<tr><td>MySQL</td><td><code>BOOLEAN</code> é outro nome para <code>TINYINT(1)</code>, um inteiro pequeno: 0 é falso, qualquer outro número é verdadeiro</td></tr>
+<tr><td>SQL Server</td><td>Não tem <code>BOOLEAN</code>: usa o tipo <code>bit</code>, que guarda 0, 1 ou <code>NULL</code></td></tr>
+<tr><td>SQLite</td><td>Não tem um tipo próprio: guarda 0 e 1. <code>TRUE</code> e <code>FALSE</code> são só outro jeito de escrever 1 e 0</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="booleano.sql" data-resultado>SELECT TRUE, FALSE;
+</pre>
+
+<p>É por isso que as colunas <code>vip</code> (em <code>clientes</code>) e <code>descontinuado</code> (em <code>produtos</code>) da Loja Aurora são <code>INTEGER</code> com 0 ou 1. E dá para usar <code>TRUE</code> na consulta, que o SQLite entende como 1:</p>
+
+<pre class="file" data-file="vips.sql" data-resultado>SELECT nome, vip FROM clientes WHERE vip = TRUE;
+</pre>
+
+<hr>
+
+<h2>6. Binários: arquivos dentro do banco</h2>
+<p>Por fim, há tipos para guardar bytes "crus": uma foto, um PDF, um arquivo qualquer. No SQLite e no MySQL é o <code>BLOB</code> (de <em>binary large object</em>, "objeto binário grande"); no PostgreSQL, <code>bytea</code> (de <em>byte array</em>, "sequência de bytes"); no SQL Server, <code>varbinary</code>. Na prática, quase sempre é melhor guardar o arquivo numa pasta e, no banco, só o <strong>caminho</strong> dele (um <code>TEXT</code> como <code>'fotos/produto-3.jpg'</code>).</p>
+
+<hr>
+
+<h2>O mapa: cada tipo em cada banco</h2>
+<p>Os nomes mais usados, lado a lado. Os da coluna "SQL padrão" estão na lista de tipos do padrão SQL (a documentação do PostgreSQL traz essa lista na seção de compatibilidade). A última coluna diz o que o SQLite faz com o nome; a próxima aula explica essa "afinidade".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Dado</th><th>SQL padrão</th><th>PostgreSQL</th><th>MySQL</th><th>SQL Server</th><th>SQLite</th></tr>
+<tr><td>Inteiro</td><td><code>SMALLINT</code>, <code>INTEGER</code>, <code>BIGINT</code></td><td><code>smallint</code>, <code>integer</code>, <code>bigint</code></td><td><code>SMALLINT</code>, <code>INT</code>, <code>BIGINT</code></td><td><code>smallint</code>, <code>int</code>, <code>bigint</code></td><td><code>INTEGER</code> (aceita todos os nomes)</td></tr>
+<tr><td>Decimal exato</td><td><code>DECIMAL(p,s)</code>, <code>NUMERIC(p,s)</code></td><td><code>numeric</code>, <code>decimal</code></td><td><code>DECIMAL</code> (até 65 algarismos)</td><td><code>decimal</code>, <code>numeric</code></td><td>aceita o nome, mas guarda aproximado</td></tr>
+<tr><td>Decimal aproximado</td><td><code>REAL</code>, <code>DOUBLE PRECISION</code></td><td><code>real</code>, <code>double precision</code></td><td><code>FLOAT</code>, <code>DOUBLE</code></td><td><code>real</code>, <code>float</code></td><td><code>REAL</code></td></tr>
+<tr><td>Texto com limite</td><td><code>CHAR(n)</code>, <code>VARCHAR(n)</code></td><td><code>char(n)</code>, <code>varchar(n)</code></td><td><code>CHAR(n)</code>, <code>VARCHAR(n)</code></td><td><code>char(n)</code>, <code>varchar(n)</code> (n até 8.000 bytes)</td><td><code>TEXT</code> (ignora o <code>n</code>)</td></tr>
+<tr><td>Texto longo</td><td>—</td><td><code>text</code></td><td><code>TEXT</code></td><td><code>varchar(max)</code></td><td><code>TEXT</code></td></tr>
+<tr><td>Data</td><td><code>DATE</code></td><td><code>date</code></td><td><code>DATE</code></td><td><code>date</code></td><td>texto <code>'AAAA-MM-DD'</code></td></tr>
+<tr><td>Data e hora</td><td><code>TIMESTAMP</code></td><td><code>timestamp</code></td><td><code>DATETIME</code>, <code>TIMESTAMP</code></td><td><code>datetime2</code></td><td>texto <code>'AAAA-MM-DD HH:MM:SS'</code></td></tr>
+<tr><td>Sim/não</td><td><code>BOOLEAN</code></td><td><code>boolean</code></td><td><code>BOOLEAN</code> (= <code>TINYINT(1)</code>)</td><td><code>bit</code></td><td><code>INTEGER</code> 0/1</td></tr>
+<tr><td>Binário</td><td>—</td><td><code>bytea</code></td><td><code>BLOB</code></td><td><code>varbinary</code></td><td><code>BLOB</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos: os tipos que vão sumir</strong>
+<p>No SQL Server existe um tipo chamado <code>text</code>, mas a documentação da Microsoft avisa que <code>text</code>, <code>ntext</code> e <code>image</code> serão removidos numa versão futura e pede para usar <code>varchar(max)</code>, <code>nvarchar(max)</code> e <code>varbinary(max)</code>. Um detalhe a mais do SQL Server: lá, o <code>n</code> do <code>varchar(n)</code> conta <strong>bytes</strong>, não letras; com acentos em UTF-8, cabem menos letras que o <code>n</code>.</p>
+</div>
+
+<hr>
+
+<h2>Qual tipo usar para cada dado</h2>
+<p>A tabela abaixo é o "gabarito" para os dados da Loja Aurora. A coluna do meio vale para os bancos rígidos; a da direita é o que a Loja Aurora usa no SQLite.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Dado</th><th>No MySQL, PostgreSQL, SQL Server</th><th>No SQLite (Loja Aurora)</th><th>Por quê</th></tr>
+<tr><td><code>id</code>, <code>estoque</code>, <code>quantidade</code></td><td><code>INTEGER</code></td><td><code>INTEGER</code></td><td>Contagens: sempre inteiras</td></tr>
+<tr><td><code>preco</code>, <code>frete</code>, <code>salario</code></td><td><code>DECIMAL(10,2)</code></td><td><code>REAL</code> + <code>round()</code>, ou centavos em <code>INTEGER</code></td><td>Dinheiro precisa bater no centavo</td></tr>
+<tr><td><code>nome</code>, <code>email</code>, <code>cidade</code></td><td><code>VARCHAR(n)</code></td><td><code>TEXT</code></td><td>Texto curto, com um tamanho razoável</td></tr>
+<tr><td><code>estado</code> (UF)</td><td><code>CHAR(2)</code></td><td><code>TEXT</code></td><td>Sempre duas letras</td></tr>
+<tr><td>CEP, telefone, CPF</td><td><code>VARCHAR(n)</code> ou <code>CHAR(n)</code></td><td><code>TEXT</code></td><td>Não se faz conta, e o zero da frente importa</td></tr>
+<tr><td><code>data</code>, <code>nascimento</code></td><td><code>DATE</code></td><td><code>TEXT</code> no formato ISO</td><td>Datas no formato que ordena certo</td></tr>
+<tr><td><code>vip</code>, <code>descontinuado</code></td><td><code>BOOLEAN</code> (ou <code>bit</code>)</td><td><code>INTEGER</code> 0/1</td><td>Sim ou não</td></tr>
+<tr><td><code>comentario</code></td><td><code>TEXT</code> (ou <code>varchar(max)</code>)</td><td><code>TEXT</code></td><td>Texto sem tamanho previsível</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Escolher o tipo errado raramente dá erro na hora. O problema aparece depois, numa conta ou numa ordenação. Estes são os clássicos.</p>
+
+<div class="cenario">
+<strong>Números guardados como texto</strong>
+<p>A Ana criou uma coluna de quantidades como <code>TEXT</code> e pediu para ordenar:</p>
+<pre class="file" data-file="ordem-texto.sql" data-resultado>CREATE TABLE contagens (quantidade TEXT);
+INSERT INTO contagens VALUES ('9'), ('10'), ('100');
+
+SELECT quantidade FROM contagens ORDER BY quantidade;
+</pre>
+<p><strong>O que acontece:</strong> <code>10</code>, <code>100</code>, <code>9</code>. Ordem de dicionário: tudo que começa com "1" vem antes do "9". Nenhum erro, só um relatório errado. <strong>Como consertar:</strong> números que você vai comparar, somar ou ordenar vão numa coluna <code>INTEGER</code> ou <code>REAL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>CEP (ou telefone) como número</strong>
+<p>Você já viu: <code>'04567000'</code> numa coluna <code>INTEGER</code> vira <code>4567000</code>. <strong>Como consertar:</strong> se não se faz conta com ele, é texto.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparar dinheiro com <code>=</code> em coluna aproximada</strong>
+<pre class="file" data-file="igual-dinheiro.sql" data-resultado>SELECT 0.1 + 0.2 = 0.3 AS igual,
+       round(0.1 + 0.2, 2) = 0.3 AS igual_arredondado;
+</pre>
+<p><strong>O que acontece:</strong> sem arredondar, <code>0</code> (falso); arredondando para 2 casas, <code>1</code>. <strong>Como consertar:</strong> nos bancos que têm, use <code>DECIMAL</code> para dinheiro. No SQLite, arredonde com <code>round(…, 2)</code> antes de comparar, ou guarde em centavos.</p>
+</div>
+
+<div class="cenario">
+<strong>Datas no formato brasileiro</strong>
+<p><code>'02/10/2026' &lt; '14/09/2026'</code> deu verdadeiro, e está errado. <strong>Como consertar:</strong> guarde sempre <code>'AAAA-MM-DD'</code>. Para <strong>mostrar</strong> no formato brasileiro, converta na consulta com <code>strftime('%d/%m/%Y', data)</code> (aula <a href="funcoes-data.html">Funções de Data</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula no lugar do ponto</strong>
+<pre class="file" data-file="virgula.sql" data-resultado data-erro>CREATE TABLE fretes (pedido_id INTEGER, valor REAL);
+INSERT INTO fretes VALUES (1, 12,50);
+</pre>
+<p><strong>O que diz:</strong> <code>table fretes has 2 columns but 3 values were supplied</code>. O banco leu <code>12,50</code> como dois valores, <code>12</code> e <code>50</code>, e agora são três valores para duas colunas. <strong>Como consertar:</strong> <code>12.50</code>, com ponto.</p>
+</div>
+
+<div class="cenario">
+<strong>Divisão de inteiros</strong>
+<p>O estoque médio por produto, com <code>sum(estoque) / count(*)</code>, sai sem casas decimais, porque os dois lados são inteiros. <strong>Como consertar:</strong> <code>sum(estoque) * 1.0 / count(*)</code>, ou use <code>avg(estoque)</code> (aula <a href="avg.html">AVG()</a>), que já devolve número com decimais.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Exemplo de valor</th></tr>
+<tr><td><code>SMALLINT</code> / <code>INTEGER</code> / <code>BIGINT</code></td><td>Inteiros (2, 4 e 8 bytes)</td><td><code>430</code></td></tr>
+<tr><td><code>DECIMAL(p,s)</code> / <code>NUMERIC(p,s)</code></td><td>Decimal exato: <code>p</code> algarismos, <code>s</code> depois do ponto</td><td><code>1.15</code></td></tr>
+<tr><td><code>REAL</code> / <code>DOUBLE PRECISION</code> / <code>FLOAT</code></td><td>Decimal aproximado</td><td><code>3.5</code></td></tr>
+<tr><td><code>CHAR(n)</code></td><td>Texto de tamanho fixo</td><td><code>'PI'</code></td></tr>
+<tr><td><code>VARCHAR(n)</code></td><td>Texto de até <code>n</code> caracteres</td><td><code>'Lápis Grafite HB'</code></td></tr>
+<tr><td><code>TEXT</code></td><td>Texto de qualquer tamanho (fora do padrão, mas comum)</td><td><code>'Chegou rápido'</code></td></tr>
+<tr><td><code>DATE</code> / <code>TIME</code> / <code>TIMESTAMP</code></td><td>Data / hora / data e hora</td><td><code>'2026-10-14'</code></td></tr>
+<tr><td><code>BOOLEAN</code></td><td>Verdadeiro ou falso</td><td><code>TRUE</code>, <code>FALSE</code></td></tr>
+<tr><td><code>BLOB</code> / <code>bytea</code> / <code>varbinary</code></td><td>Bytes de um arquivo</td><td><code>x'CAFE'</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O tipo do preço</h3>
+<p>Num banco como o PostgreSQL, complete o tipo exato para um preço com até 8 algarismos, 2 deles de centavos:</p>
+<div class="ex-code">preco <input data-answer="DECIMAL|NUMERIC|decimal|numeric" aria-label="tipo">(<input data-answer="8" aria-label="precisão">, <input data-answer="2" aria-label="escala">)</div>
+</div>
+
+<div class="exercise">
+<h3>2. A sigla do estado</h3>
+<p>Complete com o tipo de texto de tamanho <strong>fixo</strong> para a UF, que tem sempre 2 letras:</p>
+<div class="ex-code">estado <input data-answer="CHAR(2)|char(2)|CHARACTER(2)|character(2)" aria-label="tipo">
+</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual é o resultado de <code>SELECT 9 / 2;</code>?</p>
+<label><input type="radio" name="q3"> <code>4.5</code></label>
+<label><input type="radio" name="q3"> <code>5</code></label>
+<label><input type="radio" name="q3"> <code>4</code></label>
+<label><input type="radio" name="q3"> Um erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual tipo é o melhor para o telefone de um cliente?</p>
+<label><input type="radio" name="q4"> <code>INTEGER</code>, porque são algarismos</label>
+<label><input type="radio" name="q4"> Um tipo de texto (<code>VARCHAR</code> ou <code>TEXT</code>)</label>
+<label><input type="radio" name="q4"> <code>DECIMAL(11,0)</code></label>
+<label><input type="radio" name="q4"> <code>BIGINT</code>, porque o número é grande</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Por que bancos e lojas preferem <code>DECIMAL</code> a <code>REAL</code> para guardar dinheiro?</p>
+<label><input type="radio" name="q5"> Porque <code>DECIMAL</code> ocupa menos espaço</label>
+<label><input type="radio" name="q5"> Porque <code>REAL</code> não aceita casas decimais</label>
+<label><input type="radio" name="q5"> Porque <code>DECIMAL</code> é o único tipo que aceita números negativos</label>
+<label><input type="radio" name="q5"> Porque <code>DECIMAL</code> é exato, e <code>REAL</code> guarda uma aproximação (<code>0.1 + 0.2 = 0.3</code> dá falso)</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em qual banco <code>BOOLEAN</code> é só outro nome para <code>TINYINT(1)</code>?</p>
+<label><input type="radio" name="q6"> MySQL</label>
+<label><input type="radio" name="q6"> PostgreSQL</label>
+<label><input type="radio" name="q6"> SQL Server</label>
+<label><input type="radio" name="q6"> Em todos</label>
+</div>
+
+<h3>Missão final: a tabela de entregas</h3>
+
+<div class="trysql" data-goal="tabela:entregas;;contem:transportadora|VARCHAR(60)|;;contem:peso_kg|DECIMAL(6,3)|;;contem:saiu_em|DATE|;;contem:assinada|BOOLEAN|">
+<p class="try-task"><strong>Missão:</strong> a Ana criou a tabela das entregas com tudo <code>TEXT</code>. Troque o tipo de cada coluna pelo tipo do SQL padrão indicado aqui, escrito em maiúsculas e sem espaço dentro dos parênteses: <code>transportadora</code> é texto de até 60 letras (<code>VARCHAR(60)</code>); <code>peso_kg</code> tem até 6 algarismos, 3 deles depois do ponto (<code>DECIMAL(6,3)</code>); <code>saiu_em</code> é uma data (<code>DATE</code>); <code>assinada</code> é sim ou não (<code>BOOLEAN</code>). O <code>PRAGMA</code> no fim mostra os tipos que ficaram.</p>
+<pre class="script" data-file="entregas.sql">CREATE TABLE entregas (
+    id             INTEGER,
+    pedido_id      INTEGER,
+    transportadora TEXT,
+    peso_kg        TEXT,
+    saiu_em        TEXT,
+    assinada       TEXT
+);
+
+INSERT INTO entregas VALUES (1, 86, 'Rápido Piauí', 1.25, '2026-10-02', FALSE);
+
+PRAGMA table_info(entregas);
+</pre>
+<pre class="solucao" data-file="entregas.sql">CREATE TABLE entregas (
+    id             INTEGER,
+    pedido_id      INTEGER,
+    transportadora VARCHAR(60),
+    peso_kg        DECIMAL(6,3),
+    saiu_em        DATE,
+    assinada       BOOLEAN
+);
+
+INSERT INTO entregas VALUES (1, 86, 'Rápido Piauí', 1.25, '2026-10-02', FALSE);
+
+PRAGMA table_info(entregas);
+</pre>
+</div>
+
+<p>Depois de cumprir a missão, acrescente <code>SELECT *, typeof(saiu_em), typeof(assinada) FROM entregas;</code> no fim e rode. O SQLite aceitou os nomes <code>DATE</code> e <code>BOOLEAN</code>, mas o que ele guardou de verdade em cada coluna é assunto da próxima aula.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O tipo de uma coluna diz que valor ela guarda, e muda as contas, as comparações e a ordenação: como texto, <code>'10' &lt; '9'</code>.</li>
+  <li>Inteiros: <code>SMALLINT</code>, <code>INTEGER</code>, <code>BIGINT</code>. Inteiro dividido por inteiro dá inteiro (<code>7 / 2</code> = <code>3</code>).</li>
+  <li>Decimais: <code>DECIMAL(p,s)</code>/<code>NUMERIC</code> são exatos (dinheiro); <code>REAL</code>/<code>DOUBLE PRECISION</code> são aproximados (<code>0.1 + 0.2 = 0.3</code> é falso). O SQLite aceita <code>DECIMAL</code>, mas guarda aproximado: use <code>round()</code> ou centavos.</li>
+  <li>Texto: <code>CHAR(n)</code> fixo, <code>VARCHAR(n)</code> até <code>n</code>, <code>TEXT</code> livre. O SQLite ignora o <code>n</code>. CEP e telefone são texto.</li>
+  <li>Datas: <code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, sempre no formato <code>AAAA-MM-DD</code>. No SQLite, são texto ISO.</li>
+  <li>Sim/não: <code>BOOLEAN</code> no padrão e no PostgreSQL, <code>TINYINT(1)</code> no MySQL, <code>bit</code> no SQL Server, 0/1 no SQLite.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
