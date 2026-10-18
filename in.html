@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL IN — um valor de uma lista | Guia SQL</title>
+<meta name="description" content="O operador IN do SQL para quem nunca mexeu num banco de dados: comparar com uma lista de valores no lugar de vários OR, IN com números e textos, NOT IN, a armadilha do NULL dentro da lista (NOT IN com NULL devolve zero linhas), IN com subconsulta, a lista vazia e as mensagens de erro reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">IN</span></h1>
+
+<p class="intro">A Loja Aurora vai fazer uma entrega especial nas cidades de Recife, Picos e Oeiras. Com o que você já sabe, a Ana escreveria <code>cidade = 'Recife' OR cidade = 'Picos' OR cidade = 'Oeiras'</code>. Funciona, mas e se fossem dez cidades? O <code>IN</code> ("em", em inglês: "a cidade está <strong>em</strong> esta lista?") faz a mesma pergunta de um jeito curto: <code>cidade IN ('Recife', 'Picos', 'Oeiras')</code>. Nesta aula você vai usá-lo, conhecer o seu contrário, o <code>NOT IN</code>, e ver de perto a armadilha mais famosa dele: um <code>NULL</code> dentro da lista.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Comparar uma coluna com uma <strong>lista</strong> de valores usando <code>IN</code>.</li>
+  <li>Que <code>IN</code> é um atalho para vários <code>=</code> unidos por <code>OR</code>.</li>
+  <li>O <code>NOT IN</code>: "não é nenhum destes".</li>
+  <li>A armadilha do <code>NULL</code>: por que um <code>NOT IN</code> com <code>NULL</code> na lista devolve <strong>zero linhas</strong>.</li>
+  <li>Uma prévia do <code>IN</code> com uma consulta dentro (subconsulta), onde a armadilha mais aparece.</li>
+  <li>Os erros mais comuns, com as mensagens reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador. Antes desta aula, vale ter visto <a href="or.html">OR</a> e <a href="not.html">NOT</a>.</p>
+
+<hr>
+
+<h2>A ideia: a lista de convidados</h2>
+<p>Na porta de uma festa, o segurança tem uma lista de nomes. Para cada pessoa que chega, ele faz uma pergunta só: "o nome está na lista?". Ele não precisa saber quantos nomes há, nem a ordem deles. O <code>IN</code> é esse segurança: para cada linha da tabela, ele pergunta se o valor da coluna <strong>está na lista</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com OR</th><th>Com IN</th></tr>
+<tr><td><code>cidade = 'Recife' OR cidade = 'Picos' OR cidade = 'Oeiras'</code></td><td><code>cidade IN ('Recife', 'Picos', 'Oeiras')</code></td></tr>
+<tr><td>Repete a coluna e o <code>=</code> a cada valor</td><td>Escreve a coluna uma vez e os valores em fila</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro IN</h2>
+
+<pre class="file" data-file="entrega.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade IN ('Recife', 'Picos', 'Oeiras');
+</pre>
+
+<dl class="anatomy">
+  <dt>cidade</dt><dd>A coluna que vai ser comparada.</dd>
+  <dt>IN</dt><dd>"Em": a pergunta é "o valor está nesta lista?".</dd>
+  <dt>( … )</dt><dd>A lista vai entre <strong>parênteses</strong>.</dd>
+  <dt>'Recife', 'Picos', 'Oeiras'</dt><dd>Os valores, separados por <strong>vírgula</strong>. São textos, então cada um vai entre aspas simples.</dd>
+</dl>
+
+<p>Quatro clientes: dois de Recife, uma de Picos e um de Oeiras. Compare com a versão com <code>OR</code>, que dá exatamente as mesmas linhas:</p>
+
+<pre class="file" data-file="entrega-or.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Recife' OR cidade = 'Picos' OR cidade = 'Oeiras';
+</pre>
+
+<p>Uma coisa que o <code>IN</code> <strong>não</strong> faz: ordenar. Os clientes vieram na ordem da tabela, não na ordem da lista. Para ordenar, use <a href="order-by.html">ORDER BY</a>.</p>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Experimente:</strong> a consulta abaixo mostra só os clientes de Recife. Troque o <code>=</code> por um <code>IN</code> com as três cidades da entrega: Recife, Picos e Oeiras.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Recife';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade IN ('Recife', 'Picos', 'Oeiras');
+</pre>
+</div>
+
+<hr>
+
+<h2>2. IN com números</h2>
+<p>A lista pode ter números, sem aspas. Os produtos das categorias Livros (4) e Alimentos (7):</p>
+
+<pre class="file" data-file="categorias.sql" data-resultado>SELECT nome, categoria_id, preco
+FROM produtos
+WHERE categoria_id IN (4, 7);
+</pre>
+
+<p>Um uso muito comum: buscar linhas pelo <code>id</code>, quando você já sabe quais quer. Os dois produtos descontinuados e um dos que nunca foram vendidos:</p>
+
+<pre class="file" data-file="por-id.sql" data-resultado>SELECT id, nome
+FROM produtos
+WHERE id IN (12, 27, 43);
+</pre>
+
+<p>Algumas regras da lista, que valem para textos e números:</p>
+<ul>
+  <li>Um valor só também serve: <code>estado IN ('PE')</code> é o mesmo que <code>estado = 'PE'</code>.</li>
+  <li>Valores repetidos não atrapalham: <code>estado IN ('PE', 'PE', 'PE')</code> traz os mesmos 2 clientes de Pernambuco, sem repetir ninguém.</li>
+  <li>A ordem dos valores não importa.</li>
+  <li>Cada valor é comparado com <code>=</code>, então maiúsculas contam: <code>cidade IN ('teresina', 'recife')</code> não acha ninguém, porque está guardado "Teresina" e "Recife".</li>
+  <li>O <code>IN</code> não conhece curingas: <code>estado IN ('P%')</code> procura o texto "P%" de verdade e não acha nada. Para padrões, use <a href="like.html">LIKE</a>.</li>
+</ul>
+
+<hr>
+
+<h2>3. NOT IN: "nenhum destes"</h2>
+<p>Com <code>NOT</code> antes do <code>IN</code>, a pergunta vira "o valor <strong>não</strong> está na lista?". Os clientes que não são do Piauí, do Ceará nem de São Paulo:</p>
+
+<pre class="file" data-file="not-in.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado NOT IN ('PI', 'CE', 'SP');
+</pre>
+
+<p>Sobraram os 2 clientes de Pernambuco. O <code>NOT IN</code> é o mesmo que vários <code>&lt;&gt;</code> unidos por <code>AND</code>: <code>estado &lt;&gt; 'PI' AND estado &lt;&gt; 'CE' AND estado &lt;&gt; 'SP'</code>. Repare: com o <code>NOT</code>, o <code>OR</code> virou <code>AND</code>, como na troca de De Morgan da aula <a href="not.html">NOT</a>. Também dá para escrever <code>NOT estado IN ('PI', 'CE', 'SP')</code>, com o <code>NOT</code> na frente; o resultado é o mesmo.</p>
+
+<div class="trysql" data-goal="linhas:26">
+<p class="try-task"><strong>Missão:</strong> as categorias 1, 2 e 3 são Papelaria, Eletrônicos e Casa e Cozinha. A consulta abaixo traz os produtos <strong>dessas</strong> categorias. Mude-a para trazer os produtos de <strong>todas as outras</strong> (são 26).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, categoria_id
+FROM produtos
+WHERE categoria_id IN (1, 2, 3);
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, categoria_id
+FROM produtos
+WHERE categoria_id NOT IN (1, 2, 3);
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A armadilha do NULL na lista</h2>
+<p>Este é o ponto mais importante da aula. A Ana está montando a lista de estados para excluir e, por descuido (ou porque a lista veio de uma planilha com uma célula vazia), entra um <code>NULL</code> no meio:</p>
+
+<pre class="file" data-file="null-na-lista.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado NOT IN ('PI', 'CE', 'SP', NULL);
+</pre>
+
+<p><strong>Zero linhas.</strong> Nenhum erro, nenhum aviso: os 2 clientes de Pernambuco simplesmente sumiram. E não importa quais estados estão na lista: com um <code>NULL</code> lá dentro, esse <code>NOT IN</code> nunca devolve linha nenhuma.</p>
+
+<h3>Por quê?</h3>
+<p>Lembre-se de que <code>NOT IN</code> é uma fila de <code>&lt;&gt;</code> unidos por <code>AND</code>. Para a Juliana, de Pernambuco, o SQLite faz estas contas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Resposta</th></tr>
+<tr><td><code>'PE' &lt;&gt; 'PI'</code></td><td>verdadeiro</td></tr>
+<tr><td><code>'PE' &lt;&gt; 'CE'</code></td><td>verdadeiro</td></tr>
+<tr><td><code>'PE' &lt;&gt; 'SP'</code></td><td>verdadeiro</td></tr>
+<tr><td><code>'PE' &lt;&gt; NULL</code></td><td><strong><em>NULL</em></strong> ("não sei": o PE é diferente de um valor desconhecido? Ninguém sabe)</td></tr>
+<tr><td>verdadeiro AND verdadeiro AND verdadeiro AND <em>NULL</em></td><td><strong><em>NULL</em></strong></td></tr>
+</table>
+</div>
+
+<p>Um único "não sei" no <code>AND</code> deixa o resultado inteiro em "não sei", e o <code>WHERE</code> só deixa passar o que é <strong>verdadeiro</strong>. A documentação do SQLite traz essa regra numa tabela: se a lista contém <code>NULL</code> e o valor não foi encontrado nela, o resultado do <code>IN</code> e do <code>NOT IN</code> é <code>NULL</code>. Veja as contas direto:</p>
+
+<pre class="file" data-file="contas.sql" data-resultado>SELECT 'PE' IN ('PI', 'CE'),
+       'PE' NOT IN ('PI', 'CE'),
+       'PE' IN ('PI', NULL),
+       'PE' NOT IN ('PI', NULL),
+       'PI' IN ('PI', NULL),
+       'PI' NOT IN ('PI', NULL);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Resultado</th><th>Leitura</th></tr>
+<tr><td><code>'PE' IN ('PI', 'CE')</code></td><td>0</td><td>Não está na lista: falso.</td></tr>
+<tr><td><code>'PE' NOT IN ('PI', 'CE')</code></td><td>1</td><td>Não está na lista: o <code>NOT IN</code> é verdadeiro.</td></tr>
+<tr><td><code>'PE' IN ('PI', NULL)</code></td><td><em>NULL</em></td><td>Não achou o PE, mas talvez o valor desconhecido fosse PE: não sei.</td></tr>
+<tr><td><code>'PE' NOT IN ('PI', NULL)</code></td><td><em>NULL</em></td><td>O mesmo "não sei". É aqui que as linhas somem.</td></tr>
+<tr><td><code>'PI' IN ('PI', NULL)</code></td><td>1</td><td>Achou o PI na lista: verdadeiro, o <code>NULL</code> nem importa.</td></tr>
+<tr><td><code>'PI' NOT IN ('PI', NULL)</code></td><td>0</td><td>Achou o PI: o <code>NOT IN</code> é falso.</td></tr>
+</table>
+</div>
+
+<p>Repare que, no <code>IN</code> sem <code>NOT</code>, o estrago é menor: <code>estado IN ('PI', NULL)</code> acha normalmente os 14 clientes do Piauí, porque, quando o valor é <strong>encontrado</strong>, a resposta é "sim" de qualquer jeito. O problema sério é o <code>NOT IN</code>: lá, o <code>NULL</code> transforma todo "não está na lista" em "não sei".</p>
+
+<div class="warning">
+<strong>Regra de ouro</strong>
+<p>Antes de usar <code>NOT IN</code>, garanta que <strong>a lista não tem <code>NULL</code></strong>. Numa lista escrita à mão, é só não escrever. Quando a lista vem de outra consulta (próxima seção), filtre os vazios dela.</p>
+</div>
+
+<h3>E o NULL na coluna (não na lista)?</h3>
+<p>Outra situação, parecida: a lista está limpa, mas a <strong>coluna</strong> tem <code>NULL</code>. Os fornecedores que não são do Piauí:</p>
+
+<pre class="file" data-file="null-na-coluna.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE estado NOT IN ('PI');
+</pre>
+
+<p>Vieram 2, mas os fornecedores de Portugal e da Argentina, que têm <code>estado</code> <code>NULL</code>, também "não são do Piauí" e ficaram de fora. É a mesma armadilha da aula <a href="not.html">NOT</a>: <code>NULL NOT IN (…)</code> é "não sei". Para incluí-los, acrescente <code>OR estado IS NULL</code> (aula <a href="is-null.html">IS NULL</a>).</p>
+
+<hr>
+
+<h2>5. Prévia: IN com uma consulta dentro</h2>
+<p>A lista do <code>IN</code> não precisa ser escrita à mão: ela pode ser o resultado de <strong>outro</strong> <code>SELECT</code>, entre parênteses. Isso se chama <strong>subconsulta</strong> e tem aula própria (<a href="subconsultas.html">Subconsultas</a>); aqui vai só uma prévia, porque é onde a armadilha do <code>NULL</code> mais aparece na vida real.</p>
+
+<p>Os produtos que <strong>nunca</strong> foram vendidos são os que não aparecem em nenhum item de pedido:</p>
+
+<pre class="file" data-file="nunca-vendidos.sql" data-resultado>SELECT id, nome
+FROM produtos
+WHERE id NOT IN (SELECT produto_id FROM itens_pedido);
+</pre>
+
+<p>Os produtos 43, 44 e 45. O <code>SELECT</code> de dentro devolve a lista de todos os <code>produto_id</code> vendidos, e o <code>NOT IN</code> fica com os que não estão nela. Funcionou porque <code>produto_id</code> nunca é <code>NULL</code>.</p>
+
+<p>Agora a Ana quer os funcionários que <strong>não chefiam</strong> ninguém: os que não aparecem na coluna <code>chefe_id</code> de nenhum colega.</p>
+
+<pre class="file" data-file="nao-chefes.sql" data-resultado>SELECT id, nome
+FROM funcionarios
+WHERE id NOT IN (SELECT chefe_id FROM funcionarios);
+</pre>
+
+<p><strong>Zero linhas!</strong> Mas a loja tem 6 funcionários que não chefiam ninguém. O que aconteceu: a gerente, Marta Lustosa, não tem chefe, e o <code>chefe_id</code> dela é <code>NULL</code>. A lista que a subconsulta devolveu tem um <code>NULL</code> no meio, e caímos exatamente na armadilha da seção 4. O conserto é tirar os vazios da lista:</p>
+
+<pre class="file" data-file="nao-chefes-certo.sql" data-resultado>SELECT id, nome
+FROM funcionarios
+WHERE id NOT IN (SELECT chefe_id FROM funcionarios WHERE chefe_id IS NOT NULL);
+</pre>
+
+<p>Agora vieram os 6: Caio, Renata, Pedro, Igor, Sofia e Davi. Esse é um dos erros mais comuns em consultas de verdade, justamente porque não dá mensagem: a consulta "roda", só que vazia. Outro jeito de escrever, que não sofre com o <code>NULL</code>, é o <code>NOT EXISTS</code> (aula <a href="exists.html">EXISTS</a>).</p>
+
+<hr>
+
+<h2>6. Formas diferentes de escrever</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Observação</th></tr>
+<tr><td><code>cidade IN ('Recife', 'Picos')</code></td><td>A forma curta. Boa a partir de dois valores.</td></tr>
+<tr><td><code>cidade = 'Recife' OR cidade = 'Picos'</code></td><td>O mesmo resultado; fica comprido com muitos valores.</td></tr>
+<tr><td><code>estado NOT IN ('PI', 'CE')</code></td><td>"Nenhum destes".</td></tr>
+<tr><td><code>NOT estado IN ('PI', 'CE')</code></td><td>O mesmo, com o <code>NOT</code> na frente.</td></tr>
+<tr><td><code>estado &lt;&gt; 'PI' AND estado &lt;&gt; 'CE'</code></td><td>O mesmo, por extenso.</td></tr>
+<tr><td><code>id IN (SELECT …)</code></td><td>A lista vem de outra consulta (<a href="subconsultas.html">Subconsultas</a>).</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Um valor só</td><td><code>=</code></td></tr>
+<tr><td>Vários valores exatos</td><td><code>IN (…)</code></td></tr>
+<tr><td>Uma faixa (de 10 a 50)</td><td><a href="between.html">BETWEEN</a>, não uma lista com todos os números</td></tr>
+<tr><td>Um pedaço de texto</td><td><a href="like.html">LIKE</a> (o <code>IN</code> não tem curingas)</td></tr>
+<tr><td>"Nenhum destes", com lista escrita à mão</td><td><code>NOT IN (…)</code>, sem <code>NULL</code> na lista</td></tr>
+<tr><td>"Nenhum destes", com a lista vinda de uma consulta</td><td><code>NOT IN (SELECT … WHERE coluna IS NOT NULL)</code> ou <code>NOT EXISTS</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu os parênteses</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE estado IN 'PI', 'SP';
+</pre>
+<p><strong>A mensagem:</strong> <code>near ",": syntax error</code>. Sem parênteses, o SQLite não reconhece a lista e tropeça na primeira vírgula.</p>
+<p><strong>Como consertar:</strong> a lista vai sempre entre parênteses: <code>IN ('PI', 'SP')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu uma vírgula</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE estado IN ('PI' 'SP');
+</pre>
+<p><strong>A mensagem:</strong> <code>near "'SP'": syntax error</code>. Entre dois valores tem de haver uma vírgula; o SQLite chegou no <code>'SP'</code> sem esperar outro valor ali.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto sem aspas, ou com aspas duplas</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE estado IN (PI, SP);
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: PI</code>. Sem aspas, <code>PI</code> é lido como nome de coluna. Com aspas duplas, <code>IN ("PI", "SP")</code>, o SQLite dá a dica: <code>no such column: "PI" - should this be a string literal in single-quotes?</code> ("isto deveria ser um texto entre aspas simples?").</p>
+<p><strong>Como consertar:</strong> textos da lista entre aspas simples: <code>IN ('PI', 'SP')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>NOT IN com NULL: sem erro, sem linhas</strong>
+<p>O caso da seção 4: <code>estado NOT IN ('PI', 'CE', 'SP', NULL)</code> roda sem reclamar e devolve 0 linhas. Na subconsulta (seção 5), o mesmo acontece quando a coluna de dentro tem algum <code>NULL</code>. Desconfie de todo <code>NOT IN</code> que devolve vazio.</p>
+</div>
+
+<div class="cenario">
+<strong>Maiúsculas e curingas não funcionam no IN</strong>
+<p>Também sem erro: <code>cidade IN ('teresina')</code> não acha "Teresina", e <code>estado IN ('P%')</code> não acha "PI". O <code>IN</code> compara com <code>=</code>: valor exato, letra por letra.</p>
+</div>
+
+<div class="cenario">
+<strong>A lista vazia</strong>
+<pre class="file" data-file="vazia.sql" data-resultado>SELECT nome FROM clientes WHERE estado IN ();
+</pre>
+<p><strong>O que aconteceu:</strong> 0 linhas, sem erro. O SQLite aceita uma lista vazia: "estar numa lista vazia" é sempre falso (e <code>NOT IN ()</code> é sempre verdadeiro). A documentação do SQLite avisa que a maioria dos outros bancos e o padrão SQL <strong>não</strong> aceitam isso: lá, uma lista vazia é erro de sintaxe. Isso costuma aparecer quando um programa monta a lista sozinho e ela sai sem nenhum item.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li>O <code>IN</code> e o <code>NOT IN</code>, com lista ou com subconsulta, são padrão SQL e funcionam igual no MySQL, no PostgreSQL e no SQL Server, <strong>inclusive a armadilha do <code>NULL</code></strong>: ela vem da própria lógica do SQL (verdadeiro, falso e "não sei"), não é coisa do SQLite.</li>
+  <li>A <strong>lista vazia</strong> <code>IN ()</code> só é aceita no SQLite; no padrão SQL e na maioria dos bancos, a lista precisa ter pelo menos um valor.</li>
+  <li>Maiúsculas no <code>IN</code> seguem a regra de comparação de texto de cada banco: no MySQL, com a collation padrão, <code>cidade IN ('teresina')</code> acharia "Teresina".</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna IN (a, b, c)</code></td><td>O valor é <code>a</code>, <code>b</code> ou <code>c</code> (o mesmo que <code>= a OR = b OR = c</code>)</td></tr>
+<tr><td><code>coluna NOT IN (a, b, c)</code></td><td>Não é nenhum deles (o mesmo que <code>&lt;&gt; a AND &lt;&gt; b AND &lt;&gt; c</code>)</td></tr>
+<tr><td><code>coluna IN ('x', 'y')</code></td><td>Textos entre aspas simples</td></tr>
+<tr><td><code>coluna IN (SELECT …)</code></td><td>A lista vem de outra consulta</td></tr>
+<tr><td><code>x NOT IN (…, NULL)</code></td><td>Nunca é verdadeiro: devolve 0 linhas</td></tr>
+<tr><td><code>NULL IN (…)</code> / <code>NULL NOT IN (…)</code></td><td><em>NULL</em>: linhas com a coluna vazia ficam de fora dos dois</td></tr>
+<tr><td><code>IN ()</code></td><td>Lista vazia: sempre falso (só o SQLite aceita)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near ",": syntax error</code></td><td>Lista sem parênteses</td></tr>
+<tr><td><code>near "'SP'": syntax error</code></td><td>Faltou uma vírgula entre os valores</td></tr>
+<tr><td><code>no such column: PI</code></td><td>Texto sem aspas</td></tr>
+<tr><td><code>no such column: "PI" - should this be a string literal in single-quotes?</code></td><td>Texto entre aspas duplas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra da lista</h3>
+<p>Complete para mostrar os produtos das categorias 5 e 6:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE categoria_id <input data-answer="IN" aria-label="operador"> (5, 6);</div>
+</div>
+
+<div class="exercise">
+<h3>2. O contrário</h3>
+<p>Complete para mostrar os clientes que <strong>não</strong> são de Teresina nem de Fortaleza:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE cidade <input data-answer="NOT" aria-label="palavra que inverte"> IN ('Teresina', 'Fortaleza');</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual escrita é igual a <code>estado IN ('PI', 'CE')</code>?</p>
+<label><input type="radio" name="q3"> <code>estado = 'PI' AND estado = 'CE'</code></label>
+<label><input type="radio" name="q3"> <code>estado = 'PI' OR estado = 'CE'</code></label>
+<label><input type="radio" name="q3"> <code>estado LIKE 'PI%CE'</code></label>
+<label><input type="radio" name="q3"> <code>estado BETWEEN 'PI' AND 'CE'</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Quantas linhas <code>WHERE estado NOT IN ('PI', 'CE', 'SP', NULL)</code> devolve na tabela de clientes?</p>
+<label><input type="radio" name="q4"> 2, os de Pernambuco</label>
+<label><input type="radio" name="q4"> 30, todos</label>
+<label><input type="radio" name="q4"> Dá erro, porque não pode haver <code>NULL</code> na lista</label>
+<label><input type="radio" name="q4"> 0, porque o <code>NULL</code> na lista transforma cada resposta em "não sei"</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. <code>'PI' IN ('PI', NULL)</code> dá qual resultado?</p>
+<label><input type="radio" name="q5"> 1 (verdadeiro), porque o PI foi encontrado na lista</label>
+<label><input type="radio" name="q5"> <em>NULL</em>, porque a lista tem <code>NULL</code></label>
+<label><input type="radio" name="q5"> 0 (falso)</label>
+<label><input type="radio" name="q5"> Erro de sintaxe</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Por que <code>id NOT IN (SELECT chefe_id FROM funcionarios)</code> devolve 0 linhas?</p>
+<label><input type="radio" name="q6"> Porque todos os funcionários chefiam alguém</label>
+<label><input type="radio" name="q6"> Porque não pode haver <code>SELECT</code> dentro do <code>IN</code></label>
+<label><input type="radio" name="q6"> Porque a gerente tem <code>chefe_id</code> <code>NULL</code>, e esse <code>NULL</code> entra na lista</label>
+<label><input type="radio" name="q6"> Porque faltou <code>ORDER BY</code></label>
+</div>
+
+<h3>Missão final: o NULL que sumiu com tudo</h3>
+
+<div class="trysql" data-goal="linhas:2">
+<p class="try-task"><strong>Missão:</strong> a Ana copiou a lista de estados de uma planilha e veio junto uma célula vazia (o <code>NULL</code>). Por isso a consulta abaixo não traz nada. Conserte para aparecerem os 2 clientes de Pernambuco.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, estado
+FROM clientes
+WHERE estado NOT IN ('PI', 'CE', 'SP', NULL);
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, estado
+FROM clientes
+WHERE estado NOT IN ('PI', 'CE', 'SP');
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>IN</code> ("em") pergunta se o valor está numa lista: <code>cidade IN ('Recife', 'Picos', 'Oeiras')</code>. É um atalho para vários <code>=</code> com <code>OR</code>.</li>
+  <li>A lista vai entre parênteses, com vírgulas; textos entre aspas simples, números sem aspas. Ordem e repetições não importam; maiúsculas importam; curingas não existem.</li>
+  <li><code>NOT IN</code> é "nenhum destes": vários <code>&lt;&gt;</code> com <code>AND</code>.</li>
+  <li>Com <code>NULL</code> na lista, <code>NOT IN</code> nunca é verdadeiro: devolve <strong>0 linhas</strong>, sem erro. Com <code>NULL</code> na coluna, a linha fica de fora do <code>IN</code> e do <code>NOT IN</code>.</li>
+  <li>A lista pode vir de uma subconsulta. Se a coluna de dentro pode ter <code>NULL</code>, filtre com <code>WHERE … IS NOT NULL</code> antes de usar <code>NOT IN</code>, ou use <code>NOT EXISTS</code>.</li>
+  <li>O SQLite aceita a lista vazia <code>IN ()</code>; os outros bancos, não.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
