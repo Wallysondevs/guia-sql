@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL HAVING — filtrar grupos depois do GROUP BY | Guia SQL</title>
+<meta name="description" content="HAVING em SQL para quem nunca usou um banco: as cidades com mais clientes, as categorias de preço médio alto e os pedidos acima de R$ 500 da Loja Aurora. WHERE × HAVING (linhas antes, grupos depois), a ordem lógica completa da consulta, o ROUND na comparação de somas, HAVING sem GROUP BY e as mensagens reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">HAVING</span></h1>
+
+<p class="intro">A gerente da Loja Aurora quer abrir um ponto de retirada nas cidades que já têm <strong>pelo menos 7 clientes</strong>. A Ana sabe contar clientes por cidade com <a href="group-by.html">GROUP BY</a>, mas agora precisa <strong>descartar</strong> as cidades pequenas. A primeira tentativa dela é um <code>WHERE COUNT(*) &gt;= 7</code>, e o SQLite responde com erro. O <code>WHERE</code> filtra linhas, uma por uma, antes de os grupos existirem. Para filtrar <strong>grupos</strong>, pelo resultado de uma agregada, o SQL tem outra cláusula: o <code>HAVING</code> ("tendo", em inglês), lido como "fique só com os grupos que <em>tenham</em>…".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Filtrar grupos com <code>HAVING</code>, usando <code>COUNT</code>, <code>SUM</code>, <code>AVG</code>…</li>
+  <li>A diferença entre <code>WHERE</code> (linhas, antes de agrupar) e <code>HAVING</code> (grupos, depois de agrupar).</li>
+  <li>Usar os dois juntos, e a <strong>ordem lógica completa</strong> de uma consulta.</li>
+  <li>Filtrar por uma agregada que nem aparece no resultado.</li>
+  <li>Por que <code>HAVING SUM(…) = 30.94</code> não acha nada, e o <code>ROUND</code> que conserta.</li>
+  <li>Os erros reais do SQLite com <code>HAVING</code> e <code>WHERE</code> no lugar trocado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a peneira depois das pilhas</h2>
+<p>Lembra das fichas de cliente separadas em pilhas, uma por cidade (aula <a href="group-by.html">GROUP BY</a>)? O <code>HAVING</code> é uma <strong>peneira de pilhas</strong>: depois de montadas e contadas, você olha cada pilha e só guarda as que passam no teste. Já o <code>WHERE</code> é uma peneira de <strong>fichas</strong>: tira fichas da mesa <strong>antes</strong> de montar as pilhas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>WHERE</code></th><th><code>HAVING</code></th></tr>
+<tr><td>Filtra</td><td>Linhas (as fichas)</td><td>Grupos (as pilhas)</td></tr>
+<tr><td>Quando</td><td>Antes do <code>GROUP BY</code></td><td>Depois do <code>GROUP BY</code></td></tr>
+<tr><td>Pode usar agregadas?</td><td>Não</td><td>Sim: é para isso que ele existe</td></tr>
+<tr><td>Exemplo</td><td><code>WHERE estado = 'PI'</code></td><td><code>HAVING COUNT(*) &gt;= 7</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro HAVING: cidades com 7 clientes ou mais</h2>
+
+<pre class="file" data-file="cidades-grandes.sql" data-resultado>SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY cidade
+HAVING COUNT(*) &gt;= 7;
+</pre>
+
+<dl class="anatomy">
+  <dt>GROUP BY cidade</dt><dd>Monta as 8 pilhas, uma por cidade, e conta cada uma.</dd>
+  <dt>HAVING</dt><dd>"Tendo": a peneira dos grupos. Vem logo <strong>depois</strong> do <code>GROUP BY</code>.</dd>
+  <dt>COUNT(*) &gt;= 7</dt><dd>O teste, feito em cada grupo: o grupo fica se tiver 7 linhas ou mais. Recife (2) e as cidades com 1 cliente são descartadas.</dd>
+</dl>
+
+<p>Sobraram Fortaleza, São Paulo e Teresina. Os grupos descartados somem por inteiro do resultado: não aparecem nem com zero.</p>
+
+<div class="trysql" data-goal="linhas:4;;contem:1|6">
+<p class="try-task"><strong>Experimente:</strong> a consulta conta os produtos de cada categoria (8 linhas). Fique só com as categorias que têm <strong>6 produtos ou mais</strong>.</p>
+<pre class="script" data-file="consulta.sql">SELECT categoria_id, COUNT(*) AS produtos
+FROM produtos
+GROUP BY categoria_id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT categoria_id, COUNT(*) AS produtos
+FROM produtos
+GROUP BY categoria_id
+HAVING COUNT(*) &gt;= 6;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. HAVING com outras agregadas</h2>
+<p>Qualquer agregada serve no teste. Os pedidos com mais de R$ 500 em produtos:</p>
+
+<pre class="file" data-file="pedidos-grandes.sql" data-resultado>SELECT pedido_id,
+       ROUND(SUM(quantidade * preco_unitario), 2) AS total
+FROM itens_pedido
+GROUP BY pedido_id
+HAVING SUM(quantidade * preco_unitario) &gt; 500
+ORDER BY total DESC;
+</pre>
+
+<p>Seis pedidos, do maior para o menor. Repare que o <code>ORDER BY</code> vem depois do <code>HAVING</code>: primeiro a peneira, depois a arrumação.</p>
+
+<h3>Uma agregada que nem aparece no resultado</h3>
+<p>O teste do <code>HAVING</code> não precisa estar no <code>SELECT</code>. Quantos produtos têm as categorias "caras", as de preço médio acima de R$ 50?</p>
+
+<pre class="file" data-file="categorias-caras.sql" data-resultado>SELECT categoria_id, COUNT(*) AS produtos
+FROM produtos
+GROUP BY categoria_id
+HAVING AVG(preco) &gt; 50;
+</pre>
+
+<p>Eletrônicos (2) e Casa e Cozinha (3). A média foi calculada para cada grupo, usada na peneira e não foi mostrada. A documentação do SQLite diz isso com todas as letras: o <code>HAVING</code> pode usar valores, até agregadas, que não estão no resultado.</p>
+
+<hr>
+
+<h2>3. WHERE e HAVING juntos</h2>
+<p>A gerente muda de ideia: o ponto de retirada é para os clientes <strong>comuns</strong> (os VIPs já recebem em casa). Agora são duas peneiras, uma de cada tipo:</p>
+
+<pre class="file" data-file="where-e-having.sql" data-resultado>SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+WHERE vip = 0
+GROUP BY cidade
+HAVING COUNT(*) &gt;= 6;
+</pre>
+
+<p>Siga o caminho das linhas:</p>
+<ol class="passo">
+  <li><strong>FROM clientes</strong>: 30 linhas.</li>
+  <li><strong>WHERE vip = 0</strong>: tira as 5 fichas de VIP. Sobram 25 linhas.</li>
+  <li><strong>GROUP BY cidade</strong>: as 25 viram 8 pilhas (Teresina 8, São Paulo 6, Fortaleza 5, Recife 2 e quatro cidades com 1).</li>
+  <li><strong>HAVING COUNT(*) &gt;= 6</strong>: ficam as pilhas com 6 ou mais. Sobram Teresina e São Paulo.</li>
+  <li><strong>SELECT</strong>: escreve a cidade e a contagem de cada pilha que sobrou.</li>
+</ol>
+
+<p>Compare com o resultado da seção 1: Fortaleza tinha 7 clientes, mas 2 são VIP. Sem eles, a pilha de Fortaleza ficou com 5 e não passou na peneira. O <code>WHERE</code> mudou as pilhas, e com isso mudou o que o <code>HAVING</code> viu.</p>
+
+<h3>A ordem lógica completa</h3>
+<p>Agora você conhece todas as cláusulas desta parte do guia. A ordem em que o banco as "pensa":</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>Cláusula</th><th>Trabalha com</th><th>Pode usar agregadas?</th></tr>
+<tr><td>1</td><td><code>FROM</code></td><td>A tabela</td><td>Não</td></tr>
+<tr><td>2</td><td><code>WHERE</code></td><td>Cada linha</td><td>Não</td></tr>
+<tr><td>3</td><td><code>GROUP BY</code></td><td>Monta os grupos</td><td>Não</td></tr>
+<tr><td>4</td><td><code>HAVING</code></td><td>Cada grupo</td><td>Sim</td></tr>
+<tr><td>5</td><td><code>SELECT</code></td><td>Cada grupo que sobrou; dá os apelidos</td><td>Sim</td></tr>
+<tr><td>6</td><td><code>ORDER BY</code></td><td>As linhas do resultado</td><td>Sim</td></tr>
+<tr><td>7</td><td><code>LIMIT</code></td><td>Corta o resultado</td><td>Não</td></tr>
+</table>
+</div>
+
+<p>A regra de ouro sai da tabela: <strong>se o filtro usa uma agregada, ele vai no <code>HAVING</code>; se não usa, vai no <code>WHERE</code></strong>. E a ordem de <strong>escrever</strong> é <code>SELECT … FROM … WHERE … GROUP BY … HAVING … ORDER BY … LIMIT</code>.</p>
+
+<p>Um exemplo com todas as cláusulas: entre os pedidos de 2025 (os de <code>id</code> 33 a 64), os produtos que venderam 4 unidades ou mais, do mais vendido para o menos, só os 5 primeiros:</p>
+
+<pre class="file" data-file="completa.sql" data-resultado>SELECT produto_id, SUM(quantidade) AS unidades
+FROM itens_pedido
+WHERE pedido_id BETWEEN 33 AND 64
+GROUP BY produto_id
+HAVING SUM(quantidade) &gt;= 4
+ORDER BY unidades DESC, produto_id
+LIMIT 5;
+</pre>
+
+<hr>
+
+<h2>4. Formas diferentes, e qual escolher</h2>
+
+<h3>Filtro sem agregada: WHERE ou HAVING?</h3>
+<p>Um teste que não usa agregada, sobre a coluna do grupo, funciona nos dois lugares:</p>
+
+<pre class="file" data-file="filtro-where.sql" data-resultado>SELECT estado, COUNT(*) AS clientes
+FROM clientes
+WHERE estado = 'PI'
+GROUP BY estado;
+</pre>
+
+<pre class="file" data-file="filtro-having.sql" data-resultado>SELECT estado, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado
+HAVING estado = 'PI';
+</pre>
+
+<p>Mesmo resultado, mas o <code>WHERE</code> é melhor: ele joga fora as linhas de outros estados <strong>antes</strong> de agrupar, e o banco trabalha menos. No <code>HAVING</code>, pela ordem lógica, o banco monta e conta as 4 pilhas para depois jogar 3 fora. Deixe o <code>HAVING</code> para os testes com agregadas.</p>
+
+<h3>O apelido no HAVING</h3>
+
+<pre class="file" data-file="having-apelido.sql" data-resultado>SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY cidade
+HAVING clientes &gt;= 7;
+</pre>
+
+<p>O SQLite aceita o apelido <code>clientes</code> no <code>HAVING</code>, mesmo ele sendo criado no <code>SELECT</code>, que vem depois na ordem lógica. É prático, mas não é padrão (veja "Nos outros bancos"). Repetir a agregada, <code>HAVING COUNT(*) &gt;= 7</code>, funciona em todos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>O filtro usa <code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code></td><td><code>HAVING</code></td></tr>
+<tr><td>O filtro olha colunas comuns, linha a linha</td><td><code>WHERE</code></td></tr>
+<tr><td>Os dois tipos de filtro</td><td><code>WHERE</code> e <code>HAVING</code> juntos</td></tr>
+<tr><td>Comparar uma soma de dinheiro com <code>=</code></td><td><code>HAVING ROUND(SUM(…), 2) = valor</code></td></tr>
+<tr><td>Consulta que precisa rodar em qualquer banco</td><td>Repita a agregada no <code>HAVING</code> em vez do apelido</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. HAVING sem GROUP BY</h2>
+<p>Desde a versão 3.39, o SQLite aceita <code>HAVING</code> sem <code>GROUP BY</code>: a tabela inteira vira um grupo só, e o <code>HAVING</code> decide se essa única linha aparece ou não.</p>
+
+<pre class="file" data-file="sem-group-passa.sql" data-resultado>SELECT COUNT(*) AS clientes
+FROM clientes
+HAVING COUNT(*) &gt; 3;
+</pre>
+
+<pre class="file" data-file="sem-group-nao-passa.sql" data-resultado>SELECT COUNT(*) AS clientes
+FROM clientes
+HAVING COUNT(*) &gt; 100;
+</pre>
+
+<p>Na primeira, 30 &gt; 3 e a linha aparece; na segunda, o resultado tem <strong>zero linhas</strong>. Repare na diferença: sem o <code>HAVING</code>, uma consulta com agregada sempre devolve uma linha; com ele, pode não devolver nenhuma. Na prática, quase sempre o <code>HAVING</code> vem com <code>GROUP BY</code>.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Agregada no WHERE</strong>
+<p>A primeira tentativa da Ana, a da introdução:</p>
+<pre class="file" data-file="count-no-where.sql" data-resultado data-erro>SELECT cidade, COUNT(*)
+FROM clientes
+WHERE COUNT(*) &gt;= 7
+GROUP BY cidade;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate: COUNT()</code>, "uso indevido de agregada: <code>COUNT()</code>". O <code>WHERE</code> roda no passo 2, antes de os grupos existirem: ainda não há o que contar. (Sem o <code>GROUP BY</code>, a mesma ideia sai com um texto um pouco diferente, <code>misuse of aggregate function COUNT()</code>; as duas querem dizer a mesma coisa.)</p>
+<p><strong>Como consertar:</strong> o teste com agregada vai no <code>HAVING</code>, depois do <code>GROUP BY</code>: <code>GROUP BY cidade HAVING COUNT(*) &gt;= 7</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O apelido no WHERE</strong>
+<pre class="file" data-file="apelido-no-where.sql" data-resultado data-erro>SELECT cidade, COUNT(*) AS n
+FROM clientes
+WHERE n &gt;= 7
+GROUP BY cidade;
+</pre>
+<p><strong>A mensagem:</strong> a mesma, <code>misuse of aggregate: COUNT()</code>. O SQLite entende que o <code>n</code> é o <code>COUNT(*)</code> do <code>SELECT</code>, e uma agregada continua proibida no <code>WHERE</code>, com ou sem apelido.</p>
+<p><strong>Como consertar:</strong> <code>HAVING n &gt;= 7</code> (ou <code>HAVING COUNT(*) &gt;= 7</code>), depois do <code>GROUP BY</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>HAVING antes do GROUP BY</strong>
+<pre class="file" data-file="having-antes.sql" data-resultado data-erro>SELECT cidade, COUNT(*)
+FROM clientes
+HAVING COUNT(*) &gt;= 7
+GROUP BY cidade;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "GROUP": syntax error</code>. A ordem de escrita é fixa: o <code>HAVING</code> vem depois do <code>GROUP BY</code>, nunca antes.</p>
+</div>
+
+<div class="cenario">
+<strong>HAVING numa consulta sem agregada</strong>
+<pre class="file" data-file="having-sem-agregada.sql" data-resultado data-erro>SELECT cidade
+FROM clientes
+HAVING COUNT(*) &gt; 3;
+</pre>
+<p><strong>A mensagem:</strong> <code>HAVING clause on a non-aggregate query</code>, "cláusula <code>HAVING</code> numa consulta que não é agregada". O <code>SELECT</code> não tem agregada nem <code>GROUP BY</code>, então não há grupos para o <code>HAVING</code> peneirar.</p>
+<p><strong>Como consertar:</strong> diga como agrupar: <code>SELECT cidade FROM clientes GROUP BY cidade HAVING COUNT(*) &gt; 3</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparar uma soma com <code>=</code></strong>
+<p>A Ana procura o pedido cujo valor em produtos é exatamente 30.94 (ela sabe que é o pedido 1):</p>
+<pre class="file" data-file="soma-igual.sql" data-resultado>SELECT pedido_id
+FROM itens_pedido
+GROUP BY pedido_id
+HAVING SUM(quantidade * preco_unitario) = 30.94;
+</pre>
+<p><strong>O que aconteceu:</strong> zero linhas, sem erro. Como você viu na aula <a href="sum.html">SUM()</a>, a soma guardada fica uma fração minúscula abaixo de 30.94, e o <code>=</code> exige igualdade perfeita.</p>
+<p><strong>Como consertar:</strong> arredonde antes de comparar:</p>
+<pre class="file" data-file="soma-igual-round.sql" data-resultado>SELECT pedido_id
+FROM itens_pedido
+GROUP BY pedido_id
+HAVING ROUND(SUM(quantidade * preco_unitario), 2) = 30.94;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Uma coluna comum no HAVING</strong>
+<p>A Ana quer contar, por cidade, os clientes que se chamam Ana:</p>
+<pre class="file" data-file="having-coluna.sql" data-resultado>SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY cidade
+HAVING nome LIKE 'Ana%';
+</pre>
+<p><strong>O que aconteceu:</strong> São Paulo, com 7. Errado duas vezes: São Paulo tem só uma Ana, e a Ana Carvalho Lima, de Teresina, sumiu. O <code>nome</code> não está no <code>GROUP BY</code> nem numa agregada; no <code>HAVING</code>, o SQLite testou o nome de <strong>uma linha qualquer</strong> de cada grupo (a mesma ideia da coluna nua da aula <a href="max.html">MAX()</a>). Por acaso, em São Paulo essa linha era a da Ana Beatriz.</p>
+<p><strong>Como consertar:</strong> filtro de linha vai no <code>WHERE</code>, antes de agrupar:</p>
+<pre class="file" data-file="where-coluna.sql" data-resultado>SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+WHERE nome LIKE 'Ana%'
+GROUP BY cidade;
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>Apelido no HAVING:</strong> a documentação do PostgreSQL diz que o nome de uma coluna do resultado pode ser usado no <code>ORDER BY</code> e no <code>GROUP BY</code>, mas <strong>não</strong> no <code>WHERE</code> nem no <code>HAVING</code>: lá, repita a expressão. O MySQL aceita o apelido no <code>HAVING</code> e diz que isso é uma extensão dele ao SQL padrão. Repetir a agregada funciona em todos.</li>
+  <li><strong>Coluna comum no HAVING:</strong> o PostgreSQL recusa uma coluna no <code>HAVING</code> que não esteja agrupada nem dentro de uma agregada, e o MySQL, com o <code>ONLY_FULL_GROUP_BY</code> ligado (o padrão), também. O resultado errado do último cenário, nesses bancos, vira um erro.</li>
+  <li><strong>HAVING sem GROUP BY:</strong> o PostgreSQL também trata a tabela toda como um grupo só e devolve uma linha ou nenhuma, como o SQLite.</li>
+</ul>
+<pre class="file" data-file="postgresql (ilustrativo, não roda no SQLite)">SELECT cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY cidade
+HAVING COUNT(*) &gt;= 7;   -- HAVING clientes &gt;= 7 não vale aqui
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>GROUP BY x HAVING COUNT(*) &gt;= n</code></td><td>Só os grupos com n linhas ou mais</td></tr>
+<tr><td><code>HAVING SUM(…) &gt; v</code></td><td>Só os grupos cuja soma passa de v</td></tr>
+<tr><td><code>HAVING AVG(…) &gt; v</code></td><td>Pode filtrar por uma agregada que não está no <code>SELECT</code></td></tr>
+<tr><td><code>WHERE … GROUP BY … HAVING …</code></td><td>Filtra linhas antes e grupos depois</td></tr>
+<tr><td><code>HAVING ROUND(SUM(…), 2) = v</code></td><td>Compara somas de dinheiro sem a sobrinha binária</td></tr>
+<tr><td><code>HAVING apelido &gt;= n</code></td><td>Aceito no SQLite e no MySQL, não no PostgreSQL</td></tr>
+<tr><td><code>HAVING</code> sem <code>GROUP BY</code></td><td>A tabela toda é um grupo: devolve uma linha ou nenhuma</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate: COUNT()</code></td><td>Agregada (ou apelido de agregada) no <code>WHERE</code> de uma consulta com <code>GROUP BY</code></td></tr>
+<tr><td><code>misuse of aggregate function COUNT()</code></td><td>Agregada no <code>WHERE</code> de uma consulta sem <code>GROUP BY</code></td></tr>
+<tr><td><code>near "GROUP": syntax error</code></td><td><code>HAVING</code> escrito antes do <code>GROUP BY</code></td></tr>
+<tr><td><code>HAVING clause on a non-aggregate query</code></td><td><code>HAVING</code> sem agregada no <code>SELECT</code> e sem <code>GROUP BY</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A peneira dos grupos</h3>
+<p>Complete para mostrar só as cidades com mais de 1 cliente:</p>
+<div class="ex-code">SELECT cidade, COUNT(*) FROM clientes GROUP BY cidade <input data-answer="HAVING" aria-label="cláusula"> COUNT(*) &gt; 1;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Fretes altos</h3>
+<p>Complete para mostrar os funcionários cujos pedidos somam mais de R$ 220 de frete:</p>
+<div class="ex-code">SELECT funcionario_id, SUM(frete) FROM pedidos GROUP BY funcionario_id HAVING <input data-answer="SUM" aria-label="função">(frete) &gt; 220;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Onde vai o filtro "só os clientes do Ceará", numa consulta que conta clientes por cidade?</p>
+<label><input type="radio" name="q3"> No HAVING, porque a consulta tem GROUP BY</label>
+<label><input type="radio" name="q3"> No WHERE, porque olha uma coluna comum, linha a linha</label>
+<label><input type="radio" name="q3"> No ORDER BY</label>
+<label><input type="radio" name="q3"> Em lugar nenhum: não dá para filtrar com GROUP BY</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual é a ordem de escrita correta?</p>
+<label><input type="radio" name="q4"> SELECT … FROM … HAVING … GROUP BY … WHERE</label>
+<label><input type="radio" name="q4"> SELECT … FROM … GROUP BY … WHERE … HAVING</label>
+<label><input type="radio" name="q4"> SELECT … WHERE … FROM … GROUP BY … HAVING</label>
+<label><input type="radio" name="q4"> SELECT … FROM … WHERE … GROUP BY … HAVING … ORDER BY</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que <code>WHERE COUNT(*) &gt;= 7</code> dá erro?</p>
+<label><input type="radio" name="q5"> Porque o WHERE roda antes de os grupos existirem, e ainda não há o que contar</label>
+<label><input type="radio" name="q5"> Porque COUNT só funciona no SELECT</label>
+<label><input type="radio" name="q5"> Porque faltou o apelido</label>
+<label><input type="radio" name="q5"> Porque o certo é COUNT(cidade)</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Fortaleza tem 7 clientes, 2 deles VIP. Ela aparece em <code>… WHERE vip = 0 GROUP BY cidade HAVING COUNT(*) &gt;= 6</code>?</p>
+<label><input type="radio" name="q6"> Sim, com 7</label>
+<label><input type="radio" name="q6"> Sim, com 5</label>
+<label><input type="radio" name="q6"> Não: sem os VIPs, a pilha dela fica com 5</label>
+<label><input type="radio" name="q6"> Dá erro, porque não se usa WHERE com HAVING</label>
+</div>
+
+<h3>Missão final: os clientes mais fiéis</h3>
+
+<div class="trysql" data-goal="linhas:12">
+<p class="try-task"><strong>Missão:</strong> a consulta conta os pedidos de cada cliente (26 linhas). A gerente quer mandar um brinde para os clientes que fizeram <strong>4 pedidos ou mais</strong>. Deixe só esses.</p>
+<pre class="script" data-file="consulta.sql">SELECT cliente_id, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY cliente_id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT cliente_id, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY cliente_id
+HAVING COUNT(*) &gt;= 4;
+</pre>
+</div>
+
+<p>Doze clientes ganham o brinde. Para mostrar o nome deles em vez do <code>cliente_id</code>, falta juntar a tabela <code>clientes</code>, o que você aprende em <a href="inner-join.html">INNER JOIN</a>. E se a gerente quiser agrupar por cidade <strong>e</strong> por VIP ao mesmo tempo, o próximo passo é <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>HAVING</code> filtra <strong>grupos</strong>, depois do <code>GROUP BY</code>; o <code>WHERE</code> filtra <strong>linhas</strong>, antes. Os grupos que não passam somem do resultado.</li>
+  <li>Filtro com agregada (<code>COUNT</code>, <code>SUM</code>, <code>AVG</code>…) vai no <code>HAVING</code>; sem agregada, no <code>WHERE</code>. Agregada no <code>WHERE</code> dá <code>misuse of aggregate</code>.</li>
+  <li>A ordem lógica: <code>FROM</code> → <code>WHERE</code> → <code>GROUP BY</code> → <code>HAVING</code> → <code>SELECT</code> → <code>ORDER BY</code> → <code>LIMIT</code>. O <code>WHERE</code> muda as pilhas que o <code>HAVING</code> vê.</li>
+  <li>O <code>HAVING</code> pode usar agregadas que não estão no <code>SELECT</code>.</li>
+  <li>Para comparar somas de dinheiro com <code>=</code>, use <code>ROUND(SUM(…), 2)</code>.</li>
+  <li>Apelido no <code>HAVING</code> funciona no SQLite (e no MySQL), não no PostgreSQL; repetir a agregada funciona em todos. Coluna comum no <code>HAVING</code> testa uma linha qualquer do grupo: use <code>WHERE</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
