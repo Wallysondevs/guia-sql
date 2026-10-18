@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL WITH — CTE, a consulta com nome | Guia SQL</title>
+<meta name="description" content="CTE (WITH) em SQL para quem está começando: dar nome a uma consulta auxiliar, usar a mesma CTE duas vezes, várias CTEs em sequência, nomear as colunas, WITH com DELETE, CTE × subconsulta × view × tabela temporária e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">WITH</span> (CTE)</h1>
+
+<p class="intro">Na aula de <a href="subconsultas.html">Subconsultas</a> você colocou um <code>SELECT</code> dentro de outro. Funciona, mas quando a consulta de dentro cresce, o comando vira uma boneca russa difícil de ler: você precisa abrir os parênteses de dentro para fora para entender o que acontece. O <code>WITH</code> resolve isso: você calcula a parte auxiliar <strong>primeiro</strong>, dá um nome a ela e depois usa esse nome como se fosse uma tabela. Esse resultado com nome se chama <strong>CTE</strong>. Nesta aula a Ana vai montar, passo a passo, relatórios de vendas da Loja Aurora com ele.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma CTE e como escrever o <code>WITH nome AS (…)</code>.</li>
+  <li>Como usar a CTE no <code>SELECT</code> principal, em <code>WHERE</code>, em <code>JOIN</code> e até duas vezes no mesmo comando.</li>
+  <li>Como encadear várias CTEs, cada uma usando a anterior.</li>
+  <li>Como dar nome às colunas da CTE: <code>WITH t(a, b) AS (…)</code>.</li>
+  <li><code>WITH</code> antes de um <code>DELETE</code>.</li>
+  <li>CTE × subconsulta × view × tabela temporária: qual usar.</li>
+  <li>Os erros mais comuns, com a mensagem real do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>. O quadro "Resultado" embaixo de cada código mostra o que o SQLite devolveu.</p>
+
+<hr>
+
+<h2>A ideia: o rascunho na margem do caderno</h2>
+<p>Pense numa conta de matemática grande. Você não faz tudo numa linha só: primeiro faz uma conta pequena na margem do caderno, escreve "subtotal = 230" e depois usa o subtotal na conta principal. Fica mais fácil de fazer e de conferir.</p>
+
+<p>A CTE é esse rascunho na margem. A sigla vem do inglês <em>Common Table Expression</em>, "expressão de tabela comum". Na prática, é <strong>uma consulta com nome</strong>, que vale só durante um comando:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No caderno</th><th>No SQL</th></tr>
+<tr><td>"Rascunho: subtotal = …"</td><td><code>WITH subtotal AS ( SELECT … )</code></td></tr>
+<tr><td>A conta principal, que usa o subtotal</td><td>o <code>SELECT</code> principal, que lê <code>FROM subtotal</code></td></tr>
+<tr><td>Virou a página, o rascunho não vale mais</td><td>terminou o comando (no <code>;</code>), a CTE some</td></tr>
+</table>
+</div>
+
+<p><code>WITH</code> quer dizer "com": "<strong>com</strong> este rascunho chamado <em>subtotal</em>, faça a consulta tal". Ninguém cria tabela nenhuma no banco; a CTE existe só enquanto o comando roda.</p>
+
+<hr>
+
+<h2>1. A primeira CTE</h2>
+<p>Comece por algo pequeno: separar os produtos caros (acima de R$ 100) num rascunho chamado <code>caros</code> e depois ler esse rascunho.</p>
+
+<pre class="file" data-file="caros.sql" data-resultado>WITH caros AS (
+  SELECT nome, preco
+  FROM produtos
+  WHERE preco &gt; 100
+)
+SELECT nome, preco
+FROM caros
+ORDER BY preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH</dt><dd>"Com". Avisa que, antes do comando principal, vêm uma ou mais CTEs.</dd>
+  <dt>caros</dt><dd>O nome que você escolheu para o rascunho. Siga as mesmas regras de um nome de tabela: minúsculas, sem espaço, dizendo o que tem dentro.</dd>
+  <dt>AS (</dt><dd>"Como". Entre os parênteses vai a consulta que monta o rascunho. Os parênteses são obrigatórios.</dd>
+  <dt>SELECT nome, preco FROM produtos WHERE preco &gt; 100</dt><dd>Um <code>SELECT</code> comum, como os que você já escreve. As colunas que ele devolve (<code>nome</code> e <code>preco</code>) viram as colunas da CTE.</dd>
+  <dt>)</dt><dd>Fecha a CTE. Repare: <strong>não</strong> tem ponto e vírgula aqui. O comando ainda não acabou.</dd>
+  <dt>SELECT nome, preco FROM caros</dt><dd>O comando principal. Ele lê <code>caros</code> como se fosse uma tabela de verdade.</dd>
+  <dt>ORDER BY preco DESC;</dt><dd>A ordenação do resultado final, e agora sim o <code>;</code> que encerra o comando inteiro.</dd>
+</dl>
+
+<p>O resultado tem os 4 produtos acima de R$ 100. Para um filtro tão simples, a CTE nem era necessária (um <code>WHERE</code> bastava). Ela mostra o seu valor quando o rascunho é uma conta de verdade, como na próxima seção.</p>
+
+<hr>
+
+<h2>2. Uma CTE que faz uma conta</h2>
+<p>A Ana quer saber quais pedidos passaram de R$ 500 em produtos. O valor de um pedido não está pronto em coluna nenhuma: ele é a soma de <code>quantidade * preco_unitario</code> dos itens (aula <a href="sum.html">SUM()</a>). Então o rascunho é exatamente essa conta, um total por pedido:</p>
+
+<pre class="file" data-file="totais.sql" data-resultado>WITH totais AS (
+  SELECT pedido_id,
+         SUM(quantidade * preco_unitario) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; 500
+ORDER BY valor DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>totais</dt><dd>O rascunho: <strong>uma linha por pedido</strong> (90 linhas), com duas colunas.</dd>
+  <dt>SUM(quantidade * preco_unitario) AS valor</dt><dd>A conta de cada pedido. O apelido <code>valor</code> é importante: é por ele que o comando principal vai chamar a coluna.</dd>
+  <dt>GROUP BY pedido_id</dt><dd>Junta os itens de cada pedido numa linha só (aula <a href="group-by.html">GROUP BY</a>).</dd>
+  <dt>WHERE valor &gt; 500</dt><dd>O filtro no comando principal. Ele filtra o <strong>resultado da soma</strong>, coisa que um <code>WHERE</code> direto em <code>itens_pedido</code> não conseguiria (lá, cada linha é só um item).</dd>
+</dl>
+
+<p>Seis pedidos passaram de R$ 500, e o maior é o pedido 3. Repare como o comando se lê de cima para baixo, na ordem em que você pensaria: "primeiro calculo o total de cada pedido; depois escolho os maiores que 500".</p>
+
+<div class="tip">
+<strong>E o HAVING?</strong>
+<p>Este exemplo também sai com <code>GROUP BY pedido_id HAVING SUM(…) &gt; 500</code> (aula <a href="having.html">HAVING</a>). Com o <code>HAVING</code>, a conta e o filtro ficam misturados no mesmo <code>SELECT</code>. Com a CTE, a conta fica pronta num lugar e você pode usá-la de vários jeitos depois, como nas próximas seções.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:10">
+<p class="try-task"><strong>Missão:</strong> a Ana mudou de ideia: quer os pedidos com valor acima de <strong>R$ 400</strong>. Troque o número no <code>WHERE</code> do comando principal e rode. Quantos pedidos aparecem?</p>
+<pre class="script" data-file="consulta.sql">WITH totais AS (
+  SELECT pedido_id,
+         SUM(quantidade * preco_unitario) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; 500
+ORDER BY valor DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH totais AS (
+  SELECT pedido_id,
+         SUM(quantidade * preco_unitario) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; 400
+ORDER BY valor DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A mesma CTE usada duas vezes</h2>
+<p>Agora a pergunta é: quais pedidos ficaram <strong>acima da média</strong>? Para isso você precisa do total de cada pedido duas vezes: uma para calcular a média e outra para comparar cada pedido com ela. Com a CTE, o rascunho é escrito uma vez e lido duas:</p>
+
+<pre class="file" data-file="acima-da-media.sql" data-resultado>WITH totais AS (
+  SELECT pedido_id,
+         ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; (SELECT AVG(valor) FROM totais)
+ORDER BY valor DESC
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>ROUND(…, 2)</dt><dd>Arredonda cada total para 2 casas, como dinheiro (aula <a href="funcoes-numericas.html">Funções Numéricas</a>).</dd>
+  <dt>FROM totais</dt><dd>Primeira leitura: as linhas que o comando principal vai mostrar.</dd>
+  <dt>(SELECT AVG(valor) FROM totais)</dt><dd>Segunda leitura, dentro de uma subconsulta: a média dos 90 totais, que dá <code>205.971111111111</code> (uns R$ 205,97).</dd>
+  <dt>LIMIT 5</dt><dd>Mostra só os 5 maiores, para o quadro não ficar comprido. Sem o <code>LIMIT</code>, são 37 pedidos acima da média.</dd>
+</dl>
+
+<p>Sem a CTE, a conta do total teria de aparecer <strong>duas vezes</strong>, copiada e colada (você vai ver essa versão na seção 7). Se um dia a regra do total mudar (por exemplo, incluir o frete), com a CTE você muda num lugar só.</p>
+
+<hr>
+
+<h2>4. Várias CTEs, uma depois da outra</h2>
+<p>Um <code>WITH</code> pode ter várias CTEs, separadas por <strong>vírgula</strong>. E cada uma pode ler as anteriores, como uma receita em etapas. A Ana quer os 5 clientes que mais gastaram:</p>
+
+<ol class="passo">
+  <li><code>totais</code>: o valor de cada pedido (a mesma da seção 2).</li>
+  <li><code>por_cliente</code>: soma os totais de cada cliente, usando <code>totais</code>.</li>
+  <li>O comando principal junta com <code>clientes</code> para mostrar o nome.</li>
+</ol>
+
+<pre class="file" data-file="melhores-clientes.sql" data-resultado>WITH totais AS (
+  SELECT pedido_id,
+         ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+),
+por_cliente AS (
+  SELECT p.cliente_id,
+         COUNT(*) AS pedidos,
+         ROUND(SUM(t.valor), 2) AS gasto
+  FROM pedidos AS p
+  JOIN totais AS t ON t.pedido_id = p.id
+  GROUP BY p.cliente_id
+)
+SELECT c.nome, pc.pedidos, pc.gasto
+FROM por_cliente AS pc
+JOIN clientes AS c ON c.id = pc.cliente_id
+ORDER BY pc.gasto DESC
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>),</dt><dd>A vírgula depois do parêntese que fecha <code>totais</code> diz "vem mais uma CTE". Não se repete a palavra <code>WITH</code>.</dd>
+  <dt>por_cliente AS (</dt><dd>A segunda CTE. Só o nome e o <code>AS</code>, como a primeira.</dd>
+  <dt>JOIN totais AS t</dt><dd>A segunda CTE lê a primeira com um <code>JOIN</code> comum (aula <a href="inner-join.html">INNER JOIN</a>). CTE vale em qualquer lugar onde uma tabela valeria.</dd>
+  <dt>)</dt><dd>Depois da <strong>última</strong> CTE não vai vírgula: vem direto o comando principal.</dd>
+  <dt>JOIN clientes AS c</dt><dd>O comando principal mistura CTE e tabela de verdade sem problema.</dd>
+</dl>
+
+<p>A Conceição Prado lidera, com R$ 1.345,73 em 4 pedidos. Cada CTE resolve uma pergunta pequena, e você pode conferir uma de cada vez: troque o comando principal por <code>SELECT * FROM totais;</code> ou <code>SELECT * FROM por_cliente;</code> para ver só aquele rascunho.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> descubra o que tem dentro de cada rascunho. Troque o comando principal (as três últimas linhas) por <code>SELECT * FROM por_cliente;</code> e rode. Depois tente <code>SELECT * FROM totais;</code>.</p>
+<pre class="script" data-file="consulta.sql">WITH totais AS (
+  SELECT pedido_id,
+         ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+),
+por_cliente AS (
+  SELECT p.cliente_id,
+         COUNT(*) AS pedidos,
+         ROUND(SUM(t.valor), 2) AS gasto
+  FROM pedidos AS p
+  JOIN totais AS t ON t.pedido_id = p.id
+  GROUP BY p.cliente_id
+)
+SELECT c.nome, pc.pedidos, pc.gasto
+FROM por_cliente AS pc
+JOIN clientes AS c ON c.id = pc.cliente_id
+ORDER BY pc.gasto DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Dando nome às colunas da CTE</h2>
+<p>Em vez de usar <code>AS</code> em cada coluna lá dentro, você pode escrever a lista de nomes logo depois do nome da CTE, entre parênteses:</p>
+
+<pre class="file" data-file="colunas.sql" data-resultado>WITH totais(pedido, valor) AS (
+  SELECT pedido_id, SUM(quantidade * preco_unitario)
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT pedido, valor
+FROM totais
+ORDER BY valor DESC
+LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>totais(pedido, valor)</dt><dd>A CTE se chama <code>totais</code> e tem duas colunas: a primeira coluna do <code>SELECT</code> de dentro vira <code>pedido</code>; a segunda vira <code>valor</code>. Vale a <strong>posição</strong>, não o nome original.</dd>
+  <dt>SUM(quantidade * preco_unitario)</dt><dd>Aqui não precisou de <code>AS valor</code>: o nome já veio da lista.</dd>
+</dl>
+
+<p>A quantidade de nomes na lista tem de ser igual à quantidade de colunas do <code>SELECT</code> de dentro. Se não for, dá erro (veja em <a href="#errado">Quando dá errado</a>). Esse jeito de nomear vai ser muito usado na próxima aula, <a href="cte-recursiva.html">CTE Recursiva</a>.</p>
+
+<hr>
+
+<h2>6. WITH antes de um DELETE</h2>
+<p>O <code>WITH</code> não serve só para <code>SELECT</code>. No SQLite ele também pode vir antes de <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code>. A Ana quer apagar do catálogo os produtos que <strong>nunca</strong> foram vendidos. Antes de apagar, ela confere quem são, sempre (aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>):</p>
+
+<pre class="file" data-file="conferir.sql" data-resultado>WITH nunca_vendidos AS (
+  SELECT id
+  FROM produtos
+  WHERE id NOT IN (SELECT produto_id FROM itens_pedido)
+)
+SELECT id, nome
+FROM produtos
+WHERE id IN (SELECT id FROM nunca_vendidos);
+</pre>
+
+<p>São os 3 produtos de jardinagem que ninguém comprou. Agora o mesmo rascunho, com um <code>DELETE</code> no lugar do <code>SELECT</code> principal, e uma contagem depois para conferir:</p>
+
+<pre class="file" data-file="apagar.sql" data-resultado>WITH nunca_vendidos AS (
+  SELECT id
+  FROM produtos
+  WHERE id NOT IN (SELECT produto_id FROM itens_pedido)
+)
+DELETE FROM produtos
+WHERE id IN (SELECT id FROM nunca_vendidos);
+
+SELECT COUNT(*) AS produtos_restantes FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH nunca_vendidos AS (…)</dt><dd>O mesmo rascunho da conferência, sem mudar nada. É essa a vantagem: o que você conferiu é exatamente o que vai ser apagado.</dd>
+  <dt>DELETE FROM produtos WHERE id IN (…)</dt><dd>O comando principal agora é um <code>DELETE</code> (aula <a href="delete.html">DELETE</a>). Ele lê a CTE na subconsulta do <code>WHERE</code>.</dd>
+  <dt>SELECT COUNT(*) …</dt><dd>Um segundo comando, separado por <code>;</code>. Ele mostra que sobraram 42 produtos dos 45. No editor, cada Rodar começa com o banco limpo: os 45 produtos voltam na próxima vez.</dd>
+</dl>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer a mesma coisa</h2>
+<p>A pergunta da seção 3 ("pedidos acima da média") pode ser resolvida de quatro jeitos. Todos dão o mesmo resultado; o que muda é a leitura e quanto tempo o rascunho dura.</p>
+
+<h3>a) Com subconsulta no FROM</h3>
+<p>É a forma da aula <a href="subconsultas.html">Subconsultas</a>. Repare que a conta do total aparece <strong>duas vezes</strong>:</p>
+
+<pre class="file" data-file="subconsulta.sql" data-resultado>SELECT pedido_id, valor
+FROM (SELECT pedido_id,
+             ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+      FROM itens_pedido
+      GROUP BY pedido_id) AS totais
+WHERE valor &gt; (SELECT AVG(valor)
+               FROM (SELECT pedido_id,
+                            ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+                     FROM itens_pedido
+                     GROUP BY pedido_id))
+ORDER BY valor DESC
+LIMIT 5;
+</pre>
+
+<h3>b) Com CTE</h3>
+<p>É o exemplo da seção 3: a conta aparece uma vez, no alto, com nome.</p>
+
+<h3>c) Com uma view</h3>
+<p>Uma <strong>view</strong> (aula <a href="views.html">Views</a>) é uma consulta com nome guardada <strong>no banco</strong>: ela continua lá amanhã, para qualquer comando usar. A CTE é a versão descartável, que vale só para um comando.</p>
+
+<pre class="file" data-file="view.sql" data-resultado>CREATE VIEW totais AS
+  SELECT pedido_id,
+         ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id;
+
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; (SELECT AVG(valor) FROM totais)
+ORDER BY valor DESC
+LIMIT 5;
+</pre>
+
+<h3>d) Com uma tabela temporária</h3>
+<p>Uma tabela temporária guarda o resultado <strong>calculado</strong> até você fechar a conexão com o banco (no editor, até o fim do Rodar). Serve quando o rascunho é pesado e vai ser lido em vários comandos seguidos:</p>
+
+<pre class="file" data-file="temporaria.sql" data-resultado>CREATE TEMP TABLE totais AS
+  SELECT pedido_id,
+         ROUND(SUM(quantidade * preco_unitario), 2) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id;
+
+SELECT pedido_id, valor
+FROM totais
+WHERE valor &gt; (SELECT AVG(valor) FROM totais)
+ORDER BY valor DESC
+LIMIT 5;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quanto tempo dura</th><th>Quando usar</th></tr>
+<tr><td>Subconsulta no <code>FROM</code></td><td>Só aquele trecho do comando</td><td>Rascunho pequeno, usado uma vez</td></tr>
+<tr><td><strong>CTE</strong> (<code>WITH</code>)</td><td>Um comando</td><td>Rascunho usado mais de uma vez no mesmo comando, ou consulta em etapas que você quer ler de cima para baixo</td></tr>
+<tr><td>View (<code>CREATE VIEW</code>)</td><td>Para sempre, até um <code>DROP VIEW</code></td><td>Uma consulta que você (ou outros) vão usar todo dia</td></tr>
+<tr><td>Tabela temporária (<code>CREATE TEMP TABLE … AS</code>)</td><td>Até fechar a conexão</td><td>Um resultado pesado de calcular, lido por vários comandos seguidos</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As mensagens abaixo são as reais do SQLite, em inglês, como aparecem no editor. No programa <code>sqlite3</code>, as mesmas mensagens saem com o prefixo <code>Parse error:</code> na frente (por exemplo, <code>Parse error: no such table: caros</code>).</p>
+
+<div class="cenario">
+<strong>Ponto e vírgula depois da CTE</strong>
+<p>A Ana terminou a CTE com <code>;</code>, achando que era um comando à parte:</p>
+<pre class="file" data-file="erro-ponto.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome, preco FROM produtos WHERE preco &gt; 100
+);
+SELECT nome FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ";": syntax error</code>, "perto do <code>;</code>: erro de sintaxe". Uma CTE não é um comando sozinho: ela é o começo de um comando. O SQLite leu <code>WITH caros AS (…)</code>, esperava o <code>SELECT</code> principal e encontrou o fim do comando.</p>
+<p><strong>Como consertar:</strong> tire o <code>;</code> depois do parêntese. O único <code>;</code> vai no fim do <code>SELECT</code> principal.</p>
+</div>
+
+<div class="cenario">
+<strong>A CTE não existe no comando seguinte</strong>
+<p>O primeiro comando funciona. O segundo tenta usar a CTE do primeiro:</p>
+<pre class="file" data-file="erro-escopo.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome, preco FROM produtos WHERE preco &gt; 100
+)
+SELECT COUNT(*) AS quantos FROM caros;
+
+SELECT nome FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such table: caros</code>, "tabela inexistente: caros". O quadro mostra o resultado do primeiro comando (4) e para no segundo. O rascunho morreu no <code>;</code> do primeiro comando.</p>
+<p><strong>Como consertar:</strong> repita o <code>WITH</code> no segundo comando, ou, se o rascunho vai ser usado em muitos comandos, transforme-o numa view ou numa tabela temporária (seção 7).</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula sobrando ou faltando entre as CTEs</strong>
+<p>Vírgula <strong>depois da última</strong> CTE:</p>
+<pre class="file" data-file="erro-virgula.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome, preco FROM produtos WHERE preco &gt; 100
+),
+SELECT nome FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. A vírgula avisou "vem mais uma CTE", e o SQLite esperava um nome de CTE; veio um <code>SELECT</code>.</p>
+<p>E o contrário, sem a vírgula <strong>entre</strong> duas CTEs:</p>
+<pre class="file" data-file="erro-sem-virgula.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome, preco FROM produtos WHERE preco &gt; 100
+)
+baratos AS (
+  SELECT nome, preco FROM produtos WHERE preco &lt; 5
+)
+SELECT nome FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "baratos": syntax error</code>. Sem a vírgula, o SQLite esperava o comando principal depois do <code>)</code> e encontrou um nome solto.</p>
+<p><strong>Como consertar:</strong> vírgula <strong>entre</strong> as CTEs, nenhuma depois da última.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna que a CTE não tem</strong>
+<pre class="file" data-file="erro-coluna.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome FROM produtos WHERE preco &gt; 100
+)
+SELECT nome, preco FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: preco</code>, "coluna inexistente: preco". A tabela <code>produtos</code> tem <code>preco</code>, mas a CTE <code>caros</code> só tem as colunas que o <code>SELECT</code> de dentro devolveu: aqui, só <code>nome</code>.</p>
+<p><strong>Como consertar:</strong> coloque a coluna no <code>SELECT</code> de dentro da CTE: <code>SELECT nome, preco FROM produtos …</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Lista de colunas com a quantidade errada</strong>
+<pre class="file" data-file="erro-lista.sql" data-resultado data-erro>WITH totais(pedido, valor) AS (
+  SELECT pedido_id FROM itens_pedido
+)
+SELECT * FROM totais;
+</pre>
+<p><strong>A mensagem:</strong> <code>table totais has 1 values for 2 columns</code>, "a tabela totais tem 1 valor para 2 colunas". A lista prometeu duas colunas, mas o <code>SELECT</code> de dentro só devolve uma.</p>
+<p><strong>Como consertar:</strong> o número de nomes na lista tem de ser igual ao número de colunas do <code>SELECT</code>: tire o <code>valor</code> da lista ou acrescente a conta no <code>SELECT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Duas CTEs com o mesmo nome</strong>
+<pre class="file" data-file="erro-duplicada.sql" data-resultado data-erro>WITH caros AS (
+  SELECT nome FROM produtos WHERE preco &gt; 100
+),
+caros AS (
+  SELECT nome FROM produtos WHERE preco &gt; 200
+)
+SELECT nome FROM caros;
+</pre>
+<p><strong>A mensagem:</strong> <code>duplicate WITH table name: caros</code>, "nome de tabela do WITH repetido: caros".</p>
+<p><strong>Como consertar:</strong> cada CTE do mesmo <code>WITH</code> precisa de um nome diferente, por exemplo <code>caros</code> e <code>muito_caros</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas com surpresa: a CTE com nome de tabela</strong>
+<p>Uma CTE pode ter o mesmo nome de uma tabela de verdade. Nesse caso, dentro daquele comando, <strong>a CTE ganha</strong>:</p>
+<pre class="file" data-file="sombra.sql" data-resultado>WITH produtos AS (
+  SELECT 'só o rascunho' AS nome
+)
+SELECT nome FROM produtos;
+</pre>
+<p>Em vez dos 45 produtos, veio uma linha só. Nenhum erro avisa: o comando "esconde" a tabela <code>produtos</code> atrás do rascunho. Escolha nomes de CTE que não sejam nomes de tabelas, como <code>totais</code>, <code>caros</code>, <code>por_cliente</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>MySQL</strong> tem CTE a partir da versão 8.0. Lá, uma CTE só pode usar as que vieram <strong>antes</strong> dela no mesmo <code>WITH</code>. O SQLite é mais tolerante e aceita uma CTE que usa outra escrita depois; não conte com isso, porque o mesmo comando falha no MySQL e no SQL Server. Escreva sempre na ordem.</li>
+  <li><strong>SQL Server</strong>: se o <code>WITH</code> vier depois de outro comando no mesmo lote, o comando anterior <strong>tem</strong> de terminar com <code>;</code>. Por isso você vai ver muito código de SQL Server escrito <code>;WITH totais AS (…)</code>. Ele também não aceita <code>ORDER BY</code> dentro da CTE (a não ser junto com <code>TOP</code> ou <code>OFFSET</code>).</li>
+  <li><strong>PostgreSQL</strong> permite <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code> <strong>dentro</strong> da CTE (com <code>RETURNING</code>), coisa que o SQLite não faz. O PostgreSQL e o SQLite (desde a versão 3.35) aceitam ainda as dicas <code>AS MATERIALIZED</code> e <code>AS NOT MATERIALIZED</code>, que pedem para o banco calcular o rascunho uma vez só ou misturá-lo ao comando principal.</li>
+</ul>
+<p>Trecho só ilustrativo, do SQL Server (não roda no SQLite):</p>
+<pre class="file" data-file="sql-server.sql">SELECT 1;
+;WITH totais AS (
+  SELECT pedido_id, SUM(quantidade * preco_unitario) AS valor
+  FROM itens_pedido
+  GROUP BY pedido_id
+)
+SELECT TOP 3 pedido_id, valor FROM totais ORDER BY valor DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WITH nome AS (SELECT …) SELECT … FROM nome;</code></td><td>Cria uma CTE e a usa no comando principal</td></tr>
+<tr><td><code>WITH a AS (…), b AS (…) SELECT …</code></td><td>Várias CTEs, separadas por vírgula; <code>b</code> pode ler <code>a</code></td></tr>
+<tr><td><code>WITH nome(col1, col2) AS (…)</code></td><td>Dá nome às colunas pela posição</td></tr>
+<tr><td><code>… WHERE x &gt; (SELECT AVG(x) FROM nome)</code></td><td>Lê a mesma CTE de novo, numa subconsulta</td></tr>
+<tr><td><code>WITH nome AS (…) DELETE FROM t WHERE id IN (SELECT id FROM nome);</code></td><td>CTE antes de <code>DELETE</code> (vale também para <code>INSERT</code> e <code>UPDATE</code>)</td></tr>
+<tr><td><code>WITH nome AS MATERIALIZED (…)</code></td><td>Dica para calcular o rascunho uma vez só (SQLite 3.35+)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Um <code>;</code> depois da CTE, antes do comando principal</td></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td>Vírgula sobrando depois da última CTE</td></tr>
+<tr><td><code>no such table: caros</code></td><td>A CTE foi usada fora do comando onde foi criada</td></tr>
+<tr><td><code>no such column: preco</code></td><td>A CTE não devolve essa coluna</td></tr>
+<tr><td><code>table totais has 1 values for 2 columns</code></td><td>A lista de colunas não bate com o <code>SELECT</code></td></tr>
+<tr><td><code>duplicate WITH table name: caros</code></td><td>Duas CTEs com o mesmo nome</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra que abre</h3>
+<p>Complete a palavra que começa uma CTE:</p>
+<div class="ex-code"><input data-answer="WITH|with" aria-label="palavra-chave"> baratos AS (SELECT nome FROM produtos WHERE preco &lt; 5) SELECT nome FROM baratos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Duas CTEs</h3>
+<p>Complete o sinal que separa as duas CTEs e a palavra que liga o nome da segunda à sua consulta:</p>
+<div class="ex-code">WITH caros AS (SELECT id FROM produtos WHERE preco &gt; 100)<input data-answer="," aria-label="separador"> vendidos <input data-answer="AS|as" aria-label="palavra-chave"> (SELECT DISTINCT produto_id FROM itens_pedido) SELECT COUNT(*) FROM caros WHERE id IN (SELECT produto_id FROM vendidos);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana criou uma CTE <code>totais</code> num comando e, no comando seguinte, escreveu <code>SELECT * FROM totais;</code>. O que acontece?</p>
+<label><input type="radio" name="q3"> Mostra os mesmos totais do comando anterior</label>
+<label><input type="radio" name="q3"> Mostra uma tabela vazia</label>
+<label><input type="radio" name="q3"> Dá o erro <code>no such table: totais</code>, porque a CTE só vale dentro do comando onde foi escrita</label>
+<label><input type="radio" name="q3"> O SQLite cria a tabela <code>totais</code> no banco</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O SQLite respondeu <code>table resumo has 2 values for 3 columns</code>. Qual é o problema?</p>
+<label><input type="radio" name="q4"> A tabela <code>resumo</code> já existe no banco</label>
+<label><input type="radio" name="q4"> A lista <code>resumo(a, b, c)</code> tem 3 nomes, mas o <code>SELECT</code> de dentro devolve só 2 colunas</label>
+<label><input type="radio" name="q4"> Faltou a vírgula entre duas CTEs</label>
+<label><input type="radio" name="q4"> A CTE tem mais de 2 linhas</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Uma consulta que toda a equipe da loja vai usar todo dia, durante meses. Qual é a melhor escolha?</p>
+<label><input type="radio" name="q5"> Uma CTE, copiada em cada comando</label>
+<label><input type="radio" name="q5"> Uma subconsulta no <code>FROM</code></label>
+<label><input type="radio" name="q5"> Uma tabela temporária</label>
+<label><input type="radio" name="q5"> Uma view, porque ela fica guardada no banco</label>
+</div>
+
+<h3>Missão final: vendas por categoria</h3>
+
+<div class="trysql" data-goal="colunas:categoria,vendido;;linhas:2">
+<p class="try-task"><strong>Missão:</strong> a CTE <code>vendas</code> já calcula quanto cada categoria vendeu. Escreva o comando principal: junte <code>vendas</code> com <code>categorias</code> e mostre <strong>só as categorias que venderam mais de R$ 4.000</strong>, com as colunas <code>categoria</code> (o nome da categoria) e <code>vendido</code>.</p>
+<pre class="script" data-file="consulta.sql">WITH vendas AS (
+  SELECT pr.categoria_id,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendido
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.categoria_id
+)
+SELECT * FROM vendas;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH vendas AS (
+  SELECT pr.categoria_id,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendido
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.categoria_id
+)
+SELECT c.nome AS categoria, v.vendido
+FROM vendas AS v
+JOIN categorias AS c ON c.id = v.categoria_id
+WHERE v.vendido &gt; 4000
+ORDER BY v.vendido DESC;
+</pre>
+</div>
+
+<p>Eletrônicos e Casa e Cozinha são as duas categorias que passaram de R$ 4.000. Repare que você não mexeu na CTE: o rascunho estava certo, só faltava a conta principal.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>CTE</strong> é uma consulta com nome, escrita com <code>WITH nome AS ( SELECT … )</code> antes do comando principal. É o rascunho na margem do caderno.</li>
+  <li>Ela vale só durante <strong>um comando</strong>: no <code>;</code>, some. Fora dele, dá <code>no such table</code>.</li>
+  <li>O comando principal usa a CTE como uma tabela: em <code>FROM</code>, <code>JOIN</code>, subconsultas, e quantas vezes precisar.</li>
+  <li>Várias CTEs vão separadas por <strong>vírgula</strong>, sem repetir o <code>WITH</code>; cada uma pode ler as anteriores. Nenhuma vírgula depois da última, nenhum <code>;</code> antes do comando principal.</li>
+  <li><code>WITH nome(a, b) AS (…)</code> dá nome às colunas pela posição; a quantidade tem de bater.</li>
+  <li>Para um rascunho de um comando, CTE; para todo dia, view; para um resultado pesado usado em vários comandos, tabela temporária.</li>
+  <li>Próxima aula: a CTE que lê a si mesma, para contar, gerar datas e percorrer a hierarquia dos funcionários: <a href="cte-recursiva.html">CTE Recursiva</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
