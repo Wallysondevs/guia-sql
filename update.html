@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL UPDATE — mudar dados que já estão na tabela | Guia SQL</title>
+<meta name="description" content="UPDATE em SQL para quem nunca mexeu num banco: corrigir o email de um cliente, mudar várias colunas, reajustar preços de uma categoria, baixar o estoque, marcar pedidos como entregues, o papel do WHERE, '0 linhas afetadas', a armadilha do AND no SET e os erros reais do SQLite, no editor e no terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">UPDATE</span></h1>
+
+<p class="intro">O Luís Otávio, aquele cliente sem email, finalmente passou o endereço. A Ana não quer cadastrá-lo de novo: quer <strong>mudar</strong> a ficha que já existe. Para isso o SQL tem o <code>UPDATE</code> ("atualizar"). Com ele você troca o valor de uma ou mais colunas, em uma ou em muitas linhas de uma vez: corrigir um email, reajustar os preços de uma categoria, baixar o estoque depois de uma venda, marcar um pedido como entregue. E aqui aparece, pela primeira vez, a regra mais importante de todo o SQL que muda dados: <strong>o <code>WHERE</code> decide quais linhas mudam</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>UPDATE tabela SET coluna = valor WHERE condição;</code> e o que cada parte faz.</li>
+  <li>Como mudar várias colunas de uma vez, separadas por vírgula.</li>
+  <li>Como calcular o valor novo a partir do valor antigo (<code>preco = preco * 1.10</code>, <code>estoque = estoque - 2</code>).</li>
+  <li>Como mudar muitas linhas com um <code>UPDATE</code> só.</li>
+  <li>O que quer dizer "0 linhas afetadas", e por que isso não é um erro.</li>
+  <li>A armadilha do <code>AND</code> no lugar da vírgula, que estraga dados sem dar erro.</li>
+  <li>Os erros reais: coluna que não existe, <code>NOT NULL</code>, <code>UNIQUE</code>, <code>FOREIGN KEY</code>.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Pode mudar sem medo</strong>
+<p>No editor do guia, <strong>cada Rodar começa do banco limpo</strong>: a Loja Aurora é carregada de novo e só então o seu SQL roda. Por isso os exemplos têm um <code>SELECT</code> depois do <code>UPDATE</code>, na mesma caixa: é assim que você vê a mudança. No terminal é diferente, e a seção 8 mostra.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: corrigir a ficha com borracha</h2>
+<p>No fichário de papel, atualizar um cadastro é: <strong>achar a ficha certa</strong>, apagar o campo com a borracha e escrever o valor novo. O <code>UPDATE</code> tem exatamente essas três partes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No fichário</th><th>No SQL</th></tr>
+<tr><td>Abrir o fichário certo</td><td><code>UPDATE clientes</code></td></tr>
+<tr><td>Apagar um campo e escrever o valor novo</td><td><code>SET email = 'luis.brito@exemplo.com.br'</code></td></tr>
+<tr><td>Achar a ficha (ou as fichas) que vão mudar</td><td><code>WHERE id = 7</code></td></tr>
+</table>
+</div>
+
+<p>Repare na diferença para o papel: no fichário, você mexe numa ficha por vez. No SQL, o <code>UPDATE</code> muda <strong>todas</strong> as linhas que passam no <code>WHERE</code>, sejam uma, dez ou todas. É uma ferramenta poderosa, e por isso exige atenção.</p>
+
+<hr>
+
+<h2>1. O primeiro UPDATE</h2>
+
+<pre class="file" data-file="email.sql" data-resultado>UPDATE clientes
+SET email = 'luis.brito@exemplo.com.br'
+WHERE id = 7;
+
+SELECT id, nome, email FROM clientes WHERE id = 7;
+</pre>
+
+<dl class="anatomy">
+  <dt>UPDATE clientes</dt><dd>"Atualizar <code>clientes</code>": a tabela que vai mudar. Repare que não tem <code>FROM</code> nem <code>INTO</code>: o nome da tabela vem direto.</dd>
+  <dt>SET</dt><dd>"Defina": daqui vem o que muda.</dd>
+  <dt>email = 'luis.brito@…'</dt><dd>A coluna, um sinal de <code>=</code> e o valor novo. Aqui o <code>=</code> não compara: ele <strong>atribui</strong>, quer dizer "passa a valer". O valor antigo (<code>NULL</code>, no caso) é apagado.</dd>
+  <dt>WHERE id = 7</dt><dd>Quais linhas mudam: só a do cliente 7. É o mesmo <code>WHERE</code> do <code>SELECT</code> (aula <a href="where.html">WHERE</a>), com todas as condições que você já conhece.</dd>
+  <dt>;</dt><dd>Fim do comando. Depois vem o <code>SELECT</code>, só para conferir.</dd>
+</dl>
+
+<p>O quadro mostra "1 linha afetada" e, embaixo, a ficha do Luís Otávio com o email novo. Para escolher a linha, use de preferência a <strong>chave primária</strong> (o <code>id</code>): ela é única, então você tem certeza de que vai mudar uma linha só. Um <code>WHERE nome = 'Luís Otávio Brito'</code> também funcionaria hoje, mas e se amanhã houver dois clientes com esse nome?</p>
+
+<div class="trysql" data-goal="contem:roberto.falcao@exemplo.com.br">
+<p class="try-task"><strong>Experimente:</strong> o cliente 15, Roberto Falcão, também deu o email: <code>roberto.falcao@exemplo.com.br</code>. Escreva o <code>UPDATE</code> antes do <code>SELECT</code> e rode.</p>
+<pre class="script" data-file="roberto.sql">SELECT id, nome, email FROM clientes WHERE id = 15;
+</pre>
+<pre class="solucao" data-file="roberto.sql">UPDATE clientes
+SET email = 'roberto.falcao@exemplo.com.br'
+WHERE id = 15;
+
+SELECT id, nome, email FROM clientes WHERE id = 15;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Várias colunas de uma vez</h2>
+<p>A cliente 3, Ana Beatriz Sousa, mudou-se de São Paulo para Fortaleza. Mudam a cidade <strong>e</strong> o estado. No <code>SET</code>, separe as colunas com <strong>vírgula</strong>:</p>
+
+<pre class="file" data-file="mudanca.sql" data-resultado>UPDATE clientes
+SET cidade = 'Fortaleza',
+    estado = 'CE'
+WHERE id = 3;
+
+SELECT id, nome, cidade, estado FROM clientes WHERE id = 3;
+</pre>
+
+<p>Uma linha afetada, duas colunas mudadas. As colunas que não aparecem no <code>SET</code> (nome, email, nascimento, vip) ficam como estavam. Outro exemplo: o Pen Drive 32GB (produto 12) estava descontinuado, com estoque 0, e voltou a ser vendido com 50 unidades novas:</p>
+
+<pre class="file" data-file="pen-drive.sql" data-resultado>UPDATE produtos
+SET estoque = 50,
+    descontinuado = 0
+WHERE id = 12;
+
+SELECT id, nome, estoque, descontinuado FROM produtos WHERE id = 12;
+</pre>
+
+<div class="warning">
+<strong>Vírgula, não AND</strong>
+<p>Entre as colunas do <code>SET</code> vai <strong>vírgula</strong>. Parece natural escrever "cidade = Fortaleza <em>e</em> estado = CE" com <code>AND</code>, mas isso faz outra coisa, e sem dar erro. Veja o estrago na seção <a href="#errado">Quando dá errado</a>.</p>
+</div>
+
+<hr>
+
+<h2>3. O valor novo calculado a partir do antigo</h2>
+<p>Do lado direito do <code>=</code> pode vir uma conta, e ela pode usar o próprio valor que está na coluna. O Fone de Ouvido Bluetooth (produto 7) tinha 44 unidades, e acabaram de vender 2:</p>
+
+<pre class="file" data-file="venda.sql" data-resultado>UPDATE produtos
+SET estoque = estoque - 2
+WHERE id = 7;
+
+SELECT id, nome, estoque FROM produtos WHERE id = 7;
+</pre>
+
+<p>Leia <code>estoque = estoque - 2</code> como "o estoque <strong>passa a ser</strong> o estoque de agora menos 2". O SQLite pega o valor atual (44), faz a conta (42) e grava o resultado. Para uma reposição, seria <code>estoque = estoque + 50</code>.</p>
+
+<hr>
+
+<h2>4. Muitas linhas com um UPDATE só</h2>
+<p>A Aurora vai reajustar em 10% todos os produtos de Papelaria (categoria 1). Não precisa de um <code>UPDATE</code> por produto: o <code>WHERE</code> escolhe os seis de uma vez.</p>
+
+<pre class="file" data-file="reajuste.sql" data-resultado>UPDATE produtos
+SET preco = preco * 1.10
+WHERE categoria_id = 1;
+
+SELECT id, nome, preco FROM produtos WHERE categoria_id = 1;
+</pre>
+
+<p>"6 linhas afetadas", e os preços aumentaram 10%. Mas olhe os valores: <code>13.585</code>, <code>3.069</code>, <code>98.989</code>. A conta está certa, só que nenhum preço deveria ter três casas decimais. A função <code>ROUND(valor, 2)</code> arredonda para duas casas (ela tem aula própria: <a href="funcoes-numericas.html">Funções Numéricas</a>):</p>
+
+<pre class="file" data-file="reajuste-round.sql" data-resultado>UPDATE produtos
+SET preco = ROUND(preco * 1.10, 2)
+WHERE categoria_id = 1;
+
+SELECT id, nome, preco FROM produtos WHERE categoria_id = 1;
+</pre>
+
+<p>Agora sim: <code>13.59</code>, <code>3.07</code>, <code>98.99</code>. Repare no Lápis: <code>1.15 × 1.10 = 1.265</code>, que deveria virar <code>1.27</code>, mas saiu <code>1.26</code>. Não é erro do <code>ROUND</code>: dentro do computador, <code>1.265</code> fica guardado como <code>1.26499999…</code>, um tiquinho abaixo. É a famosa "cauda" do ponto flutuante, explicada em <a href="funcoes-numericas.html">Funções Numéricas</a>.</p>
+
+<p>Qualquer <code>WHERE</code> serve. Os dois clientes de Recife viram VIP:</p>
+
+<pre class="file" data-file="vip-recife.sql" data-resultado>UPDATE clientes
+SET vip = 1
+WHERE cidade = 'Recife';
+
+SELECT id, nome, cidade, vip FROM clientes WHERE cidade = 'Recife';
+</pre>
+
+<div class="trysql" data-goal="linhas:3">
+<p class="try-task"><strong>Experimente:</strong> os pedidos 86 e 87 foram entregues no dia <code>2026-10-16</code>. Escreva um <strong>único</strong> <code>UPDATE</code> que preenche o <code>entregue_em</code> dos dois (dica: <code>WHERE id IN (86, 87)</code>, da aula <a href="in.html">IN</a>). O <code>SELECT</code> lista os pedidos ainda pendentes: devem sobrar 3.</p>
+<pre class="script" data-file="entregas.sql">SELECT id, data, entregue_em
+FROM pedidos
+WHERE entregue_em IS NULL;
+</pre>
+<pre class="solucao" data-file="entregas.sql">UPDATE pedidos
+SET entregue_em = '2026-10-16'
+WHERE id IN (86, 87);
+
+SELECT id, data, entregue_em
+FROM pedidos
+WHERE entregue_em IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Apagar um valor: SET coluna = NULL</h2>
+<p>Para deixar um campo em branco, atribua <code>NULL</code> (sem aspas). O cliente 6, Rafael Monteiro, avisou que o email dele foi desativado. Até ele mandar o novo, a Ana prefere apagar o antigo:</p>
+
+<pre class="file" data-file="apagar-email.sql" data-resultado>UPDATE clientes
+SET email = NULL
+WHERE id = 6;
+
+SELECT id, nome, email FROM clientes WHERE id = 6;
+</pre>
+
+<p>Repare na diferença de sinal: no <code>SET</code>, <code>email = NULL</code> está certo, porque <strong>atribui</strong>. No <code>WHERE</code>, <code>email = NULL</code> está errado, porque <strong>compara</strong>, e comparar com <code>NULL</code> dá "não sei" (aula <a href="null.html">O Valor NULL</a>). Para escolher as linhas em branco, o <code>WHERE</code> usa <code>IS NULL</code>.</p>
+
+<p>Apagar o <strong>valor</strong> de uma coluna não é apagar a <strong>linha</strong>: o cliente 6 continua cadastrado, só sem email. Para tirar a linha inteira da tabela, o comando é outro: <a href="delete.html">DELETE</a>.</p>
+
+<hr>
+
+<h2>6. "0 linhas afetadas" não é erro</h2>
+
+<pre class="file" data-file="ninguem.sql" data-resultado>UPDATE clientes
+SET vip = 1
+WHERE id = 999;
+</pre>
+
+<p>Não existe cliente 999, e o SQLite não reclama: ele procurou as linhas que passam no <code>WHERE</code>, não achou nenhuma, e mudou zero. Para o banco, está tudo certo. Para você, pode ser sinal de engano: um <code>id</code> errado, um nome digitado diferente, ou um <code>WHERE email = NULL</code>. <strong>Sempre leia o número de linhas afetadas</strong>: ele diz se o <code>UPDATE</code> fez o que você esperava.</p>
+
+<div class="tip">
+<strong>Ensaie com um SELECT</strong>
+<p>Antes de um <code>UPDATE</code> que mexe em muitas linhas, rode um <code>SELECT</code> com <strong>o mesmo <code>WHERE</code></strong>: <code>SELECT * FROM produtos WHERE categoria_id = 1;</code>. As linhas que ele mostrar são exatamente as que vão mudar. Esse "ensaio" é o assunto da aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>, que mostra o que acontece quando o <code>WHERE</code> é esquecido.</p>
+</div>
+
+<hr>
+
+<h2>7. RETURNING: ver o que mudou</h2>
+<p>O SQLite aceita <code>RETURNING</code> no fim do <code>UPDATE</code>, como no <a href="insert-varios.html">INSERT</a>: ele devolve as linhas que mudaram, <strong>já com os valores novos</strong>, sem precisar de um <code>SELECT</code> à parte.</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>UPDATE produtos
+SET estoque = estoque - 2
+WHERE id = 7
+RETURNING id, nome, estoque;
+</pre>
+
+<hr>
+
+<h2>8. No terminal, o UPDATE é para valer</h2>
+<p>No terminal, o <code>UPDATE</code> grava no arquivo <code>loja.db</code>, e não há "Rodar de novo" que traga o valor antigo de volta. Também não aparece "1 linha afetada": quando dá certo, o <code>sqlite3</code> fica quieto. Para ver a contagem, ligue <code>.changes on</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT id, nome, email FROM clientes WHERE id = 7;
+7|Luís Otávio Brito|
+sqlite> .changes on
+sqlite> UPDATE clientes SET email = 'luis.brito@exemplo.com.br' WHERE id = 7;
+changes: 1   total_changes: 1
+sqlite> UPDATE clientes SET vip = 1 WHERE id = 999;
+changes: 0   total_changes: 1           « nenhum cliente 999: zero mudanças, sem erro
+sqlite> .changes off
+sqlite> SELECT id, nome, email FROM clientes WHERE id = 7;
+7|Luís Otávio Brito|luis.brito@exemplo.com.br
+sqlite> UPDATE clientes SET nome = NULL WHERE id = 7;
+Runtime error: NOT NULL constraint failed: clientes.nome (19)
+sqlite> .quit</pre>
+
+<p>Os erros saem com a moldura do terminal (<code>Runtime error: …</code> e o código <code>(19)</code>), mas o miolo é o mesmo do editor. E o <code>UPDATE</code> que deu erro não mudou nada: o nome do Luís Otávio continua lá.</p>
+
+<hr>
+
+<h2>Formas diferentes de mudar dados</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Escreva</th></tr>
+<tr><td>Mudar uma linha</td><td><code>UPDATE t SET col = valor WHERE id = 7;</code> (pela chave primária)</td></tr>
+<tr><td>Mudar várias colunas</td><td><code>SET a = 1, b = 2</code> (vírgula)</td></tr>
+<tr><td>Calcular a partir do valor atual</td><td><code>SET estoque = estoque - 2</code></td></tr>
+<tr><td>Mudar um grupo de linhas</td><td><code>WHERE categoria_id = 1</code>, <code>WHERE id IN (86, 87)</code>, <code>WHERE cidade = 'Recife'</code></td></tr>
+<tr><td>Apagar o valor de uma coluna</td><td><code>SET email = NULL</code></td></tr>
+<tr><td>Apagar a linha inteira</td><td>Outro comando: <a href="delete.html">DELETE</a></td></tr>
+<tr><td>Conferir antes</td><td><code>SELECT … WHERE</code> com o mesmo <code>WHERE</code></td></tr>
+<tr><td>Ver o resultado na hora</td><td><code>… RETURNING colunas;</code></td></tr>
+<tr><td>Poder desfazer</td><td>Uma transação (<code>BEGIN</code> … <code>ROLLBACK</code>): aula <a href="transacoes.html">Transações</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>AND no lugar da vírgula: estraga sem dar erro</strong>
+<pre class="file" data-file="and-no-set.sql" data-resultado>UPDATE clientes
+SET cidade = 'Fortaleza' AND estado = 'CE'
+WHERE id = 3;
+
+SELECT id, nome, cidade, estado FROM clientes WHERE id = 3;
+</pre>
+<p><strong>O que acontece:</strong> "1 linha afetada", nenhum erro, e a cidade da Ana Beatriz virou <strong><code>0</code></strong>, com o estado ainda <code>SP</code>! O SQLite leu o comando assim: "a cidade passa a valer o resultado de <code>'Fortaleza' AND estado = 'CE'</code>". Isso é uma condição lógica (verdadeiro ou falso); o estado dela era <code>'SP'</code>, a condição deu falso, e falso no SQLite é <code>0</code>. Só uma coluna mudou, e para um valor sem sentido.</p>
+<p><strong>Como consertar:</strong> vírgula entre as atribuições: <code>SET cidade = 'Fortaleza', estado = 'CE'</code>. E, de novo: confira o resultado depois de um <code>UPDATE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparou com <code>= NULL</code> no WHERE</strong>
+<pre class="file" data-file="where-null.sql" data-resultado>UPDATE clientes
+SET vip = 1
+WHERE email = NULL;
+</pre>
+<p><strong>O que acontece:</strong> "0 linhas afetadas". No <code>WHERE</code>, o <code>=</code> compara, e comparar com <code>NULL</code> nunca é verdadeiro.</p>
+<p><strong>Como consertar:</strong> <code>WHERE email IS NULL</code> (aula <a href="is-null.html">IS NULL e IS NOT NULL</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna que não existe</strong>
+<pre class="file" data-file="coluna.sql" data-resultado data-erro>UPDATE clientes
+SET telefone = '(86) 99999-0000'
+WHERE id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: telefone</code> ("não existe a coluna telefone"). Na Aurora, clientes não têm telefone; quem tem são os fornecedores. O mesmo acontece se você errar a tabela: <code>UPDATE clientes SET preco = 1</code> dá <code>no such column: preco</code>, porque o preço é da tabela <code>produtos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Deixou em branco um campo obrigatório</strong>
+<pre class="file" data-file="not-null.sql" data-resultado data-erro>UPDATE clientes
+SET nome = NULL
+WHERE id = 7;
+</pre>
+<p><strong>A mensagem:</strong> <code>NOT NULL constraint failed: clientes.nome</code>. A coluna <code>nome</code> foi criada <code>NOT NULL</code> (aula <a href="not-null.html">NOT NULL</a>), e o SQLite recusa o <code>UPDATE</code> inteiro.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudou o id para um que já existe</strong>
+<pre class="file" data-file="unique.sql" data-resultado data-erro>UPDATE clientes
+SET id = 1
+WHERE id = 2;
+</pre>
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: clientes.id</code>. Já existe um cliente 1. Mudar a chave primária quase nunca é uma boa ideia: os pedidos apontam para ela.</p>
+</div>
+
+<div class="cenario">
+<strong>Apontou para uma linha que não existe</strong>
+<pre class="file" data-file="fk.sql" data-resultado data-erro>UPDATE produtos
+SET categoria_id = 99
+WHERE id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>. Não existe categoria 99. (No terminal, lembre: a verificação de chaves estrangeiras só vale depois de <code>PRAGMA foreign_keys = ON;</code>, como explica a aula <a href="insert.html">INSERT INTO</a>.)</p>
+</div>
+
+<div class="cenario">
+<strong>Erros de escrita</strong>
+<pre class="file" data-file="sem-set.sql" data-resultado data-erro>UPDATE clientes
+cidade = 'Fortaleza'
+WHERE id = 3;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "cidade": syntax error</code>: faltou o <code>SET</code>. Outros parecidos, todos colhidos no SQLite:</p>
+<ul>
+  <li><code>UPDATE FROM clientes SET …</code> (costume do <code>DELETE FROM</code>) → <code>near "FROM": syntax error</code>.</li>
+  <li><code>SET cidade = 'Fortaleza' estado = 'CE'</code> (sem vírgula) → <code>near "estado": syntax error</code>.</li>
+  <li><code>SET cidade = 'Fortaleza', WHERE id = 3</code> (vírgula sobrando) → <code>near "WHERE": syntax error</code>.</li>
+  <li><code>SET cidade = "Fortaleza"</code> (aspas duplas) → <code>no such column: "Fortaleza" - should this be a string literal in single-quotes?</code></li>
+</ul>
+</div>
+
+<div class="cenario">
+<strong>Texto numa coluna de número</strong>
+<pre class="file" data-file="texto-no-preco.sql" data-resultado>UPDATE produtos
+SET preco = 'barato'
+WHERE id = 3;
+
+SELECT nome, preco, typeof(preco) FROM produtos WHERE id = 3;
+</pre>
+<p><strong>O que acontece:</strong> o SQLite aceitou! O preço do Lápis agora é o texto <code>barato</code>, e qualquer conta com ele vai dar resultado estranho. O SQLite é flexível com tipos: uma coluna <code>REAL</code> tenta converter o valor para número e, se não conseguir, guarda como veio. A aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a> explica, e a <a href="check.html">CHECK</a> mostra como proibir isso.</p>
+<p><strong>Como consertar:</strong> números sem aspas, com ponto: <code>SET preco = 1.15</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>UPDATE tabela SET coluna = valor WHERE condição</code> é do SQL padrão e funciona igual no MySQL, no PostgreSQL e no SQL Server. O <code>RETURNING</code> existe também no PostgreSQL; no SQL Server, o equivalente é a cláusula <code>OUTPUT</code>, que pode devolver o valor de antes (<code>DELETED.coluna</code>) e o de depois (<code>INSERTED.coluna</code>). Trecho só ilustrativo, em SQL Server:</p>
+<pre class="file" data-file="sql server (ilustrativo)">UPDATE produtos
+SET estoque = estoque - 2
+OUTPUT DELETED.estoque, INSERTED.estoque
+WHERE id = 7;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>UPDATE t SET a = 1 WHERE id = 7;</code></td><td>Muda a coluna <code>a</code> da linha 7</td></tr>
+<tr><td><code>SET a = 1, b = 'x'</code></td><td>Muda duas colunas (vírgula entre elas)</td></tr>
+<tr><td><code>SET estoque = estoque - 2</code></td><td>Valor novo calculado a partir do atual</td></tr>
+<tr><td><code>SET preco = ROUND(preco * 1.10, 2)</code></td><td>Reajuste de 10%, com duas casas</td></tr>
+<tr><td><code>SET email = NULL</code></td><td>Deixa o campo em branco</td></tr>
+<tr><td><code>WHERE …</code></td><td>Escolhe as linhas que mudam (todas que passarem)</td></tr>
+<tr><td><code>… RETURNING colunas;</code></td><td>Devolve as linhas mudadas, com os valores novos</td></tr>
+<tr><td>"0 linhas afetadas"</td><td>Nenhuma linha passou no <code>WHERE</code>; não é erro</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td>Coluna virou <code>0</code>, sem erro</td><td><code>AND</code> no lugar da vírgula no <code>SET</code></td></tr>
+<tr><td>"0 linhas afetadas"</td><td><code>WHERE</code> não achou nada (id errado, <code>= NULL</code>…)</td></tr>
+<tr><td><code>no such column: telefone</code></td><td>A coluna não existe nessa tabela</td></tr>
+<tr><td><code>NOT NULL constraint failed: clientes.nome</code></td><td>Tentou deixar em branco um campo obrigatório</td></tr>
+<tr><td><code>UNIQUE constraint failed: clientes.id</code></td><td>O valor novo já existe numa coluna única</td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Aponta para uma linha que não existe</td></tr>
+<tr><td><code>near "cidade": syntax error</code></td><td>Faltou o <code>SET</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<div class="ex-code"><input data-answer="UPDATE|update" aria-label="primeira palavra"> produtos <input data-answer="SET|set" aria-label="segunda palavra"> estoque = 100 <input data-answer="WHERE|where" aria-label="terceira palavra"> id = 9;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Duas colunas</h3>
+<p>Complete o caractere que separa as duas atribuições:</p>
+<div class="ex-code">UPDATE clientes SET cidade = 'Recife'<input data-answer="," aria-label="separador"> estado = 'PE' WHERE id = 4;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O Teclado Compacto (produto 9) tem 25 unidades. Depois de <code>UPDATE produtos SET estoque = estoque + 10 WHERE id = 9;</code>, quanto ele tem?</p>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 25</label>
+<label><input type="radio" name="q3"> 35</label>
+<label><input type="radio" name="q3"> Dá erro: não se pode usar a coluna dos dois lados</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Um <code>UPDATE</code> respondeu "0 linhas afetadas". O que aconteceu?</p>
+<label><input type="radio" name="q4"> Deu erro, e a tabela foi apagada</label>
+<label><input type="radio" name="q4"> Nenhuma linha passou no <code>WHERE</code>, então nada mudou</label>
+<label><input type="radio" name="q4"> Todas as linhas mudaram</label>
+<label><input type="radio" name="q4"> A mudança fica para o próximo Rodar</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O que <code>UPDATE clientes SET cidade = 'Recife' AND estado = 'PE' WHERE id = 4;</code> faz?</p>
+<label><input type="radio" name="q5"> Muda a cidade e o estado do cliente 4</label>
+<label><input type="radio" name="q5"> Dá erro de sintaxe</label>
+<label><input type="radio" name="q5"> Muda só o estado</label>
+<label><input type="radio" name="q5"> Põe na cidade o resultado da condição (0 ou 1), sem erro</label>
+</div>
+
+<h3>Missão final: reajuste dos brinquedos</h3>
+
+<div class="trysql" data-goal="contem:Quebra-cabeça 500 peças|5|41.9;;contem:Bola de Vinil Colorida|5|19.3;;contem:Livro Infantil A Jabutina|4|25.45;;contem:Garrafa Squeeze 700ml|6|21.75">
+<p class="try-task"><strong>Missão:</strong> todos os produtos da categoria <strong>Brinquedos</strong> (<code>categoria_id = 5</code>) vão ficar <strong>5 reais mais caros</strong>. Os outros produtos não mudam. O <code>SELECT</code> mostra dois brinquedos e, para conferir, um livro e um artigo de esporte, que devem continuar com o preço de antes.</p>
+<pre class="script" data-file="brinquedos.sql">SELECT nome, categoria_id, preco
+FROM produtos
+WHERE id IN (24, 25, 29, 30);
+</pre>
+<pre class="solucao" data-file="brinquedos.sql">UPDATE produtos
+SET preco = preco + 5
+WHERE categoria_id = 5;
+
+SELECT nome, categoria_id, preco
+FROM produtos
+WHERE id IN (24, 25, 29, 30);
+</pre>
+</div>
+
+<p>Se o livro e a garrafa também ficaram 5 reais mais caros, faltou o <code>WHERE</code>: o <code>UPDATE</code> mudou os 45 produtos. É exatamente o assunto da aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>UPDATE tabela SET coluna = valor WHERE condição;</code> muda dados que já existem.</li>
+  <li>No <code>SET</code>, o <code>=</code> atribui; várias colunas vão separadas por <strong>vírgula</strong>. <code>AND</code> no lugar da vírgula grava 0 ou 1, sem erro.</li>
+  <li>O valor novo pode ser uma conta com o atual: <code>estoque = estoque - 2</code>, <code>preco = ROUND(preco * 1.10, 2)</code>.</li>
+  <li>O <code>WHERE</code> decide quais linhas mudam: <strong>todas</strong> as que passarem. Para uma linha só, use a chave primária.</li>
+  <li>"0 linhas afetadas" não é erro: nenhuma linha passou no <code>WHERE</code>. Leia sempre a contagem.</li>
+  <li><code>SET coluna = NULL</code> apaga o valor; no <code>WHERE</code>, use <code>IS NULL</code>. Apagar a linha é com <code>DELETE</code>.</li>
+  <li>No editor, cada Rodar volta ao banco limpo; no terminal, o <code>UPDATE</code> é gravado no arquivo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
