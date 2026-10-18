@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções de Texto — referência do SQLite | Guia SQL</title>
+<meta name="description" content="Referência rápida das funções de texto do SQLite 3.50: ||, concat, concat_ws, length, upper, lower, substr, instr, replace, trim, format/printf, LIKE, GLOB, quote, hex, char, unicode, unistr. Exemplo e resultado real de cada uma e os nomes equivalentes no MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções de Texto</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida das funções que trabalham com <strong>texto</strong> no SQLite 3.50: juntar, medir, cortar, trocar, limpar e formatar. Cada linha das tabelas traz um exemplo e o resultado que ele dá de verdade. A explicação passo a passo, com exercícios, está na aula <a href="funcoes-texto.html">Funções de Texto</a>.</p>
+
+<div class="note">
+<strong>Como ler as tabelas</strong>
+<ul>
+  <li><strong>Exemplo</strong> é o que vai dentro de um <code>SELECT</code>: para testar, escreva <code>SELECT</code> antes e <code>;</code> depois, como em <code>SELECT upper('Ana');</code>.</li>
+  <li><strong>Resultado</strong> foi colhido no editor do guia (SQLite 3.50.4). <em>NULL</em> quer dizer "sem valor". Espaços que importam aparecem entre colchetes, como <code>[Ana&nbsp;&nbsp;&nbsp;]</code>.</li>
+  <li>Texto vai sempre entre <strong>aspas simples</strong>. Para pôr uma aspa dentro do texto, dobre-a: <code>'Loja D''Água'</code>.</li>
+  <li>Quase todas as funções devolvem <em>NULL</em> quando recebem <em>NULL</em> (as exceções estão marcadas).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="juntar">Juntar textos</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função / operador</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>a || b</code></td><td>Junta (concatena) dois valores. Números viram texto.</td><td><code>'Ana' || ' ' || 'Sousa'</code></td><td><code>Ana Sousa</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td></td><td>Número junto com texto</td><td><code>'Pedido nº ' || 7</code></td><td><code>Pedido nº 7</code></td><td></td></tr>
+<tr><td></td><td>Com <em>NULL</em>, o resultado inteiro vira <em>NULL</em></td><td><code>'Ana' || NULL</code></td><td><em>NULL</em></td><td><a href="null.html">O Valor NULL</a></td></tr>
+<tr><td><code>concat(x, …)</code></td><td>Junta todos os argumentos. <strong>Ignora</strong> os <em>NULL</em>.</td><td><code>concat('Ana', NULL, 'Sousa')</code></td><td><code>AnaSousa</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>concat_ws(sep, x, …)</code></td><td>Junta com um separador entre os valores (<em>ws</em> = <em>with separator</em>, "com separador"). Pula os <em>NULL</em> sem deixar separador sobrando.</td><td><code>concat_ws(', ', 'Porto', NULL, 'Portugal')</code></td><td><code>Porto, Portugal</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>group_concat(x, sep)</code> e <code>string_agg(x, sep)</code></td><td>Juntam os valores de <strong>várias linhas</strong> num texto só. São funções agregadas.</td><td colspan="2">veja <a href="ref-funcoes-agregadas.html">Funções Agregadas</a></td><td><a href="group-by.html">GROUP BY</a></td></tr>
+</table>
+</div>
+
+<p>Com dados da Loja Aurora: o <code>||</code> monta "cidade (UF)", e o <code>concat_ws</code> lida bem com o estado <em>NULL</em> dos fornecedores estrangeiros:</p>
+
+<pre class="file" data-file="juntar.sql" data-resultado>SELECT nome,
+       concat_ws(' / ', cidade, estado, pais) AS local
+FROM fornecedores;
+</pre>
+
+<p>Repare nas linhas de Porto e Buenos Aires: o <code>estado</code> é <em>NULL</em>, e o <code>concat_ws</code> simplesmente o pulou. Com <code>cidade || ' / ' || estado || ' / ' || pais</code>, essas duas linhas sairiam <em>NULL</em> inteiras.</p>
+
+<hr>
+
+<h2 id="medir">Medir</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>length(x)</code></td><td>Quantos <strong>caracteres</strong> o texto tem (letras acentuadas contam 1).</td><td><code>length('Conceição')</code></td><td><code>9</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td></td><td>Num número, mede o número escrito como texto</td><td><code>length(1234.5)</code></td><td><code>6</code></td><td></td></tr>
+<tr><td></td><td>Texto vazio tem 0; um espaço tem 1</td><td><code>length('')</code>, <code>length(' ')</code></td><td><code>0</code>, <code>1</code></td><td></td></tr>
+<tr><td><code>octet_length(x)</code></td><td>Quantos <strong>bytes</strong> o texto ocupa. Em UTF-8, cada letra acentuada ocupa 2 bytes.</td><td><code>octet_length('Conceição')</code></td><td><code>11</code></td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="caixa">Maiúsculas e minúsculas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>upper(x)</code></td><td>Passa para MAIÚSCULAS (<em>upper case</em>).</td><td><code>upper('Ana Beatriz')</code></td><td><code>ANA BEATRIZ</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td></td><td><strong>Só as letras sem acento</strong> mudam!</td><td><code>upper('Conceição')</code></td><td><code>CONCEIçãO</code></td><td></td></tr>
+<tr><td><code>lower(x)</code></td><td>Passa para minúsculas (<em>lower case</em>). Mesmo limite.</td><td><code>lower('JOSÉ RIBAMAR')</code></td><td><code>josÉ ribamar</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>x = y COLLATE NOCASE</code></td><td>Compara sem diferenciar maiúsculas de minúsculas (também só nas letras sem acento).</td><td><code>'Ana' = 'ana' COLLATE NOCASE</code></td><td><code>1</code> (verdadeiro)</td><td><a href="operadores-comparacao.html">Comparações</a></td></tr>
+<tr><td></td><td></td><td><code>'Água' = 'água' COLLATE NOCASE</code></td><td><code>0</code> (falso)</td><td></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Acentos e maiúsculas no SQLite</strong>
+<p>O SQLite que vem pronto só sabe trocar a caixa das 26 letras do alfabeto inglês (A a Z). Letras como <code>é</code>, <code>ç</code>, <code>ã</code> ficam como estão. Veja nos clientes da loja:</p>
+<pre class="file" data-file="maiusculas.sql" data-resultado>SELECT nome, upper(nome) AS maiusculo, length(nome) AS letras
+FROM clientes
+WHERE id IN (1, 5, 9);
+</pre>
+<p>O <code>length</code> conta certo (as letras acentuadas valem 1), mas o <code>upper</code> deixou <code>é</code>, <code>ç</code>, <code>ã</code> e <code>ô</code> minúsculos. Para trocar a caixa de qualquer letra, o SQLite precisa de uma extensão chamada ICU, que não vem no editor do guia nem no <code>sqlite3</code> padrão. Os outros bancos (MySQL, PostgreSQL, SQL Server) tratam os acentos corretamente.</p>
+</div>
+
+<hr>
+
+<h2 id="cortar">Cortar, procurar e trocar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>substr(x, início, n)</code></td><td>Pedaço do texto: começa na posição <code>início</code> (a primeira letra é 1) e pega <code>n</code> caracteres.</td><td><code>substr('Lápis Grafite HB', 1, 5)</code></td><td><code>Lápis</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>substr(x, início)</code></td><td>Sem o <code>n</code>: vai até o fim.</td><td><code>substr('Lápis Grafite HB', 7)</code></td><td><code>Grafite HB</code></td><td></td></tr>
+<tr><td></td><td><code>início</code> negativo conta do <strong>fim</strong> para trás.</td><td><code>substr('Lápis Grafite HB', -2)</code></td><td><code>HB</code></td><td></td></tr>
+<tr><td></td><td>Começo depois do fim: texto vazio.</td><td><code>substr('Teresina', 10)</code></td><td>(texto vazio)</td><td></td></tr>
+<tr><td><code>substring(x, início, n)</code></td><td>Outro nome do <code>substr</code> (o nome do padrão SQL).</td><td><code>substring('Teresina', 1, 3)</code></td><td><code>Ter</code></td><td></td></tr>
+<tr><td><code>instr(x, procurado)</code></td><td>Posição da <strong>primeira</strong> vez que <code>procurado</code> aparece em <code>x</code> (<em>in string</em>, "no texto"). 0 se não aparece.</td><td><code>instr('ana.beatriz@exemplo.com.br', '@')</code></td><td><code>12</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td></td><td>Não achou</td><td><code>instr('Teresina', 'x')</code></td><td><code>0</code></td><td></td></tr>
+<tr><td><code>replace(x, de, para)</code></td><td>Troca <strong>todas</strong> as vezes que <code>de</code> aparece por <code>para</code>. Diferencia maiúsculas.</td><td><code>replace('2026-10-18', '-', '/')</code></td><td><code>2026/10/18</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td></td><td>Trocar por <code>''</code> apaga</td><td><code>replace('Loja D''Água', '''', '')</code></td><td><code>Loja DÁgua</code></td><td></td></tr>
+</table>
+</div>
+
+<p>Combinando <code>substr</code> e <code>instr</code>: tudo o que vem depois do <code>@</code> do email (o domínio):</p>
+
+<pre class="file" data-file="dominio.sql" data-resultado>SELECT nome, substr(email, instr(email, '@') + 1) AS dominio
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<hr>
+
+<h2 id="limpar">Limpar as pontas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>trim(x)</code></td><td>Tira os espaços do começo e do fim (<em>trim</em> = "aparar").</td><td><code>'[' || trim('   Ana   ') || ']'</code></td><td><code>[Ana]</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>ltrim(x)</code></td><td>Só da esquerda (<em>left</em>).</td><td><code>'[' || ltrim('   Ana   ') || ']'</code></td><td><code>[Ana&nbsp;&nbsp;&nbsp;]</code></td><td></td></tr>
+<tr><td><code>rtrim(x)</code></td><td>Só da direita (<em>right</em>).</td><td><code>'[' || rtrim('   Ana   ') || ']'</code></td><td><code>[&nbsp;&nbsp;&nbsp;Ana]</code></td><td></td></tr>
+<tr><td><code>trim(x, letras)</code></td><td>Com o segundo argumento, tira <strong>qualquer</strong> das letras dadas, em vez de espaços.</td><td><code>trim('--PI--', '-')</code></td><td><code>PI</code></td><td></td></tr>
+<tr><td><code>ltrim(x, letras)</code></td><td></td><td><code>ltrim('000123', '0')</code></td><td><code>123</code></td><td></td></tr>
+<tr><td><code>rtrim(x, letras)</code></td><td></td><td><code>rtrim('Teresina...', '.')</code></td><td><code>Teresina</code></td><td></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="formatar">Formatar: <code>format()</code> e <code>printf()</code></h2>
+<p><code>format(modelo, valores…)</code> monta um texto a partir de um <strong>modelo</strong>: cada <code>%</code> do modelo é trocado pelo próximo valor. <code>printf</code> é outro nome da mesma função (o nome antigo, que vem da linguagem C).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No modelo</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>%s</code></td><td>Põe o valor como texto (<em>string</em>).</td><td><code>format('%s mora em %s', 'Ana', 'Teresina')</code></td><td><code>Ana mora em Teresina</code></td></tr>
+<tr><td><code>%d</code></td><td>Número inteiro (<em>decimal</em>).</td><td><code>format('%d%%', 15)</code></td><td><code>15%</code></td></tr>
+<tr><td><code>%.2f</code></td><td>Número com 2 casas depois do ponto (<em>float</em>).</td><td><code>format('R$ %.2f', 89.99)</code></td><td><code>R$ 89.99</code></td></tr>
+<tr><td></td><td></td><td><code>format('%.2f', 3.5)</code></td><td><code>3.50</code></td></tr>
+<tr><td><code>%05d</code></td><td>Inteiro com 5 posições, completando com zeros à esquerda.</td><td><code>printf('%05d', 42)</code></td><td><code>00042</code></td></tr>
+<tr><td><code>%8s</code> / <code>%-8s</code></td><td>Ocupa 8 posições, alinhado à direita / à esquerda (com <code>-</code>).</td><td><code>format('[%8s]', 'Ana')</code><br><code>format('[%-8s]', 'Ana')</code></td><td><code>[&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Ana]</code><br><code>[Ana&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]</code></td></tr>
+<tr><td><code>%,d</code></td><td>Inteiro com separador de milhar (vírgula, no estilo americano).</td><td><code>format('%,d', 1234567)</code></td><td><code>1,234,567</code></td></tr>
+<tr><td><code>%x</code></td><td>Inteiro em hexadecimal.</td><td><code>format('%x', 255)</code></td><td><code>ff</code></td></tr>
+<tr><td><code>%e</code></td><td>Notação científica.</td><td><code>format('%e', 1234.5)</code></td><td><code>1.234500e+03</code></td></tr>
+<tr><td><code>%q</code></td><td>Texto com as aspas simples dobradas (pronto para ir dentro de <code>'…'</code>).</td><td><code>format('%q', 'Loja D''Água')</code></td><td><code>Loja D''Água</code></td></tr>
+<tr><td><code>%%</code></td><td>Um <code>%</code> de verdade.</td><td><code>format('%%')</code></td><td><code>%</code></td></tr>
+</table>
+</div>
+
+<p>O uso mais comum na loja: mostrar o preço com duas casas.</p>
+
+<pre class="file" data-file="preco.sql" data-resultado>SELECT nome, format('R$ %.2f', preco) AS preco
+FROM produtos
+WHERE id &lt;= 3;
+</pre>
+
+<div class="tip">
+<strong>Vírgula ou ponto?</strong>
+<p>O <code>format</code> sempre usa <strong>ponto</strong> nos decimais e vírgula no milhar, como nos Estados Unidos. Para o formato brasileiro (<code>R$ 1.234,50</code>), troque os sinais com <code>replace</code> ou, melhor, deixe a formatação para o programa que mostra os dados ao usuário.</p>
+</div>
+
+<hr>
+
+<h2 id="padroes">Comparar com padrões</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador / função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>x LIKE padrão</code></td><td>Compara com curingas: <code>%</code> = qualquer sequência, <code>_</code> = um caractere. Não diferencia maiúsculas (nas letras sem acento).</td><td><code>'Ana Beatriz' LIKE 'ana%'</code></td><td><code>1</code></td><td><a href="like.html">LIKE</a></td></tr>
+<tr><td></td><td>Com acento, diferencia</td><td><code>'Água' LIKE 'água'</code></td><td><code>0</code></td><td><a href="curingas.html">Curingas</a></td></tr>
+<tr><td><code>x GLOB padrão</code></td><td>Curingas do estilo do terminal: <code>*</code> e <code>?</code>. <strong>Diferencia</strong> maiúsculas.</td><td><code>'Ana Beatriz' GLOB 'ana*'</code></td><td><code>0</code></td><td><a href="curingas.html">Curingas</a></td></tr>
+<tr><td></td><td></td><td><code>'Ana Beatriz' GLOB 'Ana*'</code></td><td><code>1</code></td><td></td></tr>
+<tr><td><code>like(padrão, x)</code></td><td>O <code>LIKE</code> escrito como função. Atenção: o <strong>padrão vem primeiro</strong>.</td><td><code>like('ana%', 'Ana Beatriz')</code></td><td><code>1</code></td><td></td></tr>
+<tr><td><code>glob(padrão, x)</code></td><td>O <code>GLOB</code> como função, também com o padrão primeiro.</td><td><code>glob('A*', 'Ana')</code></td><td><code>1</code></td><td></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="codigos">Códigos, bytes e aspas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>char(n, …)</code></td><td>Monta um texto a partir dos códigos Unicode das letras.</td><td><code>char(65, 110, 97)</code></td><td><code>Ana</code></td></tr>
+<tr><td><code>unicode(x)</code></td><td>O código Unicode da <strong>primeira</strong> letra.</td><td><code>unicode('Água')</code></td><td><code>193</code></td></tr>
+<tr><td><code>hex(x)</code></td><td>Os bytes do valor escritos em hexadecimal.</td><td><code>hex('Ana')</code></td><td><code>416E61</code></td></tr>
+<tr><td><code>unhex(x)</code></td><td>O contrário do <code>hex</code>: devolve os bytes (um valor do tipo <code>blob</code>).</td><td><code>typeof(unhex('416E61'))</code></td><td><code>blob</code></td></tr>
+<tr><td><code>quote(x)</code></td><td>Escreve o valor como ele seria escrito num comando SQL: texto entre aspas (com as aspas de dentro dobradas), <em>NULL</em> como a palavra <code>NULL</code>.</td><td><code>quote('Loja D''Água')</code></td><td><code>'Loja D''Água'</code></td></tr>
+<tr><td></td><td>Funciona com <em>NULL</em> (não devolve <em>NULL</em>)</td><td><code>quote(NULL)</code></td><td><code>NULL</code> (o texto)</td></tr>
+<tr><td><code>unistr(x)</code></td><td>Novo no 3.50: troca códigos como <code>&#92;u00e1</code> pela letra.</td><td><code>unistr('Ol&#92;u00e1')</code></td><td><code>Olá</code></td></tr>
+<tr><td><code>unistr_quote(x)</code></td><td>Novo no 3.50: como o <code>quote</code>, mas escreve caracteres de controle (como a quebra de linha) com <code>&#92;u</code>.</td><td><code>unistr_quote(char(65, 10, 66))</code></td><td><code>unistr('A&#92;u000aB')</code></td></tr>
+<tr><td><code>CAST(x AS TEXT)</code></td><td>Converte um valor em texto.</td><td><code>CAST(123 AS TEXT) || '!'</code></td><td><code>123!</code></td></tr>
+<tr><td><code>typeof(x)</code></td><td>Diz o tipo do valor: <code>text</code>, <code>integer</code>, <code>real</code>, <code>blob</code> ou <code>null</code>.</td><td><code>typeof('Ana')</code></td><td><code>text</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="faltam">Funções que o SQLite não tem</h2>
+<p>Quem vem de outro banco sente falta de algumas funções. Todas dão <code>no such function</code> no SQLite, mas há um jeito de fazer cada uma:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em outros bancos</th><th>O que faz</th><th>No SQLite</th><th>Resultado</th></tr>
+<tr><td><code>LEFT('Teresina', 4)</code></td><td>as primeiras 4 letras</td><td><code>substr('Teresina', 1, 4)</code></td><td><code>Tere</code></td></tr>
+<tr><td><code>RIGHT('Teresina', 4)</code></td><td>as últimas 4 letras</td><td><code>substr('Teresina', -4)</code></td><td><code>sina</code></td></tr>
+<tr><td><code>LPAD(42, 5, '0')</code></td><td>completar com zeros à esquerda</td><td><code>printf('%05d', 42)</code> ou <code>substr('00000' || 42, -5)</code></td><td><code>00042</code></td></tr>
+<tr><td><code>RPAD('Ana', 8)</code></td><td>completar com espaços à direita</td><td><code>format('%-8s', 'Ana')</code></td><td><code>Ana&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</code></td></tr>
+<tr><td><code>REPEAT('*', 5)</code></td><td>repetir um caractere</td><td><code>printf('%.*c', 5, '*')</code></td><td><code>*****</code></td></tr>
+<tr><td><code>LEN(x)</code> (SQL Server)</td><td>tamanho</td><td><code>length(x)</code></td><td></td></tr>
+<tr><td><code>SOUNDEX(x)</code></td><td>código de "som parecido"</td><td>Existe no SQLite só quando ele é compilado com essa opção; no editor e no <code>sqlite3</code> do guia, dá <code>no such function: soundex</code>.</td><td></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="left.sql" data-resultado data-erro>SELECT left('Teresina', 3);
+</pre>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>Os mesmos serviços, nomes diferentes</strong>
+<p>Conferido nas documentações oficiais do MySQL 8.4, do PostgreSQL e do SQL Server. Os trechos não rodam no editor do guia; são só para comparar.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>SQLite</th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>juntar</td><td><code>a || b</code>, <code>concat</code></td><td><code>CONCAT(a, b)</code>; o <code>||</code> é <strong>OU lógico</strong>, a não ser com o modo <code>PIPES_AS_CONCAT</code>; e o <code>CONCAT</code> dá NULL se um argumento for NULL</td><td><code>a || b</code>, <code>concat</code> (ignora NULL)</td><td><code>a + b</code>, <code>CONCAT</code></td></tr>
+<tr><td>juntar com separador</td><td><code>concat_ws</code></td><td><code>CONCAT_WS</code></td><td><code>concat_ws</code></td><td><code>CONCAT_WS</code></td></tr>
+<tr><td>tamanho em letras</td><td><code>length</code></td><td><code>CHAR_LENGTH</code> (o <code>LENGTH</code> do MySQL conta <strong>bytes</strong>!)</td><td><code>length</code>, <code>char_length</code></td><td><code>LEN</code> (ignora espaços no fim)</td></tr>
+<tr><td>tamanho em bytes</td><td><code>octet_length</code></td><td><code>LENGTH</code></td><td><code>octet_length</code></td><td><code>DATALENGTH</code></td></tr>
+<tr><td>posição</td><td><code>instr(texto, procurado)</code></td><td><code>INSTR(texto, procurado)</code> ou <code>LOCATE(procurado, texto)</code></td><td><code>strpos(texto, procurado)</code> ou <code>position(procurado IN texto)</code></td><td><code>CHARINDEX(procurado, texto)</code></td></tr>
+<tr><td>pedaço</td><td><code>substr</code>, <code>substring</code></td><td><code>SUBSTRING</code>, <code>SUBSTR</code></td><td><code>substring(x FROM 2 FOR 3)</code>, <code>substr</code></td><td><code>SUBSTRING(x, início, n)</code></td></tr>
+<tr><td>esquerda / direita</td><td><code>substr</code></td><td><code>LEFT</code>, <code>RIGHT</code></td><td><code>left</code>, <code>right</code></td><td><code>LEFT</code>, <code>RIGHT</code></td></tr>
+<tr><td>completar</td><td><code>printf</code></td><td><code>LPAD</code>, <code>RPAD</code></td><td><code>lpad</code>, <code>rpad</code></td><td>—</td></tr>
+<tr><td>repetir / inverter</td><td>—</td><td><code>REPEAT</code>, <code>REVERSE</code></td><td><code>repeat</code>, <code>reverse</code></td><td><code>REPLICATE</code>, <code>REVERSE</code></td></tr>
+<tr><td>formatar</td><td><code>format</code> / <code>printf</code> (estilo C)</td><td><code>FORMAT(número, casas)</code>: formata <strong>números</strong>, como <code>'12,332.1235'</code></td><td><code>format</code> com <code>%s</code>, <code>%I</code> (nome) e <code>%L</code> (valor)</td><td><code>FORMAT</code> (estilo .NET)</td></tr>
+<tr><td>maiúsculas com acento</td><td>só com a extensão ICU</td><td>sim</td><td>sim (pelas regras do idioma do banco)</td><td>sim</td></tr>
+</table>
+</div>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="trysql" data-goal="colunas:nome,preco_txt;;contem:R$ 1.15;;linhas:45">
+<p class="try-task"><strong>Missão:</strong> o catálogo da loja precisa mostrar o preço como texto, com <code>R$</code> e duas casas (<code>R$ 1.15</code>, <code>R$ 12.35</code>…). Mostre o <code>nome</code> de todos os produtos e o preço formatado numa coluna chamada <code>preco_txt</code>.</p>
+<pre class="script" data-file="catalogo.sql">SELECT nome, preco
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="catalogo.sql">SELECT nome, format('R$ %.2f', preco) AS preco_txt
+FROM produtos;
+</pre>
+</div>
+
+<div class="trysql">
+<p class="try-task"><strong>Livre:</strong> teste qualquer função desta página. Troque os nomes, junte funções umas dentro das outras.</p>
+<pre class="script" data-file="testes.sql">SELECT nome,
+       upper(substr(nome, 1, 1)) AS inicial,
+       length(nome) AS letras,
+       replace(nome, ' ', '_') AS sem_espacos
+FROM clientes
+LIMIT 5;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Juntar: <code>||</code> (com NULL vira NULL), <code>concat</code> e <code>concat_ws</code> (pulam os NULL).</li>
+  <li>Medir: <code>length</code> em letras, <code>octet_length</code> em bytes.</li>
+  <li>Cortar e procurar: <code>substr(x, início, n)</code> (início 1, negativo conta do fim), <code>instr</code>, <code>replace</code>.</li>
+  <li>Limpar: <code>trim</code>, <code>ltrim</code>, <code>rtrim</code>, com ou sem a lista de letras.</li>
+  <li>Formatar: <code>format</code> / <code>printf</code> com <code>%s</code>, <code>%d</code>, <code>%.2f</code>, <code>%05d</code>.</li>
+  <li><code>upper</code>, <code>lower</code>, <code>LIKE</code> e <code>NOCASE</code> só tratam as letras sem acento.</li>
+  <li>Não existem no SQLite: <code>LEFT</code>, <code>RIGHT</code>, <code>LPAD</code>, <code>REPEAT</code>, <code>LEN</code>; use <code>substr</code> e <code>printf</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
