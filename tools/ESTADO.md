@@ -25,7 +25,7 @@
 - d43ed28 filtro libera wallysondevs.github.io; o editor tira espaços/quebras do fim do SQL antes de rodar (a mensagem da aspa sem fechar fica igual à do terminal).
 
 ## Diferenças editor × sqlite3 achadas (detalhes em DIFERENCAS.md e §5)
-- Saída canônica: **zero** diferenças em todas as 80 páginas (mesmo 3.50.4, mesmas opções).
+- 18/10 tarde: o lab passou a usar o 3.50.4 com as opções do Debian (aspas duplas viram texto no terminal); diferenças esperadas na tabela do DIFERENCAS.md.
 - Mensagem de erro: o CLI põe `Parse error:`/`Runtime error:` (stdin de arquivo: `… near line N:`; argumento: `Error: in prepare, …`), a seta `^--- error here` e às vezes o código `(19)`.
 - `sqlite3 loja.db` começa com `foreign_keys` = 0; o editor (aurora.sql) liga. INSERT com FK ruim / `DELETE FROM produtos` passam no terminal e falham no editor.
 - EXPLAIN QUERY PLAN: tabela crua no editor, árvore no CLI. (As páginas indices/union-all/explain descrevem a tabela do editor; se um dia o editor desenhar a árvore, o texto delas muda — decisão do coordenador.)

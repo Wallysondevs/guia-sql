@@ -84,7 +84,7 @@ Igual aos outros guias: `$ ` = `ana@notebook:~$`, `sqlite> ` = o prompt do sqlit
    - `random()`, `datetime('now')`, `date('now')` mudam a cada Rodar: nunca os use numa meta nem num resultado citado no texto.
 
 ### Mensagens de erro: editor × terminal
-O motor é o mesmo (SQLite 3.50.4, mesmas opções), então **o miolo da mensagem é idêntico**. O que muda é a moldura que o programa `sqlite3` põe em volta. Exemplos reais (editor = `node tools/sim.js`; terminal = lab, `sqlite3 loja.db`):
+O motor é o mesmo (SQLite 3.50.4), então **o miolo da mensagem é idêntico**. O que muda é a moldura que o programa `sqlite3` põe em volta. Exemplos reais (editor = `node tools/sim.js`; terminal = lab, `sqlite3 loja.db`):
 
 | SQL | No editor (`Erro do SQLite: …`) | No terminal, digitando no `sqlite>` |
 |---|---|---|
@@ -168,7 +168,7 @@ Do notebook: `~/guia-sql-lab/testar [--nativo] [-q] pagina.html` (já com `timeo
 - **Privacidade:** nada da máquina real nem da VPS; só `/home/ana/…`, `ana@notebook`.
 
 ## 7. Versão e dialeto
-O guia ensina o **SQL padrão usando o SQLite 3.50** (o banco mais usado do mundo: está em todo celular e navegador). O editor e o lab usam o mesmo motor, então **toda saída bate**. As diferenças dos outros bancos entram como nota "Nos outros bancos" (§2.9) e nas aulas do grupo "Os Dialetos" do Nível 3. Nunca afirme "no MySQL é assim" sem conferir na documentação oficial — e marque como **ilustrativo** o que não dá para rodar no lab.
+O guia ensina o **SQL padrão usando o SQLite 3.50** (o banco mais usado do mundo: está em todo celular e navegador). O editor e o lab usam o mesmo SQLite 3.50.4, então as saídas batem — com uma diferença que vira lição: **aspas duplas**. O editor (wasm oficial) tem DQS=0 e recusa `"Ana"` como texto; o `sqlite3` do lab foi compilado com as opções do **pacote do Debian** (o que o leitor tem no terminal) e aceita `"Ana"` como texto, calado. Mostre os dois quando o assunto aparecer e ensine aspas simples. Outras diferenças pequenas (`DELETE … LIMIT`, `soundex`, `page_size`) estão em `tools/DIFERENCAS.md`. As diferenças dos outros bancos entram como nota "Nos outros bancos" (§2.9) e nas aulas do grupo "Os Dialetos" do Nível 3. Nunca afirme "no MySQL é assim" sem conferir na documentação oficial — e marque como **ilustrativo** o que não dá para rodar no lab.
 
 ## 8. Escrita
 - Português do Brasil, frases curtas, "você". O leitor nunca mexeu num banco.

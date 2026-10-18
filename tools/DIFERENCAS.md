@@ -68,3 +68,51 @@ SELECT 1;
 1
 ```
 <!-- /pagina:comentarios.html -->
+
+<!-- pagina:sql-server.html -->
+### sql-server.html (2026-10-18 14:13 UTC)
+
+**resultado 1 (linha 127)** — saída diferente; o editor deu erro e o nativo não
+
+```sql
+SELECT nome FROM clientes WHERE id = 1
+GO
+```
+
+- editor: erro `near "GO": syntax error`; saída:
+
+```
+
+```
+- sqlite3 nativo (status 0): saída:
+
+```
+José Ribamar Silva
+```
+
+**resultado 19 (linha 529)** — saída diferente; o editor deu erro e o nativo não
+
+```sql
+SELECT nome FROM clientes WHERE cidade = "Teresina";
+```
+
+- editor: erro `no such column: "Teresina" - should this be a string literal in single-quotes?`; saída:
+
+```
+
+```
+- sqlite3 nativo (status 0): saída:
+
+```
+José Ribamar Silva
+Maria Clara Mendes
+Conceição Prado
+Antônio Carlos Neves
+Tiago Fontes
+Larissa Macêdo
+Ana Carvalho Lima
+Henrique Sales
+Otávio Bezerra
+Elias Furtado
+```
+<!-- /pagina:sql-server.html -->

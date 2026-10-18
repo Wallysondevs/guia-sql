@@ -15,7 +15,7 @@
 //   - todo <pre>: "<" e "&" escapados (&lt; &amp;);
 //   - links internos só para páginas da NIVEIS; nada da máquina real.
 // --nativo: roda cada SQL também em ~/guia-sql-lab/src/sqlite3 (o 3.50.4 do lab,
-//   mesmas opções do wasm), compara com a saída canônica e registra as
+//   com as opções do sqlite3 do Debian: o que o leitor tem no terminal), compara com a saída canônica e registra as
 //   diferenças em tools/DIFERENCAS.md (seção da página).
 // Código de saída: 0 = tudo ok; 1 = alguma FALHA; 2 = uso errado / página inexistente.
 "use strict";
@@ -243,9 +243,10 @@ function compararNativo(sql, res) {
 const CABECALHO_DIF = `# Diferenças: editor do guia (SQLite WASM) × sqlite3 nativo do lab
 
 Mantido pelo \`tools/testar-missoes.js --nativo\`. O editor (\`assets/sql/sqlite3.wasm\`) e o lab
-(\`~/guia-sql-lab/src/sqlite3\`) são o **mesmo SQLite 3.50.4**, compilado com as **mesmas opções**
-(DQS=0, FTS5, math, dbstat…). Por isso a saída canônica (\`.mode list\`, NULL vazio) deve ser
-idêntica; qualquer diferença aparece abaixo, na seção da página.
+(\`~/guia-sql-lab/src/sqlite3\`) são o **mesmo SQLite 3.50.4**. O do lab foi compilado com as opções
+do **pacote sqlite3 do Debian 13** (o que o leitor tem no terminal); o do editor, com as do wasm
+oficial. A saída canônica (\`.mode list\`, NULL vazio) é idêntica, menos nas diferenças da tabela
+abaixo; qualquer outra aparece na seção da página.
 
 ## Diferenças conhecidas (esperadas)
 | Assunto | Editor do guia | sqlite3 no terminal |
@@ -257,6 +258,9 @@ idêntica; qualquer diferença aparece abaixo, na seção da página.
 | \`random()\`, \`datetime('now')\` | muda a cada Rodar | muda a cada execução (a comparação dá diferença; não use em página) |
 | \`EXPLAIN QUERY PLAN\` | tabela com as colunas \`id\`, \`parent\`, \`notused\`, \`detail\` | árvore: \`QUERY PLAN\` e, embaixo, \`\` \`--SCAN pedidos \`\` (o testador converte a tabela do editor em árvore antes de comparar; \`EXPLAIN\` puro não é comparado) |
 | Extensões que só o programa sqlite3 traz | não existem: \`no such table: generate_series\`, \`no such function: REGEXP\`, \`median\`, \`percentile\`, \`base64\`, \`sha3\`, \`decimal_add\`, \`readfile\`… | funcionam: o shell \`sqlite3\` embute essas extensões; a biblioteca SQLite (a do editor, a dos apps) não. **Aparecem como diferença de verdade**: não use em \`.trysql\`/\`data-resultado\` (no editor só com \`data-erro\`, mostrando o erro) |
+| Aspas duplas (\`"Ana"\`) | **erro**: o wasm tem DQS=0 — \`no such column: "Ana" - should this be a string literal in single-quotes?\` | viram **texto** sem aviso (DQS ligado, como no Debian/Ubuntu), se não houver coluna com esse nome |
+| \`DELETE … LIMIT\`, \`soundex()\` | erro de sintaxe / \`no such function\` | funcionam (o Debian compila com UPDATE_DELETE_LIMIT e SOUNDEX) |
+| Banco novo (arquivo) | em memória: \`page_size\` 8192 | \`page_size\` 4096, \`auto_vacuum\` 0 (o \`loja.db\` tem 45056 bytes, 11 páginas) |
 | SQL sem fim | interrompido em ~4 s com \`interrupted\` | roda até alguém apertar Ctrl+C |
 | Tabela grande | desenha até 500 linhas (as metas contam todas) | mostra todas |
 | Cabeçalho e formato | tabela HTML com cabeçalho | \`.mode list\` sem cabeçalho, até mudar com \`.mode\`/\`.headers\` |
