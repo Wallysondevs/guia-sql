@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Introdução — o que é um banco de dados | Guia SQL</title>
+<meta name="description" content="O que é um banco de dados, para quem nunca usou um: o caderno de fichas, a planilha e o banco; tabelas, linhas, colunas e valores; o programa que cuida do banco (SGBD); por que um banco e não uma planilha, com o banco da Loja Aurora rodando de verdade no seu navegador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O que é um <span class="hl">Banco de Dados</span></h1>
+
+<p class="intro">A Ana trabalha na <strong>Loja Aurora</strong>, uma loja de departamentos em Teresina. No começo, a dona anotava tudo num caderno: quem comprou, o que comprou, quanto custou, o que ainda tinha na prateleira. A loja cresceu, o caderno virou uma pilha de cadernos, e responder "quantas canetas azuis ainda temos?" virou uma tarde de trabalho. Hoje a Aurora guarda tudo num <strong>banco de dados</strong>, e a mesma pergunta é respondida num piscar de olhos. Nesta aula você vai entender o que é esse banco, do que ele é feito e por que quase todo programa que você usa tem um por trás.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um <strong>banco de dados</strong>, comparando com um caderno de fichas e com uma planilha.</li>
+  <li>As peças de um banco: <strong>tabela</strong>, <strong>linha</strong> (registro), <strong>coluna</strong> (campo) e <strong>valor</strong>.</li>
+  <li>Como várias tabelas se ligam por um número, o <strong>id</strong>.</li>
+  <li>O que é o <strong>SGBD</strong>, o programa que cuida do banco (o SQLite é um deles).</li>
+  <li>Quando vale a pena usar um banco em vez de uma planilha.</li>
+  <li>As duas primeiras mensagens de erro que todo iniciante vê: tabela e coluna que não existem.</li>
+</ul>
+</div>
+
+<p>Nesta página você ainda não precisa saber SQL. Os quadros com código já rodam de verdade (o <strong>SQLite</strong>, um banco de dados completo, funciona dentro do seu navegador), mas por enquanto só leia o resultado. A língua do código, o <strong>SQL</strong>, é o assunto da próxima aula: <a href="o-que-e-sql.html">O que é SQL</a>.</p>
+
+<hr>
+
+<h2>A ideia: o caderno de fichas da lojinha</h2>
+<p>Antes dos computadores, uma loja organizada guardava os dados em <strong>fichas</strong>: um cartão para cada produto, todos com os mesmos campos, numa gaveta só de produtos. Os clientes ficavam em outra gaveta, com outro tipo de ficha.</p>
+
+<pre class="file" data-file="gaveta PRODUTOS — ficha nº 2">Produto:  Caneta Esferográfica Azul
+Categoria: Papelaria
+Preço:    R$ 2,79
+Estoque:  500 unidades
+</pre>
+
+<p>Repare em três coisas, porque um banco de dados é exatamente isso, só que no computador:</p>
+<ol class="passo">
+  <li>Toda ficha da gaveta tem <strong>os mesmos campos</strong> (produto, categoria, preço, estoque). Ninguém escreve a cor da caneta no lugar do preço.</li>
+  <li>Cada ficha tem um <strong>número</strong> (a ficha nº 2). Dois produtos podem ter nomes parecidos, mas nunca o mesmo número.</li>
+  <li>Cada assunto tem a <strong>sua gaveta</strong>: produtos numa, clientes noutra, pedidos noutra.</li>
+</ol>
+
+<p>Agora deite as fichas da gaveta lado a lado, uma embaixo da outra, e escreva os nomes dos campos só uma vez, no alto. Virou uma <strong>tabela</strong>, igual a uma planilha:</p>
+
+<pre class="file" data-file="produtos.sql" data-resultado>SELECT id, nome, categoria_id, preco, estoque
+FROM produtos
+LIMIT 5;
+</pre>
+
+<p>Esse quadro "Resultado" não foi digitado por ninguém: o SQLite do seu navegador abriu o banco da Loja Aurora e mostrou os 5 primeiros produtos. A caneta azul da ficha está lá, na linha de número 2.</p>
+
+<hr>
+
+<h2>1. As peças: tabela, linha, coluna e valor</h2>
+<p>Todo banco de dados do tipo que este guia ensina (o <strong>banco relacional</strong>) é feito destas peças:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>No caderno de fichas</th><th>Na planilha</th><th>Na Loja Aurora</th></tr>
+<tr><td><strong>Banco de dados</strong></td><td>O fichário inteiro, com todas as gavetas</td><td>O arquivo da planilha</td><td>O banco da loja, com 7 tabelas</td></tr>
+<tr><td><strong>Tabela</strong></td><td>Uma gaveta</td><td>Uma aba</td><td><code>produtos</code>, <code>clientes</code>, <code>pedidos</code>…</td></tr>
+<tr><td><strong>Linha</strong> (ou <strong>registro</strong>)</td><td>Uma ficha</td><td>Uma linha</td><td>A Caneta Esferográfica Azul</td></tr>
+<tr><td><strong>Coluna</strong> (ou <strong>campo</strong>)</td><td>Um campo da ficha</td><td>Uma coluna</td><td><code>nome</code>, <code>preco</code>, <code>estoque</code></td></tr>
+<tr><td><strong>Valor</strong></td><td>O que está escrito num campo</td><td>Uma célula</td><td><code>2.79</code>, o preço da caneta</td></tr>
+</table>
+</div>
+
+<p>Veja as peças numa tabela pequena, a das <strong>categorias</strong> da loja:</p>
+
+<pre class="file" data-file="categorias.sql" data-resultado>SELECT * FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>categorias</dt><dd>O nome da <strong>tabela</strong>. Ela guarda um assunto só: os departamentos da loja.</dd>
+  <dt>id, nome, descricao</dt><dd>As três <strong>colunas</strong>, o cabeçalho do quadro. Toda linha tem essas três, nem mais, nem menos.</dd>
+  <dt>a linha 2</dt><dd>Um <strong>registro</strong>: a categoria de número 2, chamada Eletrônicos, com a sua descrição.</dd>
+  <dt>Eletrônicos</dt><dd>Um <strong>valor</strong>: o que está guardado na coluna <code>nome</code> da linha 2.</dd>
+  <dt>8 linhas</dt><dd>A loja tem 8 categorias. O número embaixo do quadro conta as linhas para você.</dd>
+</dl>
+
+<div class="tip">
+<strong>O id: o número da ficha</strong>
+<p>A coluna <code>id</code> (de <em>identificador</em>) é o número da ficha. Nunca se repete dentro da tabela: existe uma só categoria 2, um só produto 2, um só cliente 2. É por esse número que o banco acha um registro sem confusão, mesmo quando dois nomes são parecidos. O nome técnico dessa coluna é <strong>chave primária</strong>, e ela tem aula própria: <a href="primary-key.html">PRIMARY KEY</a>.</p>
+</div>
+
+<div class="trysql" data-goal="colunas:id,nome,cidade,estado,pais,telefone">
+<p class="try-task"><strong>Experimente:</strong> o código abaixo mostra a gaveta das categorias. Troque a palavra <code>categorias</code> por <code>fornecedores</code> e clique em <strong>Rodar</strong> para abrir a gaveta das empresas que vendem para a loja. Quantas colunas ela tem? Quantas linhas?</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM fornecedores;
+</pre>
+</div>
+
+<p>Na tabela de fornecedores aparece uma palavra estranha em itálico: <em>NULL</em>, na coluna <code>estado</code> das duas empresas estrangeiras. NULL quer dizer "aqui não tem valor" (Porto, em Portugal, não tem estado brasileiro). É como um campo da ficha deixado em branco de propósito. O NULL é tão importante que tem aula própria: <a href="null.html">O Valor NULL</a>.</p>
+
+<hr>
+
+<h2>2. Um banco tem várias tabelas, e elas se ligam</h2>
+<p>A Loja Aurora não guarda tudo numa tabela só. Cada assunto tem a sua:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>O que guarda</th><th>Linhas</th></tr>
+<tr><td><code>categorias</code></td><td>Os departamentos da loja</td><td>8</td></tr>
+<tr><td><code>fornecedores</code></td><td>As empresas que vendem para a loja</td><td>6</td></tr>
+<tr><td><code>produtos</code></td><td>O que a loja vende, com preço e estoque</td><td>45</td></tr>
+<tr><td><code>clientes</code></td><td>Quem compra na loja</td><td>30</td></tr>
+<tr><td><code>funcionarios</code></td><td>Quem trabalha na loja</td><td>8</td></tr>
+<tr><td><code>pedidos</code></td><td>Cada compra feita: quem comprou, quando, o frete</td><td>90</td></tr>
+<tr><td><code>itens_pedido</code></td><td>O que foi comprado em cada pedido</td><td>220</td></tr>
+</table>
+</div>
+
+<p>Por que não uma tabela gigante? Volte ao primeiro quadro desta aula: a caneta azul não tem escrito "Papelaria" na linha dela; tem <code>categoria_id</code> = <code>1</code>. Esse 1 é o número da ficha da categoria Papelaria, na outra tabela. É como na ficha do produto estar escrito "ver gaveta CATEGORIAS, ficha nº 1".</p>
+
+<pre class="file" data-file="a ligação entre as duas gavetas">tabela produtos                               tabela categorias
+id | nome                      | categoria_id      id | nome
+ 2 | Caneta Esferográfica Azul | 1  ─────────────►  1 | Papelaria
+</pre>
+
+<p>Parece mais trabalho, mas pense no dia em que a loja resolver trocar o nome "Papelaria" para "Papelaria e Escritório". Com a ligação pelo número, muda-se <strong>uma</strong> linha na tabela de categorias, e todos os produtos de papelaria passam a mostrar o nome novo. Se o nome estivesse escrito em cada produto, seria preciso corrigir produto por produto, e bastaria esquecer um para o banco ficar contraditório.</p>
+
+<p>Essa ideia de tabelas ligadas por números é o que dá nome ao <strong>banco relacional</strong>: as tabelas se <em>relacionam</em>. Você vai aprender a juntar duas tabelas numa resposta só no Nível 2, em <a href="relacionamentos.html">Tabelas que se Relacionam</a> e <a href="joins.html">O que é um JOIN</a>. O mapa completo da Loja Aurora está na aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>3. Fazendo perguntas ao banco</h2>
+<p>Guardar é só metade do serviço. A graça de um banco é <strong>perguntar</strong>. A dona da loja quer saber quantos produtos a Aurora vende. No caderno, alguém teria de contar ficha por ficha. No banco:</p>
+
+<pre class="file" data-file="contar.sql" data-resultado>SELECT COUNT(*) FROM produtos;
+</pre>
+
+<p>São 45. E quais produtos estão com o estoque zerado, para pedir mais ao fornecedor?</p>
+
+<pre class="file" data-file="acabou.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque = 0;
+</pre>
+
+<p>Dois produtos. Você ainda não precisa entender cada palavra do código; repare só que a pergunta foi escrita quase como uma frase: "selecione o nome e o estoque dos produtos onde o estoque é zero". Essa língua de perguntas é o <strong>SQL</strong>, e a partir da aula <a href="select.html">SELECT</a> você vai escrevê-la sozinho. Uma pergunta feita ao banco se chama <strong>consulta</strong> (em inglês, <em>query</em>).</p>
+
+<hr>
+
+<h2>4. O programa que cuida do banco: o SGBD</h2>
+<p>Um banco de dados não se abre com um editor de texto, como uma carta. Quem lê, grava, organiza e protege os dados é um programa especial, o <strong>SGBD</strong>: <strong>S</strong>istema <strong>G</strong>erenciador de <strong>B</strong>anco de <strong>D</strong>ados (em inglês, <em>DBMS</em>, <em>Database Management System</em>).</p>
+
+<p>Pense no SGBD como o <strong>estoquista</strong> da loja. Você não entra no depósito mexendo nas prateleiras: você pede ao estoquista ("me traga as canetas azuis", "guarde estas 50 caixas") e ele sabe onde fica cada coisa, não deixa duas pessoas pegarem a mesma caixa ao mesmo tempo e anota tudo o que entra e sai. O pedido que você faz ao estoquista é escrito em SQL.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que é</th><th>Na loja</th></tr>
+<tr><td>Banco de dados</td><td>Os dados guardados, organizados em tabelas</td><td>O depósito com as prateleiras</td></tr>
+<tr><td>SGBD</td><td>O programa que cuida do banco</td><td>O estoquista</td></tr>
+<tr><td>SQL</td><td>A língua usada para falar com o SGBD</td><td>O jeito de fazer o pedido ao estoquista</td></tr>
+<tr><td>Consulta</td><td>Uma pergunta ou ordem em SQL</td><td>Um pedido: "me traga…"</td></tr>
+</table>
+</div>
+
+<p>Existem vários SGBDs: <strong>SQLite</strong>, <strong>MySQL</strong>, <strong>PostgreSQL</strong>, <strong>SQL Server</strong>, <strong>Oracle</strong>… Todos falam SQL, cada um com o seu sotaque. Este guia usa o <strong>SQLite</strong>, porque ele não precisa de instalação complicada nem de servidor e é o banco mais usado do mundo: está dentro de todo celular e de todo navegador. Os outros têm uma aula só para eles: <a href="bancos-famosos.html">Os Bancos Famosos</a>.</p>
+
+<div class="note">
+<strong>"Banco de dados" na conversa do dia a dia</strong>
+<p>Na prática, as pessoas dizem "banco de dados" para as duas coisas: os dados e o programa. "O banco caiu" quer dizer que o <strong>programa</strong> (o SGBD) parou; "o banco tem 30 clientes" fala dos <strong>dados</strong>. Pelo contexto, você entende qual dos dois.</p>
+</div>
+
+<hr>
+
+<h2>5. Por que um banco e não uma planilha?</h2>
+<p>Uma planilha também tem linhas e colunas. Para a lista de compras do mês, ela basta. A diferença aparece quando os dados crescem e muita gente mexe neles:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Na planilha</th><th>No banco de dados</th></tr>
+<tr><td>Alguém digita "dois" na coluna do preço</td><td>A planilha aceita; a soma do mês sai errada</td><td>Dá para proibir: a coluna só aceita números (aula <a href="check.html">CHECK</a>)</td></tr>
+<tr><td>Três vendedoras registram vendas ao mesmo tempo</td><td>Uma salva por cima da outra, ou o arquivo fica "em uso"</td><td>O SGBD organiza a fila; nenhuma venda se perde</td></tr>
+<tr><td>A luz acaba no meio de uma venda</td><td>O arquivo pode ficar pela metade</td><td>A venda entra inteira ou não entra (aula <a href="transacoes.html">Transações</a>)</td></tr>
+<tr><td>Um milhão de linhas</td><td>A planilha trava ou nem abre</td><td>Responde em milissegundos, ainda mais com um índice (aula <a href="indices.html">Índices</a>)</td></tr>
+<tr><td>"Quanto cada cliente gastou em 2025?"</td><td>Fórmulas e tabelas dinâmicas, refeitas a cada mês</td><td>Uma consulta, que pode ser guardada e repetida</td></tr>
+<tr><td>Um site ou aplicativo precisa ler os dados</td><td>Difícil e frágil</td><td>É para isso que os bancos existem (aula <a href="sql-nas-linguagens.html">SQL nas Linguagens</a>)</td></tr>
+</table>
+</div>
+
+<p>Não é que a planilha seja ruim: muita gente começa nela, e o guia tem até um projeto para levar uma planilha para dentro do banco (<a href="projeto-csv.html">Projeto: da Planilha ao Banco</a>). Só que, quando os dados viram o coração de um negócio, um banco dá regras, segurança e velocidade que a planilha não dá.</p>
+
+<h3>Formas de guardar dados, e qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Começa a sofrer quando…</th></tr>
+<tr><td>Caderno ou fichas de papel</td><td>Pouca coisa, uma pessoa só</td><td>É preciso contar, somar ou procurar</td></tr>
+<tr><td>Arquivo de texto (anotações)</td><td>Lembretes, listas soltas</td><td>Os dados precisam de colunas e de conta</td></tr>
+<tr><td>Planilha</td><td>Tabelas pequenas, contas rápidas, uma ou duas pessoas</td><td>Muitas tabelas ligadas, muita gente ao mesmo tempo, muitos dados</td></tr>
+<tr><td>Banco de dados relacional (SQL)</td><td>Dados de um negócio, sites, aplicativos</td><td>Quase nunca: é a escolha padrão do mercado há décadas</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E os bancos "NoSQL"?</strong>
+<p>Você vai ouvir falar de bancos <strong>NoSQL</strong> (como o MongoDB e o Redis). Eles guardam os dados de outros jeitos: em documentos, em pares "chave → valor", em grafos. Têm o seu lugar, mas não usam tabelas como as desta aula e não são o assunto deste guia. Aqui, "banco de dados" é sempre o banco <strong>relacional</strong>, o de tabelas e SQL.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Um banco é exigente com nomes: ele não "adivinha" o que você quis dizer. As duas mensagens abaixo são as que todo iniciante vê primeiro. Elas vêm em inglês, porque o SQLite fala inglês; o quadro mostra a mensagem real que o seu navegador recebeu.</p>
+
+<div class="cenario">
+<strong>A gaveta com o nome errado: <code>produto</code> no singular</strong>
+<pre class="file" data-file="erro-tabela.sql" data-resultado data-erro>SELECT * FROM produto;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such table: produto</code> quer dizer "não existe a tabela <code>produto</code>". A tabela se chama <code>produtos</code>, no plural. Para o banco, uma letra a menos é outro nome, como pedir ao estoquista a gaveta "PRODUTO" quando na etiqueta está escrito "PRODUTOS".</p>
+<p><strong>Como consertar:</strong> use o nome exato da tabela: <code>SELECT * FROM produtos;</code>. Se não lembrar os nomes, a aula <a href="comandos-ponto.html">Comandos de Ponto</a> mostra como listar as tabelas de um banco.</p>
+</div>
+
+<div class="cenario">
+<strong>O campo com acento: <code>preço</code></strong>
+<pre class="file" data-file="erro-coluna.sql" data-resultado data-erro>SELECT preço FROM produtos;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: preço</code>, "não existe a coluna <code>preço</code>". Na Loja Aurora, a coluna foi criada como <code>preco</code>, sem cedilha. Quem cria a tabela escolhe os nomes, e o banco exige exatamente aquele nome.</p>
+<p><strong>Como consertar:</strong> <code>SELECT preco FROM produtos;</code>. Por isso o costume, que este guia segue, é dar às colunas nomes <strong>sem acento, sem espaço e em minúsculas</strong>: <code>preco</code>, <code>chefe_id</code>, <code>entregue_em</code>. Ninguém precisa lembrar se tinha cedilha.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:45">
+<p class="try-task"><strong>Missão:</strong> este código tem os dois erros que você acabou de ver. Rode, leia a mensagem, conserte e rode de novo, até aparecerem os nomes e preços dos 45 produtos da loja.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preço FROM produto;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco FROM produtos;
+</pre>
+</div>
+
+<p>Reparou? O banco acusou um erro de cada vez. Ele para no primeiro problema que encontra, e só depois de consertado você vê o próximo.</p>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>Em inglês</th><th>O que é</th></tr>
+<tr><td>Banco de dados</td><td><em>database</em></td><td>Conjunto de dados organizados, guardados para serem consultados</td></tr>
+<tr><td>Banco relacional</td><td><em>relational database</em></td><td>Banco feito de tabelas que se ligam por números (ids); fala SQL</td></tr>
+<tr><td>Tabela</td><td><em>table</em></td><td>Os dados de um assunto: a "gaveta" dos produtos, dos clientes…</td></tr>
+<tr><td>Linha, registro</td><td><em>row</em>, <em>record</em></td><td>Um item da tabela: uma "ficha"</td></tr>
+<tr><td>Coluna, campo</td><td><em>column</em>, <em>field</em></td><td>Uma informação que toda linha tem: nome, preço…</td></tr>
+<tr><td>Valor</td><td><em>value</em></td><td>O que está guardado numa coluna de uma linha</td></tr>
+<tr><td>NULL</td><td><em>null</em></td><td>"Sem valor": o campo em branco</td></tr>
+<tr><td>Chave primária (id)</td><td><em>primary key</em></td><td>A coluna que identifica cada linha; nunca se repete</td></tr>
+<tr><td>SGBD</td><td><em>DBMS</em></td><td>O programa que cuida do banco: SQLite, MySQL, PostgreSQL…</td></tr>
+<tr><td>Consulta</td><td><em>query</em></td><td>Uma pergunta (ou ordem) feita ao banco em SQL</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A gaveta</h3>
+<p>Num banco de dados, o conjunto de linhas sobre um mesmo assunto (os produtos, os clientes) se chama:</p>
+<div class="ex-code"><input data-answer="tabela" aria-label="nome da peça"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O programa</h3>
+<p>Complete a sigla do programa que cuida do banco de dados: Sistema Gerenciador de Banco de Dados.</p>
+<div class="ex-code"><input data-answer="SGBD" aria-label="sigla"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Na tabela <code>categorias</code>, o que é "Eletrônicos"?</p>
+<label><input type="radio" name="q3"> Uma tabela</label>
+<label><input type="radio" name="q3"> Um valor da coluna <code>nome</code></label>
+<label><input type="radio" name="q3"> Uma coluna</label>
+<label><input type="radio" name="q3"> O nome do banco</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que o produto guarda <code>categoria_id</code> = 1 em vez de escrever "Papelaria"?</p>
+<label><input type="radio" name="q4"> Porque o banco não aceita texto</label>
+<label><input type="radio" name="q4"> Porque números ocupam menos papel</label>
+<label><input type="radio" name="q4"> Para o nome da categoria ficar num lugar só: muda-se uma linha e todos os produtos acompanham</label>
+<label><input type="radio" name="q4"> Por acaso; tanto faz</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou <code>SELECT * FROM cliente;</code> e recebeu <code>no such table: cliente</code>. O que aconteceu?</p>
+<label><input type="radio" name="q5"> O banco está vazio</label>
+<label><input type="radio" name="q5"> O SQLite está com defeito</label>
+<label><input type="radio" name="q5"> Faltou o ponto e vírgula</label>
+<label><input type="radio" name="q5"> A tabela se chama <code>clientes</code>, no plural, e o banco exige o nome exato</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual situação mais pede um banco de dados em vez de uma planilha?</p>
+<label><input type="radio" name="q6"> Um site de vendas em que várias pessoas compram ao mesmo tempo</label>
+<label><input type="radio" name="q6"> A lista de compras do supermercado da semana</label>
+<label><input type="radio" name="q6"> As notas de uma prova de uma turma de 10 alunos, feitas uma vez</label>
+<label><input type="radio" name="q6"> Um lembrete de aniversários da família</label>
+</div>
+
+<h3>Missão final: abra a gaveta dos pedidos</h3>
+
+<div class="trysql" data-goal="linhas:90;;colunas:id,cliente_id,funcionario_id,data,entregue_em,frete">
+<p class="try-task"><strong>Missão:</strong> o código mostra a tabela de clientes. Faça ele mostrar a tabela <code>pedidos</code>, com todas as suas linhas. Depois, olhe o resultado: quantos pedidos a loja tem? Em que coluna aparece o número do cliente que fez cada pedido? E, rolando até o fim, quais pedidos ainda têm <em>NULL</em> em <code>entregue_em</code>?</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM pedidos;
+</pre>
+</div>
+
+<p>Os pedidos com <code>entregue_em</code> vazio são os que ainda estão a caminho do cliente. E a coluna <code>cliente_id</code> é a mesma ideia do <code>categoria_id</code>: o número da ficha do cliente, na outra tabela.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>banco de dados</strong> guarda dados organizados para serem consultados, como um fichário: cada gaveta é uma <strong>tabela</strong>, cada ficha é uma <strong>linha</strong> (registro), cada campo da ficha é uma <strong>coluna</strong>, e o que está escrito nele é um <strong>valor</strong>.</li>
+  <li>Toda linha de uma tabela tem as mesmas colunas. A coluna <code>id</code> é o número da ficha e nunca se repete (a <strong>chave primária</strong>).</li>
+  <li>Num <strong>banco relacional</strong>, as tabelas se ligam por esses números: o produto guarda <code>categoria_id</code> = 1 para dizer "sou da categoria 1".</li>
+  <li>O <strong>SGBD</strong> é o programa que cuida do banco (SQLite, MySQL, PostgreSQL…); você fala com ele em <strong>SQL</strong>, fazendo <strong>consultas</strong>.</li>
+  <li>Comparado a uma planilha, um banco dá regras para os dados, aguenta muita gente ao mesmo tempo, não perde dados pela metade e responde rápido, mesmo com milhões de linhas.</li>
+  <li>O banco exige o nome exato: <code>no such table</code> e <code>no such column</code> querem dizer que o nome da tabela ou da coluna está errado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
