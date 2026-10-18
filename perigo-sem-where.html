@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL O Perigo do UPDATE e DELETE sem WHERE — e como se proteger | Guia SQL</title>
+<meta name="description" content="O que acontece com um UPDATE ou DELETE sem WHERE, para quem nunca mexeu num banco: 45 preços iguais, 220 itens apagados, o WHERE que é sempre verdadeiro (id = 27 OR 28), o ponto e vírgula fora do lugar, e as proteções: o ensaio com SELECT, RETURNING, transação, backup e o safe-updates do MySQL, com os resultados reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">O Perigo do UPDATE e DELETE sem WHERE</span></h1>
+
+<p class="intro">Numa sexta-feira à tarde, a Ana quis baixar o preço do Lápis Grafite HB e digitou, com pressa, <code>UPDATE produtos SET preco = 0.99;</code>. Faltou o <code>WHERE id = 3</code>. O SQLite respondeu "45 linhas afetadas", e todos os produtos da Loja Aurora, da caneta ao jogo de panelas, passaram a custar 99 centavos. Nenhum erro, nenhuma pergunta "tem certeza?". Esta aula é sobre esse tipo de acidente: <strong>como ele acontece</strong> (inclusive de jeitos menos óbvios do que esquecer o <code>WHERE</code>) e <strong>os hábitos que protegem</strong> você dele.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que um <code>UPDATE</code> e um <code>DELETE</code> fazem quando não têm <code>WHERE</code>.</li>
+  <li>Por que as chaves estrangeiras às vezes salvam você, e quando não salvam.</li>
+  <li>Três jeitos de ter um <code>WHERE</code> e mesmo assim mudar tudo: <code>id = 27 OR 28</code>, o <code>;</code> fora do lugar e a condição sempre verdadeira.</li>
+  <li>O <strong>ensaio</strong>: o <code>SELECT</code> com o mesmo <code>WHERE</code>, antes de mudar qualquer coisa.</li>
+  <li><code>RETURNING</code>: ver o que mudou, na hora.</li>
+  <li>As redes de segurança: transação, backup e o modo <em>safe-updates</em> do MySQL.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Aqui o acidente não custa nada</strong>
+<p>No editor do guia, <strong>cada Rodar começa do banco limpo</strong>. Você vai ver todos os desastres desta aula acontecerem de verdade, e no próximo Rodar a Loja Aurora volta inteira. No terminal e em qualquer banco de verdade, não há esse botão.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: a borracha que apaga o fichário inteiro</h2>
+<p>Lembre das aulas <a href="update.html">UPDATE</a> e <a href="delete.html">DELETE</a>: o <code>WHERE</code> é quem <strong>escolhe as fichas</strong> que vão mudar ou sair. Sem ele, o banco não tem como escolher, e faz o que a frase diz ao pé da letra: <code>UPDATE produtos SET preco = 0.99</code> quer dizer "o preço dos produtos passa a ser 0.99". Dos produtos, todos. É como pedir a alguém "risque o preço e escreva 0,99" e entregar o fichário inteiro, sem dizer qual ficha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Com WHERE</th><th>Sem WHERE</th></tr>
+<tr><td><code>SELECT</code></td><td>Mostra algumas linhas</td><td>Mostra todas (inofensivo)</td></tr>
+<tr><td><code>UPDATE</code></td><td>Muda algumas linhas</td><td><strong>Muda todas</strong></td></tr>
+<tr><td><code>DELETE</code></td><td>Apaga algumas linhas</td><td><strong>Apaga todas</strong></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. UPDATE sem WHERE</h2>
+<p>O acidente da Ana, de verdade:</p>
+
+<pre class="file" data-file="acidente.sql" data-resultado>UPDATE produtos
+SET preco = 0.99;
+
+SELECT id, nome, preco FROM produtos;
+</pre>
+
+<p>"45 linhas afetadas", e a tabela inteira com o mesmo preço. Repare em três coisas:</p>
+<ol class="passo">
+  <li><strong>Nenhum erro.</strong> O comando é perfeitamente válido. Para o SQLite, "mudar o preço de todos" é um pedido normal (e às vezes é mesmo o que se quer).</li>
+  <li><strong>O valor antigo sumiu.</strong> O banco não guarda o "antes". Se não houver backup, os 45 preços certos se perderam.</li>
+  <li><strong>O número de linhas afetadas avisou.</strong> A Ana queria mudar 1 produto e o banco disse 45. Ler esse número é a primeira proteção.</li>
+</ol>
+
+<p>Com um texto é a mesma coisa. Para corrigir o email de um cliente:</p>
+
+<pre class="file" data-file="emails.sql" data-resultado>UPDATE clientes
+SET email = 'luis.brito@exemplo.com.br';
+
+SELECT id, nome, email FROM clientes WHERE id &lt;= 5;
+</pre>
+
+<p>Os 30 clientes agora têm o email do Luís Otávio. Uma campanha enviada depois disso mandaria 30 cópias para a mesma pessoa.</p>
+
+<hr>
+
+<h2>2. DELETE sem WHERE</h2>
+<p>Agora a Ana queria cancelar os itens do pedido 90 e esqueceu o <code>WHERE pedido_id = 90</code>:</p>
+
+<pre class="file" data-file="itens.sql" data-resultado>DELETE FROM itens_pedido;
+
+SELECT * FROM itens_pedido;
+</pre>
+
+<p>"220 linhas afetadas", e a tabela ficou vazia: todos os itens de todos os 90 pedidos, apagados. A tabela continua existindo (ela não foi "derrubada"; isso seria <a href="drop-table.html">DROP TABLE</a>), mas sem nenhuma linha.</p>
+
+<h3>Quando as chaves estrangeiras salvam</h3>
+<p>Com outras tabelas, a Aurora tem uma proteção: as <strong>chaves estrangeiras</strong> (aula <a href="foreign-key.html">FOREIGN KEY</a>). Um <code>DELETE FROM produtos;</code> tenta apagar produtos que estão em <code>itens_pedido</code>, e o banco recusa:</p>
+
+<pre class="file" data-file="produtos.sql" data-resultado data-erro>DELETE FROM produtos;
+</pre>
+
+<p><code>FOREIGN KEY constraint failed</code>, e nenhum produto sai. Mas essa proteção depende de existirem "filhos" apontando para as linhas. Veja o que acontece se o primeiro acidente já tiver acontecido:</p>
+
+<pre class="file" data-file="dois-acidentes.sql" data-resultado>DELETE FROM itens_pedido;
+
+DELETE FROM produtos;
+
+SELECT * FROM produtos;
+</pre>
+
+<p>Com os itens apagados, nada mais aponta para os produtos, e os 45 vão embora também. As chaves estrangeiras protegem a <strong>ligação</strong> entre as tabelas, não os seus dados. E lembre: no terminal do <code>sqlite3</code>, elas começam <strong>desligadas</strong> (aula <a href="delete.html">DELETE</a>), e aí nem essa proteção existe.</p>
+
+<hr>
+
+<h2>3. Tem WHERE, e mesmo assim muda tudo</h2>
+<p>Esquecer o <code>WHERE</code> é o caso famoso. Os três abaixo são mais traiçoeiros, porque o <code>WHERE</code> está lá.</p>
+
+<h3>O <code>OR</code> pela metade</h3>
+<p>A Ana quer tornar VIP os clientes 27 e 28 e escreve como fala: "id igual a 27 ou 28".</p>
+
+<pre class="file" data-file="or-pela-metade.sql" data-resultado>UPDATE clientes
+SET vip = 1
+WHERE id = 27 OR 28;
+
+SELECT id, nome, vip FROM clientes;
+</pre>
+
+<p>"30 linhas afetadas": todo mundo virou VIP. O SQLite leu o <code>WHERE</code> como duas condições, <code>id = 27</code> <strong>ou</strong> <code>28</code>. E <code>28</code>, sozinho, é um número diferente de zero, que o SQLite trata como <strong>verdadeiro</strong> (aula <a href="or.html">OR</a>). "Qualquer coisa OU verdadeiro" é sempre verdadeiro, então todas as linhas passaram. O certo é repetir a coluna, <code>WHERE id = 27 OR id = 28</code>, ou usar <code>WHERE id IN (27, 28)</code>.</p>
+
+<div class="trysql" data-goal="linhas:7">
+<p class="try-task"><strong>Missão:</strong> conserte o <code>WHERE</code> para que <strong>só</strong> os clientes 27 e 28 virem VIP. O <code>SELECT</code> lista os VIPs: a Aurora já tem 5, então devem aparecer 7.</p>
+<pre class="script" data-file="vip.sql">UPDATE clientes
+SET vip = 1
+WHERE id = 27 OR 28;
+
+SELECT id, nome, vip FROM clientes WHERE vip = 1;
+</pre>
+<pre class="solucao" data-file="vip.sql">UPDATE clientes
+SET vip = 1
+WHERE id IN (27, 28);
+
+SELECT id, nome, vip FROM clientes WHERE vip = 1;
+</pre>
+</div>
+
+<h3>O ponto e vírgula fora do lugar</h3>
+<p>O <code>;</code> termina o comando. Se ele cair <strong>antes</strong> do <code>WHERE</code>, o <code>UPDATE</code> acaba ali, sem condição nenhuma:</p>
+
+<pre class="file" data-file="ponto-e-virgula.sql" data-resultado data-erro>UPDATE produtos
+SET preco = 0.99;
+WHERE id = 3;
+</pre>
+
+<p>Olhe o quadro com atenção: primeiro <strong>"45 linhas afetadas"</strong>, depois o erro <code>near "WHERE": syntax error</code>. A mensagem de erro é sobre a <strong>segunda</strong> linha, o <code>WHERE id = 3;</code> sozinho, que não é um comando válido. Mas a primeira já tinha rodado, sem <code>WHERE</code>, e mudado os 45 preços. Quem vê só a mensagem vermelha acha que "não rodou nada", e é o contrário.</p>
+
+<p>Esse acidente também acontece em programas de banco de dados com um botão "executar seleção": a pessoa seleciona só a primeira linha do comando (<code>UPDATE produtos SET preco = 0.99</code>) e o programa roda exatamente isso.</p>
+
+<h3>A condição que é sempre verdadeira</h3>
+<p>Um <code>WHERE</code> pode existir e não filtrar nada. A Ana queria mudar só os produtos de estoque baixo, e escreveu a condição ao contrário:</p>
+
+<pre class="file" data-file="sempre-verdade.sql" data-resultado>UPDATE produtos
+SET descontinuado = 1
+WHERE estoque &gt;= 0;
+</pre>
+
+<p>"45 linhas afetadas": nenhum produto tem estoque negativo, então todos passaram. Para o SQLite, não há diferença entre isso e não ter <code>WHERE</code>. Só o <strong>ensaio</strong>, a seguir, mostra a diferença antes do estrago.</p>
+
+<hr>
+
+<h2>4. O ensaio: SELECT antes de mudar</h2>
+<p>O hábito mais importante desta aula: <strong>antes de um <code>UPDATE</code> ou <code>DELETE</code>, rode um <code>SELECT</code> com exatamente o mesmo <code>WHERE</code></strong>. As linhas que ele mostrar são as que vão mudar. É como ensaiar a peça antes da estreia.</p>
+
+<p>A Ana vai dar 10% de desconto nos Eletrônicos (categoria 2) com mais de 50 unidades em estoque. Primeiro, o ensaio:</p>
+
+<pre class="file" data-file="ensaio.sql" data-resultado>SELECT id, nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 2 AND estoque &gt; 50;
+</pre>
+
+<p>Três produtos: o mouse, o carregador e o cabo HDMI. É isso mesmo que ela quer? Sim. Então, e só então, ela troca o começo e <strong>mantém o <code>WHERE</code> idêntico</strong>:</p>
+
+<pre class="file" data-file="desconto.sql" data-resultado>UPDATE produtos
+SET preco = ROUND(preco * 0.9, 2)
+WHERE categoria_id = 2 AND estoque &gt; 50;
+
+SELECT id, nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 2 AND estoque &gt; 50;
+</pre>
+
+<p>"3 linhas afetadas", o mesmo número do ensaio. Se o <code>UPDATE</code> dissesse outro número, algo estaria errado.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>O que fazer</th><th>Por quê</th></tr>
+<tr><td>1. Escreva o <code>WHERE</code> primeiro</td><td>Num <code>SELECT</code>: <code>SELECT * FROM t WHERE …</code></td><td>Um <code>SELECT</code> errado não estraga nada</td></tr>
+<tr><td>2. Confira o resultado</td><td>As linhas são as certas? A quantidade bate?</td><td>É aqui que <code>OR 28</code> e <code>estoque &gt;= 0</code> se revelam</td></tr>
+<tr><td>3. Troque só o começo</td><td><code>SELECT * FROM t</code> → <code>UPDATE t SET …</code> ou <code>DELETE FROM t</code></td><td>O <code>WHERE</code> testado continua igual</td></tr>
+<tr><td>4. Compare a contagem</td><td>"N linhas afetadas" = linhas do ensaio</td><td>Se não bater, pare e investigue</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Comece pelo WHERE</strong>
+<p>Um truque de quem trabalha com bancos de dados todo dia: ao escrever um <code>UPDATE</code> ou <code>DELETE</code>, escreva a linha do <code>WHERE</code> <strong>antes</strong> do resto. Assim, se você for interrompido no meio, o comando incompleto dá erro de sintaxe em vez de rodar sem filtro.</p>
+</div>
+
+<hr>
+
+<h2>5. RETURNING: o que mudou, na hora</h2>
+<p>O SQLite aceita <code>RETURNING</code> no fim do <code>UPDATE</code> e do <code>DELETE</code>. Ele devolve <strong>as linhas que o comando mexeu</strong>: no <code>UPDATE</code>, já com os valores novos; no <code>DELETE</code>, como eram antes de sair. É o ensaio e a conferência num comando só:</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>UPDATE produtos
+SET preco = ROUND(preco * 0.9, 2)
+WHERE categoria_id = 2 AND estoque &gt; 50
+RETURNING id, nome, preco, estoque;
+</pre>
+
+<p>Se a Ana tivesse esquecido o <code>WHERE</code>, o <code>RETURNING</code> teria despejado 45 linhas na tela, impossível de não notar. Mas atenção: ele mostra o estrago <strong>depois</strong> que o estrago aconteceu. Ele não substitui o ensaio; ele confirma. Para poder voltar atrás, é preciso a próxima seção.</p>
+
+<pre class="file" data-file="returning-delete.sql" data-resultado>DELETE FROM itens_pedido
+WHERE pedido_id = 90
+RETURNING pedido_id, produto_id, quantidade;
+</pre>
+
+<hr>
+
+<h2>6. As redes de segurança</h2>
+
+<h3>Transação: poder dizer "desfaz"</h3>
+<p>Uma <strong>transação</strong> é um grupo de comandos que só vale de verdade quando você confirma. Você abre com <code>BEGIN</code> ("começar"), faz as mudanças, confere, e no fim escolhe: <code>COMMIT</code> ("confirmar") ou <code>ROLLBACK</code> ("voltar atrás"). Veja a Ana repetindo o acidente no terminal, desta vez dentro de uma transação:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> BEGIN;
+sqlite> UPDATE produtos SET preco = 9.9;
+sqlite> SELECT id, nome, preco FROM produtos WHERE id &lt;= 3;
+1|Caderno Pautado 96 folhas|9.9
+2|Caneta Esferográfica Azul|9.9
+3|Lápis Grafite HB|9.9                 « opa: todos iguais
+sqlite> ROLLBACK;
+sqlite> SELECT id, nome, preco FROM produtos WHERE id &lt;= 3;
+1|Caderno Pautado 96 folhas|12.35
+2|Caneta Esferográfica Azul|2.79
+3|Lápis Grafite HB|1.15                 « os preços de antes voltaram
+sqlite> .quit</pre>
+
+<p>O <code>ROLLBACK</code> desfez o <code>UPDATE</code> inteiro, como se ele nunca tivesse acontecido. Como funcionam o <code>BEGIN</code>, o <code>COMMIT</code> e o <code>ROLLBACK</code>, e os cuidados que eles exigem, você aprende nas aulas <a href="transacoes.html">Transações (BEGIN e COMMIT)</a> e <a href="rollback.html">ROLLBACK e Savepoints</a>. Por ora, guarde: <strong>antes de um <code>UPDATE</code> ou <code>DELETE</code> arriscado no terminal, comece com <code>BEGIN;</code></strong>.</p>
+
+<h3>Backup: a cópia de antes</h3>
+<p>A rede mais simples de todas: uma cópia do banco antes da mudança. No terminal, o comando de ponto <code>.backup</code> grava uma cópia completa num arquivo novo (aula <a href="dump-backup.html">Backup (.dump e .backup)</a>):</p>
+
+<pre class="term">$ sqlite3 loja.db ".backup loja-antes.db"
+$ ls
+Área de trabalho
+Documentos
+Downloads
+Imagens
+loja-antes.db                « a cópia
+loja.db
+Modelos
+Música
+Público
+Vídeos</pre>
+
+<p>Se o acidente acontecer, os dados de antes estão em <code>loja-antes.db</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes de se proteger</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Proteção</th><th>Como</th><th>Protege contra</th></tr>
+<tr><td>Ler a contagem</td><td>"N linhas afetadas", ou <code>.changes on</code> no terminal</td><td>Perceber o acidente na hora</td></tr>
+<tr><td>Ensaio</td><td><code>SELECT</code> com o mesmo <code>WHERE</code>, antes</td><td><code>WHERE</code> esquecido, <code>OR 28</code>, condição sempre verdadeira</td></tr>
+<tr><td>WHERE pela chave</td><td><code>WHERE id = 3</code>, <code>WHERE id IN (27, 28)</code></td><td>Mudar mais linhas do que as que você queria</td></tr>
+<tr><td><code>RETURNING</code></td><td>No fim do <code>UPDATE</code>/<code>DELETE</code></td><td>Mudanças despercebidas (confirma depois)</td></tr>
+<tr><td>Transação</td><td><code>BEGIN;</code> … conferir … <code>COMMIT;</code> ou <code>ROLLBACK;</code></td><td>Qualquer engano, enquanto não houver <code>COMMIT</code></td></tr>
+<tr><td>Backup</td><td><code>.backup arquivo.db</code></td><td>Tudo, inclusive enganos já confirmados</td></tr>
+<tr><td>Chaves estrangeiras</td><td><code>PRAGMA foreign_keys = ON;</code> no terminal</td><td>Apagar linhas que outras tabelas usam</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Nesta aula, "dar errado" quase nunca é uma mensagem vermelha: é o banco fazer, sem reclamar, algo que você não queria. Os sintomas:</p>
+
+<div class="cenario">
+<strong>"45 linhas afetadas" quando você queria 1</strong>
+<p><strong>O que aconteceu:</strong> o <code>WHERE</code> faltou, ou não filtrou (sempre verdadeiro, <code>OR</code> pela metade).</p>
+<p><strong>O que fazer:</strong> no editor, rode de novo: o banco volta limpo. No terminal, se você abriu uma transação, <code>ROLLBACK;</code>. Se não abriu, só um backup traz os dados de volta.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma mensagem de erro depois de "N linhas afetadas"</strong>
+<p><strong>O que aconteceu:</strong> um <code>;</code> no lugar errado dividiu o comando em dois. O primeiro pedaço rodou (sem <code>WHERE</code>); o erro é do segundo.</p>
+<p><strong>O que fazer:</strong> nunca conclua "deu erro, então não rodou". Leia tudo o que o editor (ou o terminal) mostrou, de cima para baixo.</p>
+</div>
+
+<div class="cenario">
+<strong>O DELETE sem WHERE passou no terminal e não no editor</strong>
+<p><strong>O que aconteceu:</strong> no editor, as chaves estrangeiras barram <code>DELETE FROM produtos;</code>. No <code>sqlite3</code>, elas começam desligadas, e o mesmo comando apaga os 45 produtos, deixando os itens dos pedidos apontando para o nada.</p>
+<p><strong>O que fazer:</strong> <code>PRAGMA foreign_keys = ON;</code> no começo de toda sessão no terminal.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Nenhum banco pede confirmação antes de um <code>UPDATE</code> ou <code>DELETE</code> sem <code>WHERE</code>: o comando é válido em todos. O <strong>MySQL</strong> tem uma proteção opcional, o modo <em>safe-updates</em>: abrindo o programa <code>mysql</code> com <code>--safe-updates</code> (ou o divertido sinônimo <code>--i-am-a-dummy</code>, "sou um bobo"), ele liga a variável <code>sql_safe_updates</code>, e todo <code>UPDATE</code> ou <code>DELETE</code> que não filtrar por uma chave no <code>WHERE</code> (ou não tiver <code>LIMIT</code>) dá erro em vez de rodar. Trecho só ilustrativo, em MySQL:</p>
+<pre class="file" data-file="mysql (ilustrativo)">SET sql_safe_updates = 1;
+UPDATE produtos SET preco = 0.99;          -- recusado: sem chave no WHERE
+UPDATE produtos SET preco = 0.99 WHERE id = 3;   -- aceito
+</pre>
+<p>O SQLite não tem esse modo. Nele, as proteções são as desta aula: o ensaio, o <code>RETURNING</code>, a transação e o backup. O <code>RETURNING</code> também existe no PostgreSQL; no SQL Server, o equivalente é o <code>OUTPUT</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>UPDATE t SET c = v;</code></td><td>Muda <strong>todas</strong> as linhas</td></tr>
+<tr><td><code>DELETE FROM t;</code></td><td>Apaga <strong>todas</strong> as linhas (se as chaves estrangeiras deixarem)</td></tr>
+<tr><td><code>WHERE id = 27 OR 28</code></td><td>Sempre verdadeiro: o <code>28</code> sozinho vale "verdadeiro"</td></tr>
+<tr><td><code>WHERE id IN (27, 28)</code></td><td>O jeito certo de escolher duas linhas</td></tr>
+<tr><td><code>SELECT … WHERE X</code> e depois <code>UPDATE … WHERE X</code></td><td>O ensaio: as linhas do <code>SELECT</code> são as que vão mudar</td></tr>
+<tr><td><code>… RETURNING colunas;</code></td><td>Mostra as linhas que o comando mexeu</td></tr>
+<tr><td><code>BEGIN;</code> … <code>ROLLBACK;</code></td><td>Desfaz tudo desde o <code>BEGIN</code> (aula <a href="transacoes.html">Transações</a>)</td></tr>
+<tr><td><code>.backup arquivo.db</code></td><td>Cópia do banco antes de mexer</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. O que <code>UPDATE produtos SET estoque = 0;</code> faz na Loja Aurora?</p>
+<label><input type="radio" name="q1"> Dá erro, porque falta o <code>WHERE</code></label>
+<label><input type="radio" name="q1"> Pergunta se você tem certeza</label>
+<label><input type="radio" name="q1"> Zera o estoque dos 45 produtos, sem erro</label>
+<label><input type="radio" name="q1"> Muda só o primeiro produto</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Quantas linhas <code>UPDATE clientes SET vip = 1 WHERE id = 5 OR 6;</code> muda?</p>
+<label><input type="radio" name="q2"> 2</label>
+<label><input type="radio" name="q2"> 30, porque o <code>6</code> sozinho é sempre verdadeiro</label>
+<label><input type="radio" name="q2"> 1</label>
+<label><input type="radio" name="q2"> 0, porque dá erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. O editor mostrou "45 linhas afetadas" e, embaixo, <code>near "WHERE": syntax error</code>. O que aconteceu?</p>
+<label><input type="radio" name="q3"> Nada: o erro impediu o comando</label>
+<label><input type="radio" name="q3"> Só a linha do <code>WHERE</code> rodou</label>
+<label><input type="radio" name="q3"> O banco foi apagado</label>
+<label><input type="radio" name="q3"> Um <code>;</code> antes do <code>WHERE</code> fez o <code>UPDATE</code> rodar sem filtro; o erro é do pedaço que sobrou</label>
+</div>
+
+<div class="exercise">
+<h3>4. O ensaio</h3>
+<p>Antes de <code>DELETE FROM produtos WHERE estoque = 0;</code>, a Ana faz o ensaio. Complete a palavra que começa o comando:</p>
+<div class="ex-code"><input data-answer="SELECT|select" aria-label="comando do ensaio"> * FROM produtos WHERE estoque = 0;</div>
+</div>
+
+<div class="exercise">
+<h3>5. Desfazer</h3>
+<p>A Ana abriu uma transação com <code>BEGIN;</code> e rodou um <code>UPDATE</code> errado. Que comando desfaz a mudança?</p>
+<div class="ex-code"><input data-answer="ROLLBACK;|rollback;|ROLLBACK|rollback" aria-label="comando que desfaz"></div>
+</div>
+
+<h3>Missão final: o desconto com conferência</h3>
+
+<div class="trysql" data-goal="linhas:3;;contem:Mouse Sem Fio|53.9">
+<p class="try-task"><strong>Missão:</strong> a Ana vai dar <strong>10% de desconto</strong> (<code>preco * 0.9</code>) nos produtos de <strong>Eletrônicos</strong> (<code>categoria_id = 2</code>) que têm <strong>mais de 50 unidades</strong> em estoque. O ensaio já está feito abaixo. Escreva o <code>UPDATE</code> com o mesmo <code>WHERE</code> e termine com <code>RETURNING</code> para conferir: devem aparecer exatamente 3 produtos, com o preço novo. (Dica: apague o <code>SELECT</code> do ensaio depois de conferir, ou deixe-o <strong>antes</strong> do <code>UPDATE</code>.)</p>
+<pre class="script" data-file="desconto.sql">SELECT id, nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 2 AND estoque &gt; 50;
+</pre>
+<pre class="solucao" data-file="desconto.sql">UPDATE produtos
+SET preco = ROUND(preco * 0.9, 2)
+WHERE categoria_id = 2 AND estoque &gt; 50
+RETURNING id, nome, preco, estoque;
+</pre>
+</div>
+
+<p>Esqueceu o <code>WHERE</code>? O <code>RETURNING</code> mostrou 45 linhas, e a missão não passou. Escreveu só <code>WHERE categoria_id = 2</code>? Vieram 7. É exatamente para isso que a conferência serve.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Sem <code>WHERE</code>, o <code>UPDATE</code> muda <strong>todas</strong> as linhas e o <code>DELETE</code> apaga <strong>todas</strong>, sem erro e sem pergunta.</li>
+  <li>As chaves estrangeiras só barram o <code>DELETE</code> enquanto houver linhas apontando; no terminal, começam desligadas.</li>
+  <li>Um <code>WHERE</code> pode existir e não filtrar: <code>id = 27 OR 28</code> (use <code>IN (27, 28)</code>), condição sempre verdadeira, <code>;</code> antes do <code>WHERE</code>.</li>
+  <li><strong>Ensaio:</strong> rode o <code>SELECT</code> com o mesmo <code>WHERE</code> antes; depois troque só o começo do comando e compare a contagem.</li>
+  <li><code>RETURNING</code> mostra o que o comando mexeu. Ele confirma; não desfaz.</li>
+  <li>Para poder desfazer: <code>BEGIN;</code> antes e <code>ROLLBACK;</code> se der errado (aula <a href="transacoes.html">Transações</a>). Para tudo o mais: <code>.backup</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
