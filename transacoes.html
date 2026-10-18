@@ -230,20 +230,20 @@ $ tail -1 visitas-transacao.sql
 COMMIT;
 $ time sqlite3 sem.db &lt; visitas.sql
 
-real	0m10,357s                « mil INSERTs, cada um gravado sozinho
-user	0m0,043s
-sys	0m0,244s
+real	0m9,944s                 « mil INSERTs, cada um gravado sozinho
+user	0m0,041s
+sys	0m0,234s
 $ time sqlite3 com.db &lt; visitas-transacao.sql
 
-real	0m0,015s                 « os mesmos mil, numa transação só
-user	0m0,001s
-sys	0m0,003s
+real	0m0,016s                 « os mesmos mil, numa transação só
+user	0m0,000s
+sys	0m0,004s
 $ sqlite3 sem.db "SELECT count(*) FROM visitas;"
 1000
 $ sqlite3 com.db "SELECT count(*) FROM visitas;"
 1000</pre>
 
-<p>Os dois bancos terminaram com as mesmas 1000 linhas. Sem transação, levou mais de 10 segundos; com transação, 15 milésimos de segundo, umas <strong>setecentas vezes</strong> mais rápido. O número exato muda de computador para computador (depende do disco), mas a diferença é sempre enorme. Foi por isso que o <code>.dump</code> da aula <a href="dump-backup.html">Backup</a> veio com um <code>BEGIN TRANSACTION</code> no começo e um <code>COMMIT</code> no fim.</p>
+<p>Os dois bancos terminaram com as mesmas 1000 linhas. Sem transação, levou quase 10 segundos; com transação, 16 milésimos de segundo, umas <strong>seiscentas vezes</strong> mais rápido. O número exato muda de computador para computador (depende do disco), mas a diferença é sempre enorme. Foi por isso que o <code>.dump</code> da aula <a href="dump-backup.html">Backup</a> veio com um <code>BEGIN TRANSACTION</code> no começo e um <code>COMMIT</code> no fim.</p>
 
 <hr>
 
