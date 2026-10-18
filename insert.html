@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL INSERT INTO — colocar uma linha nova na tabela | Guia SQL</title>
+<meta name="description" content="INSERT INTO em SQL para quem nunca mexeu num banco: cadastrar uma categoria, um cliente e um produto na Loja Aurora, a lista de colunas e a de valores, o id automático, as colunas que ficam de fora (NULL e DEFAULT), texto com apóstrofo, e os erros reais do SQLite (coluna que não existe, NOT NULL, UNIQUE, FOREIGN KEY), no editor e no terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">INSERT INTO</span></h1>
+
+<p class="intro">Até aqui você só <strong>leu</strong> dados com o <code>SELECT</code>. Mas a Loja Aurora não para: chegam clientes novos, produtos novos, até uma seção nova na loja. Para guardar uma linha nova numa tabela, o SQL tem o comando <code>INSERT INTO</code> ("inserir em"). Nesta aula você vai cadastrar uma categoria, um cliente e um produto, vai ver o banco escolher o número (o <code>id</code>) sozinho e vai conhecer as mensagens que o SQLite dá quando o cadastro está errado: coluna que não existe, campo obrigatório vazio, número repetido.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>INSERT INTO tabela (colunas) VALUES (valores);</code> e o que cada parte faz.</li>
+  <li>Como o banco escolhe o <code>id</code> da linha nova sozinho.</li>
+  <li>O que acontece com as colunas que você não citou: <code>NULL</code> ou o valor padrão.</li>
+  <li>Por que é melhor <strong>sempre</strong> escrever a lista de colunas.</li>
+  <li>Como escrever texto com apóstrofo, como <code>D'Ávila</code>.</li>
+  <li>Os erros reais: coluna ou tabela que não existe, número de valores errado, <code>NOT NULL</code>, <code>UNIQUE</code> e <code>FOREIGN KEY</code>.</li>
+  <li>A diferença entre o editor do guia (que volta ao banco limpo) e o terminal (onde o <code>INSERT</code> é para valer).</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Pode inserir sem medo</strong>
+<p>No editor do guia, <strong>cada Rodar começa do banco limpo</strong>: a Loja Aurora é carregada de novo e só então o seu SQL roda. O que você inserir aparece no resultado e some no próximo Rodar. Por isso, nos exemplos desta aula, o <code>INSERT</code> vem seguido de um <code>SELECT</code> na mesma caixa: é o jeito de ver a linha nova antes que ela desapareça.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: uma ficha nova no fichário</h2>
+<p>Pense no fichário de clientes da loja. Cadastrar um cliente é pegar uma ficha em branco, preencher os campos (nome, email, cidade…) e guardá-la no fichário. O <code>INSERT</code> faz o mesmo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No fichário</th><th>No SQL</th></tr>
+<tr><td>Escolher o fichário (clientes, produtos…)</td><td><code>INSERT INTO clientes</code></td></tr>
+<tr><td>Dizer quais campos você vai preencher</td><td><code>(nome, email, cidade)</code></td></tr>
+<tr><td>Escrever o conteúdo de cada campo, na mesma ordem</td><td><code>VALUES ('Lívia Rocha', 'livia.rocha@exemplo.com.br', 'Teresina')</code></td></tr>
+<tr><td>Campos que você não preencheu</td><td>Ficam em branco (<code>NULL</code>) ou com o valor padrão</td></tr>
+<tr><td>O número da ficha</td><td>O banco escolhe o próximo <code>id</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro INSERT</h2>
+<p>A Aurora vai abrir uma seção de produtos para animais. A tabela <code>categorias</code> tem 8 linhas; vamos acrescentar a 9ª:</p>
+
+<pre class="file" data-file="nova-categoria.sql" data-resultado>INSERT INTO categorias (nome, descricao)
+VALUES ('Pet Shop', 'Ração, brinquedos e acessórios para animais');
+
+SELECT * FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO</dt><dd>"Inserir em": vai entrar uma linha nova.</dd>
+  <dt>categorias</dt><dd>A tabela que recebe a linha.</dd>
+  <dt>(nome, descricao)</dt><dd>A <strong>lista de colunas</strong> que você vai preencher, entre parênteses e separadas por vírgula.</dd>
+  <dt>VALUES</dt><dd>"Valores": daqui em diante vem o conteúdo.</dd>
+  <dt>('Pet Shop', 'Ração, …')</dt><dd>A <strong>lista de valores</strong>, na <strong>mesma ordem</strong> das colunas: o 1º valor vai para a 1ª coluna (<code>nome</code>), o 2º para a 2ª (<code>descricao</code>). Texto vai entre aspas simples. A vírgula <strong>dentro</strong> das aspas é só uma letra do texto; as vírgulas que separam valores ficam fora das aspas.</dd>
+  <dt>;</dt><dd>Fim do comando. Depois dele vem outro comando, o <code>SELECT</code>, para você ver o resultado.</dd>
+</dl>
+
+<p>O quadro mostra duas coisas, na ordem em que os comandos rodaram: primeiro "1 linha afetada" (o <code>INSERT</code> guardou uma linha), depois a tabela inteira, com a <strong>Pet Shop</strong> no fim, com o <code>id</code> 9.</p>
+
+<h3>Quem escolheu o 9?</h3>
+<p>Você não escreveu o <code>id</code>. Na Aurora, ele é uma <code>INTEGER PRIMARY KEY</code>: a chave primária, o "número da ficha" que identifica cada linha (aula <a href="primary-key.html">PRIMARY KEY</a>). Quando você não diz o número, o SQLite usa <strong>o maior <code>id</code> que já existe, mais 1</strong>. O maior era 8, então a Pet Shop ganhou o 9. Deixar o banco escolher é o jeito normal de trabalhar: ninguém precisa descobrir qual é o próximo número livre.</p>
+
+<div class="trysql" data-goal="mudou:categorias=9">
+<p class="try-task"><strong>Experimente:</strong> a Aurora também vai vender artigos para carro. Acrescente, antes do <code>SELECT</code>, um <code>INSERT</code> com a categoria de nome <code>Automotivo</code> e descrição <code>Acessórios para o carro</code>. Rode e veja o <code>id</code> que ela recebeu.</p>
+<pre class="script" data-file="categoria.sql">SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="categoria.sql">INSERT INTO categorias (nome, descricao)
+VALUES ('Automotivo', 'Acessórios para o carro');
+
+SELECT * FROM categorias;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Um cliente novo</h2>
+<p>A Lívia Rocha, de Teresina, fez a primeira compra. A tabela <code>clientes</code> tem 7 colunas: <code>id</code>, <code>nome</code>, <code>email</code>, <code>cidade</code>, <code>estado</code>, <code>nascimento</code> e <code>vip</code>. A Ana preenche cinco:</p>
+
+<pre class="file" data-file="cliente.sql" data-resultado>INSERT INTO clientes (nome, email, cidade, estado, nascimento)
+VALUES ('Lívia Rocha', 'livia.rocha@exemplo.com.br', 'Teresina', 'PI', '2002-04-15');
+
+SELECT * FROM clientes WHERE id &gt;= 30;
+</pre>
+
+<p>A Lívia virou a cliente 31 (a última era a 30, Rosângela Dias). Repare em três detalhes:</p>
+<ul>
+  <li>A data de nascimento entrou como texto no formato ISO, <code>'2002-04-15'</code>, igual às outras datas da Aurora (veja por que na aula <a href="between.html">BETWEEN</a>).</li>
+  <li>O <code>estado</code> é a sigla <code>'PI'</code>, igual aos outros clientes. O banco não confere isso: se você escrever <code>'Piauí'</code>, ele guarda <code>'Piauí'</code>, e depois um <code>WHERE estado = 'PI'</code> não acha a Lívia. Siga o padrão que a tabela já usa.</li>
+  <li>A coluna <code>vip</code> não estava na lista, e mesmo assim ficou <code>0</code>. Isso é a próxima seção.</li>
+</ul>
+
+<hr>
+
+<h2>3. As colunas que ficam de fora</h2>
+<p>O Joaquim Leite comprou no balcão e só disse o nome. A Ana cadastra só o que sabe:</p>
+
+<pre class="file" data-file="so-nome.sql" data-resultado>INSERT INTO clientes (nome)
+VALUES ('Joaquim Leite');
+
+SELECT * FROM clientes WHERE id = 31;
+</pre>
+
+<p>Cada coluna que ficou de fora da lista recebeu um de dois valores:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Ficou</th><th>Por quê</th></tr>
+<tr><td><code>id</code></td><td><code>31</code></td><td>É a chave primária: o banco escolhe o próximo número.</td></tr>
+<tr><td><code>email</code>, <code>cidade</code>, <code>estado</code>, <code>nascimento</code></td><td><em>NULL</em></td><td>Não têm valor padrão: ficam em branco, "desconhecido" (aula <a href="null.html">O Valor NULL</a>).</td></tr>
+<tr><td><code>vip</code></td><td><code>0</code></td><td>Foi criada com <code>DEFAULT 0</code>: quando ninguém diz nada, vale 0 (aula <a href="default.html">DEFAULT</a>).</td></tr>
+</table>
+</div>
+
+<p>Como saber quais colunas têm valor padrão e quais são obrigatórias? No terminal, o comando de ponto <code>.schema clientes</code> mostra como a tabela foi criada (aula <a href="comandos-ponto.html">Comandos de Ponto</a>). Na Aurora, ele mostra <code>nome TEXT NOT NULL</code> e <code>vip INTEGER NOT NULL DEFAULT 0</code>: o nome é obrigatório; o vip, se faltar, vira 0.</p>
+
+<h3>Deixar em branco de propósito</h3>
+<p>Você também pode citar a coluna e escrever <code>NULL</code> como valor, para deixar claro que o branco foi intencional. Sem aspas: <code>NULL</code> é o valor desconhecido, e <code>'NULL'</code> seria a palavra.</p>
+
+<pre class="file" data-file="null-explicito.sql" data-resultado>INSERT INTO clientes (nome, email, cidade, estado)
+VALUES ('Joaquim Leite', NULL, 'Picos', 'PI');
+
+SELECT * FROM clientes WHERE id = 31;
+</pre>
+
+<hr>
+
+<h2>4. Sem a lista de colunas</h2>
+<p>O SQL também aceita o <code>INSERT</code> sem a lista de colunas. Aí você precisa dar um valor para <strong>todas</strong> as colunas, na ordem em que a tabela foi criada (para <code>categorias</code>: <code>id</code>, <code>nome</code>, <code>descricao</code>):</p>
+
+<pre class="file" data-file="sem-lista.sql" data-resultado>INSERT INTO categorias
+VALUES (9, 'Pet Shop', 'Ração, brinquedos e acessórios para animais');
+
+SELECT * FROM categorias WHERE id &gt; 7;
+</pre>
+
+<p>Funcionou, mas tem três problemas: você precisa decorar a ordem das colunas, precisa escolher o <code>id</code> na mão, e se um dia alguém acrescentar uma coluna na tabela (aula <a href="alter-table.html">ALTER TABLE</a>), esse <code>INSERT</code> passa a dar erro. Esqueça um valor e veja:</p>
+
+<pre class="file" data-file="sem-lista-erro.sql" data-resultado data-erro>INSERT INTO categorias
+VALUES ('Pet Shop', 'Ração, brinquedos e acessórios para animais');
+</pre>
+
+<p>"A tabela <code>categorias</code> tem 3 colunas, mas foram fornecidos 2 valores." <strong>Boa prática:</strong> escreva sempre a lista de colunas. O <code>INSERT</code> fica mais longo, mas qualquer pessoa entende o que vai para onde, e ele continua funcionando quando a tabela muda.</p>
+
+<hr>
+
+<h2>5. Escolhendo o id (e o erro do número repetido)</h2>
+<p>Se você quiser, pode dizer o <code>id</code>, como qualquer outra coluna:</p>
+
+<pre class="file" data-file="id-escolhido.sql" data-resultado>INSERT INTO categorias (id, nome)
+VALUES (20, 'Pet Shop');
+
+INSERT INTO categorias (nome)
+VALUES ('Automotivo');
+
+SELECT * FROM categorias WHERE id &gt; 7;
+</pre>
+
+<p>A Pet Shop ficou com o 20, como pedido. E a Automotivo, sem <code>id</code>, ganhou o <strong>21</strong>: "o maior que existe, mais 1". Os números de 9 a 19 ficaram sem uso, e não tem problema nenhum nisso: o <code>id</code> só precisa ser único, não precisa ser seguido. Mas <strong>único</strong> ele precisa ser:</p>
+
+<pre class="file" data-file="id-repetido.sql" data-resultado data-erro>INSERT INTO categorias (id, nome)
+VALUES (8, 'Pet Shop');
+</pre>
+
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: categorias.id</code> ("a restrição de unicidade falhou: <code>categorias.id</code>"). Já existe a categoria 8 (Jardim), e uma chave primária não pode se repetir. O <code>INSERT</code> inteiro é recusado; a Jardim continua lá, intacta. Por isso o normal é <strong>não</strong> escrever o <code>id</code>: o banco nunca escolhe um número repetido.</p>
+
+<hr>
+
+<h2>6. Texto com apóstrofo</h2>
+<p>Um fornecedor novo se chama <strong>Empório D'Ávila</strong>. O apóstrofo é o mesmo caractere da aspa simples, que fecha o texto. Para pôr um apóstrofo <strong>dentro</strong> do texto, escreva <strong>duas aspas simples seguidas</strong>:</p>
+
+<pre class="file" data-file="apostrofo.sql" data-resultado>INSERT INTO fornecedores (nome, cidade, estado, pais)
+VALUES ('Empório D''Ávila', 'Picos', 'PI', 'Brasil');
+
+SELECT id, nome, cidade FROM fornecedores;
+</pre>
+
+<p>No banco ficou um apóstrofo só: <code>Empório D'Ávila</code>, ao lado da <code>Loja D'Água</code>, que já existia. As duas aspas são só o jeito de <strong>escrever</strong>. Com uma aspa só, o SQLite acha que o texto acabou em <code>'Empório D'</code> e não entende o resto (você vai ver o erro em <a href="#errado">Quando dá errado</a>).</p>
+
+<hr>
+
+<h2>7. Um produto novo (e as chaves estrangeiras)</h2>
+<p>A tabela <code>produtos</code> tem duas colunas que apontam para outras tabelas: <code>categoria_id</code> (o número de uma categoria) e <code>fornecedor_id</code> (o número de um fornecedor). São <strong>chaves estrangeiras</strong> (aula <a href="foreign-key.html">FOREIGN KEY</a>). Um produto novo de jardinagem (categoria 8), do fornecedor 1:</p>
+
+<pre class="file" data-file="produto.sql" data-resultado>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+VALUES ('Mangueira de Jardim 15m', 8, 1, 64.9, 25);
+
+SELECT * FROM produtos WHERE categoria_id = 8;
+</pre>
+
+<dl class="anatomy">
+  <dt>64.9</dt><dd>O preço, <strong>com ponto</strong> e sem aspas: é um número. Com vírgula (<code>64,9</code>), o SQLite entenderia dois valores.</dd>
+  <dt>25</dt><dd>O estoque inicial, também sem aspas.</dd>
+  <dt>descontinuado</dt><dd>Ficou de fora e virou <code>0</code>: também tem <code>DEFAULT 0</code>.</dd>
+</dl>
+
+<p>E se a categoria não existir? O editor do guia liga a verificação das chaves estrangeiras, e o SQLite recusa:</p>
+
+<pre class="file" data-file="fk.sql" data-resultado data-erro>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Ração para Gatos 1kg', 99, 1, 25.9);
+</pre>
+
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code> ("a restrição de chave estrangeira falhou"). Não existe categoria 99; o banco não deixa um produto apontar para o nada. A mensagem não diz qual coluna é a culpada: confira cada número que aponta para outra tabela.</p>
+
+<hr>
+
+<h2>8. No terminal, o INSERT é para valer</h2>
+<p>No editor, tudo volta ao normal no próximo Rodar. No terminal, não: o <code>INSERT</code> grava a linha <strong>no arquivo</strong> <code>loja.db</code>. A Ana insere a Pet Shop, sai do <code>sqlite3</code>, entra de novo, e ela continua lá:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> INSERT INTO categorias (nome, descricao) VALUES ('Pet Shop', 'Ração, brinquedos e acessórios para animais');
+sqlite> SELECT * FROM categorias WHERE id &gt; 7;
+8|Jardim|Ferramentas e artigos de jardinagem
+9|Pet Shop|Ração, brinquedos e acessórios para animais
+sqlite> .quit
+$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT * FROM categorias WHERE id &gt; 7;
+8|Jardim|Ferramentas e artigos de jardinagem
+9|Pet Shop|Ração, brinquedos e acessórios para animais    « gravada no arquivo
+sqlite> .quit</pre>
+
+<p>Repare que o <code>INSERT</code> não mostrou nada no terminal: quando dá certo, o <code>sqlite3</code> fica quieto. Os erros, esses ele mostra, com uma "moldura" a mais que no editor:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> INSERT INTO categorias (nome) VALUES ('Automotivo', 'Peças');
+Parse error: 2 values for 1 columns
+sqlite> INSERT INTO categorias (id, nome) VALUES (1, 'Pet Shop');
+Runtime error: UNIQUE constraint failed: categorias.id (19)
+sqlite> .quit</pre>
+
+<p><code>Parse error</code> quer dizer que o SQLite nem conseguiu entender o comando; <code>Runtime error</code>, que entendeu, mas deu errado ao executar. O <code>(19)</code> é o número interno desse tipo de erro (restrição violada). O miolo da mensagem é o mesmo do editor.</p>
+
+<div class="warning">
+<strong>No terminal, as chaves estrangeiras começam desligadas</strong>
+<p>O editor do guia liga a verificação das chaves estrangeiras. O programa <code>sqlite3</code>, não: cada vez que você abre o banco, ela começa <strong>desligada</strong>, e um produto com uma categoria que não existe entra sem reclamar. Veja no lab da Ana:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco) VALUES ('Ração 1kg', 99, 1, 25.9);
+sqlite> PRAGMA foreign_keys;
+0                         « 0 = desligada: o INSERT acima passou
+sqlite> PRAGMA foreign_keys = ON;
+sqlite> INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco) VALUES ('Ração 2kg', 99, 1, 45.9);
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite> .quit</pre>
+<p>A "Ração 1kg" ficou gravada apontando para uma categoria que não existe. Ao trabalhar no terminal, comece com <code>PRAGMA foreign_keys = ON;</code>. A aula <a href="foreign-key.html">FOREIGN KEY</a> explica tudo isso com calma.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de inserir</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th><th>Cuidado</th></tr>
+<tr><td><code>INSERT INTO t (a, b) VALUES (1, 2);</code></td><td>Sempre. É a forma recomendada.</td><td>Mesmo número de colunas e de valores, na mesma ordem.</td></tr>
+<tr><td><code>INSERT INTO t VALUES (…);</code></td><td>Testes rápidos numa tabela que você conhece de cor.</td><td>Precisa de todas as colunas, na ordem da tabela; quebra quando a tabela muda.</td></tr>
+<tr><td>Deixar a coluna de fora</td><td>Quando o valor é desconhecido ou o padrão serve.</td><td>Colunas <code>NOT NULL</code> sem <code>DEFAULT</code> não podem ficar de fora.</td></tr>
+<tr><td>Escrever <code>NULL</code> no valor</td><td>Para mostrar que o branco é de propósito.</td><td>Sem aspas.</td></tr>
+<tr><td>Várias linhas num comando só</td><td>Cadastrar muitos de uma vez.</td><td>É a próxima aula: <a href="insert-varios.html">Inserindo Várias Linhas</a>.</td></tr>
+<tr><td><code>INSERT INTO … SELECT …</code></td><td>Copiar linhas de uma consulta.</td><td>Aula <a href="insert-select.html">INSERT INTO SELECT</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Em todos estes casos, o SQLite recusa o <code>INSERT</code> inteiro: nenhuma linha entra pela metade.</p>
+
+<div class="cenario">
+<strong>Coluna que não existe</strong>
+<pre class="file" data-file="coluna.sql" data-resultado data-erro>INSERT INTO clientes (nome, telefone)
+VALUES ('Lívia Rocha', '(86) 99999-0000');
+</pre>
+<p><strong>A mensagem:</strong> <code>table clientes has no column named telefone</code> ("a tabela <code>clientes</code> não tem coluna chamada <code>telefone</code>"). Na Aurora, quem tem telefone são os fornecedores, não os clientes. O mesmo acontece com um acento a mais: <code>descrição</code> em vez de <code>descricao</code> dá <code>table categorias has no column named descrição</code>.</p>
+<p><strong>Como consertar:</strong> confira os nomes das colunas com <code>.schema clientes</code> no terminal ou com um <code>SELECT * FROM clientes</code> no editor.</p>
+</div>
+
+<div class="cenario">
+<strong>Tabela com o nome errado</strong>
+<pre class="file" data-file="tabela.sql" data-resultado data-erro>INSERT INTO categoria (nome)
+VALUES ('Pet Shop');
+</pre>
+<p><strong>A mensagem:</strong> <code>no such table: categoria</code>. A tabela se chama <code>categorias</code>, no plural.</p>
+</div>
+
+<div class="cenario">
+<strong>Quantidade de valores diferente da de colunas</strong>
+<pre class="file" data-file="contagem.sql" data-resultado data-erro>INSERT INTO categorias (nome, descricao)
+VALUES ('Pet Shop');
+</pre>
+<p><strong>A mensagem:</strong> <code>1 values for 2 columns</code> ("1 valor para 2 colunas"). Você prometeu duas colunas e entregou um valor. O contrário, <code>(nome) VALUES ('Pet Shop', 'Para animais')</code>, dá <code>2 values for 1 columns</code>. Um caso clássico: um preço escrito com vírgula, <code>25,90</code>, conta como <strong>dois</strong> valores (25 e 90).</p>
+<p><strong>Como consertar:</strong> uma coluna para cada valor, e decimal com ponto.</p>
+</div>
+
+<div class="cenario">
+<strong>Campo obrigatório vazio</strong>
+<pre class="file" data-file="not-null.sql" data-resultado data-erro>INSERT INTO categorias (descricao)
+VALUES ('Ração, brinquedos e acessórios para animais');
+</pre>
+<p><strong>A mensagem:</strong> <code>NOT NULL constraint failed: categorias.nome</code>. A coluna <code>nome</code> foi criada <code>NOT NULL</code>: não pode ficar em branco, e ficou, porque não estava na lista (aula <a href="not-null.html">NOT NULL</a>). Na Aurora, os nomes de tudo são obrigatórios, e também o preço dos produtos e a data dos pedidos.</p>
+<p><strong>Como consertar:</strong> inclua a coluna obrigatória e um valor para ela.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto sem aspas, ou com aspas duplas</strong>
+<pre class="file" data-file="sem-aspas.sql" data-resultado data-erro>INSERT INTO categorias (nome)
+VALUES (Pet);
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: Pet</code>. Sem aspas, <code>Pet</code> parece o nome de uma coluna. Com duas palavras, <code>VALUES (Pet Shop)</code>, a mensagem muda para <code>near "Shop": syntax error</code>. E com aspas duplas, <code>VALUES ("Pet Shop")</code>, o SQLite responde <code>no such column: "Pet Shop" - should this be a string literal in single-quotes?</code>: aspas duplas são para nomes de coluna; texto vai entre aspas <strong>simples</strong>.</p>
+<p><strong>Como consertar:</strong> <code>VALUES ('Pet Shop')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apóstrofo sem dobrar</strong>
+<pre class="file" data-file="apostrofo-erro.sql" data-resultado data-erro>INSERT INTO fornecedores (nome, pais)
+VALUES ('Empório D'Ávila', 'Brasil');
+</pre>
+<p><strong>A mensagem:</strong> <code>near "Ávila": syntax error</code>. O texto terminou em <code>'Empório D'</code>, e o SQLite tropeçou no <code>Ávila</code> solto que veio depois.</p>
+<p><strong>Como consertar:</strong> dobre o apóstrofo: <code>'Empório D''Ávila'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu uma palavra (ou o ponto e vírgula)</strong>
+<pre class="file" data-file="value.sql" data-resultado data-erro>INSERT INTO categorias (nome)
+VALUE ('Pet Shop');
+</pre>
+<p><strong>A mensagem:</strong> <code>near "VALUE": syntax error</code>. É <code>VALUES</code>, no plural. Do mesmo jeito, <code>INSERT categorias …</code> sem o <code>INTO</code> dá <code>near "categorias": syntax error</code>. E dois <code>INSERT</code> seguidos sem o <code>;</code> entre eles dão <code>near "INSERT": syntax error</code>, apontando para o começo do segundo.</p>
+</div>
+
+<div class="trysql" data-goal="mudou:clientes=31">
+<p class="try-task"><strong>Missão:</strong> este <code>INSERT</code> está com dois erros e não cadastra ninguém. Rode, leia a mensagem, conserte, rode de novo, até a cliente Lívia Rocha entrar.</p>
+<pre class="script" data-file="conserte.sql">INSERT INTO clientes (nome, email, cidade)
+VALUES ("Lívia Rocha", 'livia.rocha@exemplo.com.br');
+
+SELECT * FROM clientes WHERE id &gt;= 30;
+</pre>
+<pre class="solucao" data-file="conserte.sql">INSERT INTO clientes (nome, email, cidade)
+VALUES ('Lívia Rocha', 'livia.rocha@exemplo.com.br', 'Teresina');
+
+SELECT * FROM clientes WHERE id &gt;= 30;
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>INSERT INTO tabela (colunas) VALUES (valores)</code> é do SQL padrão e funciona igual no MySQL, no PostgreSQL e no SQL Server. O que muda é <strong>o id automático</strong>: no SQLite, basta a coluna ser <code>INTEGER PRIMARY KEY</code>; nos outros, a coluna precisa ser criada de um jeito especial (<code>AUTO_INCREMENT</code> no MySQL, <code>GENERATED … AS IDENTITY</code> ou <code>SERIAL</code> no PostgreSQL, <code>IDENTITY</code> no SQL Server). Isso fica para a aula <a href="auto-increment.html">AUTOINCREMENT</a>. As mensagens de erro também mudam de texto em cada banco, mas os motivos são os mesmos: coluna que não existe, obrigatório vazio, chave repetida.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>INSERT INTO t (a, b) VALUES (1, 'x');</code></td><td>Uma linha nova, com <code>a</code> = 1 e <code>b</code> = 'x'</td></tr>
+<tr><td>Coluna fora da lista</td><td>Recebe o <code>DEFAULT</code>, ou <code>NULL</code> se não houver padrão</td></tr>
+<tr><td><code>id</code> fora da lista</td><td>O SQLite usa o maior <code>id</code> + 1</td></tr>
+<tr><td><code>VALUES (…, NULL, …)</code></td><td>Branco de propósito</td></tr>
+<tr><td><code>'D''Ávila'</code></td><td>Apóstrofo dentro do texto</td></tr>
+<tr><td><code>INSERT INTO t VALUES (…);</code></td><td>Sem lista: todas as colunas, na ordem da tabela</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite (editor)</th><th>Quer dizer</th></tr>
+<tr><td><code>table clientes has no column named telefone</code></td><td>A coluna não existe nessa tabela</td></tr>
+<tr><td><code>no such table: categoria</code></td><td>A tabela não existe (confira o plural)</td></tr>
+<tr><td><code>1 values for 2 columns</code></td><td>Faltou valor (ou sobrou coluna)</td></tr>
+<tr><td><code>table categorias has 3 columns but 2 values were supplied</code></td><td>Sem a lista de colunas, faltou valor</td></tr>
+<tr><td><code>NOT NULL constraint failed: categorias.nome</code></td><td>Coluna obrigatória ficou em branco</td></tr>
+<tr><td><code>UNIQUE constraint failed: categorias.id</code></td><td>Esse <code>id</code> já existe</td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Aponta para uma linha que não existe em outra tabela</td></tr>
+<tr><td><code>no such column: Pet</code></td><td>Texto sem aspas</td></tr>
+<tr><td><code>near "Ávila": syntax error</code></td><td>Apóstrofo sem dobrar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<div class="ex-code"><input data-answer="INSERT" aria-label="primeira palavra"> <input data-answer="INTO" aria-label="segunda palavra"> categorias (nome) <input data-answer="VALUES" aria-label="palavra antes dos valores"> ('Pet Shop');</div>
+</div>
+
+<div class="exercise">
+<h3>2. O apóstrofo</h3>
+<p>Como se escreve, em SQL, o texto <strong>Pão D'Ouro</strong>?</p>
+<div class="ex-code">VALUES (<input data-answer="'Pão D''Ouro'" aria-label="o texto em SQL">)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A tabela <code>clientes</code> tem a coluna <code>vip INTEGER NOT NULL DEFAULT 0</code>. O que ela vale depois de <code>INSERT INTO clientes (nome) VALUES ('Joaquim Leite');</code>?</p>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+<label><input type="radio" name="q3"> Dá erro, porque ela é <code>NOT NULL</code></label>
+<label><input type="radio" name="q3"> <code>0</code>, o valor padrão</label>
+<label><input type="radio" name="q3"> <code>1</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A maior categoria é a 8. Que <code>id</code> ganha <code>INSERT INTO categorias (nome) VALUES ('Pet Shop');</code>?</p>
+<label><input type="radio" name="q4"> 1</label>
+<label><input type="radio" name="q4"> 9</label>
+<label><input type="radio" name="q4"> <code>NULL</code></label>
+<label><input type="radio" name="q4"> Dá erro, porque faltou o <code>id</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. <code>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco) VALUES ('Vaso', 8, 1, 25,90);</code> dá qual erro?</p>
+<label><input type="radio" name="q5"> <code>NOT NULL constraint failed</code></label>
+<label><input type="radio" name="q5"> <code>FOREIGN KEY constraint failed</code></label>
+<label><input type="radio" name="q5"> Nenhum: o preço fica 25.90</label>
+<label><input type="radio" name="q5"> <code>5 values for 4 columns</code>, porque a vírgula separou 25 de 90</label>
+</div>
+
+<h3>Missão final: um produto novo no jardim</h3>
+
+<div class="trysql" data-goal="mudou:produtos=46;;contem:Mangueira de Jardim 15m">
+<p class="try-task"><strong>Missão:</strong> cadastre o produto <strong>Mangueira de Jardim 15m</strong>, da categoria 8 (Jardim), do fornecedor 1, com preço <strong>64,90</strong> e <strong>25</strong> unidades em estoque. Deixe o <code>SELECT</code> no fim, para ver o produto novo na lista.</p>
+<pre class="script" data-file="mangueira.sql">SELECT id, nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 8;
+</pre>
+<pre class="solucao" data-file="mangueira.sql">INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+VALUES ('Mangueira de Jardim 15m', 8, 1, 64.9, 25);
+
+SELECT id, nome, preco, estoque
+FROM produtos
+WHERE categoria_id = 8;
+</pre>
+</div>
+
+<p>Rode de novo e repare: a mangueira sumiu e voltou, sempre com o <code>id</code> 46. Cada Rodar parte do banco limpo, com 45 produtos.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>INSERT INTO tabela (colunas) VALUES (valores);</code> guarda uma linha nova. Os valores vão na <strong>mesma ordem</strong> das colunas.</li>
+  <li>Texto entre aspas simples; números sem aspas, com ponto decimal; apóstrofo dobrado (<code>'D''Ávila'</code>).</li>
+  <li>Sem o <code>id</code>, o SQLite usa o maior que existe + 1. Um <code>id</code> repetido dá <code>UNIQUE constraint failed</code>.</li>
+  <li>Coluna fora da lista recebe o <code>DEFAULT</code> ou <code>NULL</code>; se for <code>NOT NULL</code> sem padrão, dá <code>NOT NULL constraint failed</code>.</li>
+  <li>Escreva sempre a lista de colunas: o comando fica claro e não quebra quando a tabela muda.</li>
+  <li>No editor, cada Rodar parte do banco limpo; no terminal, o <code>INSERT</code> grava no arquivo, e as chaves estrangeiras só são conferidas depois de <code>PRAGMA foreign_keys = ON;</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
