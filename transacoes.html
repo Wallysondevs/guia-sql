@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Transações — BEGIN e COMMIT, tudo ou nada | Guia SQL</title>
+<meta name="description" content="Transações em SQL para quem está começando: o que é o tudo ou nada, BEGIN e COMMIT, o modo automático (autocommit), ver as próprias mudanças antes de gravar, o que outro programa enxerga, database is locked, por que mil INSERTs numa transação ficam centenas de vezes mais rápidos e as mensagens reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Transações: BEGIN e COMMIT</span></h1>
+
+<p class="intro">Registrar uma venda na Loja Aurora não é um comando só. É preciso criar o pedido, anotar cada item e tirar os produtos do estoque. Se a luz acabar entre o segundo e o terceiro passo, o banco fica com um pedido registrado e um estoque que não baixou. Para isso existem as <strong>transações</strong>: um jeito de dizer ao banco "estes comandos são uma coisa só; ou entram todos, ou não entra nenhum". Nesta aula, você vai abrir uma transação com <code>BEGIN</code>, gravá-la com <code>COMMIT</code> e ver o que outro programa enxerga enquanto ela está aberta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma transação e a ideia do "tudo ou nada".</li>
+  <li>Que, sem você pedir, cada comando já é uma transação sozinho (o modo automático).</li>
+  <li>A abrir uma transação com <code>BEGIN</code> e gravar tudo de uma vez com <code>COMMIT</code>.</li>
+  <li>Que, dentro da transação, você vê as suas mudanças, mas os outros programas não.</li>
+  <li>O que é <code>database is locked</code> e por que ele aparece.</li>
+  <li>Por que mil <code>INSERT</code> numa transação ficam centenas de vezes mais rápidos.</li>
+  <li>As mensagens reais quando um <code>BEGIN</code> ou um <code>COMMIT</code> está sobrando, e por que um erro no meio não desfaz nada sozinho.</li>
+</ul>
+</div>
+
+<p>Os exemplos com quadro "Resultado" rodam no SQLite do seu navegador, com a Loja Aurora. Lembre que no editor <strong>cada Rodar começa com o banco limpo</strong>: a transação inteira (o <code>BEGIN</code>, os comandos e o <code>COMMIT</code>) precisa estar na mesma caixa. As partes com dois programas usando o banco ao mesmo tempo saíram do terminal da Ana, com o arquivo <code>~/loja.db</code>.</p>
+
+<hr>
+
+<h2>A ideia: o carrinho do supermercado</h2>
+<p>No supermercado, você vai pondo as compras no carrinho. Enquanto não passa no caixa, nada é seu de verdade: você pode tirar coisas, desistir de tudo e ir embora. Quando paga, a compra inteira acontece de uma vez. Nunca acontece de metade do carrinho ser paga e a outra metade não.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No supermercado</th><th>No banco</th></tr>
+<tr><td>Pegar o carrinho</td><td><code>BEGIN</code>: começa a transação</td></tr>
+<tr><td>Pôr as compras no carrinho</td><td>Os <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code></td></tr>
+<tr><td>Olhar o que está no carrinho</td><td>Um <code>SELECT</code> dentro da transação: você vê as suas mudanças</td></tr>
+<tr><td>Pagar no caixa</td><td><code>COMMIT</code> ("confirmar"): tudo é gravado de uma vez</td></tr>
+<tr><td>Largar o carrinho e ir embora</td><td><code>ROLLBACK</code> ("voltar atrás"): nada é gravado (próxima aula, <a href="rollback.html">ROLLBACK e Savepoints</a>)</td></tr>
+</table>
+</div>
+
+<p>Uma <strong>transação</strong> é esse pacote de comandos que o banco trata como uma coisa só. O nome vem do comércio: uma transação é uma troca completa, que acontece inteira ou não acontece.</p>
+
+<hr>
+
+<h2>1. Você já usa transações sem saber</h2>
+<p>Desde a aula de <a href="update.html">UPDATE</a>, cada comando que você rodou já era uma transação: o SQLite abre uma, roda o comando e grava, sozinho. Isso se chama modo <strong>automático</strong> (em inglês, <em>autocommit</em>, "confirmação automática"). Por isso um <code>UPDATE</code> que mexe em 45 linhas nunca para na 20ª: ou muda as 45, ou nenhuma.</p>
+
+<p>O problema aparece quando a <strong>tarefa</strong> tem vários comandos. No modo automático, cada um é gravado na hora, separado dos outros. Se o terceiro falhar, os dois primeiros já ficaram no banco. Para juntar vários comandos numa transação só, você mesmo a abre e a fecha.</p>
+
+<hr>
+
+<h2>2. <code>BEGIN</code> e <code>COMMIT</code></h2>
+<p>O cliente Paulo Sérgio Andrade (id 27), que nunca tinha comprado na loja, levou 2 lápis (produto 3, R$ 1,15 cada), atendido pelo vendedor Caio Teles (id 2). A venda são três comandos, dentro de uma transação:</p>
+
+<pre class="file" data-file="venda.sql" data-resultado>BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 27, 2, '2026-10-18', NULL, 0.0);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (91, 3, 2, 1.15);
+
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+
+COMMIT;
+
+SELECT p.id, c.nome AS cliente, i.quantidade, pr.nome AS produto, pr.estoque
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+JOIN produtos AS pr ON pr.id = i.produto_id
+WHERE p.id = 91;
+</pre>
+
+<dl class="anatomy">
+  <dt>BEGIN;</dt><dd>"Comece". Abre a transação. A partir daqui, nada é gravado de verdade até o <code>COMMIT</code>. (<code>BEGIN TRANSACTION;</code> é a mesma coisa, escrita por extenso.)</dd>
+  <dt>INSERT INTO pedidos …</dt><dd>Cria o pedido 91 (veja <a href="insert.html">INSERT INTO</a>).</dd>
+  <dt>INSERT INTO itens_pedido …</dt><dd>Anota o item: 2 unidades do produto 3, a 1.15.</dd>
+  <dt>UPDATE produtos …</dt><dd>Baixa o estoque do lápis de 430 para 428.</dd>
+  <dt>COMMIT;</dt><dd>"Confirme". Grava os três comandos de uma vez e fecha a transação.</dd>
+  <dt>SELECT …</dt><dd>Já fora da transação, confere a venda juntando as quatro tabelas (veja <a href="inner-join.html">INNER JOIN</a>).</dd>
+</dl>
+
+<p>No quadro, cada comando aparece com a sua resposta: "BEGIN: ok", "1 linha afetada" para cada <code>INSERT</code> e para o <code>UPDATE</code>, "COMMIT: ok" e, no fim, a tabela com a venda e o estoque já em 428.</p>
+
+<h3>Dentro da transação, você vê as suas mudanças</h3>
+<p>Antes do <code>COMMIT</code>, as mudanças ainda não estão gravadas. Mesmo assim, quem abriu a transação já as enxerga, como as compras no próprio carrinho:</p>
+
+<pre class="file" data-file="ver-antes.sql" data-resultado>SELECT estoque FROM produtos WHERE id = 3;
+
+BEGIN;
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+SELECT estoque FROM produtos WHERE id = 3;
+COMMIT;
+
+SELECT estoque FROM produtos WHERE id = 3;
+</pre>
+
+<p>O primeiro <code>SELECT</code> mostra 430. O segundo, ainda dentro da transação, já mostra 428: você vê o próprio <code>UPDATE</code>. O terceiro, depois do <code>COMMIT</code>, mostra 428 gravado. A diferença entre o segundo e o terceiro só aparece para <strong>outros</strong> programas, e é isso que a seção 4 mostra.</p>
+
+<div class="trysql" data-goal="mudou:pedidos=91;;mudou:itens_pedido=221;;contem:Mochila Escolar Azul|34">
+<p class="try-task"><strong>Experimente:</strong> registre outra venda numa transação. A cliente Tainá Soares (id 28) comprou <strong>1 Mochila Escolar Azul</strong> (produto 5, R$ 89,99), atendida pela vendedora Renata Borges (id 3), em <code>'2026-10-18'</code>, com frete de 15.0. O pedido já está escrito; falta o item e a baixa no estoque (que é de 35).</p>
+<pre class="script" data-file="venda2.sql">BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 28, 3, '2026-10-18', NULL, 15.0);
+
+-- falta o item do pedido 91 e a baixa no estoque do produto 5
+
+COMMIT;
+
+SELECT nome, estoque FROM produtos WHERE id = 5;
+</pre>
+<pre class="solucao" data-file="venda2.sql">BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 28, 3, '2026-10-18', NULL, 15.0);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (91, 5, 1, 89.99);
+
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 5;
+
+COMMIT;
+
+SELECT nome, estoque FROM produtos WHERE id = 5;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Sem <code>COMMIT</code>, nada fica</h2>
+<p>No terminal, o banco é um arquivo que continua existindo depois que você sai. Veja o que acontece se a Ana abre uma transação, muda o estoque e sai do <code>sqlite3</code> <strong>sem</strong> o <code>COMMIT</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430
+sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428
+sqlite&gt; .quit
+$ sqlite3 loja.db "SELECT estoque FROM produtos WHERE id = 3;"
+430                              « a mudança sumiu: faltou o COMMIT</pre>
+
+<p>Dentro da transação, o estoque já era 428. Mas a transação nunca foi confirmada, e uma transação que termina sem <code>COMMIT</code> (porque o programa fechou, travou ou a luz acabou) é <strong>desfeita</strong> pelo SQLite. Na próxima abertura, o estoque está em 430, como se nada tivesse acontecido. É exatamente o "tudo ou nada": a transação não terminou, então não aconteceu.</p>
+
+<hr>
+
+<h2>4. O que os outros programas enxergam</h2>
+<p>Um banco costuma ser usado por mais de um programa ao mesmo tempo: o caixa da loja registra vendas enquanto o sistema de estoque consulta os produtos. Para ver isso, a Ana abriu <strong>duas janelas</strong> de terminal, cada uma com o seu <code>sqlite3</code>, no mesmo <code>loja.db</code>. Na primeira, ela começa uma venda e <strong>não</strong> confirma ainda:</p>
+
+<pre class="term" data-title="Terminal 1: o caixa">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428</pre>
+
+<p>Com a transação do caixa ainda aberta, ela vai para a segunda janela e consulta o mesmo produto. Depois, tenta mudar o estoque:</p>
+
+<pre class="term" data-title="Terminal 2: o estoque">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430
+sqlite&gt; UPDATE produtos SET estoque = 0 WHERE id = 3;
+Runtime error: database is locked (5)</pre>
+
+<p>Duas coisas aconteceram:</p>
+<ul>
+  <li>A segunda janela vê o estoque <strong>antigo</strong>, 430. A mudança do caixa ainda está "no carrinho": ninguém mais a enxerga até o <code>COMMIT</code>. Assim, ninguém toma decisões com dados que talvez nunca sejam gravados.</li>
+  <li>A segunda janela <strong>não consegue escrever</strong>: "erro ao executar: o banco está travado" (o 5 é o código de erro do SQLite para "travado"). No SQLite, só uma transação por vez pode escrever no banco. Enquanto a do caixa estiver aberta com mudanças, as outras esperam ou desistem.</li>
+</ul>
+
+<p>Então o caixa confirma a venda:</p>
+
+<pre class="term" data-title="Terminal 1: o caixa">sqlite&gt; COMMIT;</pre>
+
+<p>E, na segunda janela, a mesma consulta agora mostra o valor novo:</p>
+
+<pre class="term" data-title="Terminal 2: o estoque">sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Momento</th><th>Terminal 1 (caixa)</th><th>Terminal 2 (estoque)</th></tr>
+<tr><td>1</td><td><code>BEGIN;</code> e o <code>UPDATE</code>: vê 428</td><td></td></tr>
+<tr><td>2</td><td>(transação aberta)</td><td><code>SELECT</code>: vê 430, o valor gravado</td></tr>
+<tr><td>3</td><td>(transação aberta)</td><td><code>UPDATE</code>: <code>database is locked</code></td></tr>
+<tr><td>4</td><td><code>COMMIT;</code></td><td></td></tr>
+<tr><td>5</td><td></td><td><code>SELECT</code>: vê 428</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Transação aberta é porta trancada</strong>
+<p>Uma transação esquecida aberta (alguém deu <code>BEGIN</code>, mudou uma linha e foi almoçar) trava a escrita de todos os outros programas. Abra a transação o mais tarde possível, faça o que precisa e dê o <code>COMMIT</code> logo. Nunca deixe uma transação esperando alguém digitar alguma coisa.</p>
+</div>
+
+<p>Se a espera for normal (um programa que só precisa aguardar alguns instantes), o <code>sqlite3</code> pode ser mandado a tentar de novo por um tempo antes de desistir, com <code>.timeout 5000</code> (5000 milissegundos = 5 segundos). Programas em Python, PHP e outras linguagens têm uma opção parecida, o <em>busy timeout</em> ("tempo de espera quando ocupado").</p>
+
+<hr>
+
+<h2>5. Transação deixa tudo mais rápido</h2>
+<p>Gravar de verdade no disco é a parte lenta de um banco: a cada <code>COMMIT</code>, o SQLite espera o disco garantir que os dados estão lá. No modo automático, isso acontece <strong>a cada comando</strong>. Numa transação, uma vez só, no fim.</p>
+
+<p>A Ana montou um arquivo com mil <code>INSERT</code> numa tabela de teste, <code>visitas</code>, e uma segunda versão do mesmo arquivo com <code>BEGIN;</code> na primeira linha e <code>COMMIT;</code> na última. Depois, mediu o tempo de cada um com o <code>time</code> do terminal, em dois bancos novos:</p>
+
+<pre class="term">$ head -2 visitas-transacao.sql
+BEGIN;
+INSERT INTO visitas VALUES (1, 'pagina-1');
+$ tail -1 visitas-transacao.sql
+COMMIT;
+$ time sqlite3 sem.db &lt; visitas.sql
+
+real	0m10,357s                « mil INSERTs, cada um gravado sozinho
+user	0m0,043s
+sys	0m0,244s
+$ time sqlite3 com.db &lt; visitas-transacao.sql
+
+real	0m0,015s                 « os mesmos mil, numa transação só
+user	0m0,001s
+sys	0m0,003s
+$ sqlite3 sem.db "SELECT count(*) FROM visitas;"
+1000
+$ sqlite3 com.db "SELECT count(*) FROM visitas;"
+1000</pre>
+
+<p>Os dois bancos terminaram com as mesmas 1000 linhas. Sem transação, levou mais de 10 segundos; com transação, 15 milésimos de segundo, umas <strong>setecentas vezes</strong> mais rápido. O número exato muda de computador para computador (depende do disco), mas a diferença é sempre enorme. Foi por isso que o <code>.dump</code> da aula <a href="dump-backup.html">Backup</a> veio com um <code>BEGIN TRANSACTION</code> no começo e um <code>COMMIT</code> no fim.</p>
+
+<hr>
+
+<h2>6. Formas diferentes de escrever</h2>
+<p>O SQLite aceita vários jeitos de abrir e fechar uma transação. Todos estes rodam:</p>
+
+<pre class="file" data-file="formas.sql" data-resultado>BEGIN TRANSACTION;
+UPDATE produtos SET descontinuado = 1 WHERE id = 43;
+END TRANSACTION;
+
+BEGIN IMMEDIATE;
+UPDATE produtos SET descontinuado = 1 WHERE id = 44;
+COMMIT TRANSACTION;
+
+SELECT id, nome, descontinuado FROM produtos WHERE id IN (43, 44);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Quando usar</th></tr>
+<tr><td><code>BEGIN;</code> ou <code>BEGIN TRANSACTION;</code></td><td>Abre a transação. Só pede a vez de escrever no primeiro comando que muda alguma coisa</td><td>O normal</td></tr>
+<tr><td><code>BEGIN DEFERRED;</code></td><td>O mesmo que <code>BEGIN</code> (<em>deferred</em> = "adiado"); é o padrão</td><td>Raramente escrito por extenso</td></tr>
+<tr><td><code>BEGIN IMMEDIATE;</code></td><td>Pede a vez de escrever <strong>já</strong> no <code>BEGIN</code> (<em>immediate</em> = "imediato"). Se outro programa estiver escrevendo, o erro <code>database is locked</code> vem logo no começo, e não no meio da tarefa</td><td>Quando você sabe que vai escrever: o erro aparece antes de você ter feito qualquer coisa</td></tr>
+<tr><td><code>BEGIN EXCLUSIVE;</code></td><td>Parecido com o <code>IMMEDIATE</code>, ainda mais restrito (<em>exclusive</em> = "exclusivo")</td><td>Casos especiais</td></tr>
+<tr><td><code>COMMIT;</code>, <code>COMMIT TRANSACTION;</code>, <code>END;</code>, <code>END TRANSACTION;</code></td><td>Todos confirmam e fecham a transação</td><td>Prefira <code>COMMIT</code>: é o que todo banco entende</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>COMMIT</code> sem <code>BEGIN</code></strong>
+<pre class="file" data-file="commit-sobrando.sql" data-resultado data-erro>UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+COMMIT;
+</pre>
+<p><strong>O que aconteceu:</strong> "não posso confirmar: nenhuma transação está ativa". O <code>UPDATE</code> rodou no modo automático e já foi gravado sozinho; o <code>COMMIT</code> não tinha nada para confirmar. É um erro inofensivo, mas mostra que o <code>BEGIN</code> ficou faltando, e com ele a proteção do "tudo ou nada". No terminal, a mensagem vem com o prefixo: <code>Runtime error: cannot commit - no transaction is active</code>.</p>
+<p><strong>Como consertar:</strong> comece com <code>BEGIN;</code> tudo o que precisa ir junto.</p>
+</div>
+
+<div class="cenario">
+<strong><code>BEGIN</code> dentro de <code>BEGIN</code></strong>
+<pre class="file" data-file="begin-duplo.sql" data-resultado data-erro>BEGIN;
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+BEGIN;
+</pre>
+<p><strong>O que aconteceu:</strong> "não posso começar uma transação dentro de uma transação". No SQLite, as transações não se encaixam uma dentro da outra. Atenção: a primeira transação continua aberta, com o <code>UPDATE</code> pendente. Para "transações dentro de transações", existem os <strong>savepoints</strong>, da próxima aula.</p>
+<p><strong>Como consertar:</strong> feche a transação atual com <code>COMMIT</code> antes de abrir outra.</p>
+</div>
+
+<div class="cenario">
+<strong>Um erro no meio <em>não</em> desfaz a transação</strong>
+<p>Este é o engano mais comum sobre transações. A Ana começa uma venda no terminal, baixa o estoque e esquece o preço do item:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES (90, 3, 2);
+Runtime error: NOT NULL constraint failed: itens_pedido.preco_unitario (19)
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428
+sqlite&gt; COMMIT;
+sqlite&gt; .quit
+$ sqlite3 loja.db "SELECT estoque FROM produtos WHERE id = 3;"
+428</pre>
+<p><strong>O que aconteceu:</strong> o <code>INSERT</code> falhou ("a restrição NOT NULL falhou em <code>itens_pedido.preco_unitario</code>": faltou o preço, veja <a href="not-null.html">NOT NULL</a>). Mas o SQLite desfez <strong>só aquele comando</strong>: a transação continuou aberta, com o <code>UPDATE</code> do estoque valendo. Quando a Ana deu <code>COMMIT</code>, gravou o estoque baixado <strong>sem</strong> o item da venda. Exatamente o que a transação devia evitar.</p>
+<p><strong>Como consertar:</strong> quando um comando da transação falhar, não dê <code>COMMIT</code>: desfaça tudo com <code>ROLLBACK</code> e comece de novo. É o assunto da próxima aula, <a href="rollback.html">ROLLBACK e Savepoints</a>.</p>
+</div>
+
+<p>No editor, o mesmo erro <strong>para</strong> a execução ali, e o banco do editor é jogado fora no fim de cada Rodar. Por isso, no editor, nada do que veio antes do erro "fica"; no terminal, com um arquivo de verdade, fica:</p>
+
+<pre class="file" data-file="erro-no-meio.sql" data-resultado data-erro>BEGIN;
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES (90, 3, 2);
+COMMIT;
+</pre>
+
+<div class="cenario">
+<strong><code>database is locked</code></strong>
+<pre class="term">sqlite&gt; UPDATE produtos SET estoque = 0 WHERE id = 3;
+Runtime error: database is locked (5)</pre>
+<p><strong>O que aconteceu:</strong> outro programa (ou outra janela do terminal) está com uma transação de escrita aberta no mesmo banco, como na seção 4.</p>
+<p><strong>Como consertar:</strong> descubra quem está com a transação aberta e faça-o terminar (<code>COMMIT</code> ou <code>ROLLBACK</code>). Se for só uma espera curta e normal, use <code>.timeout 5000</code> no <code>sqlite3</code> (ou o <em>busy timeout</em> do seu programa). E mantenha as suas transações curtas.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>Transações no MySQL, PostgreSQL e SQL Server</strong>
+<p>Os três também trabalham no modo automático por padrão: sem você abrir uma transação, cada comando é confirmado sozinho. O jeito de abrir muda um pouco (trechos <strong>ilustrativos</strong>, conforme a documentação oficial):</p>
+<pre class="file" data-file="outros-bancos.sql">-- SQL padrão; MySQL e PostgreSQL também aceitam BEGIN
+START TRANSACTION;
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+COMMIT;
+
+-- SQL Server
+BEGIN TRANSACTION;   -- ou BEGIN TRAN
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+COMMIT TRANSACTION;
+</pre>
+<p>Uma diferença importante: no PostgreSQL, um erro dentro da transação a deixa "abortada", e todo comando seguinte é recusado até você encerrá-la; nem dá para dar o <code>COMMIT</code> do estoque sem o item, como a Ana fez acima. No SQLite, quem decide o que fazer depois do erro é você. E nos bancos com servidor, em geral, em vez de travar o banco inteiro para escrever, cada transação trava só as linhas que mudou, então duas vendas de produtos diferentes podem acontecer ao mesmo tempo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>BEGIN;</code> / <code>BEGIN TRANSACTION;</code></td><td>Abre uma transação</td></tr>
+<tr><td><code>BEGIN IMMEDIATE;</code></td><td>Abre e já reserva a escrita</td></tr>
+<tr><td><code>COMMIT;</code> / <code>END;</code></td><td>Grava tudo e fecha a transação</td></tr>
+<tr><td><code>ROLLBACK;</code></td><td>Desfaz tudo e fecha a transação (próxima aula)</td></tr>
+<tr><td>(sem <code>BEGIN</code>)</td><td>Modo automático: cada comando é uma transação</td></tr>
+<tr><td><code>.timeout 5000</code></td><td>No <code>sqlite3</code>: espera até 5 s antes de dar <code>database is locked</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>cannot commit - no transaction is active</code></td><td><code>COMMIT</code> (ou <code>END</code>) sem transação aberta</td></tr>
+<tr><td><code>cannot start a transaction within a transaction</code></td><td><code>BEGIN</code> com outra transação já aberta</td></tr>
+<tr><td><code>database is locked (5)</code></td><td>Outro programa está escrevendo no banco</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Abrir e fechar</h3>
+<p>Complete para que as duas mudanças sejam gravadas juntas:</p>
+<div class="ex-code"><input data-answer="BEGIN|begin" aria-label="abrir a transação">;<br>UPDATE produtos SET estoque = estoque - 1 WHERE id = 1;<br>UPDATE produtos SET estoque = estoque + 1 WHERE id = 2;<br><input data-answer="COMMIT|commit|END|end" aria-label="confirmar">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Sem nenhum <code>BEGIN</code>, a Ana roda um <code>UPDATE</code>. O que acontece?</p>
+<label><input type="radio" name="q2"> Nada: sem <code>BEGIN</code> o banco não grava</label>
+<label><input type="radio" name="q2"> O <code>UPDATE</code> fica esperando um <code>COMMIT</code></label>
+<label><input type="radio" name="q2"> Ele vira uma transação sozinho e é gravado na hora (modo automático)</label>
+<label><input type="radio" name="q2"> Dá erro <code>cannot commit</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. No terminal, a Ana deu <code>BEGIN</code>, apagou um cliente e fechou o <code>sqlite3</code> sem <code>COMMIT</code>. Ao abrir de novo, o cliente…</p>
+<label><input type="radio" name="q3"> …continua apagado</label>
+<label><input type="radio" name="q3"> …está lá: a transação sem <code>COMMIT</code> foi desfeita</label>
+<label><input type="radio" name="q3"> …aparece pela metade</label>
+<label><input type="radio" name="q3"> …o banco não abre mais</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Com uma transação aberta no Terminal 1, que mudou o estoque de 430 para 428, o Terminal 2 consulta o estoque. O que ele vê?</p>
+<label><input type="radio" name="q4"> 428</label>
+<label><input type="radio" name="q4"> <code>database is locked</code></label>
+<label><input type="radio" name="q4"> <code>NULL</code></label>
+<label><input type="radio" name="q4"> 430, o valor gravado, até o Terminal 1 dar <code>COMMIT</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Dentro de uma transação, o segundo de três comandos deu erro. No SQLite, o que acontece com o primeiro?</p>
+<label><input type="radio" name="q5"> Continua valendo, pendente: se a Ana der <code>COMMIT</code>, ele é gravado</label>
+<label><input type="radio" name="q5"> É desfeito automaticamente</label>
+<label><input type="radio" name="q5"> É gravado na hora do erro</label>
+<label><input type="radio" name="q5"> A transação inteira é apagada e o banco fecha</label>
+</div>
+
+<h3>Missão final: a venda completa</h3>
+
+<div class="trysql" data-goal="mudou:pedidos=91;;mudou:itens_pedido=222;;contem:Caderno Pautado 96 folhas|117;;contem:Caneta Esferográfica Azul|498">
+<p class="try-task"><strong>Missão:</strong> registre numa transação só a venda do pedido 91: o cliente Paulo Sérgio Andrade (id 27) levou <strong>3 Cadernos Pautados</strong> (produto 1, a 12.35) e <strong>2 Canetas Azuis</strong> (produto 2, a 2.79), atendido por Caio Teles (id 2), em <code>'2026-10-18'</code>, com frete 9.9. São cinco comandos entre o <code>BEGIN</code> e o <code>COMMIT</code>: o pedido, os dois itens e as duas baixas de estoque (o caderno tem 120, a caneta, 500).</p>
+<pre class="script" data-file="venda-completa.sql">BEGIN;
+
+-- 1. o pedido 91
+-- 2. os dois itens
+-- 3. as duas baixas de estoque
+
+COMMIT;
+
+SELECT nome, estoque FROM produtos WHERE id IN (1, 2);
+</pre>
+<pre class="solucao" data-file="venda-completa.sql">BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 27, 2, '2026-10-18', NULL, 9.9);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (91, 1, 3, 12.35),
+       (91, 2, 2, 2.79);
+
+UPDATE produtos SET estoque = estoque - 3 WHERE id = 1;
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 2;
+
+COMMIT;
+
+SELECT nome, estoque FROM produtos WHERE id IN (1, 2);
+</pre>
+</div>
+
+<p>Os dois itens podem ir num <code>INSERT</code> só, com duas linhas de valores (veja <a href="insert-varios.html">Inserindo Várias Linhas</a>), ou em dois <code>INSERT</code> separados: dentro da transação, dá no mesmo. O que importa é que, se qualquer um dos cinco falhasse, a Ana poderia desfazer tudo, e nenhum programa veria uma venda pela metade.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma transação é um pacote de comandos que o banco trata como uma coisa só: tudo ou nada.</li>
+  <li>Sem <code>BEGIN</code>, cada comando é uma transação sozinho e é gravado na hora (modo automático, <em>autocommit</em>).</li>
+  <li><code>BEGIN;</code> abre a transação; <code>COMMIT;</code> grava tudo de uma vez. Sem <code>COMMIT</code> (programa fechado, luz que acaba), a transação é desfeita.</li>
+  <li>Dentro da transação você vê as suas mudanças; os outros programas só as veem depois do <code>COMMIT</code>. Enquanto ela escreve, os outros recebem <code>database is locked</code>: mantenha as transações curtas.</li>
+  <li>Muitos <code>INSERT</code> numa transação ficam centenas de vezes mais rápidos: o disco só é esperado uma vez.</li>
+  <li>No SQLite, um erro no meio desfaz só o comando que falhou; a transação continua aberta. Não dê <code>COMMIT</code> depois de um erro: use <code>ROLLBACK</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
