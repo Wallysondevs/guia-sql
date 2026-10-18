@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Importar e Exportar CSV — da planilha para o banco e de volta | Guia SQL</title>
+<meta name="description" content="Importar e exportar CSV no SQLite para quem nunca mexeu num banco: .mode csv, .headers on, .once e .output para gerar a planilha, .import --csv e --skip 1 para trazer os dados de volta, o que acontece com vírgulas, acentos, campos vazios e NULL, e as mensagens reais do sqlite3 quando a importação dá errado.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Importar e Exportar CSV</span></h1>
+
+<p class="intro">A contadora da Loja Aurora pediu a lista de produtos com preço e estoque "numa planilha". No mesmo dia, um fornecedor mandou três produtos novos, também numa planilha. Nos dois casos, a ponte entre o banco e a planilha é um arquivo <strong>CSV</strong>. Nesta aula, a Ana vai <strong>exportar</strong> (tirar dados do banco para um arquivo) e <strong>importar</strong> (colocar os dados de um arquivo no banco) com o programa <code>sqlite3</code>, e vai ver o que acontece quando o arquivo vem com cabeçalho a mais, coluna a menos ou campo vazio.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um arquivo CSV e por que toda planilha entende esse formato.</li>
+  <li>A exportar uma consulta para CSV com <code>.headers on</code>, <code>.mode csv</code> e <code>.once</code>.</li>
+  <li>A diferença entre <code>.once</code> (só a próxima consulta) e <code>.output</code> (tudo, até você mandar parar).</li>
+  <li>A exportar direto da linha de comando, sem abrir o <code>sqlite3</code>.</li>
+  <li>A importar um CSV para uma tabela nova e para uma tabela que já existe (<code>.import --csv</code> e <code>--skip 1</code>).</li>
+  <li>Por que os números importados podem virar texto, e por que um campo vazio não vira <code>NULL</code>.</li>
+  <li>As mensagens reais do <code>sqlite3</code> quando a importação dá errado.</li>
+</ul>
+</div>
+
+<p>Esta é uma aula de <strong>terminal</strong>. Importar e exportar mexe com arquivos do computador, e quem faz isso é o programa <code>sqlite3</code>, com os comandos de ponto que você viu em <a href="comandos-ponto.html">Comandos de Ponto</a>. O editor do guia roda só SQL, num banco que vive na memória do navegador, então ele não lê nem grava arquivos. Todas as sessões abaixo saíram do terminal da Ana, com o banco <code>~/loja.db</code>. O editor aparece onde o assunto é SQL: a consulta que você exporta e o conserto dos dados que você importa.</p>
+
+<hr>
+
+<h2>A ideia: uma planilha escrita em texto</h2>
+<p>Pense numa planilha simples, com quatro colunas. Agora imagine que você precisa ditá-la por telefone, linha por linha. Você diria algo como "um, vírgula, Caderno Pautado, vírgula, doze e trinta e cinco…". Um arquivo <strong>CSV</strong> é exatamente isso, escrito num arquivo de texto:</p>
+
+<pre class="file" data-file="produtos.csv">id,nome,preco,estoque
+1,"Caderno Pautado 96 folhas",12.35,120
+2,"Caneta Esferográfica Azul",2.79,500
+3,"Lápis Grafite HB",1.15,430
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na planilha</th><th>No CSV</th></tr>
+<tr><td>Uma linha</td><td>Uma linha do arquivo</td></tr>
+<tr><td>A troca de coluna</td><td>Uma vírgula</td></tr>
+<tr><td>A primeira linha, com os nomes das colunas</td><td>O <strong>cabeçalho</strong> (opcional): <code>id,nome,preco,estoque</code></td></tr>
+<tr><td>Um texto com espaço, vírgula ou acento</td><td>Pode vir entre aspas duplas: <code>"Lápis Grafite HB"</code></td></tr>
+</table>
+</div>
+
+<p>CSV vem do inglês <em>comma-separated values</em>, "valores separados por vírgula". Como é só texto, qualquer programa entende: o LibreOffice Calc, o Excel, o Google Planilhas, o próprio <code>cat</code> do terminal e todos os bancos de dados. É o formato mais comum para levar dados de um lugar para outro.</p>
+
+<hr>
+
+<h2>1. Exportar: o primeiro CSV</h2>
+<p>A Ana abre o banco e, antes da consulta, faz três ajustes no <code>sqlite3</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .headers on
+sqlite&gt; .mode csv
+sqlite&gt; .once produtos.csv
+sqlite&gt; SELECT id, nome, preco, estoque FROM produtos;
+sqlite&gt; .quit</pre>
+
+<dl class="anatomy">
+  <dt>.headers on</dt><dd>Liga o <strong>cabeçalho</strong>: a primeira linha da saída terá os nomes das colunas. Sem ele, o arquivo começa direto nos dados. (<code>.header on</code>, no singular, também funciona.)</dd>
+  <dt>.mode csv</dt><dd>Muda o <strong>formato</strong> da saída para CSV: vírgula entre as colunas e aspas onde for preciso. O padrão do <code>sqlite3</code> é a barra <code>|</code>.</dd>
+  <dt>.once produtos.csv</dt><dd>Manda a saída da <strong>próxima</strong> consulta para o arquivo <code>produtos.csv</code>, em vez da tela. <em>Once</em> quer dizer "uma vez". Se o arquivo já existir, ele é <strong>substituído</strong>.</dd>
+  <dt>SELECT …</dt><dd>A consulta. Qualquer <code>SELECT</code> serve: com <code>WHERE</code>, <code>ORDER BY</code>, junção… O que ela devolveria na tela vai para o arquivo.</dd>
+  <dt>.quit</dt><dd>Sai do <code>sqlite3</code> e volta para o terminal.</dd>
+</dl>
+
+<p>Repare que o <code>SELECT</code> não mostrou nada na tela: a saída foi toda para o arquivo. De volta ao terminal, a Ana confere:</p>
+
+<pre class="term">$ ls -l produtos.csv
+-rw-rw-r-- 1 ana ana 1636 out 18 10:27 produtos.csv
+$ head -5 produtos.csv
+id,nome,preco,estoque
+1,"Caderno Pautado 96 folhas",12.35,120
+2,"Caneta Esferográfica Azul",2.79,500
+3,"Lápis Grafite HB",1.15,430
+4,"Marca-texto Amarelo",4.9,210
+$ wc -l produtos.csv
+46 produtos.csv                  « 1 linha de cabeçalho + 45 produtos</pre>
+
+<p>O <code>head -5</code> mostra as cinco primeiras linhas, e o <code>wc -l</code> conta as linhas do arquivo: 46, o cabeçalho mais os 45 produtos da loja. Está pronto para mandar para a contadora. Para abrir no LibreOffice Calc, basta dar dois cliques no arquivo; o Calc mostra uma janela "Importar texto" e pergunta qual é o separador (marque "Vírgula").</p>
+
+<div class="tip">
+<strong>Por que só alguns textos têm aspas?</strong>
+<p>O <code>sqlite3</code> põe aspas duplas num texto quando ele tem algo que poderia confundir quem lê o arquivo: espaço, vírgula, aspas ou letra acentuada. Por isso <code>"Eletrônicos"</code> vem entre aspas e <code>Papelaria</code> não. Números nunca levam aspas. Para uma planilha, tanto faz: ela tira as aspas ao abrir.</p>
+</div>
+
+<hr>
+
+<h2>2. Com e sem cabeçalho</h2>
+<p>O cabeçalho é desligado por padrão. Veja a diferença, numa sessão nova (cada vez que você abre o <code>sqlite3</code>, os ajustes voltam ao padrão):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .mode csv
+sqlite&gt; .once sem-cabecalho.csv
+sqlite&gt; SELECT id, nome FROM categorias;
+sqlite&gt; .quit
+$ cat sem-cabecalho.csv
+1,Papelaria
+2,"Eletrônicos"
+3,"Casa e Cozinha"
+4,Livros
+5,Brinquedos
+6,"Esporte e Lazer"
+7,Alimentos
+8,Jardim</pre>
+
+<p>Sem o <code>.headers on</code>, quem abrir o arquivo não sabe o que é a primeira coluna. Para mandar a alguém, ligue sempre o cabeçalho. Sem cabeçalho só vale a pena quando o arquivo vai ser lido por outro programa que já sabe a ordem das colunas.</p>
+
+<hr>
+
+<h2>3. <code>.once</code> × <code>.output</code></h2>
+<p>O <code>.once</code> vale para <strong>uma</strong> consulta. O <code>.output</code> (saída) manda <strong>tudo</strong> para o arquivo, consulta após consulta, até você escrever <code>.output</code> sozinho, que devolve a saída para a tela:</p>
+
+<pre class="term">sqlite&gt; .headers on
+sqlite&gt; .output relatorio.csv
+sqlite&gt; SELECT nome, cidade FROM clientes WHERE estado = 'PI' LIMIT 3;
+sqlite&gt; SELECT nome, preco FROM produtos WHERE preco &gt; 200;
+sqlite&gt; .output
+sqlite&gt; SELECT count(*) AS total FROM clientes;
+total
+30</pre>
+
+<p>As duas primeiras consultas foram para o arquivo; depois do <code>.output</code> sozinho, a terceira voltou a aparecer na tela. O arquivo ficou assim:</p>
+
+<pre class="term">$ cat relatorio.csv
+nome,cidade
+"José Ribamar Silva",Teresina
+"Maria Clara Mendes",Teresina
+"Conceição Prado",Teresina
+nome,preco
+"Jogo de Panelas 5 peças",249.9</pre>
+
+<p>Repare que as duas consultas ficaram uma embaixo da outra, cada uma com o seu cabeçalho. Isso é útil para um relatório em texto, mas confunde uma planilha, que espera <strong>uma</strong> tabela por arquivo. Regra prática: um CSV por consulta, com <code>.once</code>.</p>
+
+<div class="warning">
+<strong>Esqueceu o <code>.output</code> ligado?</strong>
+<p>Enquanto o <code>.output arquivo</code> estiver valendo, nada aparece na tela, e parece que o <code>sqlite3</code> "parou de responder". Não parou: está escrevendo tudo no arquivo. Digite <code>.output</code> sozinho e a tela volta.</p>
+</div>
+
+<hr>
+
+<h2>4. Vírgulas, aspas e <code>NULL</code> dentro do CSV</h2>
+<p>Se a vírgula separa as colunas, o que acontece com um texto que <strong>tem</strong> vírgula? E com um <code>NULL</code>? Com o <code>.mode csv</code> ligado e a saída na tela, a Ana testa três casos difíceis:</p>
+
+<pre class="term">sqlite&gt; SELECT id, nome, email FROM clientes WHERE email IS NULL;
+id,nome,email
+7,"Luís Otávio Brito",
+15,"Roberto Falcão",
+23,"Henrique Sales",
+sqlite&gt; SELECT nome, cidade || ', ' || estado AS local FROM clientes LIMIT 3;
+nome,local
+"José Ribamar Silva","Teresina, PI"
+"Maria Clara Mendes","Teresina, PI"
+"Ana Beatriz Sousa","São Paulo, SP"
+sqlite&gt; SELECT id, nome FROM fornecedores WHERE id = 2;
+id,nome
+2,"Loja D'Água"</pre>
+
+<dl class="anatomy">
+  <dt>7,"Luís Otávio Brito",</dt><dd>O email é <code>NULL</code> (veja <a href="null.html">O Valor NULL</a>). No CSV, <code>NULL</code> vira um campo <strong>vazio</strong>: nada depois da última vírgula. O CSV não tem como escrever "nulo".</dd>
+  <dt>"Teresina, PI"</dt><dd>O texto tem vírgula, então vai entre aspas. Quem lê o arquivo sabe que a vírgula de dentro das aspas faz parte do texto e não separa colunas.</dd>
+  <dt>"Loja D'Água"</dt><dd>O apóstrofo não atrapalha o CSV, que usa aspas <strong>duplas</strong>. (Se o texto tivesse aspas duplas, elas sairiam dobradas: <code>""</code>.)</dd>
+</dl>
+
+<h3>Ponto e vírgula no lugar da vírgula</h3>
+<p>Em português, a vírgula é a separadora de decimais (12,35), e algumas planilhas configuradas para o Brasil esperam o <strong>ponto e vírgula</strong> entre as colunas. O <code>.separator</code> troca o separador:</p>
+
+<pre class="term">sqlite&gt; .separator ;
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+id;nome;preco
+1;"Caderno Pautado 96 folhas";12.35
+2;"Caneta Esferográfica Azul";2.79
+3;"Lápis Grafite HB";1.15</pre>
+
+<p>Os preços continuam com <strong>ponto</strong> (12.35): o banco sempre escreve números assim. Na janela "Importar texto" do LibreOffice Calc, escolha o separador certo e, no campo de idioma, "Inglês (EUA)": assim ele entende o ponto como separador decimal.</p>
+
+<hr>
+
+<h2>5. Exportar sem abrir o <code>sqlite3</code></h2>
+<p>Dá para fazer tudo numa linha só do terminal, com opções no lugar dos comandos de ponto e o <code>&gt;</code> do shell para gravar o arquivo. É o jeito de automatizar um relatório (um script que gera o CSV todo dia, por exemplo):</p>
+
+<pre class="term">$ sqlite3 -header -csv loja.db "SELECT nome, email FROM clientes WHERE vip = 1;" &gt; vips.csv
+$ cat vips.csv
+nome,email
+"José Ribamar Silva",jose.ribamar@exemplo.com.br
+"Ana Beatriz Sousa",ana.beatriz@exemplo.com.br
+"Fernanda Carvalho",fernanda.carvalho@exemplo.com.br
+"Larissa Macêdo",larissa.macedo@exemplo.com.br
+"Mirela Pontes",mirela.pontes@exemplo.com.br</pre>
+
+<dl class="anatomy">
+  <dt>-header</dt><dd>O mesmo que <code>.headers on</code>.</dd>
+  <dt>-csv</dt><dd>O mesmo que <code>.mode csv</code>.</dd>
+  <dt>loja.db</dt><dd>O banco.</dd>
+  <dt>"SELECT …;"</dt><dd>A consulta, entre aspas duplas do shell (por isso o texto dentro do SQL usa aspas simples, como sempre).</dd>
+  <dt>&gt; vips.csv</dt><dd>O <strong>shell</strong>, não o <code>sqlite3</code>, pega o que sairia na tela e grava no arquivo (substituindo o que houver nele).</dd>
+</dl>
+
+<p>Em toda exportação, a parte que dá trabalho é a <strong>consulta</strong>. E essa você pode treinar no editor: o que ela mostrar na tabela é o que iria para o CSV.</p>
+
+<div class="trysql" data-goal="colunas:nome,estoque;;linhas:4">
+<p class="try-task"><strong>Experimente:</strong> o setor de compras quer um CSV com os produtos que estão acabando: só <code>nome</code> e <code>estoque</code>, dos produtos <strong>não descontinuados</strong> (<code>descontinuado = 0</code>) com estoque <strong>abaixo de 20</strong>, do menor para o maior estoque. Monte a consulta que a Ana vai exportar.</p>
+<pre class="script" data-file="reposicao.sql">SELECT nome, estoque
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="reposicao.sql">SELECT nome, estoque
+FROM produtos
+WHERE estoque &lt; 20 AND descontinuado = 0
+ORDER BY estoque;
+</pre>
+</div>
+
+<p>No terminal, bastaria colocar <code>.headers on</code>, <code>.mode csv</code> e <code>.once reposicao.csv</code> antes dessa consulta.</p>
+
+<hr>
+
+<h2>6. Importar para uma tabela nova</h2>
+<p>Agora o caminho inverso. O fornecedor mandou o arquivo <code>novos_produtos.csv</code>, que a Ana salvou na pasta <code>Downloads</code>:</p>
+
+<pre class="term">$ cd Downloads
+$ cat novos_produtos.csv
+nome,preco,estoque
+Agenda 2027,34.9,60
+Calculadora Científica,79.5,18
+Régua 30 cm,3.25,250</pre>
+
+<p>Antes de misturar esses dados com os produtos da loja, ela quer olhar com calma. Então importa o arquivo para uma tabela <strong>nova</strong>, separada, chamada <code>novos</code>:</p>
+
+<pre class="term">$ sqlite3 ~/loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .import --csv novos_produtos.csv novos
+sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  pedidos
+clientes      funcionarios  novos         produtos
+sqlite&gt; .schema novos
+CREATE TABLE IF NOT EXISTS "novos"(
+"nome" TEXT, "preco" TEXT, "estoque" TEXT);</pre>
+
+<dl class="anatomy">
+  <dt>.import</dt><dd>O comando de ponto que lê um arquivo e insere cada linha como uma linha da tabela.</dd>
+  <dt>--csv</dt><dd>Diz que o arquivo é CSV (vírgulas e aspas). Sem isso, o <code>.import</code> usa o modo atual, que por padrão separa por <code>|</code>; veja em <a href="#errado">Quando dá errado</a> o que acontece.</dd>
+  <dt>novos_produtos.csv</dt><dd>O arquivo, procurado na pasta em que você abriu o <code>sqlite3</code> (aqui, <code>~/Downloads</code>). O banco pode estar em outra pasta: <code>~/loja.db</code>.</dd>
+  <dt>novos</dt><dd>A tabela de destino. Como ela <strong>não existia</strong>, o <code>sqlite3</code> a criou, usando a <strong>primeira linha</strong> do arquivo como nomes das colunas.</dd>
+</dl>
+
+<p>O <code>.import</code> não mostra nada quando dá certo. O <code>.tables</code> mostra a tabela nova, e o <code>.schema</code> mostra como ela foi criada. Repare num detalhe importante: <strong>todas as colunas são <code>TEXT</code></strong>. O <code>sqlite3</code> não adivinha tipos; para ele, um CSV é só texto. Veja os dados:</p>
+
+<pre class="term">sqlite&gt; .mode box
+sqlite&gt; SELECT nome, preco, typeof(preco) FROM novos;
+┌────────────────────────┬───────┬───────────────┐
+│          nome          │ preco │ typeof(preco) │
+├────────────────────────┼───────┼───────────────┤
+│ Agenda 2027            │ 34.9  │ text          │
+│ Calculadora Científica │ 79.5  │ text          │
+│ Régua 30 cm            │ 3.25  │ text          │
+└────────────────────────┴───────┴───────────────┘
+sqlite&gt; SELECT nome, estoque FROM novos ORDER BY estoque;
+┌────────────────────────┬─────────┐
+│          nome          │ estoque │
+├────────────────────────┼─────────┤
+│ Calculadora Científica │ 18      │
+│ Régua 30 cm            │ 250     │
+│ Agenda 2027            │ 60      │
+└────────────────────────┴─────────┘</pre>
+
+<p>A função <code>typeof()</code> mostra o tipo de cada valor (veja <a href="tipos-sqlite.html">Os Tipos no SQLite</a>): <code>text</code>. E a ordenação saiu esquisita: 18, 250, 60. Texto é ordenado como no dicionário, letra por letra, e "2" vem antes de "6", então <code>'250'</code> fica antes de <code>'60'</code>. Para ordenar como número, converta com <code>CAST</code> ("converter"):</p>
+
+<pre class="file" data-file="ordenar-numero.sql" data-resultado>CREATE TABLE novos (nome TEXT, preco TEXT, estoque TEXT);
+INSERT INTO novos VALUES
+  ('Agenda 2027', '34.9', '60'),
+  ('Calculadora Científica', '79.5', '18'),
+  ('Régua 30 cm', '3.25', '250');
+
+SELECT nome, estoque, typeof(estoque),
+       CAST(estoque AS INTEGER) AS numero,
+       typeof(CAST(estoque AS INTEGER)) AS tipo_numero
+FROM novos;
+</pre>
+
+<p>O editor não lê arquivos, então aqui a tabela <code>novos</code> é criada à mão, igualzinha à que o <code>.import</code> criou: três colunas <code>TEXT</code> e os valores como texto. O <code>CAST(estoque AS INTEGER)</code> transforma o texto <code>'60'</code> no número <code>60</code>.</p>
+
+<div class="trysql" data-goal="out:Agenda 2027\|60\nRégua 30 cm\|250">
+<p class="try-task"><strong>Experimente:</strong> ordene os produtos importados pelo estoque <strong>como número</strong>, do menor para o maior: 18, 60, 250.</p>
+<pre class="script" data-file="ordenar.sql">CREATE TABLE novos (nome TEXT, preco TEXT, estoque TEXT);
+INSERT INTO novos VALUES
+  ('Agenda 2027', '34.9', '60'),
+  ('Calculadora Científica', '79.5', '18'),
+  ('Régua 30 cm', '3.25', '250');
+
+SELECT nome, estoque FROM novos ORDER BY estoque;
+</pre>
+<pre class="solucao" data-file="ordenar.sql">CREATE TABLE novos (nome TEXT, preco TEXT, estoque TEXT);
+INSERT INTO novos VALUES
+  ('Agenda 2027', '34.9', '60'),
+  ('Calculadora Científica', '79.5', '18'),
+  ('Régua 30 cm', '3.25', '250');
+
+SELECT nome, estoque FROM novos ORDER BY CAST(estoque AS INTEGER);
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Importar para uma tabela que já existe</h2>
+<p>A loja ganhou dois clientes num evento, e a lista veio num CSV com as mesmas colunas da tabela <code>clientes</code>:</p>
+
+<pre class="term">$ cat clientes_novos.csv
+id,nome,email,cidade,estado,nascimento,vip
+31,Paula Rocha Leal,paula.leal@exemplo.com.br,Parnaíba,PI,1994-03-12,0
+32,Davi Monteiro,,Teresina,PI,,0</pre>
+
+<p>Desta vez a tabela <strong>já existe</strong>. Quando a tabela existe, o <code>.import</code> trata <strong>todas</strong> as linhas como dados, inclusive a primeira. Como a primeira linha é o cabeçalho, a Ana manda pular uma linha com <code>--skip 1</code>:</p>
+
+<pre class="term">$ sqlite3 ~/loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .import --csv --skip 1 clientes_novos.csv clientes
+sqlite&gt; .mode box
+sqlite&gt; SELECT id, nome, email, nascimento FROM clientes WHERE id &gt; 30;
+┌────┬──────────────────┬───────────────────────────┬────────────┐
+│ id │       nome       │           email           │ nascimento │
+├────┼──────────────────┼───────────────────────────┼────────────┤
+│ 31 │ Paula Rocha Leal │ paula.leal@exemplo.com.br │ 1994-03-12 │
+│ 32 │ Davi Monteiro    │                           │            │
+└────┴──────────────────┴───────────────────────────┴────────────┘</pre>
+
+<dl class="anatomy">
+  <dt>--skip 1</dt><dd>"Pule 1 linha": ignora a primeira linha do arquivo, o cabeçalho. Com <code>--skip 2</code>, pularia duas, e assim por diante.</dd>
+  <dt>clientes</dt><dd>A tabela que já existe. As colunas do arquivo entram <strong>na ordem</strong> das colunas da tabela: a primeira do CSV vai para <code>id</code>, a segunda para <code>nome</code>… O <code>.import</code> não lê os nomes do cabeçalho para casar as colunas; a ordem tem de ser a mesma.</dd>
+</dl>
+
+<p>Os dois clientes entraram. Mas o Davi não tem email nem data de nascimento: os campos vieram vazios no CSV. Será que viraram <code>NULL</code>?</p>
+
+<pre class="term">sqlite&gt; SELECT id, typeof(id), email IS NULL AS sem_email, typeof(email) FROM clientes WHERE id &gt; 30;
+┌────┬────────────┬───────────┬───────────────┐
+│ id │ typeof(id) │ sem_email │ typeof(email) │
+├────┼────────────┼───────────┼───────────────┤
+│ 31 │ integer    │ 0         │ text          │
+│ 32 │ integer    │ 0         │ text          │
+└────┴────────────┴───────────┴───────────────┘</pre>
+
+<p>Duas surpresas, uma boa e uma ruim:</p>
+<ul>
+  <li><strong>A boa:</strong> o <code>id</code> é <code>integer</code>. Como a coluna <code>id</code> da tabela <code>clientes</code> foi criada como <code>INTEGER</code>, o SQLite converteu o texto <code>'31'</code> em número ao inserir. Numa tabela que já existe, com tipos, os números entram como números.</li>
+  <li><strong>A ruim:</strong> o email do Davi <strong>não</strong> é <code>NULL</code> (<code>sem_email</code> deu 0). É um texto vazio, <code>''</code>. O <code>.import</code> transforma campo vazio em texto vazio, não em <code>NULL</code>. E aí uma consulta <code>WHERE email IS NULL</code>, que deveria achar quem não tem email, não acha o Davi.</li>
+</ul>
+
+<p>O conserto é um <code>UPDATE</code> logo depois de importar, trocando o texto vazio por <code>NULL</code> (veja <a href="update.html">UPDATE</a>):</p>
+
+<pre class="term">sqlite&gt; UPDATE clientes SET email = NULL WHERE email = '';
+sqlite&gt; UPDATE clientes SET nascimento = NULL WHERE nascimento = '';
+sqlite&gt; SELECT id, nome, email IS NULL AS sem_email, nascimento IS NULL AS sem_nascimento FROM clientes WHERE id &gt; 30;
+┌────┬──────────────────┬───────────┬────────────────┐
+│ id │       nome       │ sem_email │ sem_nascimento │
+├────┼──────────────────┼───────────┼────────────────┤
+│ 31 │ Paula Rocha Leal │ 0         │ 0              │
+│ 32 │ Davi Monteiro    │ 1         │ 1              │
+└────┴──────────────────┴───────────┴────────────────┘</pre>
+
+<p>Agora o Davi aparece como "sem email" e "sem nascimento", como os outros clientes sem esses dados. No editor, você pode ver a diferença entre <code>''</code> e <code>NULL</code> com o mesmo cliente:</p>
+
+<pre class="file" data-file="vazio-ou-null.sql" data-resultado>INSERT INTO clientes (id, nome, email, cidade, estado, nascimento, vip)
+VALUES (32, 'Davi Monteiro', '', 'Teresina', 'PI', '', 0);
+
+SELECT count(*) AS sem_email_antes FROM clientes WHERE email IS NULL;
+
+UPDATE clientes SET email = NULL WHERE email = '';
+
+SELECT count(*) AS sem_email_depois FROM clientes WHERE email IS NULL;
+</pre>
+
+<p>Antes do <code>UPDATE</code>, o <code>IS NULL</code> acha só os 3 clientes que já não tinham email; depois, acha 4.</p>
+
+<hr>
+
+<h2>8. Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>Forma</th><th>Quando usar</th></tr>
+<tr><td>Exportar uma consulta</td><td><code>.headers on</code> + <code>.mode csv</code> + <code>.once arq.csv</code></td><td>O jeito do dia a dia, dentro do <code>sqlite3</code></td></tr>
+<tr><td>Exportar várias consultas seguidas</td><td><code>.output arq.csv</code> … <code>.output</code></td><td>Relatórios em texto; para planilha, prefira um arquivo por consulta</td></tr>
+<tr><td>Exportar de um script</td><td><code>sqlite3 -header -csv loja.db "SELECT …" &gt; arq.csv</code></td><td>Automatizar, sem abrir o <code>sqlite3</code></td></tr>
+<tr><td>Abrir direto na planilha</td><td><code>.excel</code> antes da consulta</td><td>Uma olhada rápida: o <code>sqlite3</code> grava um arquivo temporário e o abre no programa de planilhas do computador</td></tr>
+<tr><td>Importar para tabela nova</td><td><code>.import --csv arq.csv tabela</code></td><td>Para olhar os dados antes; o cabeçalho vira nome de coluna e tudo vira <code>TEXT</code></td></tr>
+<tr><td>Importar para tabela existente</td><td><code>.import --csv --skip 1 arq.csv tabela</code></td><td>Quando as colunas do arquivo estão na mesma ordem da tabela</td></tr>
+<tr><td>Importar no modo CSV</td><td><code>.mode csv</code> e depois <code>.import arq.csv tabela</code></td><td>O mesmo que <code>--csv</code>; é a forma antiga, que você vai ver em tutoriais</td></tr>
+<tr><td>Passar da tabela nova para a de verdade</td><td><code>INSERT INTO … SELECT … FROM novos</code></td><td>Quando o CSV tem outras colunas ou precisa de conversão (veja <a href="insert-select.html">INSERT INTO SELECT</a>)</td></tr>
+</table>
+</div>
+
+<p>A forma mais segura de importar dados de fora é a de duas etapas: primeiro para uma tabela separada (como a <code>novos</code>), depois, com SQL, para a tabela de verdade, convertendo e conferindo no caminho. É a missão final desta aula.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As mensagens abaixo saíram do <code>sqlite3</code> da Ana, dentro da pasta <code>~/Downloads</code>, depois da importação da seção 7. Repare num padrão: o <code>.import</code> aponta o <strong>arquivo e a linha</strong> com problema (<code>clientes_novos.csv:2:</code> = linha 2 do arquivo) e <strong>continua</strong> com as linhas seguintes.</p>
+
+<div class="cenario">
+<strong>Importou o mesmo arquivo duas vezes</strong>
+<pre class="term">sqlite&gt; .import --csv --skip 1 clientes_novos.csv clientes
+clientes_novos.csv:2: INSERT failed: UNIQUE constraint failed: clientes.id
+clientes_novos.csv:3: INSERT failed: UNIQUE constraint failed: clientes.id</pre>
+<p><strong>O que aconteceu:</strong> "linha 2: o INSERT falhou: a restrição UNIQUE falhou em <code>clientes.id</code>". Os clientes 31 e 32 já estavam no banco, e o <code>id</code> é a chave primária, que não aceita repetição (veja <a href="primary-key.html">PRIMARY KEY</a>). Nenhuma linha entrou duas vezes, e o banco continua certo.</p>
+<p><strong>Como evitar:</strong> antes de importar de novo, confira o que já está lá (<code>SELECT … WHERE id &gt; 30</code>). Se a tabela não tivesse chave primária, as linhas teriam entrado <strong>repetidas</strong>, sem aviso nenhum.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>--skip 1</code> numa tabela que já existe</strong>
+<p>Outro arquivo, <code>clientes_mais.csv</code>, com cabeçalho e os clientes 34 e 35:</p>
+<pre class="term">sqlite&gt; .import --csv clientes_mais.csv clientes
+clientes_mais.csv:1: INSERT failed: datatype mismatch
+sqlite&gt; SELECT id, nome FROM clientes WHERE id &gt; 33;
+34|Otávio Lima
+35|Rita Nogueira</pre>
+<p><strong>O que aconteceu:</strong> sem o <code>--skip 1</code>, o <code>sqlite3</code> tentou inserir o cabeçalho como se fosse um cliente: <code>id</code> = <code>'id'</code>. A coluna <code>id</code> é a chave <code>INTEGER PRIMARY KEY</code>, que só aceita número inteiro, e daí veio "linha 1: o INSERT falhou: tipo de dado incompatível". As outras duas linhas entraram normalmente. Aqui o erro foi inofensivo; numa tabela com colunas só de texto, o cabeçalho teria entrado como um registro falso, um cliente chamado "nome" que mora em "cidade".</p>
+<p><strong>Como consertar:</strong> numa tabela que já existe, use <code>--skip 1</code> sempre que o arquivo tiver cabeçalho.</p>
+</div>
+
+<div class="cenario">
+<strong>Faltam colunas no arquivo</strong>
+<pre class="term">$ cat incompleto.csv
+id,nome,email,cidade,estado,nascimento,vip
+33,Sílvia Barros,Picos</pre>
+<pre class="term">sqlite&gt; .import --csv --skip 1 incompleto.csv clientes
+incompleto.csv:2: expected 7 columns but found 3 - filling the rest with NULL
+incompleto.csv:2: INSERT failed: NOT NULL constraint failed: clientes.vip</pre>
+<p><strong>O que aconteceu:</strong> duas mensagens para a mesma linha. A primeira é um aviso: "esperava 7 colunas mas achou 3; preenchendo o resto com NULL". Quem escreveu o arquivo pôs a cidade no lugar do email. A segunda é o erro: a coluna <code>vip</code> é <code>NOT NULL</code> (veja <a href="not-null.html">NOT NULL</a>), e o <code>NULL</code> do preenchimento não pode entrar. A Sílvia ficou de fora. Se a tabela aceitasse <code>NULL</code> em todas as colunas, ela teria entrado com "Picos" no email, sem erro nenhum.</p>
+<p><strong>Como consertar:</strong> abra o arquivo e corrija a linha (cada linha precisa ter o mesmo número de vírgulas que o cabeçalho). Se o aviso <code>expected … columns</code> aparecer, desconfie do arquivo inteiro.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome do arquivo errado</strong>
+<pre class="term">sqlite&gt; .import --csv --skip 1 clientes_nvos.csv clientes
+Error: cannot open "clientes_nvos.csv"</pre>
+<p><strong>O que aconteceu:</strong> "não consigo abrir o arquivo". Ou o nome está errado (aqui faltou um "o"), ou o arquivo está em outra pasta. O <code>sqlite3</code> procura o arquivo na pasta em que você o abriu, não na pasta do banco.</p>
+<p><strong>Como consertar:</strong> confira o nome com <code>ls</code> antes de abrir o <code>sqlite3</code>, ou use o caminho inteiro: <code>.import --csv --skip 1 ~/Downloads/clientes_novos.csv clientes</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>--csv</code></strong>
+<pre class="term">sqlite&gt; .import novos_produtos.csv teste
+sqlite&gt; .schema teste
+CREATE TABLE IF NOT EXISTS "teste"(
+"nome,preco,estoque" TEXT);
+sqlite&gt; SELECT * FROM teste;
+Agenda 2027,34.9,60
+Calculadora Científica,79.5,18
+Régua 30 cm,3.25,250</pre>
+<p><strong>O que aconteceu:</strong> nenhuma mensagem, e mesmo assim deu errado. Sem <code>--csv</code> (e sem <code>.mode csv</code>), o <code>.import</code> usa o separador padrão do <code>sqlite3</code>, a barra <code>|</code>. Como o arquivo não tem nenhuma barra, cada linha inteira virou <strong>uma coluna só</strong>, chamada <code>"nome,preco,estoque"</code>.</p>
+<p><strong>Como consertar:</strong> apague a tabela errada (<code>DROP TABLE teste;</code>) e importe de novo com <code>--csv</code>. Depois de todo <code>.import</code>, dê um <code>.schema</code> na tabela para conferir as colunas.</p>
+</div>
+
+<div class="cenario">
+<strong>Tentou usar <code>.import</code> no editor do guia</strong>
+<pre class="file" data-file="no-editor.sql" data-resultado data-erro>.import --csv novos_produtos.csv novos
+</pre>
+<p><strong>O que aconteceu:</strong> "perto de <code>.</code>: erro de sintaxe". Os comandos de ponto não são SQL: quem os entende é o programa <code>sqlite3</code>. O editor só roda SQL, e no navegador não existe a sua pasta <code>Downloads</code>. Import e export se fazem no terminal.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>Import e export no MySQL, PostgreSQL e SQL Server</strong>
+<p>Os comandos de ponto são só do <code>sqlite3</code>. Os outros bancos têm comandos SQL próprios para isso, cada um do seu jeito. Os trechos abaixo são <strong>ilustrativos</strong> (não rodam no SQLite) e seguem a documentação oficial de cada banco:</p>
+<pre class="file" data-file="postgresql.sql">-- PostgreSQL: o arquivo é lido/gravado pelo SERVIDOR do banco
+COPY clientes FROM '/dados/clientes_novos.csv' WITH (FORMAT csv, HEADER);
+COPY (SELECT nome, email FROM clientes WHERE vip = 1)
+  TO '/dados/vips.csv' WITH (FORMAT csv, HEADER);
+-- no programa psql, \copy faz o mesmo com um arquivo do SEU computador
+</pre>
+<pre class="file" data-file="mysql.sql">-- MySQL: LOCAL = o arquivo está no computador do cliente
+LOAD DATA LOCAL INFILE 'clientes_novos.csv'
+  INTO TABLE clientes
+  FIELDS TERMINATED BY ',' ENCLOSED BY '"'
+  IGNORE 1 LINES;
+-- exportar: SELECT ... INTO OUTFILE 'arquivo' FIELDS TERMINATED BY ','
+</pre>
+<pre class="file" data-file="sqlserver.sql">-- SQL Server 2017 ou mais novo: caminho visto pelo servidor
+BULK INSERT clientes
+FROM 'C:\dados\clientes_novos.csv'
+WITH (FORMAT = 'CSV', FIRSTROW = 2);
+</pre>
+<p>Repare no <code>HEADER</code>, no <code>IGNORE 1 LINES</code> e no <code>FIRSTROW = 2</code>: os três fazem o papel do nosso <code>--skip 1</code>. E repare que, nos bancos com servidor, é preciso saber <strong>em qual computador</strong> está o arquivo: no seu ou no servidor. No SQLite essa dúvida não existe, porque o banco é um arquivo no seu próprio computador.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>.headers on</code> / <code>.headers off</code></td><td>Liga/desliga a linha de cabeçalho com os nomes das colunas</td></tr>
+<tr><td><code>.mode csv</code></td><td>Saída em CSV (vírgula, aspas onde precisa)</td></tr>
+<tr><td><code>.separator ;</code></td><td>Troca o separador de colunas (aqui, ponto e vírgula)</td></tr>
+<tr><td><code>.once arquivo.csv</code></td><td>Manda só a próxima consulta para o arquivo</td></tr>
+<tr><td><code>.output arquivo.csv</code></td><td>Manda tudo para o arquivo, até um <code>.output</code> sozinho</td></tr>
+<tr><td><code>.output</code></td><td>Devolve a saída para a tela</td></tr>
+<tr><td><code>.excel</code></td><td>Abre o resultado da próxima consulta no programa de planilhas</td></tr>
+<tr><td><code>.import --csv arq tabela</code></td><td>Importa o CSV; cria a tabela (com o cabeçalho) se ela não existir</td></tr>
+<tr><td><code>.import --csv --skip 1 arq tabela</code></td><td>Importa pulando a primeira linha (para tabela que já existe)</td></tr>
+<tr><td><code>sqlite3 -header -csv banco "SQL" &gt; arq</code></td><td>Exporta direto do terminal</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>arq:N: INSERT failed: UNIQUE constraint failed: tabela.coluna</code></td><td>A linha N repete uma chave que já existe</td></tr>
+<tr><td><code>arq:1: INSERT failed: datatype mismatch</code></td><td>O cabeçalho entrou como dado numa coluna de número: faltou <code>--skip 1</code></td></tr>
+<tr><td><code>arq:N: expected 7 columns but found 3 - filling the rest with NULL</code></td><td>A linha N tem menos colunas que a tabela</td></tr>
+<tr><td><code>arq:N: INSERT failed: NOT NULL constraint failed: tabela.coluna</code></td><td>Um campo obrigatório ficou sem valor</td></tr>
+<tr><td><code>Error: cannot open "arq"</code></td><td>Arquivo não encontrado (nome ou pasta errados)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A saída em CSV</h3>
+<p>Complete os comandos para gerar o arquivo <code>categorias.csv</code> com cabeçalho:</p>
+<div class="ex-code">.headers <input data-answer="on" aria-label="ligar o cabeçalho"><br>.mode <input data-answer="csv" aria-label="formato"><br>.<input data-answer="once" aria-label="só a próxima consulta"> categorias.csv<br>SELECT * FROM categorias;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Pular o cabeçalho</h3>
+<p>A tabela <code>clientes</code> já existe e o arquivo tem cabeçalho. Complete:</p>
+<div class="ex-code">.import --csv --<input data-answer="skip" aria-label="opção"> <input data-answer="1" aria-label="quantas linhas"> clientes_novos.csv clientes</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana importou um CSV para uma tabela que <strong>não existia</strong>. Que tipo têm as colunas criadas?</p>
+<label><input type="radio" name="q3"> O tipo certo de cada coluna: número para número, texto para texto</label>
+<label><input type="radio" name="q3"> Todas <code>TEXT</code></label>
+<label><input type="radio" name="q3"> Todas <code>INTEGER</code></label>
+<label><input type="radio" name="q3"> Nenhum: a tabela fica sem colunas até alguém criá-las</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. No CSV, o campo email de um cliente estava vazio (<code>…,Davi Monteiro,,Teresina…</code>). Depois do <code>.import</code>, o que fica no banco?</p>
+<label><input type="radio" name="q4"> <code>NULL</code></label>
+<label><input type="radio" name="q4"> O texto <code>'NULL'</code></label>
+<label><input type="radio" name="q4"> Um texto vazio, <code>''</code>, que o <code>IS NULL</code> não encontra</label>
+<label><input type="radio" name="q4"> A linha não é importada</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A Ana escreveu <code>.output relatorio.csv</code>, rodou uma consulta e agora nada aparece na tela. O que ela faz?</p>
+<label><input type="radio" name="q5"> Digita <code>.output</code> sozinho, que devolve a saída para a tela</label>
+<label><input type="radio" name="q5"> Fecha o terminal, porque o <code>sqlite3</code> travou</label>
+<label><input type="radio" name="q5"> Digita <code>.once</code></label>
+<label><input type="radio" name="q5"> Apaga o arquivo <code>relatorio.csv</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O <code>sqlite3</code> respondeu <code>novos.csv:2: expected 7 columns but found 3 - filling the rest with NULL</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q6"> O arquivo não foi encontrado</label>
+<label><input type="radio" name="q6"> A tabela tem só 3 colunas</label>
+<label><input type="radio" name="q6"> A linha 2 repete uma chave primária</label>
+<label><input type="radio" name="q6"> A linha 2 do arquivo tem 3 campos, e a tabela, 7; os que faltam ficam <code>NULL</code></label>
+</div>
+
+<h3>Missão final: do CSV para a tabela de verdade</h3>
+
+<div class="trysql" data-goal="mudou:produtos=48;;contem:Régua 30 cm|3.25|real">
+<p class="try-task"><strong>Missão:</strong> os três produtos do fornecedor estão na tabela <code>novos</code>, do jeito que o <code>.import</code> deixou (tudo texto). Copie-os para a tabela <code>produtos</code> com um <code>INSERT INTO … SELECT</code>: categoria <code>1</code> (Papelaria), fornecedor <code>1</code>, e o preço e o estoque convertidos para número com <code>CAST</code> (<code>REAL</code> para o preço, <code>INTEGER</code> para o estoque). O <code>SELECT</code> do fim mostra o que entrou.</p>
+<pre class="script" data-file="importar.sql">CREATE TABLE novos (nome TEXT, preco TEXT, estoque TEXT);
+INSERT INTO novos VALUES
+  ('Agenda 2027', '34.9', '60'),
+  ('Calculadora Científica', '79.5', '18'),
+  ('Régua 30 cm', '3.25', '250');
+
+-- escreva aqui o INSERT INTO produtos ... SELECT ... FROM novos;
+
+SELECT nome, preco, typeof(preco), estoque FROM produtos WHERE id &gt; 45;
+</pre>
+<pre class="solucao" data-file="importar.sql">CREATE TABLE novos (nome TEXT, preco TEXT, estoque TEXT);
+INSERT INTO novos VALUES
+  ('Agenda 2027', '34.9', '60'),
+  ('Calculadora Científica', '79.5', '18'),
+  ('Régua 30 cm', '3.25', '250');
+
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+SELECT nome, 1, 1, CAST(preco AS REAL), CAST(estoque AS INTEGER)
+FROM novos;
+
+SELECT nome, preco, typeof(preco), estoque FROM produtos WHERE id &gt; 45;
+</pre>
+</div>
+
+<p>Os produtos ganham os ids 46, 47 e 48 sozinhos (veja <a href="auto-increment.html">AUTOINCREMENT</a>), e a coluna <code>descontinuado</code>, que você não citou, fica com o valor padrão, 0. Um detalhe honesto: como a coluna <code>preco</code> de <code>produtos</code> é <code>REAL</code>, o SQLite converteria o texto sozinho, mesmo sem o <code>CAST</code>. Escreva o <code>CAST</code> assim mesmo: ele deixa claro o que você quer e funciona igual em todos os bancos, inclusive nos que não convertem nada sozinhos. No terminal, o último passo seria <code>DROP TABLE novos;</code>, para não deixar a tabela provisória no banco. Quer o caminho completo, de uma planilha de verdade até as consultas? Veja o <a href="projeto-csv.html">Projeto: da Planilha ao Banco</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>CSV é uma planilha em texto: uma linha por registro, vírgula entre as colunas, cabeçalho opcional. Toda planilha e todo banco entendem.</li>
+  <li>Para exportar: <code>.headers on</code>, <code>.mode csv</code>, <code>.once arquivo.csv</code> e a consulta. <code>.output</code> manda tudo para o arquivo até um <code>.output</code> sozinho. De um script: <code>sqlite3 -header -csv loja.db "SELECT …" &gt; arquivo.csv</code>.</li>
+  <li>No CSV, <code>NULL</code> vira campo vazio, e textos com espaço, vírgula ou acento vêm entre aspas duplas.</li>
+  <li>Para importar: <code>.import --csv arquivo tabela</code>. Tabela nova: o cabeçalho vira nome de coluna e tudo vira <code>TEXT</code> (converta com <code>CAST</code>). Tabela existente: use <code>--skip 1</code> e mantenha a ordem das colunas.</li>
+  <li>Campo vazio importado vira <code>''</code>, não <code>NULL</code>: conserte com <code>UPDATE … SET coluna = NULL WHERE coluna = ''</code>.</li>
+  <li>O <code>.import</code> avisa arquivo e linha de cada problema e segue em frente. Depois de importar, confira com <code>.schema</code> e um <code>SELECT</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
