@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL MIN() — o menor valor: números, textos e datas | Guia SQL</title>
+<meta name="description" content="MIN em SQL para quem nunca usou um banco: o produto mais barato, o primeiro pedido e o cliente mais velho da Loja Aurora; MIN com texto (maiúsculas, acentos, COLLATE NOCASE), com datas ISO e com datas DD/MM/AAAA que dão errado; MIN × ORDER BY LIMIT 1, o NULL que fica de fora e o min() de várias colunas do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">MIN()</span></h1>
+
+<p class="intro">Qual é o produto mais barato da Loja Aurora? Quando foi o primeiro pedido da loja? Quem é o cliente mais velho? As três perguntas pedem o <strong>menor</strong> valor de uma coluna: o menor preço, a data mais antiga, o nascimento mais antigo. Em SQL, quem acha o menor é <code>MIN()</code>, de <em>minimum</em>, "mínimo". Ela funciona com números, com textos e com datas, e cada um tem a sua regra de "quem vem primeiro". Esta aula mostra as três, e um formato de data que faz o <code>MIN</code> errar sem avisar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Achar o menor valor de uma coluna, da tabela toda ou de um <code>WHERE</code>.</li>
+  <li>O que é "menor" num <strong>texto</strong>: a ordem do SQLite, com maiúsculas e acentos.</li>
+  <li><code>MIN</code> com <strong>datas</strong>: por que o formato <code>AAAA-MM-DD</code> funciona e <code>DD/MM/AAAA</code> não.</li>
+  <li>Que o <code>MIN</code> pula o <code>NULL</code>, mas o <code>ORDER BY</code> não.</li>
+  <li><code>MIN(preco)</code> × <code>ORDER BY preco LIMIT 1</code>: o valor ou a linha inteira.</li>
+  <li>O <code>min()</code> com várias colunas, que não é agregada.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a fila por ordem de altura</h2>
+<p>Na educação física, a professora manda a turma fazer fila do mais baixo para o mais alto. O <code>MIN</code> é olhar <strong>quem ficou na frente</strong>. Para isso, só precisa de uma regra que diga quem vem antes: em números, o menor; em textos, a ordem alfabética; em datas, a mais antiga. É a mesma regra do <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>): <code>MIN</code> devolve o valor que ficaria em primeiro lugar numa ordenação crescente, deixando os <code>NULL</code> de fora.</p>
+
+<hr>
+
+<h2>1. O menor número</h2>
+
+<pre class="file" data-file="mais-barato.sql" data-resultado>SELECT MIN(preco) AS mais_barato
+FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>MIN</dt><dd>A função do menor valor.</dd>
+  <dt>(preco)</dt><dd>A coluna onde procurar. Vai uma coluna (ou uma conta); <code>MIN(*)</code> não existe.</dd>
+  <dt>AS mais_barato</dt><dd>O apelido da coluna do resultado.</dd>
+</dl>
+
+<p>O mais barato custa 1.15 (é o Lápis Grafite HB; na seção 5 você vê como mostrar o nome junto). Com <code>WHERE</code>, o menor de um grupo. O eletrônico mais barato:</p>
+
+<pre class="file" data-file="eletronico-barato.sql" data-resultado>SELECT MIN(preco) AS mais_barato
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+
+<p>Repare que o <code>MIN</code> devolve o valor com o tipo da coluna: <code>preco</code> é <code>REAL</code>, então 24.75 sai como está; o menor frete sai <code>0.0</code>, e não <code>0</code>, porque <code>frete</code> também é <code>REAL</code>:</p>
+
+<pre class="file" data-file="menor-frete.sql" data-resultado>SELECT MIN(frete) AS menor_frete
+FROM pedidos;
+</pre>
+
+<p>O zero é o frete grátis. Se a pergunta for "qual o frete <strong>cobrado</strong> mais barato?", tire os zeros com <code>WHERE frete &gt; 0</code>: dá 7.25.</p>
+
+<hr>
+
+<h2>2. O menor texto</h2>
+<p>Num texto, "menor" quer dizer "vem antes na ordem". Qual nome de cliente vem primeiro, e qual cidade?</p>
+
+<pre class="file" data-file="menor-texto.sql" data-resultado>SELECT MIN(nome) AS primeiro_nome,
+       MIN(cidade) AS primeira_cidade
+FROM clientes;
+</pre>
+
+<p>Ana Beatriz Sousa e Floriano: o primeiro de cada coluna na ordem alfabética. Só que a "ordem alfabética" do SQLite não é a do dicionário. Ele compara os textos <strong>pelo código de cada letra</strong> (a ordem chamada <code>BINARY</code>), e nesse código:</p>
+<ul>
+  <li>todas as <strong>maiúsculas</strong> (A a Z) vêm antes de todas as minúsculas (a a z);</li>
+  <li>as letras <strong>acentuadas</strong> (Á, É, Ó, ç…) vêm depois do z.</li>
+</ul>
+
+<p>A Loja Aurora não tem um caso desses, então a consulta abaixo usa três nomes inventados na hora, com <code>VALUES</code> (uma tabelinha temporária; a coluna dela se chama <code>column1</code>):</p>
+
+<pre class="file" data-file="ordem-binaria.sql" data-resultado>SELECT MIN(column1) AS menor,
+       MAX(column1) AS maior
+FROM (VALUES ('ana'), ('Bruno'), ('Óscar'));
+</pre>
+
+<p>O menor saiu "Bruno", e não "ana": o <code>B</code> maiúsculo vem antes do <code>a</code> minúsculo. E o maior é "Óscar", porque o <code>Ó</code> vem depois de todas as letras sem acento. Para ignorar maiúsculas e minúsculas, acrescente <code>COLLATE NOCASE</code> ("ordem sem diferenciar caixa"):</p>
+
+<pre class="file" data-file="nocase.sql" data-resultado>SELECT MIN(column1 COLLATE NOCASE) AS menor,
+       MAX(column1 COLLATE NOCASE) AS maior
+FROM (VALUES ('ana'), ('Bruno'), ('Óscar'));
+</pre>
+
+<p>Agora "ana" vem primeiro. O "Óscar" continua por último: o <code>NOCASE</code> do SQLite só entende maiúsculas e minúsculas sem acento (de A a Z). A boa prática que evita a maior parte desses sustos é <strong>padronizar os dados</strong> ao guardar, por exemplo, nomes sempre com a primeira letra maiúscula.</p>
+
+<hr>
+
+<h2>3. A data mais antiga</h2>
+<p>Quando a Loja Aurora recebeu o primeiro pedido?</p>
+
+<pre class="file" data-file="primeiro-pedido.sql" data-resultado>SELECT MIN(data) AS primeiro_pedido
+FROM pedidos;
+</pre>
+
+<p>No SQLite, as datas da Loja Aurora são <strong>texto</strong> no formato <code>AAAA-MM-DD</code> (ano, mês, dia; é o padrão internacional ISO 8601). O <code>MIN</code> compara esses textos letra por letra, da esquerda para a direita. Como o ano vem primeiro, depois o mês e depois o dia, a ordem do texto é exatamente a ordem do calendário. Por isso funciona também para achar o cliente mais velho, que é quem tem o <strong>menor</strong> nascimento:</p>
+
+<pre class="file" data-file="mais-velho.sql" data-resultado>SELECT MIN(nascimento) AS nasceu_primeiro
+FROM clientes;
+</pre>
+
+<p>30 de setembro de 1965 (é a Conceição Prado). Os dois clientes sem data de nascimento (<code>NULL</code>) ficaram de fora da disputa, como sempre.</p>
+
+<div class="trysql" data-goal="out:^2025-01-06$">
+<p class="try-task"><strong>Experimente:</strong> a consulta mostra o primeiro pedido de todos. A gerente quer a data do primeiro pedido <strong>de 2025</strong>. Acrescente um <code>WHERE</code> que deixe passar só as datas a partir de <code>'2025-01-01'</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT MIN(data) AS primeiro_pedido
+FROM pedidos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT MIN(data) AS primeiro_pedido
+FROM pedidos
+WHERE data &gt;= '2025-01-01';
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O MIN pula o NULL; o ORDER BY, não</h2>
+<p>Dois fornecedores são estrangeiros e têm <code>estado</code> <code>NULL</code>. Compare o <code>MIN</code> com a "primeira linha" de um <code>ORDER BY</code>:</p>
+
+<pre class="file" data-file="min-estado.sql" data-resultado>SELECT MIN(estado) AS menor_estado
+FROM fornecedores;
+</pre>
+
+<pre class="file" data-file="order-estado.sql" data-resultado>SELECT estado
+FROM fornecedores
+ORDER BY estado
+LIMIT 1;
+</pre>
+
+<p>O <code>MIN</code> deu <code>CE</code>; o <code>ORDER BY … LIMIT 1</code> deu <em>NULL</em>. No SQLite, o <code>ORDER BY</code> coloca os <code>NULL</code> <strong>antes</strong> de todos os outros valores, e o <code>LIMIT 1</code> pegou justamente um deles. Já o <code>MIN</code>, como toda agregada, não deixa o <code>NULL</code> participar. O <code>MIN</code> só devolve <code>NULL</code> quando não há nenhum valor conhecido para comparar (por exemplo, com um <code>WHERE</code> que não deixa passar nenhuma linha).</p>
+
+<hr>
+
+<h2>5. O valor ou a linha inteira?</h2>
+<p>O <code>MIN(preco)</code> diz <strong>quanto</strong> custa o mais barato, mas não <strong>qual</strong> é. Para ver o nome junto, você tem três caminhos:</p>
+
+<pre class="file" data-file="order-limit.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco
+LIMIT 1;
+</pre>
+
+<pre class="file" data-file="coluna-nua.sql" data-resultado>SELECT nome, MIN(preco) AS preco
+FROM produtos;
+</pre>
+
+<p>Os dois mostram o Lápis Grafite HB. O primeiro ordena tudo do mais barato para o mais caro e fica com a primeira linha. O segundo usa uma regra que <strong>só o SQLite tem</strong>: quando a consulta tem um único <code>MIN</code> ou <code>MAX</code>, as outras colunas vêm da mesma linha do valor mínimo. Em quase todos os outros bancos, essa consulta dá erro; a aula <a href="max.html">MAX()</a> explica a regra e o erro. A terceira forma, que funciona em qualquer banco, usa uma subconsulta (aula <a href="subconsultas.html">Subconsultas</a>):</p>
+
+<pre class="file" data-file="subconsulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco = (SELECT MIN(preco) FROM produtos);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Devolve</th><th>Empates</th><th>Outros bancos</th></tr>
+<tr><td><code>MIN(preco)</code></td><td>Só o valor</td><td>Não importa: o valor é um só</td><td>Funciona</td></tr>
+<tr><td><code>ORDER BY preco LIMIT 1</code></td><td>A linha inteira</td><td>Mostra só um dos empatados</td><td>Funciona (no SQL Server, com <code>TOP 1</code>)</td></tr>
+<tr><td><code>SELECT nome, MIN(preco)</code></td><td>A linha do mínimo</td><td>Mostra só um, sem dizer qual</td><td>Erro na maioria</td></tr>
+<tr><td><code>WHERE preco = (SELECT MIN(preco) …)</code></td><td>A linha inteira</td><td>Mostra <strong>todos</strong> os empatados</td><td>Funciona</td></tr>
+</table>
+</div>
+
+<p>E cuidado com o <code>NULL</code> da seção 4: numa coluna com <code>NULL</code>, o <code>ORDER BY … LIMIT 1</code> pode trazer justamente a linha do <code>NULL</code>. Nesse caso, filtre antes com <code>WHERE coluna IS NOT NULL</code>.</p>
+
+<hr>
+
+<h2>6. min() com várias colunas não é agregada</h2>
+<p>O SQLite tem uma segunda função <code>min()</code>, que recebe <strong>dois ou mais</strong> valores e devolve o menor deles, <strong>linha por linha</strong>. Ela é uma função comum, não agregada. A Ana quer limitar a exposição na vitrine a no máximo 50 unidades de cada produto:</p>
+
+<pre class="file" data-file="min-varios.sql" data-resultado>SELECT nome, estoque, MIN(estoque, 50) AS na_vitrine
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<p>Seis produtos entraram, seis linhas saíram: para cada um, o menor entre o estoque e 50. A Mochila, com 35 no estoque, fica com 35. Não confunda: <code>MIN(estoque)</code>, com <strong>um</strong> valor, é a agregada (uma linha no resultado); <code>MIN(estoque, 50)</code>, com <strong>dois ou mais</strong>, é a função comum.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Datas no formato brasileiro</strong>
+<p>Se as datas estivessem guardadas como <code>DD/MM/AAAA</code>, o <code>MIN</code> não daria erro nenhum, só a resposta errada. Duas datas de exemplo, 1º de dezembro de 2026 e 15 de janeiro de 2024:</p>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT MIN(column1) AS mais_antiga
+FROM (VALUES ('01/12/2026'), ('15/01/2024'));
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>MIN</code> escolheu 01/12/2026, a data mais <strong>nova</strong>. Ele compara texto da esquerda para a direita: o <code>'0'</code> de <code>01</code> vem antes do <code>'1'</code> de <code>15</code>, e a comparação para ali. No formato brasileiro, o <strong>dia</strong> é o que manda na ordem do texto, e não o ano.</p>
+<p><strong>Como consertar:</strong> guarde datas sempre no formato <code>AAAA-MM-DD</code>, como a Loja Aurora faz. Para mostrar no formato brasileiro, converta só na hora de exibir (aula <a href="funcoes-data.html">Funções de Data</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>MIN no WHERE</strong>
+<p>A Ana tenta achar o produto mais barato com um <code>WHERE</code>:</p>
+<pre class="file" data-file="min-where.sql" data-resultado data-erro>SELECT nome FROM produtos WHERE preco = MIN(preco);
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate function MIN()</code>, "uso indevido da função agregada <code>MIN()</code>". O <code>WHERE</code> olha uma linha por vez, e o mínimo só existe depois de ver todas.</p>
+<p><strong>Como consertar:</strong> a subconsulta da seção 5: <code>WHERE preco = (SELECT MIN(preco) FROM produtos)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>MIN(*) ou MIN vazio</strong>
+<pre class="file" data-file="min-asterisco.sql" data-resultado data-erro>SELECT MIN(*) FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function MIN()</code>. O mesmo sai com <code>MIN()</code>, sem nada dentro. Diga a coluna: <code>MIN(preco)</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>Textos:</strong> a ordem depende da <em>collation</em> (a regra de ordenação) do banco. No MySQL 8, a padrão é <code>utf8mb4_0900_ai_ci</code>, que ignora acentos (<code>ai</code>, <em>accent-insensitive</em>) e maiúsculas (<code>ci</code>, <em>case-insensitive</em>); lá, o <code>MIN</code> dos três nomes da seção 2 não segue a ordem <code>BINARY</code> do SQLite. Ao trocar de banco, confira o resultado de <code>MIN</code>/<code>MAX</code> em colunas de texto.</li>
+  <li><strong>Várias colunas:</strong> o <code>min(a, b)</code> da seção 6 é do SQLite. No MySQL e no PostgreSQL, a função que faz isso se chama <code>LEAST(a, b)</code> (e <code>GREATEST</code> para o maior); no SQL Server, ela existe a partir da versão 2022.</li>
+</ul>
+<pre class="file" data-file="mysql / postgresql (ilustrativo, não roda no SQLite)">SELECT nome, estoque, LEAST(estoque, 50) AS na_vitrine
+FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>MIN(coluna)</code></td><td>O menor valor não <code>NULL</code></td><td><code>MIN(preco)</code> = 1.15</td></tr>
+<tr><td><code>MIN(texto)</code></td><td>O primeiro na ordem <code>BINARY</code> (maiúsculas antes, acentos depois do z)</td><td><code>MIN(cidade)</code> = Floriano</td></tr>
+<tr><td><code>MIN(texto COLLATE NOCASE)</code></td><td>Ignora maiúsculas/minúsculas (sem acento)</td><td></td></tr>
+<tr><td><code>MIN(data)</code></td><td>A data mais antiga, se estiver em <code>AAAA-MM-DD</code></td><td><code>MIN(data)</code> = 2024-01-05</td></tr>
+<tr><td><code>MIN(a, b, …)</code></td><td>Função comum: o menor entre os valores, em cada linha</td><td><code>MIN(estoque, 50)</code></td></tr>
+<tr><td>Sem nenhuma linha</td><td><code>NULL</code></td><td></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate function MIN()</code></td><td><code>MIN</code> dentro do <code>WHERE</code></td></tr>
+<tr><td><code>wrong number of arguments to function MIN()</code></td><td><code>MIN(*)</code> ou <code>MIN()</code> vazio</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O menor salário</h3>
+<p>Complete para achar o menor salário da equipe:</p>
+<div class="ex-code">SELECT <input data-answer="MIN" aria-label="função">(salario) FROM funcionarios;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A primeira entrega</h3>
+<p>Complete para achar a data da primeira entrega feita pela loja (a coluna <code>entregue_em</code>):</p>
+<div class="ex-code">SELECT MIN(<input data-answer="entregue_em" aria-label="coluna">) FROM pedidos;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. No SQLite, qual é o <code>MIN</code> dos textos <code>'banana'</code>, <code>'Uva'</code> e <code>'Abacaxi'</code>?</p>
+<label><input type="radio" name="q3"> banana</label>
+<label><input type="radio" name="q3"> Uva</label>
+<label><input type="radio" name="q3"> Abacaxi</label>
+<label><input type="radio" name="q3"> Dá erro: MIN só funciona com números</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>MIN(data)</code> funciona na Loja Aurora?</p>
+<label><input type="radio" name="q4"> Porque o SQLite tem um tipo DATE especial</label>
+<label><input type="radio" name="q4"> Porque as datas estão em AAAA-MM-DD, e a ordem do texto é a ordem do calendário</label>
+<label><input type="radio" name="q4"> Porque o MIN transforma qualquer texto em data</label>
+<label><input type="radio" name="q4"> Não funciona: precisa de julianday()</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A coluna <code>estado</code> tem <code>CE</code>, <code>PI</code>, <code>SP</code> e dois <em>NULL</em>. O que <code>MIN(estado)</code> devolve?</p>
+<label><input type="radio" name="q5"> NULL</label>
+<label><input type="radio" name="q5"> Duas linhas</label>
+<label><input type="radio" name="q5"> SP</label>
+<label><input type="radio" name="q5"> CE</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Quantas linhas tem o resultado de <code>SELECT MIN(estoque, 50) FROM produtos;</code> (a tabela tem 45 produtos)?</p>
+<label><input type="radio" name="q6"> 45, porque com dois valores o min() é uma função comum</label>
+<label><input type="radio" name="q6"> 1, porque MIN é agregada</label>
+<label><input type="radio" name="q6"> 50</label>
+<label><input type="radio" name="q6"> Nenhuma: dá erro de número de argumentos</label>
+</div>
+
+<h3>Missão final: o brinquedo mais barato</h3>
+
+<div class="trysql" data-goal="linhas:1;;contem:Bola de Vinil Colorida">
+<p class="try-task"><strong>Missão:</strong> a consulta lista todos os brinquedos (categoria 5). A gerente quer só <strong>uma linha</strong>: o nome e o preço do brinquedo mais barato. Use a forma que preferir da seção 5.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5
+ORDER BY preco
+LIMIT 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>MIN(coluna)</code> devolve o menor valor, o que viria primeiro num <code>ORDER BY</code> crescente, sem contar os <code>NULL</code>.</li>
+  <li>Em texto, o SQLite usa a ordem <code>BINARY</code>: maiúsculas antes das minúsculas, acentuadas depois do z. <code>COLLATE NOCASE</code> ignora a caixa (sem acento).</li>
+  <li>Datas em <code>AAAA-MM-DD</code> funcionam com <code>MIN</code>; em <code>DD/MM/AAAA</code>, o <code>MIN</code> erra sem avisar.</li>
+  <li><code>MIN</code> pula o <code>NULL</code>; <code>ORDER BY … LIMIT 1</code> pode trazê-lo, porque no SQLite o <code>NULL</code> vem primeiro.</li>
+  <li>Para a linha inteira: <code>ORDER BY … LIMIT 1</code> ou <code>WHERE coluna = (SELECT MIN(coluna) …)</code>. O <code>SELECT nome, MIN(preco)</code> é coisa só do SQLite.</li>
+  <li><code>MIN(a, b)</code>, com dois ou mais valores, é uma função comum, linha por linha.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
