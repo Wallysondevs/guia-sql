@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Normalização — 1FN, 2FN e 3FN sem mistério | Guia SQL</title>
+<meta name="description" content="Normalização para quem está começando: as anomalias de atualização, inserção e exclusão numa planilha de vendas real da Loja Aurora, a primeira, a segunda e a terceira forma normal com exemplos que rodam no editor, por que o preço unitário fica em itens_pedido, quando desnormalizar de propósito e as mensagens reais do SQLite, com missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Normalização (1FN, 2FN, 3FN)</span></h1>
+
+<p class="intro">Na aula <a href="modelagem.html">Modelando um Banco do Zero</a>, o telefone do João, repetido em várias linhas do caderno, acabou com dois valores diferentes. Isso não é azar: é um defeito de projeto, e tem remédio com nome. A <strong>normalização</strong> é um conjunto de três regras, as <strong>formas normais</strong> (1FN, 2FN e 3FN), que dizem como dividir os dados em tabelas para que cada informação fique guardada <strong>num lugar só</strong>. Nesta aula você vai ver os defeitos acontecendo numa planilha de vendas montada com os dados reais da Loja Aurora, aplicar as três regras e descobrir que a Aurora já foi desenhada assim.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As três <strong>anomalias</strong> de uma tabela mal dividida: de atualização, de inserção e de exclusão.</li>
+  <li>A <strong>1FN</strong>: um valor por célula, nada de listas numa coluna.</li>
+  <li>A <strong>2FN</strong>: numa chave de duas colunas, cada dado depende da chave <strong>inteira</strong>.</li>
+  <li>A <strong>3FN</strong>: cada dado depende da chave, e não de outra coluna comum.</li>
+  <li>Por que o <code>preco_unitario</code> da Aurora fica em <code>itens_pedido</code>, e não é repetição.</li>
+  <li>Quando vale a pena <strong>desnormalizar</strong> de propósito.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no SQLite 3.50 com o banco da Loja Aurora. As tabelas "mal divididas" desta aula (<code>planilha</code>, <code>pedidos_lista</code>, <code>itens_largos</code>, <code>produtos_largos</code>) não existem na Aurora: cada exemplo as monta, a partir dos dados reais, com <code>CREATE TABLE … AS SELECT</code> (aula <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>).</p>
+
+<hr>
+
+<h2>A ideia: cada coisa no seu lugar</h2>
+<p>Pense numa agenda de papel em que, a cada vez que você marca um compromisso com a tia Rosa, escreve também o endereço e o telefone dela. Um dia ela muda de casa. Você corrige o endereço na página de hoje e esquece as outras. Agora a agenda tem dois endereços da tia Rosa. A solução, que toda agenda já tem, é uma <strong>página de contatos</strong>: o endereço fica lá, uma vez só, e o compromisso diz só "tia Rosa".</p>
+
+<p>Normalizar é fazer isso com método. A frase que resume as três formas normais é:</p>
+
+<div class="tip">
+<strong>"A chave, a chave inteira e nada além da chave."</strong>
+<p>Toda coluna de uma tabela tem de dizer algo sobre <strong>a chave</strong> (1FN), sobre <strong>a chave inteira</strong> (2FN) e sobre <strong>nada além da chave</strong> (3FN). É uma frase famosa entre quem projeta bancos; guarde-a, e as três regras ficam fáceis.</p>
+</div>
+
+<hr>
+
+<h2>1. Os defeitos de uma planilha</h2>
+<p>Muita loja começa assim: uma planilha de vendas, uma linha por produto vendido, com tudo junto. A Ana montou essa planilha com os 220 itens vendidos pela Aurora:</p>
+
+<pre class="file" data-file="planilha.sql" data-resultado>CREATE TABLE planilha AS
+SELECT ip.pedido_id, p.data, c.nome AS cliente, c.cidade,
+       pr.nome AS produto, cat.nome AS categoria, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip
+JOIN pedidos p      ON p.id = ip.pedido_id
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN produtos pr    ON pr.id = ip.produto_id
+JOIN categorias cat ON cat.id = pr.categoria_id;
+
+SELECT * FROM planilha WHERE pedido_id &lt;= 2;
+</pre>
+
+<p>Parece prático: tudo numa tabela, sem <code>JOIN</code>. Mas veja quantas vezes cada informação se repete. O José Ribamar Silva aparece em 10 linhas; "Teresina" ao lado dele, 10 vezes; a data do pedido 1, três vezes. Essas repetições causam três defeitos, chamados <strong>anomalias</strong>.</p>
+
+<h3>Anomalia de atualização</h3>
+<p>O José se mudou para Parnaíba. A Ana corrige a cidade dele, mas só nas linhas do pedido 1:</p>
+
+<pre class="file" data-file="atualizacao.sql" data-resultado>CREATE TABLE planilha AS
+SELECT ip.pedido_id, p.data, c.nome AS cliente, c.cidade,
+       pr.nome AS produto, cat.nome AS categoria, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip JOIN pedidos p ON p.id = ip.pedido_id JOIN clientes c ON c.id = p.cliente_id
+JOIN produtos pr ON pr.id = ip.produto_id JOIN categorias cat ON cat.id = pr.categoria_id;
+
+UPDATE planilha SET cidade = 'Parnaíba'
+WHERE cliente = 'José Ribamar Silva' AND pedido_id = 1;
+
+SELECT DISTINCT cliente, cidade FROM planilha WHERE cliente = 'José Ribamar Silva';
+</pre>
+
+<p>Agora o José mora em duas cidades. Para mudar <strong>uma</strong> informação, era preciso mudar <strong>dez</strong> linhas; esquecer uma deixa o banco <strong>contraditório</strong>, e nenhuma consulta avisa.</p>
+
+<h3>Anomalia de inserção</h3>
+<p>A Aurora tem 45 produtos e 30 clientes. Quantos aparecem na planilha?</p>
+
+<pre class="file" data-file="insercao.sql" data-resultado>CREATE TABLE planilha AS
+SELECT ip.pedido_id, p.data, c.nome AS cliente, c.cidade,
+       pr.nome AS produto, cat.nome AS categoria, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip JOIN pedidos p ON p.id = ip.pedido_id JOIN clientes c ON c.id = p.cliente_id
+JOIN produtos pr ON pr.id = ip.produto_id JOIN categorias cat ON cat.id = pr.categoria_id;
+
+SELECT COUNT(DISTINCT produto) AS produtos, COUNT(DISTINCT cliente) AS clientes
+FROM planilha;
+</pre>
+
+<p>Só 42 produtos e 26 clientes. Os 3 produtos que nunca foram vendidos e os 4 clientes que nunca compraram (casos do banco: aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a>) <strong>não cabem</strong> na planilha: toda linha é uma venda, e sem venda não há onde escrever o produto novo ou o cliente que acabou de se cadastrar.</p>
+
+<h3>Anomalia de exclusão</h3>
+<p>O Pen Drive 32GB foi vendido em 4 pedidos. Se esses pedidos forem cancelados e apagados da planilha:</p>
+
+<pre class="file" data-file="exclusao.sql" data-resultado>CREATE TABLE planilha AS
+SELECT ip.pedido_id, p.data, c.nome AS cliente, c.cidade,
+       pr.nome AS produto, cat.nome AS categoria, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip JOIN pedidos p ON p.id = ip.pedido_id JOIN clientes c ON c.id = p.cliente_id
+JOIN produtos pr ON pr.id = ip.produto_id JOIN categorias cat ON cat.id = pr.categoria_id;
+
+DELETE FROM planilha WHERE produto = 'Pen Drive 32GB';
+
+SELECT COUNT(*) AS linhas_do_pen_drive FROM planilha WHERE produto = 'Pen Drive 32GB';
+</pre>
+
+<p>Apagar as vendas apagou junto o <strong>produto</strong>: a loja "esqueceu" que vende pen drive, de que categoria ele é e por quanto. Uma informação (o produto) morreu porque outra (as vendas) foi apagada.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Anomalia</th><th>O que acontece</th><th>Na planilha</th></tr>
+<tr><td>de <strong>atualização</strong></td><td>Mudar uma informação exige mudar várias linhas; esquecer uma deixa o banco contraditório</td><td>O José com duas cidades</td></tr>
+<tr><td>de <strong>inserção</strong></td><td>Não dá para guardar uma coisa sem inventar outra</td><td>Cliente sem pedido não entra</td></tr>
+<tr><td>de <strong>exclusão</strong></td><td>Apagar uma coisa apaga outra junto</td><td>Cancelar as vendas apaga o produto</td></tr>
+</table>
+</div>
+
+<p>As três formas normais existem para acabar com essas anomalias. Cada uma ataca um tipo de repetição.</p>
+
+<hr>
+
+<h2>2. Primeira Forma Normal (1FN): um valor por célula</h2>
+<p><strong>A regra:</strong> cada célula guarda <strong>um valor só</strong>, e não há grupos de colunas repetidas (<code>produto1</code>, <code>produto2</code>, <code>produto3</code>…). Uma tabela assim está na <strong>1FN</strong> (Primeira Forma Normal).</p>
+
+<p>A violação mais comum é guardar uma <strong>lista</strong> dentro de uma coluna. Um pedido com os produtos separados por vírgula, por exemplo (a Ana montou com <code>group_concat()</code>, que junta textos de várias linhas):</p>
+
+<pre class="file" data-file="lista.sql" data-resultado>CREATE TABLE pedidos_lista AS
+SELECT p.id AS pedido_id, group_concat(pr.nome, ', ') AS produtos
+FROM pedidos p
+JOIN itens_pedido ip ON ip.pedido_id = p.id
+JOIN produtos pr     ON pr.id = ip.produto_id
+GROUP BY p.id;
+
+SELECT * FROM pedidos_lista WHERE pedido_id &lt;= 3;
+</pre>
+
+<p>Fica bonito de ler, e é péssimo de consultar. "Em quantos pedidos saiu o Jogo de Panelas?" A tentação é um <code>LIKE</code>:</p>
+
+<pre class="file" data-file="like.sql" data-resultado>CREATE TABLE pedidos_lista AS
+SELECT p.id AS pedido_id, group_concat(pr.nome, ', ') AS produtos
+FROM pedidos p JOIN itens_pedido ip ON ip.pedido_id = p.id JOIN produtos pr ON pr.id = ip.produto_id
+GROUP BY p.id;
+
+SELECT COUNT(*) AS com_like FROM pedidos_lista WHERE produtos LIKE '%Jogo%';
+
+SELECT COUNT(*) AS certo FROM itens_pedido WHERE produto_id = 14;
+</pre>
+
+<p>O <code>LIKE '%Jogo%'</code> contou 11 pedidos; a resposta certa é 6. O <code>LIKE</code> também pegou o "Jogo de Tabuleiro Trilha Mística". Dá para escrever o nome inteiro no <code>LIKE</code>, mas aí qualquer diferença de grafia quebra a busca. E perguntas como "quantas unidades saíram?" ficam impossíveis: a lista nem guarda a quantidade, e não há como fazer <code>JOIN</code> com <code>produtos</code> nem usar índice.</p>
+
+<p><strong>O conserto:</strong> uma linha para cada item, com o produto pela chave. É exatamente a tabela <code>itens_pedido</code> da Aurora: <code>(pedido_id, produto_id, quantidade, preco_unitario)</code>. Com ela, cada pergunta vira um <code>WHERE</code> simples.</p>
+
+<div class="trysql" data-goal="out:^8$">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo tenta descobrir quantas <strong>unidades</strong> do Jogo de Panelas (produto 14) foram vendidas, olhando a lista de texto, e erra feio (ela conta pedidos, e conta o jogo errado junto). Apague-a e responda com a tabela que está na 1FN, <code>itens_pedido</code>, somando a <code>quantidade</code>.</p>
+<pre class="script" data-file="unidades.sql">CREATE TABLE pedidos_lista AS
+SELECT p.id AS pedido_id, group_concat(pr.nome, ', ') AS produtos
+FROM pedidos p JOIN itens_pedido ip ON ip.pedido_id = p.id JOIN produtos pr ON pr.id = ip.produto_id
+GROUP BY p.id;
+
+SELECT COUNT(*) FROM pedidos_lista WHERE produtos LIKE '%Jogo%';
+</pre>
+<pre class="solucao" data-file="unidades.sql">SELECT SUM(quantidade) FROM itens_pedido WHERE produto_id = 14;
+</pre>
+</div>
+
+<div class="warning">
+<strong>E o JSON?</strong>
+<p>Uma lista JSON numa coluna (aula <a href="json.html">JSON no SQL</a>) também quebra a 1FN. Às vezes isso é aceitável, para dados que chegam prontos e não são consultados por dentro (como os carrinhos do aplicativo daquela aula). Para dados que você vai somar, filtrar e ligar a outras tabelas, como os itens de um pedido, use uma tabela de verdade.</p>
+</div>
+
+<hr>
+
+<h2>3. Segunda Forma Normal (2FN): a chave inteira</h2>
+<p><strong>A regra:</strong> a tabela está na 1FN e, se a chave primária tem <strong>mais de uma coluna</strong>, cada coluna comum depende da chave <strong>inteira</strong>, e não só de um pedaço dela.</p>
+
+<p>A chave da tabela de itens é composta: <code>(pedido_id, produto_id)</code>. Imagine que alguém, para "facilitar", acrescentou nela a data do pedido e o nome do produto:</p>
+
+<pre class="file" data-file="itens-largos.sql" data-resultado>CREATE TABLE itens_largos AS
+SELECT ip.pedido_id, ip.produto_id, p.data, pr.nome AS produto,
+       ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip
+JOIN pedidos p   ON p.id = ip.pedido_id
+JOIN produtos pr ON pr.id = ip.produto_id;
+
+SELECT * FROM itens_largos WHERE pedido_id IN (1, 29) ORDER BY pedido_id, produto_id;
+</pre>
+
+<p>Pergunte a cada coluna: "<strong>do que</strong> você depende?"</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Para saber o valor, basta…</th><th>Depende de</th><th>2FN?</th></tr>
+<tr><td><code>data</code></td><td>…saber o pedido. Todo item do pedido 1 tem a mesma data</td><td>só <code>pedido_id</code></td><td>Não: vai para <code>pedidos</code></td></tr>
+<tr><td><code>produto</code> (o nome)</td><td>…saber o produto. O Caderno se chama "Caderno Pautado 96 folhas" em qualquer pedido</td><td>só <code>produto_id</code></td><td>Não: vai para <code>produtos</code></td></tr>
+<tr><td><code>quantidade</code></td><td>…saber o pedido <strong>e</strong> o produto: 2 cadernos no pedido 1, 1 no pedido 29</td><td>a chave inteira</td><td>Sim</td></tr>
+<tr><td><code>preco_unitario</code></td><td>…saber o pedido <strong>e</strong> o produto (veja abaixo)</td><td>a chave inteira</td><td>Sim</td></tr>
+</table>
+</div>
+
+<p>Quem depende de um pedaço da chave se repete toda vez que esse pedaço aparece: a data do pedido 1 está escrita três vezes, e o nome do Caderno, em todas as vendas dele. São as anomalias da seção 1 de volta. <strong>O conserto:</strong> cada coluna vai para a tabela do pedaço de que depende. A <code>data</code> já está em <code>pedidos</code>; o nome, em <code>produtos</code>. Para ver tudo junto, um <code>JOIN</code> remonta a informação na hora da consulta.</p>
+
+<h3>O <code>preco_unitario</code> não é repetição</h3>
+<p>Se o preço está em <code>produtos.preco</code>, por que a Aurora guarda outro preço em <code>itens_pedido</code>? Porque são <strong>informações diferentes</strong>: <code>produtos.preco</code> é o preço de <strong>hoje</strong>; <code>preco_unitario</code> é o preço cobrado <strong>naquela venda</strong>. Os dois às vezes diferem:</p>
+
+<pre class="file" data-file="preco-historico.sql" data-resultado>SELECT ip.pedido_id, pr.nome, ip.preco_unitario AS cobrado, pr.preco AS hoje
+FROM itens_pedido ip
+JOIN produtos pr ON pr.id = ip.produto_id
+WHERE ip.preco_unitario &lt;&gt; pr.preco;
+</pre>
+
+<p>São as três vendas feitas em promoção. Se o preço da venda fosse lido de <code>produtos</code>, cada aumento de preço mudaria o valor de pedidos antigos, já pagos. O preço cobrado depende do produto <strong>e</strong> do pedido, ou seja, da chave inteira: está na 2FN e no lugar certo. Antes de chamar algo de "repetido", pergunte se é mesmo a <strong>mesma</strong> informação.</p>
+
+<div class="note">
+<strong>Chave de uma coluna só</strong>
+<p>Se a chave primária tem uma coluna só (como o <code>id</code> de <code>produtos</code>), não existe "pedaço" da chave, e uma tabela na 1FN já está automaticamente na 2FN. A 2FN só dá trabalho em tabelas com chave composta, como as tabelas de ligação (aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>).</p>
+</div>
+
+<hr>
+
+<h2>4. Terceira Forma Normal (3FN): nada além da chave</h2>
+<p><strong>A regra:</strong> a tabela está na 2FN e nenhuma coluna comum depende de <strong>outra coluna comum</strong>. Tudo depende da chave, e só dela. Quando uma coluna depende da chave "por tabela", através de outra coluna, isso se chama <strong>dependência transitiva</strong>.</p>
+
+<p>Um cadastro de produtos com os dados do fornecedor junto:</p>
+
+<pre class="file" data-file="produtos-largos.sql" data-resultado>CREATE TABLE produtos_largos AS
+SELECT pr.id, pr.nome, pr.preco, pr.fornecedor_id,
+       f.nome AS fornecedor_nome, f.pais AS fornecedor_pais
+FROM produtos pr
+JOIN fornecedores f ON f.id = pr.fornecedor_id;
+
+SELECT * FROM produtos_largos WHERE fornecedor_id = 4;
+</pre>
+
+<p>A chave é o <code>id</code> do produto, e a tabela está na 2FN (chave de uma coluna). Mas olhe a cadeia: o <code>id</code> do produto diz qual é o <code>fornecedor_id</code>, e o <code>fornecedor_id</code> diz o <code>fornecedor_nome</code> e o <code>fornecedor_pais</code>. O nome e o país são do <strong>fornecedor</strong>, não do produto: dependem de <code>fornecedor_id</code>, que é uma coluna comum.</p>
+
+<pre class="file" data-file="cadeia">id do produto ──→ fornecedor_id ──→ fornecedor_nome, fornecedor_pais
+   (chave)          (coluna comum)       (dependem da coluna comum: transitiva)
+</pre>
+
+<p>Resultado: "Lusitana Comércio, Portugal" escrito cinco vezes, uma por produto. A anomalia de atualização aparece igualzinha:</p>
+
+<pre class="file" data-file="transitiva.sql" data-resultado>CREATE TABLE produtos_largos AS
+SELECT pr.id, pr.nome, pr.preco, pr.fornecedor_id,
+       f.nome AS fornecedor_nome, f.pais AS fornecedor_pais
+FROM produtos pr JOIN fornecedores f ON f.id = pr.fornecedor_id;
+
+-- alguém corrigiu o país num produto só
+UPDATE produtos_largos SET fornecedor_pais = 'Espanha' WHERE id = 16;
+
+SELECT DISTINCT fornecedor_nome, fornecedor_pais
+FROM produtos_largos WHERE fornecedor_id = 4;
+</pre>
+
+<p>A mesma empresa em dois países. <strong>O conserto:</strong> os dados do fornecedor vão para uma tabela <code>fornecedores</code>, uma linha por fornecedor, e o produto guarda só o <code>fornecedor_id</code>. É o que a Aurora faz. O mesmo vale para a categoria: o produto guarda <code>categoria_id</code>, e o nome da categoria fica em <code>categorias</code>.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> veja os dados da Aurora normalizados e remontados por <code>JOIN</code>: troque o fornecedor, acrescente a categoria (<code>JOIN categorias c ON c.id = pr.categoria_id</code>) ou mude o <code>WHERE</code>. Depois, mude o país de um fornecedor com um <code>UPDATE fornecedores …</code> antes do <code>SELECT</code> e veja todos os produtos dele mudarem juntos.</p>
+<pre class="script" data-file="remontar.sql">SELECT pr.id, pr.nome, pr.preco, f.nome AS fornecedor, f.pais
+FROM produtos pr
+JOIN fornecedores f ON f.id = pr.fornecedor_id
+WHERE f.id = 4;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Resumo das três formas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>A regra</th><th>A pergunta para cada coluna</th><th>Violação na aula</th><th>Conserto na Aurora</th></tr>
+<tr><td><strong>1FN</strong></td><td>Um valor por célula; sem grupos repetidos</td><td>"Você guarda um valor só?"</td><td><code>pedidos_lista.produtos</code></td><td>Uma linha por item: <code>itens_pedido</code></td></tr>
+<tr><td><strong>2FN</strong></td><td>1FN + cada coluna depende da chave <strong>inteira</strong></td><td>"Você depende de toda a chave, ou só de um pedaço?"</td><td><code>itens_largos.data</code>, <code>itens_largos.produto</code></td><td>Data em <code>pedidos</code>, nome em <code>produtos</code></td></tr>
+<tr><td><strong>3FN</strong></td><td>2FN + nenhuma coluna depende de outra coluna comum</td><td>"Você depende da chave, ou de outra coluna?"</td><td><code>produtos_largos.fornecedor_nome</code></td><td>Tabela <code>fornecedores</code></td></tr>
+</table>
+</div>
+
+<p>Existem formas normais além da terceira (a de Boyce-Codd, a 4FN, a 5FN), que tratam de casos mais raros. Na prática, um banco na 3FN já está livre das anomalias do dia a dia.</p>
+
+<hr>
+
+<h2>6. Desnormalizar de propósito</h2>
+<p>Normalizar não é uma lei que nunca se quebra. Às vezes um projetista <strong>repete</strong> um dado de caso pensado, sabendo do preço:</p>
+<ul>
+  <li><strong>Relatórios pesados.</strong> Uma tabela de resumo (o total de vendas de cada mês) recalculada toda noite evita somar milhões de linhas a cada consulta. É uma cópia: quem a mantém tem de refazê-la quando os dados mudam.</li>
+  <li><strong>Fotografias do passado.</strong> Uma nota fiscal guarda o endereço do cliente <strong>como era</strong> no dia da compra, mesmo que ele se mude depois. Como o <code>preco_unitario</code>, não é repetição: é outra informação (o endereço daquele dia).</li>
+  <li><strong>Leitura muito mais frequente que escrita</strong>, quando um <code>JOIN</code> a menos faz diferença medida (aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a>).</li>
+</ul>
+<p>Antes de desnormalizar, tente uma <strong>view</strong> (aula <a href="views.html">Views</a>): ela guarda a <strong>consulta</strong> que monta a "planilha", e não os dados. Você ganha a praticidade da tabela única sem nenhuma repetição.</p>
+
+<pre class="file" data-file="view.sql" data-resultado>CREATE VIEW vendas_planilha AS
+SELECT ip.pedido_id, p.data, c.nome AS cliente, c.cidade,
+       pr.nome AS produto, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip
+JOIN pedidos p   ON p.id = ip.pedido_id
+JOIN clientes c  ON c.id = p.cliente_id
+JOIN produtos pr ON pr.id = ip.produto_id;
+
+UPDATE clientes SET cidade = 'Parnaíba' WHERE id = 1;
+
+SELECT DISTINCT cliente, cidade FROM vendas_planilha WHERE cliente = 'José Ribamar Silva';
+</pre>
+
+<p>A mesma mudança de cidade da seção 1, agora feita em <strong>uma</strong> linha de <code>clientes</code>: a "planilha" (a view) mostra a cidade nova em todas as vendas do José, sem contradição.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Para ver "a planilha de vendas" há três caminhos. Os três mostram os mesmos dados:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>Repete dados?</th><th>Fica atualizado sozinho?</th><th>Quando usar</th></tr>
+<tr><td>Tabelas normalizadas + <code>JOIN</code> na consulta</td><td>Não</td><td>Sim</td><td>Sempre, como base do banco</td></tr>
+<tr><td>Uma <strong>view</strong> com o <code>JOIN</code></td><td>Não</td><td>Sim</td><td>Quando a mesma "planilha" é consultada muitas vezes</td></tr>
+<tr><td>Uma tabela desnormalizada (<code>CREATE TABLE … AS SELECT</code>)</td><td>Sim</td><td>Não: é uma cópia</td><td>Resumos para relatório, refeitos de tempos em tempos; fotografias do passado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>As anomalias não dão erro</strong>
+<p>O mais perigoso das tabelas mal divididas é que <strong>nenhuma</strong> das anomalias da seção 1 gerou mensagem de erro. O <code>UPDATE</code> que deixou o José em duas cidades disse "3 linhas afetadas", e pronto. O banco não sabe que aquelas linhas falam da mesma pessoa. Num banco normalizado, a informação existe num lugar só, e o problema simplesmente não tem como acontecer.</p>
+</div>
+
+<div class="cenario">
+<strong>A proteção do banco normalizado</strong>
+<p>Na Aurora normalizada, o produto não some quando as vendas somem, porque ele mora em <code>produtos</code>. E o contrário, apagar um produto que tem vendas, o banco <strong>impede</strong>:</p>
+<pre class="file" data-file="fk.sql" data-resultado data-erro>DELETE FROM produtos WHERE id = 12;
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>, "a regra da chave estrangeira falhou". O Pen Drive (produto 12) aparece em <code>itens_pedido</code>; apagá-lo deixaria quatro vendas apontando para nada. É a anomalia de exclusão sendo barrada pela chave estrangeira (aula <a href="foreign-key.html">FOREIGN KEY</a>). Produto que sai de linha se marca, não se apaga: na Aurora, <code>descontinuado = 1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Normalizou e esqueceu do <code>JOIN</code></strong>
+<pre class="file" data-file="join-faltando.sql" data-resultado data-erro>SELECT pedido_id, nome, quantidade
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: nome</code>. Depois de normalizar, o nome do produto não está mais em <code>itens_pedido</code>; está em <code>produtos</code>. A consulta precisa ir buscá-lo com <code>JOIN produtos pr ON pr.id = itens_pedido.produto_id</code> (aula <a href="inner-join.html">INNER JOIN</a>). Escrever mais <code>JOIN</code> é o "preço" da normalização, e é por isso que as views existem.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>A normalização é teoria de projeto, não um comando: as formas normais são as mesmas no MySQL, no PostgreSQL, no SQL Server ou em qualquer banco relacional. O que muda é só a escrita do <code>CREATE TABLE</code> (aula <a href="dialetos.html">As Diferenças entre os Bancos</a>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>Quer dizer</th></tr>
+<tr><td>Normalização</td><td>Dividir os dados em tabelas para que cada informação fique num lugar só</td></tr>
+<tr><td>Anomalia de atualização / inserção / exclusão</td><td>Contradição ao mudar; impossível guardar sem inventar; apagar uma coisa leva outra junto</td></tr>
+<tr><td>Dependência</td><td>A coluna B depende de A quando, sabendo A, você sabe B (sabendo o <code>fornecedor_id</code>, sabe o nome do fornecedor)</td></tr>
+<tr><td>1FN</td><td>Um valor por célula, sem grupos de colunas repetidas</td></tr>
+<tr><td>2FN</td><td>1FN + nenhuma coluna depende só de um pedaço da chave composta</td></tr>
+<tr><td>3FN</td><td>2FN + nenhuma coluna depende de outra coluna que não é chave (sem dependência transitiva)</td></tr>
+<tr><td>Desnormalizar</td><td>Repetir dados de propósito, por desempenho ou para guardar uma fotografia do passado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A forma da lista</h3>
+<p>Uma coluna <code>telefones</code> com <code>'(86) 90000-0001, (86) 90000-0005'</code> quebra qual forma normal? Escreva a sigla:</p>
+<div class="ex-code"><input data-answer="1FN" aria-label="forma normal"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A frase</h3>
+<p>Complete a frase que resume as três formas normais: "A chave, a chave inteira e nada além da <input data-answer="chave" aria-label="palavra">."</p>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Numa tabela de matrículas com chave <code>(aluno_id, disciplina_id)</code>, a coluna <code>nome_aluno</code> quebra qual regra?</p>
+<label><input type="radio" name="q3"> 1FN, porque tem acento</label>
+<label><input type="radio" name="q3"> 3FN, porque depende de outra coluna comum</label>
+<label><input type="radio" name="q3"> 2FN, porque depende só de um pedaço da chave (<code>aluno_id</code>)</label>
+<label><input type="radio" name="q3"> Nenhuma</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Na tabela <code>clientes (id, nome, cep, rua_do_cep)</code>, em que a rua é sempre a do CEP, a coluna <code>rua_do_cep</code> quebra qual regra?</p>
+<label><input type="radio" name="q4"> 3FN: depende do <code>cep</code>, que é uma coluna comum (dependência transitiva)</label>
+<label><input type="radio" name="q4"> 1FN</label>
+<label><input type="radio" name="q4"> 2FN</label>
+<label><input type="radio" name="q4"> Nenhuma: endereço é sempre do cliente</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Por que o <code>preco_unitario</code> de <code>itens_pedido</code> <strong>não</strong> é uma repetição de <code>produtos.preco</code>?</p>
+<label><input type="radio" name="q5"> Porque tem outro nome</label>
+<label><input type="radio" name="q5"> Porque é o preço cobrado naquela venda, que pode ser diferente do preço de hoje: depende do pedido e do produto</label>
+<label><input type="radio" name="q5"> Porque o SQLite não deixa ler de outra tabela</label>
+<label><input type="radio" name="q5"> Porque <code>REAL</code> é diferente de <code>INTEGER</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Na planilha de vendas, por que um cliente que acabou de se cadastrar não aparece?</p>
+<label><input type="radio" name="q6"> Por causa de um erro de <code>NOT NULL</code></label>
+<label><input type="radio" name="q6"> Porque a planilha está na 3FN</label>
+<label><input type="radio" name="q6"> Porque o nome dele tem acento</label>
+<label><input type="radio" name="q6"> Porque cada linha é uma venda, e sem venda não há onde guardá-lo: é a anomalia de inserção</label>
+</div>
+
+<h3>Missão final: tirar os fornecedores da tabela de produtos</h3>
+
+<div class="trysql" data-goal="tabela:fornecedores_novo;;mudou:fornecedores_novo=6;;linhas:6">
+<p class="try-task"><strong>Missão:</strong> a tabela <code>produtos_largos</code> quebra a 3FN, com os dados do fornecedor repetidos em cada produto. Crie, a partir dela, a tabela <code>fornecedores_novo</code> com <strong>uma linha por fornecedor</strong> (colunas <code>id</code>, <code>nome</code> e <code>pais</code>; pista: <code>CREATE TABLE … AS SELECT DISTINCT</code>) e termine mostrando todas as linhas dela.</p>
+<pre class="script" data-file="3fn.sql">CREATE TABLE produtos_largos AS
+SELECT pr.id, pr.nome, pr.preco, pr.fornecedor_id,
+       f.nome AS fornecedor_nome, f.pais AS fornecedor_pais
+FROM produtos pr JOIN fornecedores f ON f.id = pr.fornecedor_id;
+
+SELECT fornecedor_id, fornecedor_nome, fornecedor_pais
+FROM produtos_largos;
+</pre>
+<pre class="solucao" data-file="3fn.sql">CREATE TABLE produtos_largos AS
+SELECT pr.id, pr.nome, pr.preco, pr.fornecedor_id,
+       f.nome AS fornecedor_nome, f.pais AS fornecedor_pais
+FROM produtos pr JOIN fornecedores f ON f.id = pr.fornecedor_id;
+
+CREATE TABLE fornecedores_novo AS
+SELECT DISTINCT fornecedor_id AS id, fornecedor_nome AS nome, fornecedor_pais AS pais
+FROM produtos_largos;
+
+SELECT * FROM fornecedores_novo ORDER BY id;
+</pre>
+</div>
+
+<p>De 45 linhas com fornecedor repetido para 6 linhas, uma por fornecedor. O próximo passo seria apagar as colunas <code>fornecedor_nome</code> e <code>fornecedor_pais</code> de <code>produtos_largos</code> (aula <a href="alter-table.html">ALTER TABLE</a>), deixando só o <code>fornecedor_id</code>, e você teria reconstruído, sozinho, as tabelas <code>produtos</code> e <code>fornecedores</code> da Aurora.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Dados repetidos causam três <strong>anomalias</strong>: de atualização (contradição), de inserção (não cabe) e de exclusão (some junto). Nenhuma delas dá mensagem de erro.</li>
+  <li><strong>1FN:</strong> um valor por célula. Lista numa coluna vira uma tabela com uma linha por item (<code>itens_pedido</code>).</li>
+  <li><strong>2FN:</strong> com chave composta, cada coluna depende da chave inteira. A data é do pedido; o nome é do produto; a quantidade e o preço cobrado são do item.</li>
+  <li><strong>3FN:</strong> nenhuma coluna depende de outra coluna comum. Os dados do fornecedor vão para <code>fornecedores</code>; o produto guarda só o <code>fornecedor_id</code>.</li>
+  <li>"A chave, a chave inteira e nada além da chave." A Loja Aurora está na 3FN.</li>
+  <li>Desnormalize só de propósito (resumos, fotografias do passado); para a praticidade de "uma tabela só", prefira uma view.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
