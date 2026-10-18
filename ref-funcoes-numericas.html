@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções Numéricas — referência do SQLite | Guia SQL</title>
+<meta name="description" content="Referência rápida das contas e funções numéricas do SQLite 3.50: + - * / %, round, ceil, floor, trunc, abs, sign, mod, pow, sqrt, exp, ln, log, log10, log2, pi, seno e cosseno, random, CAST. Exemplo e resultado real de cada uma, as armadilhas da divisão inteira e do ponto flutuante e os nomes no MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções Numéricas</span></h1>
+
+<p class="intro">Esta é a página de consulta rápida das <strong>contas</strong> no SQLite 3.50: os operadores (<code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>), o arredondamento, as potências, os logaritmos, os ângulos e os números aleatórios. Cada linha traz um exemplo e o resultado real. A explicação passo a passo está na aula <a href="funcoes-numericas.html">Funções Numéricas</a>.</p>
+
+<div class="note">
+<strong>Como ler as tabelas</strong>
+<ul>
+  <li><strong>Exemplo</strong> vai dentro de um <code>SELECT</code>: <code>SELECT round(3.14159, 2);</code>.</li>
+  <li><strong>Resultado</strong> foi colhido no editor do guia (SQLite 3.50.4). Repare no <code>.0</code>: <code>3</code> é um número <strong>inteiro</strong>, <code>3.0</code> é um número <strong>real</strong> (com casas decimais). A diferença importa, como você vai ver na divisão.</li>
+  <li>O SQLite usa <strong>ponto</strong> como separador decimal: <code>89.99</code>, nunca <code>89,99</code>.</li>
+  <li>Com <em>NULL</em> no meio da conta, o resultado é <em>NULL</em>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="operadores">Os operadores</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>+</code></td><td>soma</td><td><code>7 + 2</code></td><td><code>9</code></td><td><a href="funcoes-numericas.html">Funções Numéricas</a></td></tr>
+<tr><td><code>-</code></td><td>subtração</td><td><code>7 - 2</code></td><td><code>5</code></td><td></td></tr>
+<tr><td><code>*</code></td><td>multiplicação</td><td><code>7 * 2</code></td><td><code>14</code></td><td></td></tr>
+<tr><td><code>/</code></td><td>divisão. <strong>Inteiro dividido por inteiro dá inteiro</strong>: a parte decimal é jogada fora.</td><td><code>7 / 2</code></td><td><code>3</code></td><td></td></tr>
+<tr><td></td><td>Se um dos lados for real, a divisão é real</td><td><code>7 / 2.0</code></td><td><code>3.5</code></td><td></td></tr>
+<tr><td></td><td>Dividir por zero dá <em>NULL</em>, sem erro</td><td><code>1 / 0</code></td><td><em>NULL</em></td><td></td></tr>
+<tr><td><code>%</code></td><td>resto da divisão de inteiros</td><td><code>7 % 2</code></td><td><code>1</code></td><td></td></tr>
+<tr><td></td><td>O resto fica com o sinal do primeiro número</td><td><code>-7 % 2</code></td><td><code>-1</code></td><td></td></tr>
+<tr><td></td><td>Com número real, o <code>%</code> corta as casas antes (use <code>mod</code>)</td><td><code>7.5 % 2</code></td><td><code>1.0</code></td><td></td></tr>
+<tr><td><code>( )</code></td><td>Mudam a ordem: sem eles, <code>*</code> e <code>/</code> vêm antes de <code>+</code> e <code>-</code>.</td><td><code>2 + 3 * 4</code><br><code>(2 + 3) * 4</code></td><td><code>14</code><br><code>20</code></td><td></td></tr>
+</table>
+</div>
+
+<p>O <code>%</code> é ótimo para separar pares e ímpares:</p>
+
+<pre class="file" data-file="par-impar.sql" data-resultado>SELECT id,
+       id % 2 AS resto,
+       CASE id % 2 WHEN 0 THEN 'par' ELSE 'ímpar' END AS tipo
+FROM pedidos
+LIMIT 4;
+</pre>
+
+<hr>
+
+<h2 id="arredondar">Arredondar e cortar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>round(x, casas)</code></td><td>Arredonda para o número de casas pedido (<em>round</em> = "arredondar").</td><td><code>round(3.14159, 2)</code></td><td><code>3.14</code></td><td><a href="funcoes-numericas.html">Funções Numéricas</a></td></tr>
+<tr><td><code>round(x)</code></td><td>Sem as casas: arredonda para inteiro, mas o resultado continua <strong>real</strong>.</td><td><code>round(89.99)</code></td><td><code>90.0</code></td><td></td></tr>
+<tr><td></td><td>O meio (.5) vai para longe do zero</td><td><code>round(2.5)</code>, <code>round(-2.5)</code></td><td><code>3.0</code>, <code>-3.0</code></td><td></td></tr>
+<tr><td></td><td>Casas negativas contam como 0 (não arredonda para dezenas)</td><td><code>round(1234.5678, -2)</code></td><td><code>1235.0</code></td><td></td></tr>
+<tr><td><code>ceil(x)</code>, <code>ceiling(x)</code></td><td>Arredonda <strong>para cima</strong> (<em>ceiling</em> = "teto").</td><td><code>ceil(2.1)</code>, <code>ceil(-2.1)</code></td><td><code>3.0</code>, <code>-2.0</code></td><td></td></tr>
+<tr><td><code>floor(x)</code></td><td>Arredonda <strong>para baixo</strong> (<em>floor</em> = "chão").</td><td><code>floor(2.9)</code>, <code>floor(-2.1)</code></td><td><code>2.0</code>, <code>-3.0</code></td><td></td></tr>
+<tr><td><code>trunc(x)</code></td><td>Corta as casas decimais, indo em direção ao zero (<em>truncate</em> = "truncar").</td><td><code>trunc(2.9)</code>, <code>trunc(-2.9)</code></td><td><code>2.0</code>, <code>-2.0</code></td><td></td></tr>
+<tr><td><code>CAST(x AS INTEGER)</code></td><td>Converte para inteiro, cortando as casas (como o <code>trunc</code>, mas o resultado é inteiro).</td><td><code>CAST(2.9 AS INTEGER)</code>, <code>CAST(-2.9 AS INTEGER)</code></td><td><code>2</code>, <code>-2</code></td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+</table>
+</div>
+
+<p>Os quatro jeitos lado a lado, nos preços da loja:</p>
+
+<pre class="file" data-file="arredondar.sql" data-resultado>SELECT nome, preco,
+       round(preco) AS arredondado,
+       ceil(preco)  AS para_cima,
+       floor(preco) AS para_baixo,
+       trunc(preco) AS cortado
+FROM produtos
+WHERE id IN (1, 2, 3, 20);
+</pre>
+
+<hr>
+
+<h2 id="sinal">Sinal, maior e menor</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>abs(x)</code></td><td>Valor absoluto: o número sem o sinal (<em>absolute</em>).</td><td><code>abs(-3.5)</code></td><td><code>3.5</code></td></tr>
+<tr><td><code>sign(x)</code></td><td>O sinal: -1 (negativo), 0 ou 1 (positivo).</td><td><code>sign(-8)</code>, <code>sign(0)</code>, <code>sign(3.2)</code></td><td><code>-1</code>, <code>0</code>, <code>1</code></td></tr>
+<tr><td></td><td>Com texto que não é número, <em>NULL</em></td><td><code>sign('abc')</code></td><td><em>NULL</em></td></tr>
+<tr><td><code>max(a, b, …)</code></td><td>Com <strong>dois ou mais</strong> argumentos: o maior deles.</td><td><code>max(3, 9, 4)</code></td><td><code>9</code></td></tr>
+<tr><td><code>min(a, b, …)</code></td><td>O menor deles.</td><td><code>min(3, 9, 4)</code></td><td><code>3</code></td></tr>
+<tr><td></td><td>Se algum for <em>NULL</em>, o resultado é <em>NULL</em></td><td><code>max(3, NULL, 4)</code></td><td><em>NULL</em></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong><code>max</code> com um argumento é outra coisa</strong>
+<p><code>max(preco)</code>, com <strong>uma</strong> coluna só, é a função agregada: o maior preço de <strong>todas as linhas</strong>. Veja <a href="max.html">MAX()</a> e <a href="ref-funcoes-agregadas.html">Funções Agregadas</a>. Com dois ou mais valores, compara os valores <strong>da mesma linha</strong>. Nos outros bancos, essa segunda forma se chama <code>GREATEST</code> e <code>LEAST</code>.</p>
+</div>
+
+<hr>
+
+<h2 id="potencias">Potências, raízes e logaritmos</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>pow(x, y)</code>, <code>power(x, y)</code></td><td>x elevado a y (<em>power</em> = "potência").</td><td><code>pow(2, 10)</code></td><td><code>1024.0</code></td></tr>
+<tr><td></td><td></td><td><code>power(1.1, 2)</code></td><td><code>1.21</code></td></tr>
+<tr><td><code>sqrt(x)</code></td><td>Raiz quadrada (<em>square root</em>).</td><td><code>sqrt(16)</code>, <code>sqrt(2)</code></td><td><code>4.0</code>, <code>1.4142135623731</code></td></tr>
+<tr><td></td><td>De número negativo: <em>NULL</em></td><td><code>sqrt(-1)</code></td><td><em>NULL</em></td></tr>
+<tr><td><code>exp(x)</code></td><td>O número <em>e</em> (2,718…) elevado a x.</td><td><code>exp(1)</code></td><td><code>2.71828182845905</code></td></tr>
+<tr><td><code>ln(x)</code></td><td>Logaritmo natural (base <em>e</em>).</td><td><code>ln(exp(1))</code></td><td><code>1.0</code></td></tr>
+<tr><td><code>log(x)</code>, <code>log10(x)</code></td><td>Logaritmo na base <strong>10</strong>.</td><td><code>log(1000)</code></td><td><code>3.0</code></td></tr>
+<tr><td><code>log(b, x)</code></td><td>Logaritmo de x na base b (a base vem <strong>primeiro</strong>).</td><td><code>log(2, 8)</code></td><td><code>3.0</code></td></tr>
+<tr><td><code>log2(x)</code></td><td>Logaritmo na base 2.</td><td><code>log2(1024)</code></td><td><code>10.0</code></td></tr>
+<tr><td></td><td>Fora do domínio (zero, negativo): <em>NULL</em></td><td><code>ln(0)</code></td><td><em>NULL</em></td></tr>
+<tr><td><code>mod(x, y)</code></td><td>Resto da divisão, também com números reais.</td><td><code>mod(7.5, 2)</code></td><td><code>1.5</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="angulos">Ângulos (trigonometria)</h2>
+<p>As funções de ângulo trabalham em <strong>radianos</strong>. Para usar graus, converta com <code>radians()</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>pi()</code></td><td>O número π.</td><td><code>pi()</code></td><td><code>3.14159265358979</code></td></tr>
+<tr><td><code>radians(graus)</code></td><td>Graus → radianos.</td><td><code>radians(180)</code></td><td><code>3.14159265358979</code></td></tr>
+<tr><td><code>degrees(rad)</code></td><td>Radianos → graus.</td><td><code>degrees(pi())</code></td><td><code>180.0</code></td></tr>
+<tr><td><code>sin(x)</code>, <code>cos(x)</code>, <code>tan(x)</code></td><td>Seno, cosseno, tangente.</td><td><code>sin(radians(30))</code>, <code>cos(0)</code>, <code>tan(radians(45))</code></td><td><code>0.5</code>, <code>1.0</code>, <code>1.0</code></td></tr>
+<tr><td><code>asin(x)</code>, <code>acos(x)</code>, <code>atan(x)</code></td><td>As inversas (arco seno, arco cosseno, arco tangente).</td><td><code>degrees(asin(0.5))</code></td><td><code>30.0</code></td></tr>
+<tr><td><code>atan2(y, x)</code></td><td>Arco tangente de y/x, com o quadrante certo.</td><td><code>atan2(1, 1)</code></td><td><code>0.785398163397448</code></td></tr>
+<tr><td><code>sinh</code>, <code>cosh</code>, <code>tanh</code>, <code>asinh</code>, <code>acosh</code>, <code>atanh</code></td><td>As versões hiperbólicas.</td><td></td><td></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="aleatorio">Aleatórios e conversões</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>random()</code></td><td>Um inteiro aleatório enorme (positivo ou negativo). Muda a cada execução.</td><td><code>typeof(random())</code></td><td><code>integer</code></td></tr>
+<tr><td></td><td>Um dado de 6 faces</td><td><code>abs(random()) % 6 + 1</code></td><td>(de 1 a 6, cada vez um)</td></tr>
+<tr><td><code>randomblob(n)</code></td><td><code>n</code> bytes aleatórios (tipo <code>blob</code>).</td><td><code>length(randomblob(4))</code></td><td><code>4</code></td></tr>
+<tr><td><code>CAST(x AS REAL)</code></td><td>Converte para real.</td><td><code>CAST('12.5' AS REAL)</code></td><td><code>12.5</code></td></tr>
+<tr><td><code>CAST(x AS INTEGER)</code></td><td>Converte para inteiro. De um texto, aproveita os números do começo…</td><td><code>CAST('12abc' AS INTEGER)</code></td><td><code>12</code></td></tr>
+<tr><td></td><td>…e dá 0 se não houver nenhum.</td><td><code>CAST('abc' AS INTEGER)</code></td><td><code>0</code></td></tr>
+<tr><td>texto numa conta</td><td>Um texto que parece número entra na conta como número.</td><td><code>'10' + 5</code></td><td><code>15</code></td></tr>
+<tr><td><code>typeof(x)</code></td><td>Diz se o valor é <code>integer</code> ou <code>real</code>.</td><td><code>typeof(7 / 2)</code>, <code>typeof(7 / 2.0)</code></td><td><code>integer</code>, <code>real</code></td></tr>
+</table>
+</div>
+
+<p>Para sortear linhas, junte <code>random()</code> com <code>ORDER BY</code>: <code>SELECT nome FROM clientes ORDER BY random() LIMIT 1;</code> escolhe um cliente ao acaso a cada Rodar.</p>
+
+<hr>
+
+<h2 id="armadilhas">As três armadilhas</h2>
+
+<div class="cenario">
+<strong>1. A divisão inteira</strong>
+<p>A Ana quer a média de 7 itens em 2 caixas e escreve <code>7 / 2</code>. O SQLite responde <code>3</code>: inteiro dividido por inteiro dá inteiro. Os jeitos de pedir a divisão "de verdade":</p>
+<pre class="file" data-file="divisao.sql" data-resultado>SELECT 7 / 2 AS inteiro,
+       7 / 2.0 AS decimal,
+       CAST(7 AS REAL) / 2 AS com_cast,
+       7 % 2 AS resto;
+</pre>
+<p>Isso acontece de verdade com colunas: <code>estoque / 2</code> (estoque é <code>INTEGER</code>) também corta as casas. Multiplique por <code>1.0</code> antes: <code>estoque * 1.0 / 2</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>2. Os decimais "quase certos" (ponto flutuante)</strong>
+<p>Números reais são guardados em binário, e frações como 0,1 não têm representação exata em binário. O SQLite mostra só 15 algarismos, então quase sempre o número <strong>parece</strong> certo:</p>
+<pre class="file" data-file="flutuante.sql" data-resultado>SELECT 0.1 + 0.2 AS soma,
+       0.1 + 0.2 = 0.3 AS igual,
+       0.1 + 0.2 - 0.3 AS diferenca,
+       round(0.1 + 0.2, 2) = 0.3 AS igual_arredondado;
+</pre>
+<p>A soma aparece como <code>0.3</code>, mas a comparação com <code>0.3</code> dá <strong>falso</strong> (<code>0</code>): a diferença é um número minúsculo (<code>5.55111512312578e-17</code>, ou seja, 0,0000000000000000555). Pelo mesmo motivo, <code>round(2.675, 2)</code> dá <code>2.67</code>, e não 2.68: o 2,675 guardado é, na verdade, um pouquinho menos que 2,675.</p>
+<p><strong>Regra prática:</strong> com dinheiro, arredonde (<code>round(x, 2)</code>) antes de comparar ou de mostrar. Sistemas que não podem errar um centavo guardam o valor em <strong>centavos</strong>, como inteiro (<code>8999</code> no lugar de <code>89.99</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>3. O número grande demais</strong>
+<p>O maior inteiro do SQLite é 9.223.372.036.854.775.807. Uma soma que passa disso vira número real (perdendo precisão), e o <code>abs</code> do menor inteiro dá erro:</p>
+<pre class="file" data-file="overflow.sql" data-resultado data-erro>SELECT abs(-9223372036854775807 - 1);
+</pre>
+<p>Na Loja Aurora isso nunca acontece, mas é bom saber que a mensagem <code>integer overflow</code> ("estouro de inteiro") quer dizer isso.</p>
+</div>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>Os nomes e os comportamentos mudam</strong>
+<p>Conferido nas documentações oficiais do MySQL 8.4 e do PostgreSQL (e, no SQL Server, na própria documentação do SQLite, que compara o <code>log</code>). Trechos só para comparar; não rodam no editor do guia.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>SQLite</th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td><code>5 / 2</code></td><td><code>2</code> (inteiro)</td><td>2,5: o <code>/</code> sempre dá decimal; a divisão inteira é <code>5 DIV 2</code></td><td><code>2</code> (corta em direção ao zero); também <code>div(5, 2)</code></td><td><code>2</code> (inteiro)</td></tr>
+<tr><td>dividir por zero</td><td><em>NULL</em></td><td><em>NULL</em></td><td><strong>erro</strong> (<code>division_by_zero</code>)</td><td>erro</td></tr>
+<tr><td><code>log(x)</code></td><td>base 10</td><td>logaritmo <strong>natural</strong></td><td>base 10</td><td>logaritmo <strong>natural</strong></td></tr>
+<tr><td>log na base b</td><td><code>log(b, x)</code></td><td><code>LOG(b, x)</code></td><td><code>log(b, x)</code></td><td><code>LOG(x, b)</code> (base no fim)</td></tr>
+<tr><td>cortar casas</td><td><code>trunc(x)</code></td><td><code>TRUNCATE(x, casas)</code></td><td><code>trunc(x)</code>, <code>trunc(x, casas)</code></td><td><code>ROUND(x, casas, 1)</code></td></tr>
+<tr><td>arredondar para cima</td><td><code>ceil</code>, <code>ceiling</code></td><td><code>CEIL</code>, <code>CEILING</code></td><td><code>ceil</code>, <code>ceiling</code></td><td><code>CEILING</code></td></tr>
+<tr><td>aleatório</td><td><code>random()</code>: inteiro enorme</td><td><code>RAND()</code>: real entre 0 e 1</td><td><code>random()</code>: real entre 0 e 1</td><td><code>RAND()</code></td></tr>
+<tr><td>maior da linha</td><td><code>max(a, b)</code></td><td><code>GREATEST(a, b)</code></td><td><code>greatest(a, b)</code></td><td><code>GREATEST(a, b)</code> (2022+)</td></tr>
+<tr><td>potência</td><td><code>pow</code>, <code>power</code></td><td><code>POW</code>, <code>POWER</code></td><td><code>power</code>, operador <code>^</code></td><td><code>POWER</code></td></tr>
+</table>
+</div>
+<p>Outra diferença: no MySQL e no PostgreSQL, os números <code>DECIMAL</code>/<code>NUMERIC</code> são <strong>exatos</strong> (sem o problema do 0,1 + 0,2). O SQLite não tem esse tipo: um <code>DECIMAL</code> no <code>CREATE TABLE</code> vira número real ou inteiro (veja <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="trysql" data-goal="colunas:nome,preco,com_desconto;;contem:Caderno Pautado 96 folhas|12.35|11.12;;linhas:45">
+<p class="try-task"><strong>Missão:</strong> a loja vai dar 10% de desconto em tudo. Mostre o <code>nome</code>, o <code>preco</code> e o preço com desconto (o preço vezes <code>0.9</code>), arredondado a 2 casas, numa coluna chamada <code>com_desconto</code>.</p>
+<pre class="script" data-file="desconto.sql">SELECT nome, preco
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="desconto.sql">SELECT nome, preco, round(preco * 0.9, 2) AS com_desconto
+FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Operadores: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>, <code>%</code>. Inteiro <code>/</code> inteiro dá inteiro (<code>7 / 2</code> = <code>3</code>); escreva <code>7 / 2.0</code>. Dividir por zero dá <em>NULL</em>.</li>
+  <li>Arredondar: <code>round(x, casas)</code>; para cima <code>ceil</code>; para baixo <code>floor</code>; cortar <code>trunc</code> ou <code>CAST(x AS INTEGER)</code>.</li>
+  <li><code>abs</code>, <code>sign</code>, e <code>max</code>/<code>min</code> com vários valores (nos outros bancos, <code>GREATEST</code>/<code>LEAST</code>).</li>
+  <li><code>pow</code>, <code>sqrt</code>, <code>exp</code>, <code>ln</code>; no SQLite, <code>log(x)</code> é na base 10.</li>
+  <li>Ângulos em radianos: <code>radians()</code> e <code>degrees()</code> convertem.</li>
+  <li>Decimais são aproximados: arredonde antes de comparar, e guarde dinheiro em centavos quando a exatidão importa.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
