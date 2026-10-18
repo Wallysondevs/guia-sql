@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL OR — uma condição ou outra, e a precedência do AND | Guia SQL</title>
+<meta name="description" content="O operador OR para quem está começando: como aceitar uma condição ou outra no WHERE, a tabela-verdade do OR com 1 e 0, várias alternativas na mesma coluna, a precedência (o AND vem antes do OR) e os parênteses, e os erros reais do SQLite, incluindo o OR pela metade e o || que não é OR, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">OR</span></h1>
+
+<p class="intro">A Loja Aurora vai abrir uma filial no Nordeste e quer mandar um convite para os clientes de <strong>Pernambuco</strong> e para os do <strong>Ceará</strong>. Na aula <a href="and.html">AND</a>, você viu que pedir "estado PE e estado CE" com <code>AND</code> não traz ninguém: nenhum cliente mora nos dois estados ao mesmo tempo. O que a Ana quer é juntar as duas listas, e para isso existe o <code>OR</code> (em inglês, "ou"): a linha entra se <strong>esta condição ou aquela</strong> for verdadeira. Nesta aula você também vai ver o que acontece quando <code>AND</code> e <code>OR</code> aparecem juntos, e por que os parênteses salvam a sua consulta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A aceitar uma condição <strong>ou</strong> outra com <code>OR</code>.</li>
+  <li>A <strong>tabela-verdade</strong> do <code>OR</code>: basta uma parte ser verdadeira.</li>
+  <li>A usar o <code>OR</code> com várias alternativas na mesma coluna e com colunas diferentes.</li>
+  <li>Que cada <code>OR</code> a mais deixa o resultado <strong>maior</strong> (ou igual), nunca menor.</li>
+  <li>A <strong>precedência</strong>: o <code>AND</code> é resolvido antes do <code>OR</code>, e os parênteses mudam isso.</li>
+  <li>Os erros mais comuns: o <code>OR</code> pela metade, o <code>||</code> de outras linguagens e os parênteses sem par.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: juntar duas listas</h2>
+<p>Volte ao porteiro da aula <a href="and.html">AND</a>. Agora a regra do evento é outra: "entra quem <strong>tem convite</strong> ou quem <strong>é VIP</strong>". Para cada pessoa da fila, ele confere:</p>
+
+<ul>
+  <li>Tem convite e é VIP? <strong>Entra.</strong></li>
+  <li>Tem convite, mas não é VIP? <strong>Entra.</strong></li>
+  <li>Não tem convite, mas é VIP? <strong>Entra.</strong></li>
+  <li>Nem uma coisa nem outra? Fica de fora.</li>
+</ul>
+
+<p>Basta <strong>uma</strong> regra valer para a pessoa entrar. Esse é o <code>OR</code>: a linha entra no resultado se pelo menos uma das condições for verdadeira.</p>
+
+<h3>A tabela-verdade</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Condição A</th><th>Condição B</th><th>A <code>OR</code> B</th><th>No evento</th></tr>
+<tr><td>verdadeira (1)</td><td>verdadeira (1)</td><td><strong>verdadeira (1)</strong></td><td>Convite e VIP: entra</td></tr>
+<tr><td>verdadeira (1)</td><td>falsa (0)</td><td><strong>verdadeira (1)</strong></td><td>Só convite: entra</td></tr>
+<tr><td>falsa (0)</td><td>verdadeira (1)</td><td><strong>verdadeira (1)</strong></td><td>Só VIP: entra</td></tr>
+<tr><td>falsa (0)</td><td>falsa (0)</td><td>falsa (0)</td><td>Nenhuma das duas: fora</td></tr>
+</table>
+</div>
+
+<p>É o contrário do <code>AND</code>: lá, só uma combinação dava 1; aqui, só uma dá 0. Confira no banco:</p>
+
+<pre class="file" data-file="tabela-verdade.sql" data-resultado>SELECT 1 OR 1, 1 OR 0, 0 OR 1, 0 OR 0;
+</pre>
+
+<div class="tip">
+<strong>O "ou" do SQL aceita os dois</strong>
+<p>Em português, "ou" às vezes quer dizer "um ou outro, mas não os dois" ("vai de ônibus ou de carro?"). O <code>OR</code> do SQL não é assim: se as <strong>duas</strong> condições forem verdadeiras, a linha também entra (a primeira linha da tabela). E entra <strong>uma vez só</strong>, nunca repetida.</p>
+</div>
+
+<hr>
+
+<h2>1. O primeiro <code>OR</code></h2>
+<p>O convite da filial nova:</p>
+
+<pre class="file" data-file="nordeste.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado = 'PE' OR estado = 'CE';
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>"Onde": as condições começam aqui.</dd>
+  <dt>estado = 'PE'</dt><dd>A primeira condição: o cliente é de Pernambuco.</dd>
+  <dt>OR</dt><dd>"Ou": a linha passa se a primeira condição for verdadeira, se a segunda for, ou se as duas forem.</dd>
+  <dt>estado = 'CE'</dt><dd>A segunda condição: o cliente é do Ceará. Repare que a coluna é escrita de novo: cada lado do <code>OR</code> é uma condição completa.</dd>
+</dl>
+
+<p>Vieram <strong>9 clientes</strong>: os 2 de Pernambuco e os 7 do Ceará, misturados na ordem da tabela. O <code>OR</code> juntou as duas listas numa só.</p>
+
+<h3>Como o banco decide, linha por linha</h3>
+<ol class="passo">
+  <li>Cliente 1, José Ribamar Silva: estado <code>'PI'</code>. <code>'PI' = 'PE'</code>? 0. <code>'PI' = 'CE'</code>? 0. <code>0 OR 0</code> = 0: fica de fora.</li>
+  <li>Cliente 4, Carlos Eduardo Lima: estado <code>'CE'</code>. A primeira dá 0, a segunda dá 1. <code>0 OR 1</code> = 1: <strong>entra</strong>.</li>
+  <li>Cliente 10, Juliana Paes Barbosa: estado <code>'PE'</code>. A primeira dá 1. <code>1 OR 0</code> = 1: <strong>entra</strong>.</li>
+  <li>…e assim com todos os 30.</li>
+</ol>
+
+<hr>
+
+<h2>2. Várias alternativas na mesma coluna</h2>
+<p>Na aula <a href="select-distinct.html">SELECT DISTINCT</a>, você viu que a loja tem os cargos <code>Vendedor</code> e <code>Vendedora</code>, escritos de jeitos diferentes. Para ver toda a equipe de vendas, aceite os dois:</p>
+
+<pre class="file" data-file="vendas.sql" data-resultado>SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Vendedor' OR cargo = 'Vendedora';
+</pre>
+
+<p>Os 5 da equipe de vendas: 3 vendedores e 2 vendedoras. Dá para encadear quantos <code>OR</code> quiser. Os clientes das cidades menores da lista, Recife, Picos e Oeiras:</p>
+
+<pre class="file" data-file="tres-cidades.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Recife' OR cidade = 'Picos' OR cidade = 'Oeiras';
+</pre>
+
+<p>Quatro clientes: dois de Recife, um de Picos, um de Oeiras. Quando a lista de alternativas cresce, escrever <code>cidade =</code> toda hora cansa. Para isso existe o <code>IN</code>, que você vai ver na aula <a href="in.html">IN</a>: <code>WHERE cidade IN ('Recife', 'Picos', 'Oeiras')</code>.</p>
+
+<div class="trysql" data-goal="linhas:11">
+<p class="try-task"><strong>Missão:</strong> a loja vai fazer uma ação de vendas em São Paulo e também quer incluir todos os clientes VIP, de onde forem. Mostre os clientes que são de <code>'SP'</code> <strong>ou</strong> que são VIP (<code>vip = 1</code>).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estado, vip
+FROM clientes
+WHERE estado = 'SP';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, estado, vip
+FROM clientes
+WHERE estado = 'SP' OR vip = 1;
+</pre>
+</div>
+
+<p>São 7 clientes de São Paulo e 5 VIPs, mas vieram 11, e não 12. A Ana Beatriz Sousa é de São Paulo <strong>e</strong> é VIP: passou nas duas condições e aparece uma vez só.</p>
+
+<hr>
+
+<h2>3. Condições em colunas diferentes</h2>
+<p>Como no <code>AND</code>, cada lado do <code>OR</code> pode testar uma coluna diferente. A Ana vai revisar os produtos que precisam de atenção: os muito caros (mais de R$ 200) <strong>ou</strong> os com estoque muito baixo (menos de 15):</p>
+
+<pre class="file" data-file="atencao.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE preco &gt; 200 OR estoque &lt; 15;
+</pre>
+
+<p>Três produtos. O Jogo de Panelas passa nas <strong>duas</strong> condições (249.9 e 12 unidades) e aparece uma vez. O pen drive e o carrinho de fricção passam só na segunda (estoque 0).</p>
+
+<h3>O que fica de fora de uma faixa</h3>
+<p>Com <code>AND</code>, você montou uma faixa ("entre 20 e 30"). Com <code>OR</code>, dá para pegar o que está <strong>fora</strong> dela, nas duas pontas. Os funcionários que ganham menos de 3000 ou mais de 5000:</p>
+
+<pre class="file" data-file="pontas.sql" data-resultado>SELECT nome, salario
+FROM funcionarios
+WHERE salario &lt; 3000 OR salario &gt; 5000;
+</pre>
+
+<p>Os dois salários mais altos (a gerente e a supervisora) e os dois mais baixos. Repare: aqui a mesma coluna aparece nos dois lados, e não é impossível como no <code>AND</code>, porque cada salário só precisa cumprir uma das condições.</p>
+
+<div class="note">
+<strong>Cada <code>OR</code> só põe, nunca tira</strong>
+<p>Acrescentar um <code>OR</code> é abrir mais uma porta: o resultado pode ganhar linhas ou continuar igual, mas <strong>nunca</strong> fica menor. É o contrário do <code>AND</code>, que só tira. Na dúvida sobre qual usar, pergunte: "eu quero <strong>restringir</strong> a lista (só quem cumpre tudo) ou <strong>ampliar</strong> (quem cumpre qualquer uma)?". Restringir é <code>AND</code>; ampliar é <code>OR</code>.</p>
+</div>
+
+<hr>
+
+<h2>4. <code>AND</code> e <code>OR</code> juntos: a precedência</h2>
+<p>Esta é a parte mais importante da aula. A Ana quer os clientes <strong>VIP</strong> do Piauí ou do Ceará. Ela escreveu a frase do jeito que pensou:</p>
+
+<pre class="file" data-file="vip-errado.sql" data-resultado>SELECT nome, estado, vip
+FROM clientes
+WHERE estado = 'PI' OR estado = 'CE' AND vip = 1;
+</pre>
+
+<p>Vieram <strong>16 clientes</strong>, e vários deles têm <code>vip = 0</code>! Não deu erro, mas a resposta está errada. O que aconteceu?</p>
+
+<h3>O <code>AND</code> é resolvido primeiro</h3>
+<p>Lembra da matemática da escola? Em <code>1 + 2 * 3</code>, a multiplicação é feita antes da soma: o resultado é 7, e não 9. Para fazer a soma primeiro, você põe parênteses: <code>(1 + 2) * 3</code> dá 9.</p>
+
+<pre class="file" data-file="matematica.sql" data-resultado>SELECT 1 + 2 * 3, (1 + 2) * 3;
+</pre>
+
+<p>Com <code>AND</code> e <code>OR</code> acontece o mesmo: o <code>AND</code> tem <strong>precedência</strong> (é resolvido antes), como a multiplicação; o <code>OR</code> fica para depois, como a soma. Veja com 1 e 0:</p>
+
+<pre class="file" data-file="precedencia.sql" data-resultado>SELECT 1 OR 1 AND 0, (1 OR 1) AND 0;
+</pre>
+
+<p>Sem parênteses, o banco fez <code>1 AND 0</code> primeiro (deu 0) e depois <code>1 OR 0</code> (deu 1). Com parênteses, fez <code>1 OR 1</code> primeiro (deu 1) e depois <code>1 AND 0</code> (deu 0). Os mesmos números, as mesmas palavras, resultados diferentes.</p>
+
+<h3>O que o banco entendeu na consulta da Ana</h3>
+<p>Como o <code>AND</code> vem primeiro, o banco leu a condição da Ana assim:</p>
+
+<pre class="file" data-file="como o banco leu">estado = 'PI'   OR   (estado = 'CE' AND vip = 1)
+</pre>
+
+<p>Ou seja: "<strong>todos</strong> os clientes do Piauí, VIP ou não, e mais os clientes VIP do Ceará". Foram os 14 do Piauí mais 2 VIPs do Ceará: 16. Para dizer o que a Ana queria, os parênteses têm de juntar os dois estados:</p>
+
+<pre class="file" data-file="vip-certo.sql" data-resultado>SELECT nome, estado, vip
+FROM clientes
+WHERE (estado = 'PI' OR estado = 'CE') AND vip = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>(</dt><dd>Abre o grupo: o que está aqui dentro é resolvido primeiro.</dd>
+  <dt>estado = 'PI' OR estado = 'CE'</dt><dd>"Do Piauí ou do Ceará". Dá 1 para os 21 clientes desses dois estados (14 do Piauí e 7 do Ceará).</dd>
+  <dt>)</dt><dd>Fecha o grupo. Todo parêntese aberto precisa ser fechado.</dd>
+  <dt>AND vip = 1</dt><dd>E, desses, só os VIP.</dd>
+</dl>
+
+<p>Agora sim: <strong>4 clientes</strong>, todos VIP, todos do Piauí ou do Ceará.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Consulta</th><th>O banco entende</th><th>Linhas</th></tr>
+<tr><td><code>estado = 'PI' OR estado = 'CE' AND vip = 1</code></td><td>Todos do PI, mais os VIPs do CE</td><td>16</td></tr>
+<tr><td><code>(estado = 'PI' OR estado = 'CE') AND vip = 1</code></td><td>Os VIPs do PI e do CE</td><td>4</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>A regra de ouro</strong>
+<p>Misturou <code>AND</code> e <code>OR</code> no mesmo <code>WHERE</code>? <strong>Use parênteses.</strong> Mesmo quando a ordem natural já daria o resultado certo, os parênteses deixam claro o que você quis dizer, para o banco e para quem ler a consulta depois. Esse erro não dá mensagem nenhuma; ele só aparece como um resultado errado, que pode passar despercebido.</p>
+</div>
+
+<p>Mais um exemplo, com a ordem trocada. A Ana quer os VIPs de São Paulo ou de Pernambuco:</p>
+
+<pre class="file" data-file="vip-sp-pe-errado.sql" data-resultado>SELECT nome, estado, vip
+FROM clientes
+WHERE vip = 1 AND estado = 'SP' OR estado = 'PE';
+</pre>
+
+<p>O banco leu <code>(vip = 1 AND estado = 'SP') OR estado = 'PE'</code>: a VIP de São Paulo e <strong>todos</strong> os de Pernambuco, que não são VIP. Com parênteses:</p>
+
+<pre class="file" data-file="vip-sp-pe-certo.sql" data-resultado>SELECT nome, estado, vip
+FROM clientes
+WHERE vip = 1 AND (estado = 'SP' OR estado = 'PE');
+</pre>
+
+<p>Só a Ana Beatriz: Pernambuco não tem nenhum cliente VIP.</p>
+
+<div class="trysql" data-goal="linhas:3">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os <strong>brinquedos</strong> (categoria 5) ou artigos de <strong>esporte</strong> (categoria 6) que custem <strong>menos de R$ 20</strong>. A consulta trouxe brinquedos caros, como o jogo de tabuleiro de 79.99. Use parênteses para consertar.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, categoria_id, preco
+FROM produtos
+WHERE categoria_id = 5 OR categoria_id = 6 AND preco &lt; 20;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, categoria_id, preco
+FROM produtos
+WHERE (categoria_id = 5 OR categoria_id = 6) AND preco &lt; 20;
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Para várias alternativas na mesma coluna, o <code>IN</code> faz o mesmo que uma fila de <code>OR</code>. As duas consultas abaixo trazem os mesmos 9 clientes:</p>
+
+<pre class="file" data-file="com-or.sql">SELECT nome, estado FROM clientes WHERE estado = 'PE' OR estado = 'CE';
+</pre>
+
+<pre class="file" data-file="com-in.sql" data-resultado>SELECT nome, estado FROM clientes WHERE estado IN ('PE', 'CE');
+</pre>
+
+<p>A ordem dos lados do <code>OR</code> não importa: <code>estado = 'CE' OR estado = 'PE'</code> dá o mesmo resultado. E quando a consulta tem muitas condições, o costume é pôr cada uma numa linha, com o <code>OR</code> e o <code>AND</code> no começo:</p>
+
+<pre class="file" data-file="uma-por-linha.sql" data-resultado>SELECT nome, estado, vip
+FROM clientes
+WHERE (estado = 'PI'
+       OR estado = 'CE')
+  AND vip = 1;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>a OR b</code></td><td>Duas ou três alternativas, principalmente em colunas diferentes</td></tr>
+<tr><td><code>coluna IN (…)</code></td><td>Muitas alternativas na <strong>mesma</strong> coluna (aula <a href="in.html">IN</a>)</td></tr>
+<tr><td><code>(a OR b) AND c</code></td><td>Sempre que <code>AND</code> e <code>OR</code> aparecem juntos</td></tr>
+<tr><td>Uma condição por linha</td><td>Consultas com muitas condições</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O <code>OR</code> pela metade</strong>
+<p>Em português dizemos "do Piauí ou do Ceará", sem repetir "estado". A Ana escreveu igual:</p>
+<pre class="file" data-file="or-metade.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado = 'PI' OR 'CE';
+</pre>
+<p>Nenhum erro, mas vieram <strong>só</strong> os 14 do Piauí. Os do Ceará sumiram. O lado direito do <code>OR</code> ficou sendo só o texto <code>'CE'</code>, e não <code>estado = 'CE'</code>. Quando o SQLite usa um valor sozinho como condição, ele o transforma em número: <code>'CE'</code> não é um número, vira 0, e 0 é falso. Então a condição é, na prática, <code>estado = 'PI' OR 0</code>.</p>
+<p><strong>Como consertar:</strong> cada lado do <code>OR</code> é uma condição completa: <code>estado = 'PI' OR estado = 'CE'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>||</code> no lugar de <code>OR</code></strong>
+<p>Em muitas linguagens de programação, o "ou" se escreve <code>||</code>. No SQLite, ele quer dizer outra coisa:</p>
+<pre class="file" data-file="barras.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado = 'PI' || estado = 'CE';
+</pre>
+<p>Nenhuma linha, e nenhum erro. No SQL padrão, <code>||</code> é o operador que <strong>junta textos</strong>: <code>'PI' || 'CE'</code> dá <code>'PICE'</code> (ele aparece na aula <a href="funcoes-texto.html">Funções de Texto</a>). O banco juntou pedaços da condição como se fossem textos e comparou o resultado com <code>'CE'</code>, e nenhuma linha passou. <strong>Como consertar:</strong> escreva a palavra <code>OR</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>No <strong>MySQL</strong>, o <code>||</code> é um "ou", como nas linguagens de programação, e não junta textos (a não ser com o modo <code>PIPES_AS_CONCAT</code> ligado). A documentação dele avisa que esse <code>||</code> como "ou" é uma extensão fora do padrão, está obsoleta e pode sumir numa versão futura. Ou seja: a mesma consulta com <code>||</code> faz uma coisa no MySQL e outra no SQLite. Com a palavra <code>OR</code>, ela faz a mesma coisa em todos.</p>
+</div>
+
+<div class="cenario">
+<strong>Parêntese aberto e não fechado</strong>
+<pre class="file" data-file="erro-parentese.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE (estado = 'PI' OR estado = 'CE' AND vip = 1;
+</pre>
+<p><code>near ";": syntax error</code>. O comando acabou com um parêntese ainda aberto: o banco esperava o <code>)</code> e encontrou o <code>;</code>. <strong>Como consertar:</strong> feche o parêntese no lugar certo: <code>(estado = 'PI' OR estado = 'CE') AND vip = 1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Parêntese fechado sem ter aberto</strong>
+<pre class="file" data-file="erro-parentese2.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE estado = 'PI' OR estado = 'CE') AND vip = 1;
+</pre>
+<p><code>near ")": syntax error</code>. Agora sobrou um <code>)</code> sem par. <strong>Como consertar:</strong> conte os parênteses: cada <code>(</code> precisa do seu <code>)</code>. Os editores de código costumam destacar o par de cada parêntese, o que ajuda muito.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o sinal de igual</strong>
+<pre class="file" data-file="erro-sem-igual.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE estado = 'PI' OR estado 'CE';
+</pre>
+<p><code>near "'CE'": syntax error</code>. Depois de <code>estado</code>, o banco esperava um sinal de comparação. <strong>Como consertar:</strong> <code>OR estado = 'CE'</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:9">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os clientes de Pernambuco <strong>e</strong> os do Ceará (as duas listas juntas), mas a consulta só trouxe os de Pernambuco. Conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estado
+FROM clientes
+WHERE estado = 'PE' OR 'CE';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, estado
+FROM clientes
+WHERE estado = 'PE' OR estado = 'CE';
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WHERE a OR b</code></td><td>As linhas em que <code>a</code>, <code>b</code> ou as duas são verdadeiras</td></tr>
+<tr><td><code>WHERE a OR b OR c</code></td><td>As linhas em que pelo menos uma é verdadeira</td></tr>
+<tr><td><code>WHERE a OR b AND c</code></td><td>O banco lê <code>a OR (b AND c)</code>: o <code>AND</code> vem primeiro</td></tr>
+<tr><td><code>WHERE (a OR b) AND c</code></td><td>Os parênteses fazem o <code>OR</code> vir primeiro</td></tr>
+<tr><td><code>SELECT 0 OR 1;</code></td><td>Testa o <code>OR</code> sem tabela (dá 1)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ordem em que o banco resolve</th><th>Como na matemática</th></tr>
+<tr><td>1º: o que está entre parênteses</td><td><code>( )</code></td></tr>
+<tr><td>2º: as comparações (<code>=</code>, <code>&lt;</code>, <code>&gt;</code>…)</td><td></td></tr>
+<tr><td>3º: <code>AND</code></td><td>como a multiplicação</td></tr>
+<tr><td>4º: <code>OR</code></td><td>como a soma</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Causa provável</th></tr>
+<tr><td>Linhas a mais, que não cumprem uma das condições</td><td><code>AND</code> e <code>OR</code> juntos sem parênteses</td></tr>
+<tr><td>Faltou a segunda lista inteira, sem erro</td><td><code>OR</code> pela metade: <code>estado = 'PI' OR 'CE'</code></td></tr>
+<tr><td>Nenhuma linha, sem erro</td><td><code>||</code> no lugar de <code>OR</code></td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Parêntese sem fechar, ou um <code>OR</code> sobrando no fim</td></tr>
+<tr><td><code>near ")": syntax error</code></td><td>Parêntese fechado sem ter aberto</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Recife ou Fortaleza</h3>
+<p>Complete para mostrar os clientes de Recife e os de Fortaleza:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE cidade = 'Recife' <input data-answer="OR|or" aria-label="operador"> cidade = 'Fortaleza';</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os parênteses</h3>
+<p>Complete com os parênteses para mostrar os VIPs de São Paulo ou de Fortaleza:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE <input data-answer="(" aria-label="parêntese">cidade = 'São Paulo' OR cidade = 'Fortaleza'<input data-answer=")" aria-label="parêntese"> AND vip = 1;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual é o resultado de <code>SELECT 0 OR 0;</code>?</p>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> Dá erro</label>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> 00</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Como o banco lê <code>WHERE a OR b AND c</code>?</p>
+<label><input type="radio" name="q4"> <code>a OR (b AND c)</code></label>
+<label><input type="radio" name="q4"> <code>(a OR b) AND c</code></label>
+<label><input type="radio" name="q4"> Da esquerda para a direita, sem prioridade</label>
+<label><input type="radio" name="q4"> Dá erro: não pode misturar <code>AND</code> e <code>OR</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana escreveu <code>WHERE cargo = 'Vendedor' OR 'Vendedora'</code>. O que vem?</p>
+<label><input type="radio" name="q5"> Os vendedores e as vendedoras</label>
+<label><input type="radio" name="q5"> Erro de sintaxe</label>
+<label><input type="radio" name="q5"> Nenhuma linha</label>
+<label><input type="radio" name="q5"> Só os vendedores: o <code>'Vendedora'</code> sozinho vale falso</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Uma consulta com <code>WHERE estado = 'PE'</code> trouxe 2 linhas. Se você acrescentar <code>OR estado = 'CE'</code>, quantas linhas podem vir?</p>
+<label><input type="radio" name="q6"> Menos de 2</label>
+<label><input type="radio" name="q6"> 2 ou mais: o <code>OR</code> só pode acrescentar linhas</label>
+<label><input type="radio" name="q6"> Exatamente 2</label>
+<label><input type="radio" name="q6"> Nenhuma</label>
+</div>
+
+<h3>Missão final: os jovens do Nordeste</h3>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a loja quer os clientes de <strong>Fortaleza ou Recife</strong> nascidos <strong>a partir de 1990</strong> (data de nascimento <code>&gt;= '1990-01-01'</code>). A consulta abaixo trouxe clientes nascidos em 1969 e 1979. Descubra por quê e conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, nascimento
+FROM clientes
+WHERE cidade = 'Fortaleza' OR cidade = 'Recife' AND nascimento &gt;= '1990-01-01';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, nascimento
+FROM clientes
+WHERE (cidade = 'Fortaleza' OR cidade = 'Recife') AND nascimento &gt;= '1990-01-01';
+</pre>
+</div>
+
+<p>Sem parênteses, o banco leu "todos de Fortaleza, mais os de Recife nascidos a partir de 1990". Com os parênteses, vêm só os 4 certos: Fernanda, Juliana, Débora e Mirela.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>OR</code> ("ou") junta condições no <code>WHERE</code>: a linha entra se <strong>pelo menos uma</strong> for verdadeira. Se as duas forem, ela entra uma vez só.</li>
+  <li>Na tabela-verdade, só <code>0 OR 0</code> dá 0; qualquer 1 deixa o resultado em 1.</li>
+  <li>Cada <code>OR</code> a mais só acrescenta linhas. Restringir é <code>AND</code>; ampliar é <code>OR</code>.</li>
+  <li>Cada lado do <code>OR</code> é uma condição completa: <code>estado = 'PI' OR estado = 'CE'</code>, nunca <code>estado = 'PI' OR 'CE'</code>.</li>
+  <li>O <code>AND</code> é resolvido <strong>antes</strong> do <code>OR</code>, como a multiplicação antes da soma. Misturou os dois? Use <strong>parênteses</strong>.</li>
+  <li>Escreva <code>OR</code>, nunca <code>||</code>: no SQLite, <code>||</code> junta textos.</li>
+  <li>Muitas alternativas na mesma coluna ficam mais curtas com <code>IN</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
