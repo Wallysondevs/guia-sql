@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Backup — .dump, .backup, .restore e VACUUM INTO | Guia SQL</title>
+<meta name="description" content="Backup do banco SQLite para quem nunca mexeu num banco: o .dump que transforma o banco em SQL, o .backup que faz uma cópia segura do arquivo, o .restore que volta a cópia, VACUUM INTO, como restaurar um dump e as armadilhas reais, como o .restore de um arquivo que não existe apagar o banco inteiro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Backup: .dump e .backup</span></h1>
+
+<p class="intro">Todo o cadastro da Loja Aurora (clientes, produtos, 90 pedidos) mora num arquivo só: <code>~/loja.db</code>. Se o notebook da Ana quebrar, ou se alguém rodar um <code>DELETE</code> sem <code>WHERE</code>, a loja perde tudo. A proteção é uma <strong>cópia de segurança</strong>, o <strong>backup</strong>. Nesta aula você vai ver os dois jeitos que o <code>sqlite3</code> oferece: o <strong><code>.dump</code></strong>, que transforma o banco num arquivo de SQL que qualquer pessoa consegue ler, e o <strong><code>.backup</code></strong>, que faz uma cópia exata do arquivo do banco. E vai ver como trazer os dados de volta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que fazer backup, e por que copiar o arquivo com o banco aberto pode dar errado.</li>
+  <li>O <code>.dump</code>: o banco inteiro (ou uma tabela) escrito como comandos SQL.</li>
+  <li>A salvar o dump num arquivo (<code>sqlite3 loja.db .dump &gt; backup.sql</code>) e a recriar o banco a partir dele.</li>
+  <li>O <code>.backup</code> e o <code>.restore</code>: cópia exata do banco e volta da cópia.</li>
+  <li>O <code>VACUUM INTO</code>, que faz a cópia com um comando SQL.</li>
+  <li>As armadilhas reais: restaurar por cima de um banco cheio e o <code>.restore</code> que apaga tudo.</li>
+</ul>
+</div>
+
+<p>Como a aula anterior, <a href="import-export.html">Importar e Exportar CSV</a>, esta é uma aula de <strong>terminal</strong>: backup é gravar arquivos, e o editor do guia não grava arquivos no seu computador. As sessões saíram do terminal da Ana, na pasta pessoal dela (<code>~</code>), onde está o <code>loja.db</code>. O editor entra para mostrar que um dump é SQL comum, que roda em qualquer lugar.</p>
+
+<hr>
+
+<h2>A ideia: a foto e a receita</h2>
+<p>Imagine que a Ana quer guardar uma cópia de um bolo que deu muito certo. Ela tem dois jeitos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Na cozinha</th><th>No banco</th></tr>
+<tr><td><strong>A receita</strong></td><td>Anota cada ingrediente e cada passo. Qualquer pessoa lê e faz o bolo de novo, em qualquer cozinha.</td><td><code>.dump</code>: um arquivo de texto com os <code>CREATE TABLE</code> e os <code>INSERT</code> que recriam o banco.</td></tr>
+<tr><td><strong>O congelador</strong></td><td>Guarda um bolo igualzinho no freezer. É só descongelar, sem refazer nada.</td><td><code>.backup</code>: uma cópia exata do arquivo <code>.db</code>, pronta para abrir.</td></tr>
+</table>
+</div>
+
+<p>A receita é ótima para ler, comparar e levar para outro banco. O congelador é mais rápido de fazer e de usar. Muita gente guarda os dois.</p>
+
+<div class="warning">
+<strong>E o <code>cp loja.db copia.db</code>?</strong>
+<p>Copiar o arquivo com o <code>cp</code> funciona <strong>quando nenhum programa está mexendo no banco</strong>. Se um programa estiver gravando bem na hora da cópia, a cópia pode sair com metade de uma alteração, e virar um arquivo estragado. Além disso, num banco no modo WAL (veja <a href="pragma.html">PRAGMAs Úteis</a>), parte dos dados recentes fica num segundo arquivo, o <code>loja.db-wal</code>, que o <code>cp</code> de um arquivo só deixa para trás. O <code>.backup</code> e o <code>VACUUM INTO</code> pedem licença ao banco e copiam um retrato consistente. Prefira os dois.</p>
+</div>
+
+<hr>
+
+<h2>1. O <code>.dump</code>: o banco virado SQL</h2>
+<p>Comece por uma tabela pequena. Com o nome de uma tabela, o <code>.dump</code> mostra só ela:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .dump categorias
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias VALUES(1,'Papelaria','Material escolar e de escritório');
+INSERT INTO categorias VALUES(2,'Eletrônicos','Acessórios e dispositivos eletrônicos');
+INSERT INTO categorias VALUES(3,'Casa e Cozinha','Utensílios para o lar');
+INSERT INTO categorias VALUES(4,'Livros','Livros, dicionários e guias');
+INSERT INTO categorias VALUES(5,'Brinquedos','Brinquedos e jogos para todas as idades');
+INSERT INTO categorias VALUES(6,'Esporte e Lazer','Artigos esportivos e de lazer');
+INSERT INTO categorias VALUES(7,'Alimentos','Alimentos não perecíveis e regionais');
+INSERT INTO categorias VALUES(8,'Jardim','Ferramentas e artigos de jardinagem');
+COMMIT;
+sqlite&gt; .quit</pre>
+
+<p>Tudo o que saiu é SQL que você já conhece (ou vai conhecer). Leia de cima para baixo:</p>
+
+<dl class="anatomy">
+  <dt>PRAGMA foreign_keys=OFF;</dt><dd>Desliga a conferência de chaves estrangeiras durante a restauração. Assim a ordem das tabelas não importa: um produto pode entrar antes da sua categoria. (PRAGMAs têm aula própria: <a href="pragma.html">PRAGMAs Úteis</a>.)</dd>
+  <dt>BEGIN TRANSACTION;</dt><dd>Abre uma <strong>transação</strong>: tudo até o <code>COMMIT</code> vale como uma coisa só, e fica muito mais rápido. Você vai ver isso em <a href="transacoes.html">Transações</a>.</dd>
+  <dt>CREATE TABLE categorias (…);</dt><dd>A estrutura da tabela, <strong>do jeito que foi escrita</strong> quando ela foi criada, com os espaços e tudo (veja <a href="create-table.html">CREATE TABLE</a>).</dd>
+  <dt>INSERT INTO categorias VALUES(…);</dt><dd>Uma linha da tabela por <code>INSERT</code>, com os valores na ordem das colunas. Os textos vêm em aspas simples, como manda o SQL.</dd>
+  <dt>COMMIT;</dt><dd>Fecha a transação e grava tudo.</dd>
+</dl>
+
+<p>Rodar esse texto num banco vazio recria a tabela <code>categorias</code> exatamente como ela é. Essa é toda a ideia do dump.</p>
+
+<hr>
+
+<h2>2. O dump do banco inteiro num arquivo</h2>
+<p>Sem nome de tabela, o <code>.dump</code> escreve o banco inteiro. Em vez de jogar tudo na tela, a Ana manda para um arquivo, numa linha só do terminal:</p>
+
+<pre class="term">$ sqlite3 loja.db .dump &gt; backup.sql
+$ ls -l loja.db backup.sql
+-rw-rw-r-- 1 ana ana 30423 out 18 10:34 backup.sql
+-rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db
+$ head -4 backup.sql
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+$ tail -3 backup.sql
+INSERT INTO itens_pedido VALUES(90,15,2,54.29999999999999716);
+INSERT INTO itens_pedido VALUES(90,16,1,39.99000000000000198);
+COMMIT;
+$ grep -c '^INSERT' backup.sql
+407                              « 8+6+45+30+8+90+220: todas as linhas de todas as tabelas</pre>
+
+<dl class="anatomy">
+  <dt>sqlite3 loja.db</dt><dd>Abre o banco.</dd>
+  <dt>.dump</dt><dd>O comando de ponto, passado direto na linha de comando: o <code>sqlite3</code> roda, escreve e sai.</dd>
+  <dt>&gt; backup.sql</dt><dd>O shell grava tudo o que sairia na tela no arquivo <code>backup.sql</code>. O <code>.sql</code> no fim do nome é só um costume, para lembrar que o arquivo é SQL.</dd>
+</dl>
+
+<p>O <code>grep -c '^INSERT'</code> conta as linhas que começam com <code>INSERT</code>: 407, exatamente o total de linhas das sete tabelas da loja. O dump ficou <strong>menor</strong> que o banco (30 KB contra 48 KB): é só texto, sem os índices nem o espaço livre que o arquivo do banco guarda por dentro. Num banco grande, ele também comprime muito bem com <code>gzip</code>.</p>
+
+<h3>Que números são esses: 54.29999999999999716?</h3>
+<p>No banco, o preço desse item é 54.3. O dump escreve o número com todas as casas que o computador guarda de verdade. Números com vírgula (o tipo <code>REAL</code>) são guardados em binário, e 54.3 não tem representação exata em binário, assim como 1/3 não tem em decimal (0,333…). O dump escreve a versão longa para que, ao restaurar, volte <strong>exatamente o mesmo número</strong>, sem nenhuma diferença:</p>
+
+<pre class="file" data-file="numero-longo.sql" data-resultado>SELECT preco_unitario
+FROM itens_pedido
+WHERE pedido_id = 90 AND produto_id = 15;
+
+SELECT 54.29999999999999716 = 54.3 AS igual;
+</pre>
+
+<p>O <code>1</code> quer dizer "verdadeiro": para o SQLite, os dois números são o mesmo. Mais sobre essas casas "feias" em <a href="funcoes-numericas.html">Funções Numéricas</a>.</p>
+
+<hr>
+
+<h2>3. Restaurar um dump</h2>
+<p>Para recriar o banco a partir da "receita", basta dar o arquivo de SQL para um <code>sqlite3</code> com um banco <strong>novo</strong>. O <code>&lt;</code> do shell faz o caminho contrário do <code>&gt;</code>: lê o arquivo e entrega ao programa, como se você digitasse tudo:</p>
+
+<pre class="term">$ sqlite3 restaurado.db &lt; backup.sql
+$ ls -l restaurado.db
+-rw-r--r-- 1 ana ana 73728 out 18 10:34 restaurado.db
+$ sqlite3 restaurado.db "SELECT count(*) FROM produtos; SELECT count(*) FROM itens_pedido;"
+45
+220</pre>
+
+<p>O <code>restaurado.db</code> não existia: o <code>sqlite3</code> criou o arquivo vazio, rodou os 407 <code>INSERT</code> e os sete <code>CREATE TABLE</code>, e pronto. As contagens batem com o original. O tamanho não bate, e não tem problema. O SQLite guarda o banco em blocos de tamanho fixo, as <strong>páginas</strong>: o <code>loja.db</code> usa páginas de 4096 bytes, e o banco novo, criado por este <code>sqlite3</code>, ganhou páginas de 8192 bytes (dá para ver com <code>PRAGMA page_size</code>, na aula <a href="pragma.html">PRAGMAs Úteis</a>). Com páginas maiores e meio vazias, o arquivo cresce. Os <strong>dados</strong> são os mesmos.</p>
+
+<p>De dentro do <code>sqlite3</code>, o mesmo efeito vem do <code>.read</code>, que lê e roda um arquivo de SQL:</p>
+
+<pre class="term">$ sqlite3 novo.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .read backup.sql
+sqlite&gt; SELECT count(*) FROM clientes;
+30
+sqlite&gt; .quit</pre>
+
+<div class="tip">
+<strong>O dump é SQL, então roda em qualquer lugar</strong>
+<p>Como o dump é só texto com SQL, você pode abrir no editor de texto, procurar um cliente com <code>grep</code>, comparar dois backups com <code>diff</code> para ver o que mudou, ou guardar no Git. Com poucos ajustes (os tipos e o <code>PRAGMA</code> do começo), ele serve até para levar os dados para outro banco, como o PostgreSQL.</p>
+</div>
+
+<p>E é SQL de verdade: o editor do guia roda um trecho de dump. Aqui, uma tabela que não existe na loja, <code>cupons</code>, escrita no formato do dump:</p>
+
+<pre class="file" data-file="trecho-de-dump.sql" data-resultado>PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE cupons (codigo TEXT PRIMARY KEY, desconto REAL);
+INSERT INTO cupons VALUES('AURORA10',0.1);
+INSERT INTO cupons VALUES('FRETEGRATIS',0.0);
+COMMIT;
+
+SELECT * FROM cupons;
+</pre>
+
+<hr>
+
+<h2>4. O <code>.backup</code>: a cópia exata</h2>
+<p>O "congelador" é o <code>.backup</code>. Dentro do <code>sqlite3</code>, ele grava uma cópia idêntica do banco aberto em outro arquivo:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .backup copia.db
+sqlite&gt; SELECT count(*) FROM clientes;
+30</pre>
+
+<dl class="anatomy">
+  <dt>.backup</dt><dd>Copia o banco aberto, página por página, usando a "API de backup" do SQLite: enquanto copia, nenhum outro programa consegue deixar o banco pela metade.</dd>
+  <dt>copia.db</dt><dd>O arquivo de destino. Se já existir, é <strong>substituído</strong> sem perguntar.</dd>
+</dl>
+
+<p>Logo depois, um acidente: a Ana apaga a cliente 30 sem querer. Como ela tinha acabado de fazer a cópia, o <code>.restore</code> traz tudo de volta:</p>
+
+<pre class="term">sqlite&gt; DELETE FROM clientes WHERE id = 30;
+sqlite&gt; SELECT count(*) FROM clientes;
+29
+sqlite&gt; .restore copia.db
+sqlite&gt; SELECT count(*) FROM clientes;
+30
+sqlite&gt; SELECT nome FROM clientes WHERE id = 30;
+Rosângela Dias
+sqlite&gt; .quit</pre>
+
+<dl class="anatomy">
+  <dt>.restore copia.db</dt><dd>O caminho contrário: <strong>substitui</strong> o banco aberto pelo conteúdo de <code>copia.db</code>. Tudo o que o banco tinha antes do <code>.restore</code> some, inclusive o que mudou depois do backup.</dd>
+</dl>
+
+<p>A Rosângela voltou. Fora do <code>sqlite3</code>, os dois arquivos têm o mesmo tamanho, e o <code>PRAGMA integrity_check</code> ("conferência de integridade") confirma que a cópia está saudável:</p>
+
+<pre class="term">$ ls -l loja.db copia.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:34 copia.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:34 loja.db
+$ sqlite3 copia.db "PRAGMA integrity_check;"
+ok</pre>
+
+<p>Um backup que nunca foi conferido é uma esperança, não um backup. De tempos em tempos, abra a cópia e rode o <code>integrity_check</code> e uma ou duas contagens.</p>
+
+<h3>Um backup por dia, com a data no nome</h3>
+<p>O <code>.backup</code> também funciona numa linha só do terminal. Com o <code>$(date +%F)</code> do shell, que vira a data de hoje no formato ano-mês-dia, cada dia ganha o seu arquivo:</p>
+
+<pre class="term">$ sqlite3 loja.db ".backup backup-$(date +%F).db"
+$ ls -l backup-*
+-rw-r--r-- 1 ana ana 49152 out 18 10:34 backup-2026-10-18.db</pre>
+
+<p>As aspas em volta de <code>.backup …</code> fazem o <code>sqlite3</code> receber o comando inteiro como uma coisa só. Essa linha pode ir para um agendador de tarefas (como o <code>cron</code>, no Linux) e rodar sozinha toda noite.</p>
+
+<hr>
+
+<h2>5. <code>VACUUM INTO</code>: a cópia com SQL</h2>
+<p>O <code>.backup</code> é um comando de ponto, que só o programa <code>sqlite3</code> entende. Um programa em Python ou PHP que usa o SQLite precisa de um jeito em SQL. É o <code>VACUUM INTO</code> ("aspire para dentro de"):</p>
+
+<pre class="term">$ sqlite3 loja.db "VACUUM INTO 'compacta.db';"
+$ ls -l compacta.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:34 compacta.db</pre>
+
+<dl class="anatomy">
+  <dt>VACUUM</dt><dd>O comando que reorganiza o banco por dentro e joga fora o espaço vazio (aula <a href="vacuum.html">VACUUM e ANALYZE</a>).</dd>
+  <dt>INTO 'compacta.db'</dt><dd>Em vez de reorganizar o próprio banco, grava o resultado num arquivo <strong>novo</strong>. O original não é tocado. O nome do arquivo vai entre aspas simples, como um texto.</dd>
+</dl>
+
+<p>A cópia sai já "aspirada", sem espaço desperdiçado. Aqui ela ficou do mesmo tamanho do original porque o <code>loja.db</code> está arrumado; num banco que já teve muitos <code>DELETE</code>, a cópia sai menor. Diferente do <code>.backup</code>, o <code>VACUUM INTO</code> <strong>não</strong> substitui um arquivo que já existe (veja em <a href="#errado">Quando dá errado</a>).</p>
+
+<div class="note">
+<strong>E no editor do guia?</strong>
+<p>O <code>VACUUM INTO 'copia.db';</code> roda no editor e responde "VACUUM: ok". Mas o banco do editor vive na memória do seu navegador, e o arquivo também: não existe a sua pasta pessoal ali, e a cópia some junto com o banco. Backup de verdade, só no terminal.</p>
+</div>
+
+<hr>
+
+<h2>6. Um backup dentro do próprio banco</h2>
+<p>Antes de uma mudança arriscada numa tabela só, como um aumento de preços, existe um truque rápido: copiar a tabela para outra tabela no mesmo banco, com <code>CREATE TABLE … AS SELECT</code> (veja <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>). Não substitui o backup em outro arquivo (se o notebook quebrar, as duas tabelas vão junto), mas salva de um <code>UPDATE</code> errado.</p>
+
+<div class="trysql" data-goal="contem:Lápis Grafite HB|1.15;;contem:Caderno Pautado 96 folhas|12.35">
+<p class="try-task"><strong>Experimente:</strong> a Ana guardou os produtos em <code>produtos_backup</code> e logo depois zerou <strong>todos</strong> os preços por engano. Escreva, no lugar indicado, um <code>UPDATE</code> que devolva a cada produto o preço que está na cópia (dica: <code>SET preco = (SELECT b.preco FROM produtos_backup AS b WHERE b.id = produtos.id)</code>).</p>
+<pre class="script" data-file="desfazer.sql">CREATE TABLE produtos_backup AS SELECT * FROM produtos;
+
+UPDATE produtos SET preco = 0;   -- o acidente
+
+-- escreva aqui o UPDATE que traz os preços de volta
+
+SELECT nome, preco FROM produtos WHERE id IN (1, 2, 3);
+</pre>
+<pre class="solucao" data-file="desfazer.sql">CREATE TABLE produtos_backup AS SELECT * FROM produtos;
+
+UPDATE produtos SET preco = 0;   -- o acidente
+
+UPDATE produtos
+SET preco = (SELECT b.preco FROM produtos_backup AS b WHERE b.id = produtos.id);
+
+SELECT nome, preco FROM produtos WHERE id IN (1, 2, 3);
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que gera</th><th>Vantagens</th><th>Cuidados</th></tr>
+<tr><td><code>sqlite3 loja.db .dump &gt; backup.sql</code></td><td>Texto com SQL</td><td>Legível, comparável com <code>diff</code>, serve para outros bancos, comprime bem</td><td>Restaurar é rodar todo o SQL: num banco grande, demora</td></tr>
+<tr><td><code>.dump tabela</code></td><td>SQL de uma tabela</td><td>Leva uma tabela só para outro banco</td><td>Não leva as tabelas relacionadas</td></tr>
+<tr><td><code>.backup copia.db</code></td><td>Cópia exata do <code>.db</code></td><td>Rápido, consistente, pronto para abrir</td><td>Arquivo binário: não dá para ler nem comparar no editor de texto</td></tr>
+<tr><td><code>.restore copia.db</code></td><td>(volta a cópia)</td><td>Desfaz tudo desde o backup</td><td>Apaga o que veio depois; com nome errado, apaga tudo</td></tr>
+<tr><td><code>VACUUM INTO 'copia.db'</code></td><td>Cópia compactada do <code>.db</code></td><td>É SQL: funciona em qualquer programa que usa SQLite</td><td>Não sobrescreve um arquivo que já existe</td></tr>
+<tr><td><code>cp loja.db copia.db</code></td><td>Cópia do arquivo</td><td>Simples</td><td>Só com o banco fechado; esquece o <code>-wal</code></td></tr>
+<tr><td><code>CREATE TABLE x AS SELECT …</code></td><td>Tabela de reserva no mesmo banco</td><td>Instantâneo, antes de uma mudança arriscada</td><td>Não é backup: fica no mesmo arquivo</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> Para o dia a dia, um <code>.backup</code> com a data no nome, todo dia, guardado em <strong>outro lugar</strong> (um pendrive, outro computador, a nuvem). De vez em quando, um <code>.dump</code>, que você consegue ler mesmo daqui a dez anos, com qualquer programa.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Restaurou o dump por cima do banco cheio</strong>
+<p>A Ana tenta "restaurar" o <code>backup.sql</code> no próprio <code>loja.db</code>, que ainda tem todas as tabelas:</p>
+<pre class="term">$ sqlite3 loja.db &lt; backup.sql 2&gt;&amp;1 | head -6
+Parse error near line 3: table categorias already exists
+  CREATE TABLE categorias (     id        INTEGER PRIMARY KEY,     nome      TEX
+               ^--- error here
+Runtime error near line 8: UNIQUE constraint failed: categorias.id (19)
+Runtime error near line 9: UNIQUE constraint failed: categorias.id (19)
+Runtime error near line 10: UNIQUE constraint failed: categorias.id (19)
+$ sqlite3 loja.db &lt; backup.sql 2&gt;&amp;1 | wc -l
+428</pre>
+<p><strong>O que aconteceu:</strong> "erro perto da linha 3: a tabela <code>categorias</code> já existe", com a seta apontando onde o SQLite parou de entender. Depois, um "a restrição UNIQUE falhou em <code>categorias.id</code>" para cada <code>INSERT</code>, porque cada linha já estava lá (o <code>(19)</code> é o número do código de erro do SQLite para restrição violada). Ao todo, 428 linhas de erro. O <code>2&gt;&amp;1 | head -6</code> é só para mostrar as primeiras: junta as mensagens de erro na saída e corta nas 6 primeiras linhas. O banco não estragou (nada entrou duplicado), mas também não foi restaurado.</p>
+<p><strong>Como consertar:</strong> restaure um dump sempre num banco <strong>novo</strong> (<code>sqlite3 restaurado.db &lt; backup.sql</code>), confira, e só então troque um arquivo pelo outro.</p>
+</div>
+
+<p>No editor acontece o mesmo: a Loja Aurora já está carregada, então o <code>CREATE TABLE</code> do dump bate na tabela que existe:</p>
+
+<pre class="file" data-file="ja-existe.sql" data-resultado data-erro>CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+</pre>
+
+<div class="cenario">
+<strong><code>.restore</code> de um arquivo que não existe: o banco some</strong>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .restore nao-existe.db
+sqlite&gt; .tables
+sqlite&gt; SELECT count(*) FROM clientes;
+Parse error: no such table: clientes</pre>
+<p><strong>O que aconteceu:</strong> este é o erro mais perigoso da aula, porque <strong>não aparece mensagem nenhuma</strong>. O <code>.restore</code> tentou abrir <code>nao-existe.db</code>; como o arquivo não existia, o SQLite criou um banco novo, <strong>vazio</strong>, com esse nome, e restaurou esse vazio por cima do <code>loja.db</code>. O <code>.tables</code> não mostra nada e "não existe a tabela clientes". Se a Ana não tivesse outra cópia, a loja teria perdido tudo.</p>
+<p><strong>Como consertar:</strong> aqui havia o <code>copia.db</code>, então deu para voltar:</p>
+<pre class="term">sqlite&gt; .restore copia.db
+sqlite&gt; SELECT count(*) FROM clientes;
+30
+sqlite&gt; .quit
+$ ls -l loja.db nao-existe.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:34 loja.db
+-rw-r--r-- 1 ana ana     0 out 18 10:34 nao-existe.db
+$ rm nao-existe.db</pre>
+<p>Repare no <code>nao-existe.db</code> com 0 bytes, que o <code>.restore</code> deixou para trás. <strong>Para nunca cair nessa:</strong> antes de um <code>.restore</code>, confira o nome com <code>ls</code> e faça um <code>.backup</code> do banco atual (por exemplo, <code>.backup antes-do-restore.db</code>). Assim, até um <code>.restore</code> errado tem volta.</p>
+</div>
+
+<div class="cenario">
+<strong><code>VACUUM INTO</code> num arquivo que já existe</strong>
+<pre class="term">$ sqlite3 loja.db "VACUUM INTO 'compacta.db';"
+Error: stepping, output file already exists</pre>
+<p><strong>O que aconteceu:</strong> "o arquivo de saída já existe" (o <code>stepping</code> diz que o erro veio ao executar o comando). Ao contrário do <code>.backup</code>, o <code>VACUUM INTO</code> se recusa a apagar um arquivo, e isso é uma proteção. Dentro do <code>sqlite3</code>, a mesma situação aparece como <code>Runtime error: output file already exists</code>.</p>
+<p><strong>Como consertar:</strong> use outro nome (a data no nome resolve) ou apague o arquivo antigo antes, se tiver certeza.</p>
+</div>
+
+<div class="cenario">
+<strong>Backup numa pasta que não existe</strong>
+<pre class="term">sqlite&gt; .backup pasta-que-nao-existe/copia.db
+Error: cannot open "pasta-que-nao-existe/copia.db"</pre>
+<p><strong>O que aconteceu:</strong> "não consigo abrir". O <code>sqlite3</code> cria o arquivo, mas não cria pastas.</p>
+<p><strong>Como consertar:</strong> crie a pasta antes, no terminal: <code>mkdir -p ~/backups</code>, e depois <code>.backup ~/backups/copia.db</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Abriu o dump como se fosse um banco</strong>
+<pre class="term">$ sqlite3 backup.sql ".tables"
+Error: file is not a database</pre>
+<p><strong>O que aconteceu:</strong> "o arquivo não é um banco de dados". O <code>backup.sql</code> é texto, a receita; o <code>sqlite3</code> esperava um arquivo de banco, o bolo pronto.</p>
+<p><strong>Como consertar:</strong> um dump se <strong>roda</strong> num banco novo: <code>sqlite3 novo.db &lt; backup.sql</code>. Só o que o <code>.backup</code> e o <code>VACUUM INTO</code> geram se <strong>abre</strong> direto.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>Backup no MySQL, PostgreSQL e SQL Server</strong>
+<p>A ideia da "receita" existe em todos: um programa que escreve o banco como SQL. Os trechos são <strong>ilustrativos</strong> (não rodam no SQLite), conforme a documentação oficial de cada banco:</p>
+<pre class="file" data-file="terminal (outros bancos)">mysqldump loja &gt; backup.sql      # MySQL: o "dump" do banco loja
+mysql loja &lt; backup.sql          # MySQL: restaurar (o banco loja precisa existir)
+
+pg_dump loja &gt; backup.sql        # PostgreSQL: o "dump" em SQL
+psql -X loja &lt; backup.sql        # PostgreSQL: restaurar num banco já criado
+</pre>
+<pre class="file" data-file="sqlserver.sql">-- SQL Server: o backup é um comando SQL, gravado pelo servidor
+BACKUP DATABASE loja TO DISK = 'C:\backups\loja.bak';
+RESTORE DATABASE loja FROM DISK = 'C:\backups\loja.bak';
+</pre>
+<p>Nos bancos com servidor, o banco não é um arquivo que você possa simplesmente copiar: são vários arquivos, em uso o tempo todo pelo servidor. Por isso as ferramentas próprias são o único jeito seguro.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>.dump</code></td><td>Escreve o banco inteiro como SQL</td></tr>
+<tr><td><code>.dump tabela</code></td><td>Escreve só uma tabela</td></tr>
+<tr><td><code>sqlite3 loja.db .dump &gt; backup.sql</code></td><td>Salva o dump num arquivo</td></tr>
+<tr><td><code>sqlite3 novo.db &lt; backup.sql</code></td><td>Recria o banco a partir do dump</td></tr>
+<tr><td><code>.read backup.sql</code></td><td>Roda um arquivo de SQL de dentro do <code>sqlite3</code></td></tr>
+<tr><td><code>.backup copia.db</code></td><td>Cópia exata e consistente do banco aberto (substitui o destino)</td></tr>
+<tr><td><code>.restore copia.db</code></td><td>Substitui o banco aberto pela cópia</td></tr>
+<tr><td><code>VACUUM INTO 'copia.db';</code></td><td>Cópia compactada, em SQL (não substitui arquivo existente)</td></tr>
+<tr><td><code>PRAGMA integrity_check;</code></td><td>Confere se o banco (ou a cópia) está saudável: responde <code>ok</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>Parse error near line 3: table categorias already exists</code></td><td>Dump restaurado num banco que já tem as tabelas</td></tr>
+<tr><td><code>Runtime error near line 8: UNIQUE constraint failed: categorias.id (19)</code></td><td>A linha já existe no banco</td></tr>
+<tr><td><code>Error: stepping, output file already exists</code></td><td><code>VACUUM INTO</code> num arquivo que já existe</td></tr>
+<tr><td><code>Error: cannot open "…"</code></td><td>Pasta ou arquivo inexistente</td></tr>
+<tr><td><code>Error: file is not a database</code></td><td>Tentou abrir um arquivo de texto (um dump) como banco</td></tr>
+<tr><td>(nenhuma mensagem) depois de <code>.restore</code></td><td>Confira com <code>.tables</code>: um nome errado restaura um banco vazio</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O dump num arquivo</h3>
+<p>Complete a linha do terminal que salva o banco inteiro como SQL no arquivo <code>backup.sql</code>:</p>
+<div class="ex-code">sqlite3 loja.db .<input data-answer="dump" aria-label="comando de ponto"> <input data-answer="&gt;" aria-label="símbolo do shell"> backup.sql</div>
+</div>
+
+<div class="exercise">
+<h3>2. A cópia exata</h3>
+<p>Dentro do <code>sqlite3</code>, complete o comando que grava uma cópia do banco aberto em <code>copia.db</code>, e o que traz essa cópia de volta:</p>
+<div class="ex-code">.<input data-answer="backup" aria-label="gravar a cópia"> copia.db<br>.<input data-answer="restore" aria-label="voltar a cópia"> copia.db</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O que tem dentro do arquivo gerado por <code>sqlite3 loja.db .dump &gt; backup.sql</code>?</p>
+<label><input type="radio" name="q3"> Uma cópia binária do <code>loja.db</code></label>
+<label><input type="radio" name="q3"> Comandos SQL (<code>CREATE TABLE</code>, <code>INSERT</code>…) que recriam o banco</label>
+<label><input type="radio" name="q3"> Uma planilha CSV de cada tabela</label>
+<label><input type="radio" name="q3"> Só a estrutura das tabelas, sem os dados</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A Ana digitou <code>.restore copai.db</code> (com o nome errado). O que acontece?</p>
+<label><input type="radio" name="q4"> Aparece <code>Error: cannot open "copai.db"</code> e nada muda</label>
+<label><input type="radio" name="q4"> O <code>sqlite3</code> pergunta se ela tem certeza</label>
+<label><input type="radio" name="q4"> Nada: o comando é ignorado</label>
+<label><input type="radio" name="q4"> O banco aberto é trocado por um banco vazio, sem nenhuma mensagem</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Por que o <code>.backup</code> é melhor que o <code>cp loja.db copia.db</code>?</p>
+<label><input type="radio" name="q5"> Porque o <code>cp</code> não copia arquivos <code>.db</code></label>
+<label><input type="radio" name="q5"> Porque o <code>.backup</code> gera um arquivo de texto</label>
+<label><input type="radio" name="q5"> Porque o <code>.backup</code> copia um retrato consistente, mesmo com outro programa usando o banco</label>
+<label><input type="radio" name="q5"> Porque o <code>cp</code> apaga o original</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O <code>sqlite3 loja.db &lt; backup.sql</code> respondeu <code>table categorias already exists</code>. O que a Ana deveria ter feito?</p>
+<label><input type="radio" name="q6"> Restaurar num banco novo: <code>sqlite3 restaurado.db &lt; backup.sql</code></label>
+<label><input type="radio" name="q6"> Rodar o mesmo comando de novo</label>
+<label><input type="radio" name="q6"> Usar <code>.backup</code> no lugar do <code>&lt;</code></label>
+<label><input type="radio" name="q6"> Abrir o <code>backup.sql</code> com <code>sqlite3 backup.sql</code></label>
+</div>
+
+<h3>Missão final: a tabela que sumiu</h3>
+
+<div class="trysql" data-goal="tabela:categorias;;mudou:categorias=8">
+<p class="try-task"><strong>Missão:</strong> alguém apagou a tabela <code>categorias</code> inteira. Por sorte, a Ana tem o <code>.dump categorias</code> da seção 1. Cole o dump no lugar indicado (do <code>PRAGMA</code> ao <code>COMMIT</code>) e rode: a contagem do fim tem de dar 8.</p>
+<pre class="script" data-file="restaurar.sql">PRAGMA foreign_keys = OFF;
+DROP TABLE categorias;   -- o acidente
+
+-- cole aqui o dump da tabela categorias
+
+SELECT count(*) AS categorias FROM categorias;
+</pre>
+<pre class="solucao" data-file="restaurar.sql">PRAGMA foreign_keys = OFF;
+DROP TABLE categorias;   -- o acidente
+
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias VALUES(1,'Papelaria','Material escolar e de escritório');
+INSERT INTO categorias VALUES(2,'Eletrônicos','Acessórios e dispositivos eletrônicos');
+INSERT INTO categorias VALUES(3,'Casa e Cozinha','Utensílios para o lar');
+INSERT INTO categorias VALUES(4,'Livros','Livros, dicionários e guias');
+INSERT INTO categorias VALUES(5,'Brinquedos','Brinquedos e jogos para todas as idades');
+INSERT INTO categorias VALUES(6,'Esporte e Lazer','Artigos esportivos e de lazer');
+INSERT INTO categorias VALUES(7,'Alimentos','Alimentos não perecíveis e regionais');
+INSERT INTO categorias VALUES(8,'Jardim','Ferramentas e artigos de jardinagem');
+COMMIT;
+
+SELECT count(*) AS categorias FROM categorias;
+</pre>
+</div>
+
+<p>Rode primeiro o código como está: o <code>SELECT</code> do fim dá <code>no such table: categorias</code>, porque a tabela foi apagada. Depois de colar o dump, as 8 categorias voltam. Por que o <code>PRAGMA foreign_keys = OFF</code> no começo? Com ele ligado, o SQLite não deixa apagar uma tabela que outras tabelas usam (os produtos apontam para as categorias), e o "acidente" nem aconteceria. Você vai ver esse pragma em <a href="pragma.html">PRAGMAs Úteis</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O banco SQLite é um arquivo só: perder o arquivo é perder tudo. Faça backup e guarde em outro lugar.</li>
+  <li><code>.dump</code> escreve o banco como SQL (<code>CREATE TABLE</code> + <code>INSERT</code>, numa transação). <code>sqlite3 loja.db .dump &gt; backup.sql</code> salva; <code>sqlite3 novo.db &lt; backup.sql</code> restaura, sempre num banco novo.</li>
+  <li><code>.backup copia.db</code> grava uma cópia exata e consistente; <code>.restore copia.db</code> troca o banco aberto pela cópia. Os dois substituem o destino sem perguntar.</li>
+  <li><code>VACUUM INTO 'copia.db'</code> é a cópia em SQL, já compactada, e não sobrescreve arquivo existente.</li>
+  <li><code>cp</code> só com o banco fechado. Confira os backups com <code>PRAGMA integrity_check</code>.</li>
+  <li>Cuidado com o <code>.restore</code> de um nome errado: ele restaura um banco vazio, sem aviso. Faça um <code>.backup</code> antes de qualquer <code>.restore</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
