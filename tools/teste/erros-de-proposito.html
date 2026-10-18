@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>Página com erros de propósito | testador</title></head>
+<body>
+<!-- Página de TESTE do tools/testar-missoes.js: cada bloco tem um erro de propósito.
+     O comentário diz o que o testador DEVE acusar. -->
+
+<!-- 1. ok: caixa livre -->
+<div class="trysql">
+<pre class="script" data-file="consulta.sql">SELECT nome FROM categorias;
+</pre>
+</div>
+
+<!-- 2. ok: missão boa -->
+<div class="trysql" data-goal="linhas:4;;colunas:nome">
+<p class="try-task">Missão: os clientes que nunca pediram.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM clientes;
+</pre>
+<pre class="solucao">SELECT nome FROM clientes WHERE id NOT IN (SELECT cliente_id FROM pedidos);
+</pre>
+</div>
+
+<!-- 3. FALHA: meta desconhecida -->
+<div class="trysql" data-goal="linha:3">
+<pre class="script">SELECT 1;</pre>
+<pre class="solucao">SELECT 1;</pre>
+</div>
+
+<!-- 4. FALHA: missão sem pre.solucao -->
+<div class="trysql" data-goal="linhas:2">
+<pre class="script">SELECT 1;</pre>
+</div>
+
+<!-- 5. FALHA: o inicial já cumpre -->
+<div class="trysql" data-goal="contem:Papelaria">
+<pre class="script">SELECT nome FROM categorias;</pre>
+<pre class="solucao">SELECT nome FROM categorias;</pre>
+</div>
+
+<!-- 6. FALHA: a solução não cumpre -->
+<div class="trysql" data-goal="mudou:clientes=29">
+<pre class="script">SELECT count(*) FROM clientes;</pre>
+<pre class="solucao">DELETE FROM clientes WHERE id = 99;</pre>
+</div>
+
+<!-- 7. FALHA: regex inválida -->
+<div class="trysql" data-goal="out:(abc">
+<pre class="script">SELECT 1;</pre>
+<pre class="solucao">SELECT 'abc';</pre>
+</div>
+
+<!-- 8. ok: missão de erro com &quot; no goal e &lt; escapado -->
+<div class="trysql" data-goal="erro:no such column: &quot;?precoo">
+<pre class="script">SELECT nome FROM produtos WHERE preco &lt; 2;</pre>
+<pre class="solucao">SELECT nome FROM produtos WHERE precoo &lt; 2;</pre>
+</div>
+
+<!-- 9. FALHA: "<" sem escape -->
+<pre class="file" data-resultado>SELECT nome FROM produtos WHERE preco < 2;
+</pre>
+
+<!-- 10. FALHA: "&" sem escape -->
+<pre class="file" data-resultado>SELECT 6 & 3;
+</pre>
+
+<!-- 11. FALHA: data-resultado que dá erro sem data-erro -->
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT * FROM cliente;
+</pre>
+
+<!-- 12. ok: exemplo de erro marcado -->
+<pre class="file" data-resultado data-erro>SELECT * FROM cliente;
+</pre>
+
+<!-- 13. FALHA: data-erro mas rodou sem erro -->
+<pre class="file" data-resultado data-erro>SELECT count(*) FROM clientes;
+</pre>
+
+<!-- 14. FALHA: caixa livre cujo SQL dá erro sem data-erro -->
+<div class="trysql">
+<pre class="script">SELEC nome FROM clientes;</pre>
+</div>
+
+<!-- 15. ok: a trava (interrupted), marcada com data-erro -->
+<pre class="file" data-resultado data-erro>WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n)
+SELECT count(*) FROM n;
+</pre>
+
+<!-- 16. aviso: link para fora da NIVEIS; FALHA: dado da máquina real -->
+<p><a href="nao-existe.html">link</a> e <code>/home/admin/x</code></p>
+
+<!-- 17. FALHA: caixa sem pre.script -->
+<div class="trysql"><p>sem nada</p></div>
+
+<!-- 18. ok: várias instruções, DML, NULL e terminal com tags -->
+<pre class="file" data-resultado>UPDATE produtos SET preco = preco * 2 WHERE id = 1;
+SELECT nome, email FROM clientes WHERE id = 7;
+</pre>
+<pre class="term">$ sqlite3 loja.db
+sqlite&gt; <b>.tables</b>
+</pre>
+</body>
+</html>
