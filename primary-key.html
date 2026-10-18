@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL PRIMARY KEY — a chave que identifica cada linha | Guia SQL</title>
+<meta name="description" content="PRIMARY KEY para quem nunca mexeu num banco de dados: a chave primária que identifica cada linha, o id que se numera sozinho no SQLite, rowid × INTEGER PRIMARY KEY, chave composta como a de itens_pedido, e os erros reais UNIQUE constraint failed e datatype mismatch, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">PRIMARY KEY</span></h1>
+
+<p class="intro">Na Loja Aurora há duas clientes chamadas Ana, e várias pessoas moram em Teresina. Como o banco sabe de <strong>qual</strong> cliente um pedido é? Pelo <code>id</code>: a cliente 3 é a Ana Beatriz Sousa, e só ela é a 3. Essa coluna que identifica cada linha, sem nunca repetir e sem nunca ficar vazia, é a <strong>chave primária</strong> (em inglês, <em>primary key</em>). Todas as tabelas da Loja Aurora têm uma. Nesta aula você vai entender a regra, ver o <code>id</code> se numerar sozinho, descobrir o <code>rowid</code> escondido em toda tabela do SQLite e montar uma chave de duas colunas, como a de <code>itens_pedido</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é a chave primária: única (<a href="unique.html">UNIQUE</a>) e obrigatória (<a href="not-null.html">NOT NULL</a>), uma por tabela.</li>
+  <li>Como escrever <code>PRIMARY KEY</code> e o erro real quando o <code>id</code> repete.</li>
+  <li><code>INTEGER PRIMARY KEY</code>: o <code>id</code> que o SQLite preenche sozinho.</li>
+  <li>O <code>rowid</code>, a numeração escondida das tabelas do SQLite, e por que <code>INT PRIMARY KEY</code> não é a mesma coisa que <code>INTEGER PRIMARY KEY</code>.</li>
+  <li>A <strong>chave composta</strong>: <code>PRIMARY KEY (pedido_id, produto_id)</code>.</li>
+  <li>As pegadinhas: o <code>datatype mismatch</code>, a chave de texto que aceita <code>NULL</code> e o número que volta a ser usado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o CPF de cada linha</h2>
+<p>No Brasil, duas pessoas podem ter o mesmo nome, nascer no mesmo dia e morar na mesma rua. Mas cada uma tem um <strong>CPF</strong> só dela, e todo mundo tem um. O CPF não diz nada sobre a pessoa; ele só serve para <strong>apontar</strong> para ela sem confusão.</p>
+
+<p>A chave primária é o CPF de cada linha. Ela tem três regras:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>Quer dizer</th><th>Igual a</th></tr>
+<tr><td>Única</td><td>Duas linhas nunca têm a mesma chave</td><td><code>UNIQUE</code></td></tr>
+<tr><td>Obrigatória</td><td>Toda linha tem chave</td><td><code>NOT NULL</code></td></tr>
+<tr><td>Uma por tabela</td><td>A tabela tem <strong>uma</strong> chave primária (que pode ter mais de uma coluna)</td><td>—</td></tr>
+</table>
+</div>
+
+<p>Com isso, a chave vira o "endereço" de cada linha. Quando um pedido diz <code>cliente_id = 3</code>, aponta para uma cliente e só uma. É assim que as tabelas se relacionam (aula <a href="relacionamentos.html">Tabelas que se Relacionam</a>) e é a chave que outras tabelas citam com <a href="foreign-key.html">FOREIGN KEY</a>.</p>
+
+<hr>
+
+<h2>1. A chave primária da Loja Aurora</h2>
+<p>Toda tabela da loja começa assim:</p>
+
+<pre class="file" data-file="categorias.sql" data-resultado>SELECT sql FROM sqlite_schema WHERE name = 'categorias';
+</pre>
+
+<dl class="anatomy">
+  <dt>id</dt><dd>O nome da coluna. <code>id</code> (de "identificador") é o nome mais comum para a chave.</dd>
+  <dt>INTEGER</dt><dd>O tipo: número inteiro. No SQLite, este tipo exato tem um poder especial (seção 3).</dd>
+  <dt>PRIMARY KEY</dt><dd>"Chave primária." A restrição vem depois do tipo, como o <code>NOT NULL</code> e o <code>UNIQUE</code>.</dd>
+</dl>
+
+<p>O <code>PRAGMA table_info</code> mostra a chave na coluna <code>pk</code> (de <em>primary key</em>): 1 na coluna da chave, 0 nas outras.</p>
+
+<pre class="file" data-file="pk.sql" data-resultado>SELECT name, type, pk FROM pragma_table_info('categorias');
+</pre>
+
+<hr>
+
+<h2>2. A chave não repete</h2>
+<p>A categoria 3 já existe (é "Casa e Cozinha"). A Ana tentou cadastrar outra categoria com o mesmo número:</p>
+
+<pre class="file" data-file="repetida.sql" data-resultado data-erro>INSERT INTO categorias (id, nome) VALUES (3, 'Papelaria Fina');
+</pre>
+
+<p>A mensagem é a mesma do <code>UNIQUE</code>, <code>UNIQUE constraint failed: categorias.id</code>: por dentro, a chave primária é uma regra de "único". O mesmo vale para um <code>UPDATE</code> que tente dar a uma categoria o número de outra:</p>
+
+<pre class="file" data-file="update.sql" data-resultado data-erro>UPDATE categorias SET id = 1 WHERE id = 2;
+</pre>
+
+<p>No terminal, o prefixo <code>Runtime error:</code> e o código <code>(19)</code>, o de "restrição violada":</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; INSERT INTO categorias (id, nome) VALUES (3, 'Papelaria Fina');
+Runtime error: UNIQUE constraint failed: categorias.id (19)
+sqlite&gt; .quit</pre>
+
+<div class="tip">
+<strong>Não mexa na chave</strong>
+<p>Trocar o <code>id</code> de uma linha que já existe é quase sempre má ideia: outras tabelas apontam para ele. Na Loja Aurora, o banco nem deixa: tente <code>UPDATE categorias SET id = 50 WHERE id = 8;</code> e o resultado é <code>FOREIGN KEY constraint failed</code>, porque há produtos da categoria 8. Uma chave boa é escolhida uma vez e nunca muda.</p>
+</div>
+
+<hr>
+
+<h2>3. O <code>id</code> que se numera sozinho</h2>
+<p>Se a chave não pode repetir, como a Ana descobre o próximo número livre? Ela não precisa: numa coluna <code>INTEGER PRIMARY KEY</code>, basta <strong>não informar</strong> o <code>id</code>, e o SQLite escolhe.</p>
+
+<pre class="file" data-file="automatico.sql" data-resultado>INSERT INTO categorias (nome) VALUES ('Pet Shop');
+
+SELECT * FROM categorias WHERE id &gt; 6;
+</pre>
+
+<p>A categoria nova ganhou o 9, um a mais que o maior <code>id</code> da tabela (8). Mandar <code>NULL</code> no <code>id</code> dá o mesmo resultado: numa <code>INTEGER PRIMARY KEY</code>, <code>NULL</code> quer dizer "escolha você".</p>
+
+<pre class="file" data-file="null.sql" data-resultado>INSERT INTO categorias (id, nome) VALUES (NULL, 'Pet Shop');
+
+SELECT id, nome FROM categorias WHERE nome = 'Pet Shop';
+</pre>
+
+<p>Como saber o número que o banco escolheu? O <code>RETURNING id</code> ("devolva o id"), no fim do <code>INSERT</code>, mostra na hora:</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>INSERT INTO categorias (nome) VALUES ('Pet Shop') RETURNING id;
+</pre>
+
+<p>A regra do "um a mais que o maior" tem consequências. Se a Ana cadastrar a categoria 100 à mão, a próxima automática será 101, e não 10:</p>
+
+<pre class="file" data-file="salto.sql" data-resultado>INSERT INTO categorias (id, nome) VALUES (100, 'Pet Shop');
+INSERT INTO categorias (nome) VALUES ('Moda');
+
+SELECT id, nome FROM categorias WHERE id &gt; 8;
+</pre>
+
+<p>E se a linha de <code>id</code> mais alto for apagada, o número dela pode voltar a ser usado. Numa tabela nova de avaliações, a 3 foi apagada e a próxima avaliação ganhou o 3 de novo:</p>
+
+<pre class="file" data-file="reuso.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes (produto_id) VALUES (3), (1), (10);
+DELETE FROM avaliacoes WHERE id = 3;
+INSERT INTO avaliacoes (produto_id) VALUES (5);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>Se um número reaproveitado causaria confusão (um sistema antigo que ainda guarda "avaliação 3" apontando para a avaliação apagada), use <code>AUTOINCREMENT</code>, que garante números nunca repetidos: é a próxima aula, <a href="auto-increment.html">AUTOINCREMENT</a>.</p>
+
+<div class="trysql" data-goal="mudou:categorias=9">
+<p class="try-task"><strong>Experimente:</strong> a Ana quer cadastrar a categoria "Música", mas chutou o <code>id</code> 5, que já é usado. Rode e veja o erro. Depois conserte, deixando o banco escolher o número.</p>
+<pre class="script" data-file="musica.sql">INSERT INTO categorias (id, nome) VALUES (5, 'Música');
+
+SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="musica.sql">INSERT INTO categorias (nome) VALUES ('Música');
+
+SELECT * FROM categorias;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O <code>rowid</code>: a chave escondida</h2>
+<p>Agora um segredo do SQLite: <strong>toda</strong> tabela comum já tem uma numeração, mesmo sem chave primária. É uma coluna escondida chamada <code>rowid</code> ("id da linha"). Ela não aparece no <code>SELECT *</code>, mas está lá:</p>
+
+<pre class="file" data-file="rowid.sql" data-resultado>CREATE TABLE recados (texto TEXT);
+
+INSERT INTO recados VALUES ('Repor lápis'), ('Ligar para o fornecedor');
+
+SELECT * FROM recados;
+SELECT rowid, * FROM recados;
+</pre>
+
+<p>O primeiro <code>SELECT</code> mostra só o texto. O segundo, pedindo o <code>rowid</code> pelo nome, revela os números 1 e 2. É por ele que o SQLite guarda e encontra as linhas por dentro. A tabela <code>itens_pedido</code> da loja, que não tem uma coluna <code>id</code>, também tem o seu:</p>
+
+<pre class="file" data-file="rowid-itens.sql" data-resultado>SELECT rowid, pedido_id, produto_id FROM itens_pedido LIMIT 3;
+</pre>
+
+<h3><code>INTEGER PRIMARY KEY</code> é o próprio <code>rowid</code></h3>
+<p>Aqui está o "poder especial" da seção 1. Quando a chave primária é uma coluna só, do tipo escrito <strong>exatamente</strong> <code>INTEGER</code>, ela vira um <strong>outro nome</strong> (um "apelido") para o <code>rowid</code>. Não são duas numerações: é uma só, com dois nomes. Veja o que acontece quando a Ana pede as duas colunas na tabela <code>categorias</code>:</p>
+
+<pre class="file" data-file="apelido.sql" data-resultado>SELECT rowid, id, nome FROM categorias LIMIT 3;
+</pre>
+
+<p>Repare no cabeçalho: as duas primeiras colunas se chamam <code>id</code>. O SQLite pediu o <code>rowid</code>, viu que ele tem um nome "de verdade" nessa tabela, e mostrou esse nome. É por ser o <code>rowid</code> que o <code>id</code> se numera sozinho: o <code>rowid</code> sempre teve essa numeração automática.</p>
+
+<h3>A pegadinha: <code>INT</code> não é <code>INTEGER</code></h3>
+<p>A documentação do SQLite é clara: só o nome de tipo exato <code>INTEGER</code> faz a chave virar <code>rowid</code>. Com <code>INT</code>, <code>BIGINT</code> ou qualquer outro, a chave é uma coluna comum, com uma regra de único, e <strong>não</strong> se numera sozinha:</p>
+
+<pre class="file" data-file="int-pk.sql" data-resultado>CREATE TABLE avaliacoes (id INT PRIMARY KEY, comentario TEXT);
+
+INSERT INTO avaliacoes (comentario) VALUES ('Chegou rápido'), ('Bom');
+
+SELECT rowid, id, comentario FROM avaliacoes;
+</pre>
+
+<p>Agora o <code>rowid</code> e o <code>id</code> são colunas diferentes: o <code>rowid</code> (escondido) numerou 1 e 2, e o <code>id</code> ficou <em>NULL</em> nas duas linhas. Duas linhas com a chave vazia! Isso leva à próxima pegadinha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Declaração</th><th>É o <code>rowid</code>?</th><th>Numera sozinho?</th><th>Aceita <code>NULL</code>?</th></tr>
+<tr><td><code>id INTEGER PRIMARY KEY</code></td><td>Sim</td><td>Sim</td><td>Não: <code>NULL</code> vira o próximo número</td></tr>
+<tr><td><code>id INT PRIMARY KEY</code></td><td>Não</td><td>Não</td><td>Sim (pegadinha do SQLite)</td></tr>
+<tr><td><code>codigo TEXT PRIMARY KEY</code></td><td>Não</td><td>Não</td><td>Sim (pegadinha do SQLite)</td></tr>
+<tr><td><code>codigo TEXT NOT NULL PRIMARY KEY</code></td><td>Não</td><td>Não</td><td>Não</td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="contem:1|3|5;;contem:2|1|4">
+<p class="try-task"><strong>Experimente:</strong> as avaliações ficaram com o <code>id</code> <em>NULL</em>, porque a chave foi declarada com <code>INT</code>. Mude <strong>uma palavra</strong> no <code>CREATE TABLE</code> para que o <code>id</code> se numere sozinho (1 e 2).</p>
+<pre class="script" data-file="avaliacoes.sql">CREATE TABLE avaliacoes (
+    id         INT PRIMARY KEY,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes (produto_id, nota) VALUES (3, 5), (1, 4);
+
+SELECT id, produto_id, nota FROM avaliacoes;
+</pre>
+<pre class="solucao" data-file="avaliacoes.sql">CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes (produto_id, nota) VALUES (3, 5), (1, 4);
+
+SELECT id, produto_id, nota FROM avaliacoes;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. A chave que aceita <code>NULL</code> (um defeito antigo)</h2>
+<p>Pelo SQL padrão, chave primária é sempre <code>NOT NULL</code>. O SQLite, por causa de um defeito das primeiras versões, deixa passar <code>NULL</code> na chave primária, a não ser que ela seja <code>INTEGER PRIMARY KEY</code>, que a tabela seja <code>STRICT</code> (ou <code>WITHOUT ROWID</code>) ou que a coluna tenha <code>NOT NULL</code> escrito. A documentação explica que consertar isso quebraria programas antigos, e por isso o comportamento ficou.</p>
+
+<pre class="file" data-file="pk-null.sql" data-resultado>CREATE TABLE cupons (codigo TEXT PRIMARY KEY, desconto REAL);
+
+INSERT INTO cupons VALUES (NULL, 10), (NULL, 15);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Dois cupons sem código, com a chave primária vazia. Com <code>NOT NULL</code>, o banco faz o que o padrão manda:</p>
+
+<pre class="file" data-file="pk-not-null.sql" data-resultado data-erro>CREATE TABLE cupons (codigo TEXT NOT NULL PRIMARY KEY, desconto REAL);
+
+INSERT INTO cupons VALUES (NULL, 10);
+</pre>
+
+<p>A regra prática: <strong>se a chave não for <code>INTEGER PRIMARY KEY</code>, escreva <code>NOT NULL</code> junto</strong>.</p>
+
+<hr>
+
+<h2>6. A chave composta: duas colunas</h2>
+<p>A tabela <code>itens_pedido</code> não tem <code>id</code>. Cada linha é "o produto tal, no pedido tal". O que identifica a linha é o <strong>par</strong>: o pedido 1 pode ter vários produtos, o produto 1 pode estar em vários pedidos, mas o produto 1 aparece uma vez só no pedido 1 (se o cliente leva dois, a <code>quantidade</code> é 2). Uma chave de mais de uma coluna se chama <strong>chave composta</strong>:</p>
+
+<pre class="file" data-file="itens.sql" data-resultado>SELECT sql FROM sqlite_schema WHERE name = 'itens_pedido';
+</pre>
+
+<dl class="anatomy">
+  <dt>pedido_id … NOT NULL</dt><dd>As colunas da chave, com <code>NOT NULL</code> (lembre do defeito da seção 5).</dd>
+  <dt>PRIMARY KEY (pedido_id, produto_id)</dt><dd>A chave vai numa linha própria, no fim, com as colunas entre parênteses: é uma <strong>restrição de tabela</strong>, igual ao <code>UNIQUE (a, b)</code> da aula <a href="unique.html">UNIQUE</a>.</dd>
+</dl>
+
+<p>O pedido 1 tem os produtos 1, 2 e 3. Pôr o produto 1 de novo no pedido 1 é recusado; já um produto novo no mesmo pedido, ou o mesmo produto em outro pedido, passa:</p>
+
+<pre class="file" data-file="itens-repetido.sql" data-resultado data-erro>SELECT pedido_id, produto_id, quantidade FROM itens_pedido WHERE pedido_id = 1;
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (1, 1, 2, 12.35);
+</pre>
+
+<pre class="file" data-file="itens-novo.sql" data-resultado>INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (1, 5, 1, 89.9);
+
+SELECT pedido_id, produto_id, quantidade FROM itens_pedido WHERE pedido_id = 1;
+</pre>
+
+<p>No <code>PRAGMA table_info</code>, a coluna <code>pk</code> mostra a <strong>ordem</strong> de cada coluna dentro da chave: 1 para <code>pedido_id</code>, 2 para <code>produto_id</code>.</p>
+
+<pre class="file" data-file="itens-pk.sql" data-resultado>SELECT name, pk FROM pragma_table_info('itens_pedido');
+</pre>
+
+<p>Uma chave composta não se numera sozinha: não é <code>INTEGER PRIMARY KEY</code> de uma coluna só. Cada <code>INSERT</code> informa as duas partes.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever a chave</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Na coluna</td><td><code>id INTEGER PRIMARY KEY</code></td><td>O caso comum: um número que se numera sozinho</td></tr>
+<tr><td>Restrição de tabela, uma coluna</td><td><code>PRIMARY KEY (id)</code> no fim da lista</td><td>Dá no mesmo que a forma da coluna (também vira <code>rowid</code>, se o tipo for <code>INTEGER</code>)</td></tr>
+<tr><td>Composta</td><td><code>PRIMARY KEY (pedido_id, produto_id)</code></td><td>Tabelas que ligam duas outras, como <code>itens_pedido</code> (aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>)</td></tr>
+<tr><td>Chave de texto</td><td><code>codigo TEXT NOT NULL PRIMARY KEY</code></td><td>Quando já existe um código natural e estável (a sigla da UF, o código de um cupom)</td></tr>
+<tr><td>Com <code>AUTOINCREMENT</code></td><td><code>id INTEGER PRIMARY KEY AUTOINCREMENT</code></td><td>Quando um número apagado nunca pode voltar (aula <a href="auto-increment.html">AUTOINCREMENT</a>)</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Chave "natural" ou "artificial"?</strong>
+<p>Um CPF ou um email parecem ótimas chaves, porque já são únicos. Mas a pessoa pode mudar de email, e um CPF digitado errado precisa ser corrigido, e a chave não deveria mudar nunca. Por isso quase todo projeto usa uma chave <strong>artificial</strong>, um <code>id INTEGER PRIMARY KEY</code> sem significado, e põe o email numa coluna <code>UNIQUE</code> separada. É o que a Loja Aurora faz.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Chave repetida</strong>
+<p><code>UNIQUE constraint failed: categorias.id</code>. <strong>Como consertar:</strong> não informe o <code>id</code> e deixe o banco escolher, ou confira o maior número usado com <code>SELECT max(id) FROM categorias;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto na chave <code>INTEGER PRIMARY KEY</code></strong>
+<pre class="file" data-file="mismatch.sql" data-resultado data-erro>INSERT INTO categorias (id, nome) VALUES ('nove', 'Pet Shop');
+</pre>
+<p><strong>O que diz:</strong> <code>datatype mismatch</code>, "tipo de dado não combina". Lembra que o SQLite aceita texto numa coluna <code>INTEGER</code> comum (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>)? Na <code>INTEGER PRIMARY KEY</code>, não: ela é o <code>rowid</code>, que só pode ser inteiro. O texto <code>'20'</code> passa (vira o número 20); <code>'nove'</code> e <code>2.5</code> não. No terminal, o código muda para <code>(20)</code>, o de "tipo errado":</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; INSERT INTO categorias (id, nome) VALUES ('nove', 'Pet Shop');
+Runtime error: datatype mismatch (20)
+sqlite&gt; .quit</pre>
+<p><strong>Como consertar:</strong> a chave é um número inteiro. Ou, melhor, não a informe.</p>
+</div>
+
+<div class="cenario">
+<strong>Duas chaves primárias</strong>
+<pre class="file" data-file="duas-chaves.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id     INTEGER PRIMARY KEY,
+    codigo TEXT PRIMARY KEY
+);
+</pre>
+<p><strong>O que diz:</strong> <code>table "cupons" has more than one primary key</code>, "a tabela tem mais de uma chave primária". <strong>Como consertar:</strong> escolha uma para ser a chave (o <code>id</code>) e faça a outra <code>UNIQUE</code>: <code>codigo TEXT NOT NULL UNIQUE</code>. Se a ideia era uma chave de duas colunas, escreva <code>PRIMARY KEY (a, b)</code> no fim.</p>
+</div>
+
+<div class="cenario">
+<strong>Chave composta repetida</strong>
+<p>Já viu: <code>UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id</code>. A mensagem lista as duas colunas da chave. <strong>Como consertar:</strong> se o cliente levou mais unidades, não é um item novo: aumente a <code>quantidade</code> do item que existe com <code>UPDATE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>id</code> ficou <code>NULL</code></strong>
+<p>A chave foi declarada como <code>INT PRIMARY KEY</code> (ou <code>BIGINT</code>, ou de texto), e o <code>INSERT</code> não informou o <code>id</code>. <strong>Como consertar:</strong> para numerar sozinho, o tipo tem de ser exatamente <code>INTEGER</code>. Para outras chaves, junte <code>NOT NULL</code>, e o erro aparece na hora: <code>NOT NULL constraint failed: cupons.codigo</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>PRIMARY KEY</code> é do SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server, na coluna ou como <code>PRIMARY KEY (a, b)</code>. Neles, a chave primária é sempre <code>NOT NULL</code> (a documentação do PostgreSQL diz: <code>PRIMARY KEY</code> exige valores únicos e não nulos, e uma tabela tem no máximo uma). A grande diferença é a <strong>numeração automática</strong>, que no SQLite vem de graça com o <code>INTEGER PRIMARY KEY</code> e nos outros precisa ser pedida (trechos ilustrativos, não rodam no SQLite):</p>
+<pre class="file" data-file="mysql.sql (ilustrativo)">CREATE TABLE avaliacoes (
+    id   INT NOT NULL AUTO_INCREMENT,
+    nota INT NOT NULL,
+    PRIMARY KEY (id)
+);
+</pre>
+<pre class="file" data-file="postgresql.sql (ilustrativo)">CREATE TABLE avaliacoes (
+    id   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nota integer NOT NULL
+);
+</pre>
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">CREATE TABLE avaliacoes (
+    id   INT IDENTITY(1,1) PRIMARY KEY,
+    nota INT NOT NULL
+);
+</pre>
+<p>E o <code>rowid</code> escondido é coisa do SQLite: os outros bancos não têm uma coluna com esse nome. Mais sobre a numeração automática na próxima aula, <a href="auto-increment.html">AUTOINCREMENT</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>id INTEGER PRIMARY KEY</code></td><td>Chave que é o <code>rowid</code>: única, nunca <code>NULL</code>, numerada sozinha</td></tr>
+<tr><td><code>codigo TEXT NOT NULL PRIMARY KEY</code></td><td>Chave de texto (escreva o <code>NOT NULL</code>)</td></tr>
+<tr><td><code>PRIMARY KEY (a, b)</code></td><td>Chave composta: o par não se repete</td></tr>
+<tr><td><code>INSERT … RETURNING id</code></td><td>Mostra o <code>id</code> que o banco escolheu</td></tr>
+<tr><td><code>SELECT rowid, * FROM t;</code></td><td>Mostra a coluna escondida <code>rowid</code></td></tr>
+<tr><td><code>SELECT name, pk FROM pragma_table_info('t');</code></td><td>Quais colunas formam a chave, e em que ordem</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>UNIQUE constraint failed: categorias.id</code></td><td>A chave já existe</td></tr>
+<tr><td><code>UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id</code></td><td>A chave composta já existe</td></tr>
+<tr><td><code>datatype mismatch</code></td><td>Um valor que não é inteiro numa <code>INTEGER PRIMARY KEY</code></td></tr>
+<tr><td><code>table "t" has more than one primary key</code></td><td>Duas colunas com <code>PRIMARY KEY</code></td></tr>
+<tr><td><code>NOT NULL constraint failed: t.c</code></td><td><code>NULL</code> numa chave com <code>NOT NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A chave que se numera sozinha</h3>
+<p>Complete para que o <code>id</code> seja a chave primária e se numere sozinho no SQLite:</p>
+<div class="ex-code">id <input data-answer="INTEGER|integer" aria-label="tipo"> <input data-answer="PRIMARY KEY|primary key" aria-label="restrição"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A chave composta</h3>
+<p>Complete a chave da tabela que guarda os produtos de cada pedido:</p>
+<div class="ex-code"><input data-answer="PRIMARY KEY|primary key" aria-label="restrição"> (pedido_id, produto_id)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A tabela <code>categorias</code> tem ids de 1 a 8. Qual <code>id</code> recebe <code>INSERT INTO categorias (nome) VALUES ('Pet Shop');</code>?</p>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 9</label>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas declarações faz a coluna virar um apelido do <code>rowid</code>?</p>
+<label><input type="radio" name="q4"> <code>id INT PRIMARY KEY</code></label>
+<label><input type="radio" name="q4"> <code>id INTEGER PRIMARY KEY</code></label>
+<label><input type="radio" name="q4"> <code>id BIGINT PRIMARY KEY</code></label>
+<label><input type="radio" name="q4"> <code>id TEXT PRIMARY KEY</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Em <code>itens_pedido</code>, com <code>PRIMARY KEY (pedido_id, produto_id)</code>, o pedido 1 já tem o produto 1. Qual <code>INSERT</code> é recusado?</p>
+<label><input type="radio" name="q5"> pedido 1, produto 5</label>
+<label><input type="radio" name="q5"> pedido 2, produto 1</label>
+<label><input type="radio" name="q5"> pedido 90, produto 45</label>
+<label><input type="radio" name="q5"> pedido 1, produto 1</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que <code>INSERT INTO categorias (id, nome) VALUES ('nove', 'Pet Shop');</code> dá <code>datatype mismatch</code>?</p>
+<label><input type="radio" name="q6"> Porque a <code>INTEGER PRIMARY KEY</code> é o <code>rowid</code>, que só aceita inteiros</label>
+<label><input type="radio" name="q6"> Porque o texto deveria estar entre aspas duplas</label>
+<label><input type="radio" name="q6"> Porque a categoria "nove" já existe</label>
+<label><input type="radio" name="q6"> Porque o SQLite nunca aceita texto em coluna <code>INTEGER</code></label>
+</div>
+
+<h3>Missão final: o carrinho de compras</h3>
+
+<div class="trysql" data-goal="erro:UNIQUE constraint failed: carrinho\.cliente_id, carrinho\.produto_id">
+<p class="try-task"><strong>Missão:</strong> o carrinho guarda, para cada cliente, os produtos que ele separou e a quantidade. O mesmo produto não pode aparecer duas vezes no carrinho do mesmo cliente (para isso existe a <code>quantidade</code>). Rode: o quarto <code>INSERT</code> repetiu o par cliente 5, produto 3, e a tabela aceitou. Dê ao carrinho a <strong>chave primária composta</strong> certa, para que esse <code>INSERT</code> seja recusado. O erro em vermelho é a resposta certa.</p>
+<pre class="script" data-file="carrinho.sql">CREATE TABLE carrinho (
+    cliente_id INTEGER NOT NULL,
+    produto_id INTEGER NOT NULL,
+    quantidade INTEGER NOT NULL DEFAULT 1
+);
+
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 3);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 1);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (8, 3);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 3);
+
+SELECT * FROM carrinho;
+</pre>
+<pre class="solucao" data-file="carrinho.sql">CREATE TABLE carrinho (
+    cliente_id INTEGER NOT NULL,
+    produto_id INTEGER NOT NULL,
+    quantidade INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (cliente_id, produto_id)
+);
+
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 3);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 1);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (8, 3);
+INSERT INTO carrinho (cliente_id, produto_id) VALUES (5, 3);
+
+SELECT * FROM carrinho;
+</pre>
+</div>
+
+<p>Depois de cumprir, troque o último <code>INSERT</code> por <code>UPDATE carrinho SET quantidade = quantidade + 1 WHERE cliente_id = 5 AND produto_id = 3;</code>: é assim que um carrinho de verdade registra "mais um".</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A chave primária identifica cada linha: é única, obrigatória, e só há uma por tabela. A repetição dá <code>UNIQUE constraint failed: tabela.coluna</code>.</li>
+  <li><code>id INTEGER PRIMARY KEY</code> é um apelido do <code>rowid</code>: quem não informa o <code>id</code> (ou manda <code>NULL</code>) ganha o próximo número, um a mais que o maior. Texto que não é número dá <code>datatype mismatch</code>.</li>
+  <li>Toda tabela comum do SQLite tem o <code>rowid</code> escondido; <code>SELECT rowid, *</code> o revela.</li>
+  <li>Só o tipo exato <code>INTEGER</code> vira <code>rowid</code>. <code>INT PRIMARY KEY</code> e chaves de texto não se numeram e, por um defeito antigo do SQLite, aceitam <code>NULL</code>: escreva <code>NOT NULL</code> junto.</li>
+  <li>Chave composta: <code>PRIMARY KEY (pedido_id, produto_id)</code>, no fim da lista de colunas; é o par que não se repete.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
