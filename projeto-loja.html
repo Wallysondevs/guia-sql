@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: a Loja Aurora Completa — o banco do zero, tabela por tabela | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: reconstrua do zero o banco da Loja Aurora, versão por versão. Planejar as tabelas, CREATE TABLE com chave primária e estrangeira, a ordem mães e filhas, inserir os dados, conferir o total de um pedido, melhorar com CHECK e guardar num arquivo de verdade, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">a Loja Aurora Completa</span></h1>
+
+<p class="intro">Em todas as aulas você usou a Loja Aurora pronta: 7 tabelas, 45 produtos, 90 pedidos. Alguém teve de criar esse banco, tabela por tabela, decidindo cada coluna, cada chave e a ordem certa de tudo. Neste projeto, esse alguém é você. Vamos <strong>reconstruir a Aurora do zero</strong>, em versões: primeiro as categorias, depois os produtos, os clientes, os pedidos… Em cada versão você roda o banco de verdade no editor, vê o que funciona e vê o que o SQLite recusa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A planejar um banco antes de escrever SQL: que tabelas existem e quem depende de quem.</li>
+  <li>A criar as 7 tabelas da Aurora com <code>CREATE TABLE</code>, <code>PRIMARY KEY</code>, <code>REFERENCES</code>, <code>NOT NULL</code> e <code>DEFAULT</code>.</li>
+  <li>Por que as tabelas "mães" (categorias, fornecedores, clientes) vêm antes das "filhas" (produtos, pedidos, itens).</li>
+  <li>A chave primária de duas colunas de <code>itens_pedido</code> e a chave que aponta para a própria tabela em <code>funcionarios</code>.</li>
+  <li>A conferir a sua construção: o total do pedido 1 tem de bater com o da Aurora de verdade.</li>
+  <li>A deixar o banco mais rigoroso que o original, com <code>CHECK</code>, e a guardá-lo num arquivo no terminal.</li>
+</ul>
+</div>
+
+<p>Este é um projeto: ele junta o que você viu em várias aulas. Quando um conceito aparecer, o link leva para a aula dele. Os mais usados aqui são <a href="create-table.html">CREATE TABLE</a>, <a href="primary-key.html">PRIMARY KEY</a>, <a href="foreign-key.html">FOREIGN KEY</a> e <a href="insert-varios.html">Inserindo Várias Linhas</a>.</p>
+
+<hr>
+
+<h2>A ideia: a planta antes da obra</h2>
+<p>Ninguém levanta uma casa assentando tijolo sem planta. Com banco de dados é igual: antes do primeiro <code>CREATE TABLE</code>, a gente escreve no papel <strong>o que a loja precisa guardar</strong> e <strong>como as coisas se ligam</strong>. A Loja Aurora guarda sete "fichários":</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>Uma linha é…</th><th>Aponta para</th></tr>
+<tr><td><code>categorias</code></td><td>um tipo de produto (Papelaria, Livros…)</td><td>ninguém</td></tr>
+<tr><td><code>fornecedores</code></td><td>uma empresa que vende para a loja</td><td>ninguém</td></tr>
+<tr><td><code>produtos</code></td><td>um item à venda</td><td><code>categorias</code> e <code>fornecedores</code></td></tr>
+<tr><td><code>clientes</code></td><td>uma pessoa que compra</td><td>ninguém</td></tr>
+<tr><td><code>funcionarios</code></td><td>um empregado da loja</td><td><code>funcionarios</code> (o chefe dele)</td></tr>
+<tr><td><code>pedidos</code></td><td>uma compra: quem comprou, quem vendeu, quando</td><td><code>clientes</code> e <code>funcionarios</code></td></tr>
+<tr><td><code>itens_pedido</code></td><td>um produto dentro de um pedido, com a quantidade</td><td><code>pedidos</code> e <code>produtos</code></td></tr>
+</table>
+</div>
+
+<p>A coluna "Aponta para" é a mais importante da planta. Um produto <strong>aponta</strong> para a sua categoria: na linha do produto há uma coluna <code>categoria_id</code> com o número da categoria. Por isso a categoria tem de existir <strong>antes</strong> do produto, como a gaveta do fichário tem de existir antes da ficha que diz "guarde-me na gaveta 3". Chamamos a tabela apontada de <strong>mãe</strong> e a que aponta de <strong>filha</strong>. A ordem de construção sai daí:</p>
+
+<pre class="file" data-file="ordem de construção">versão 1   categorias, fornecedores          (mães: não apontam para ninguém)
+versão 2   produtos                          (filha de categorias e fornecedores)
+versão 3   clientes, funcionarios            (mães dos pedidos)
+versão 4   pedidos, itens_pedido             (as filhas do fim da fila)
+versão 5   melhorias: CHECK
+versão 6   consultas no banco completo
+</pre>
+
+<p>Se a ideia de tabelas que se apontam ainda está nebulosa, a aula <a href="relacionamentos.html">Tabelas que se Relacionam</a> explica com calma, e <a href="modelagem.html">Modelando um Banco do Zero</a> mostra como se chega a essa planta.</p>
+
+<hr>
+
+<h2>Antes de começar: o editor já tem uma Aurora</h2>
+<p>Lembre-se de como o editor do guia funciona: a cada Rodar, ele cria um banco novo e <strong>carrega a Aurora pronta</strong>. É ótimo para as aulas, mas atrapalha quem quer construí-la do zero. Veja o que já existe quando a sua caixa começa a rodar:</p>
+
+<pre class="file" data-file="o-que-existe.sql" data-resultado>SELECT name, type
+FROM sqlite_schema
+WHERE type = 'table';
+</pre>
+
+<dl class="anatomy">
+  <dt>sqlite_schema</dt><dd>Uma tabela especial que todo banco SQLite tem: o <strong>catálogo</strong> do próprio banco, com uma linha para cada tabela, índice ou view. Você só lê; quem escreve nela é o SQLite, sempre que você cria ou apaga alguma coisa.</dd>
+  <dt>name, type</dt><dd>O nome do objeto e o tipo dele (<code>table</code>, <code>index</code>, <code>view</code>…).</dd>
+</dl>
+
+<p>As 7 tabelas já estão lá. Se você tentar criar <code>categorias</code> de novo, o SQLite recusa:</p>
+
+<pre class="file" data-file="criar-de-novo.sql" data-resultado data-erro>CREATE TABLE categorias (
+    id   INTEGER PRIMARY KEY,
+    nome TEXT NOT NULL
+);
+</pre>
+
+<p>"A tabela categorias já existe." Então toda caixa deste projeto começa com o <strong>bloco 0</strong>, que apaga a Aurora pronta com <a href="drop-table.html">DROP TABLE</a>. A ordem dele não é à toa: apagam-se primeiro as <strong>filhas</strong> e só depois as mães, o caminho contrário ao da construção.</p>
+
+<pre class="file" data-file="bloco-0.sql" data-resultado>-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+</pre>
+
+<p>Por que a ordem importa? No editor, as chaves estrangeiras estão <strong>ligadas</strong>. Apagar <code>categorias</code> enquanto ainda existem produtos apontando para elas deixaria 45 produtos órfãos, e o SQLite não deixa:</p>
+
+<pre class="file" data-file="ordem-errada.sql" data-resultado data-erro>DROP TABLE categorias;
+</pre>
+
+<div class="tip">
+<strong>Fica tudo igual em toda caixa</strong>
+<p>Como cada Rodar parte da Aurora limpa, o editor não lembra o que você construiu na versão anterior. Por isso cada caixa <strong>repete</strong> o bloco 0 e as tabelas das versões anteriores, e a novidade da versão vem marcada com o comentário <code>-- NOVO</code>. Fora do editor, num arquivo de verdade, você não precisaria repetir nada: no fim do projeto você guarda tudo num arquivo pelo terminal.</p>
+</div>
+
+<hr>
+
+<h2>Versão 1: as primeiras mães (categorias e fornecedores)</h2>
+<p>Comece pela tabela mais simples da loja: <code>categorias</code>. Ela tem um número, um nome e uma descrição.</p>
+
+<pre class="file" data-file="versao-1.sql" data-resultado>-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. NOVO: categorias
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+
+INSERT INTO categorias (id, nome, descricao) VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+SELECT * FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>id INTEGER PRIMARY KEY</dt><dd>A <strong>chave primária</strong>: o número que identifica cada categoria, sem repetir. No SQLite, uma coluna <code>INTEGER PRIMARY KEY</code> ganha número sozinha se você não informar (aula <a href="primary-key.html">PRIMARY KEY</a>). Aqui informamos, para usar os mesmos números da Aurora.</dd>
+  <dt>nome TEXT NOT NULL</dt><dd>Toda categoria precisa de um nome: <code>NOT NULL</code> proíbe deixar vazio (aula <a href="not-null.html">NOT NULL</a>).</dd>
+  <dt>descricao TEXT</dt><dd>Sem <code>NOT NULL</code>: a descrição é opcional.</dd>
+  <dt>INSERT INTO … VALUES (…), (…), (…)</dt><dd>Três categorias num comando só (aula <a href="insert-varios.html">Inserindo Várias Linhas</a>). Pulamos o 2 de propósito: Eletrônicos chega numa missão mais adiante.</dd>
+</dl>
+
+<p>O quadro mostra os 7 <code>DROP TABLE: ok</code> do bloco 0, o <code>CREATE TABLE: ok</code>, as "3 linhas afetadas" do <code>INSERT</code> e, no fim, a tabela nova. É a sua primeira tabela da Aurora.</p>
+
+<div class="trysql" data-goal="tabela:fornecedores;;mudou:fornecedores=2">
+<p class="try-task"><strong>Missão:</strong> crie a outra mãe da versão 1, a tabela <code>fornecedores</code>, com as colunas <code>id</code> (chave primária), <code>nome</code> (obrigatório), <code>cidade</code>, <code>estado</code>, <code>pais</code> (obrigatório) e <code>telefone</code>. Depois cadastre os dois primeiros fornecedores da Aurora: <code>1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455'</code> e <code>2, 'Loja D''Água', 'Fortaleza', 'CE', 'Brasil', '(85) 98712-3344'</code>. Repare no apóstrofo de <em>D'Água</em>: dentro das aspas simples, ele se escreve dobrado (<code>''</code>).</p>
+<pre class="script" data-file="versao-1.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. categorias
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias (id, nome, descricao) VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+-- 2. NOVO: fornecedores (escreva aqui o CREATE TABLE e o INSERT)
+
+
+SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="versao-1.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. categorias
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias (id, nome, descricao) VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+-- 2. NOVO: fornecedores
+CREATE TABLE fornecedores (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    cidade   TEXT,
+    estado   TEXT,
+    pais     TEXT NOT NULL,
+    telefone TEXT
+);
+INSERT INTO fornecedores (id, nome, cidade, estado, pais, telefone) VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina',  'PI', 'Brasil', '(86) 99821-4455'),
+(2, 'Loja D''Água',               'Fortaleza', 'CE', 'Brasil', '(85) 98712-3344');
+
+SELECT * FROM fornecedores;
+</pre>
+</div>
+
+<p>Por que <code>estado</code> pode ficar vazio e <code>pais</code> não? Porque a Aurora compra de Portugal e da Argentina, e lá não existe "UF": nos fornecedores 4 e 5 o estado é <code>NULL</code>. Já o país, todo fornecedor tem. Decidir o que é obrigatório é uma decisão sobre <strong>o mundo real</strong>, não sobre o SQL.</p>
+
+<hr>
+
+<h2>Versão 2: produtos, a primeira filha</h2>
+<p>Um produto pertence a uma categoria e vem de um fornecedor. Em vez de escrever "Papelaria" em cada produto, guardamos só o <strong>número</strong> da categoria, e dizemos ao banco que esse número tem de existir lá na tabela mãe. É isso que o <code>REFERENCES</code> faz:</p>
+
+<pre class="file" data-file="versao-2.sql" data-resultado>-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. categorias (da versão 1)
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias (id, nome, descricao) VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+-- 2. fornecedores (da versão 1)
+CREATE TABLE fornecedores (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    cidade   TEXT,
+    estado   TEXT,
+    pais     TEXT NOT NULL,
+    telefone TEXT
+);
+INSERT INTO fornecedores (id, nome, cidade, estado, pais, telefone) VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina',  'PI', 'Brasil', '(86) 99821-4455'),
+(2, 'Loja D''Água',               'Fortaleza', 'CE', 'Brasil', '(85) 98712-3344');
+
+-- 3. NOVO: produtos
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1,  'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(14, 'Jogo de Panelas 5 peças',   3, 2, 249.9, 12),
+(20, 'Dicionário Escolar',        4, 1, 34.6,  40);
+
+SELECT p.nome AS produto, c.nome AS categoria, f.nome AS fornecedor,
+       p.preco, p.descontinuado
+FROM produtos p
+JOIN categorias c   ON c.id = p.categoria_id
+JOIN fornecedores f ON f.id = p.fornecedor_id;
+</pre>
+
+<dl class="anatomy">
+  <dt>categoria_id INTEGER NOT NULL REFERENCES categorias(id)</dt><dd>A <strong>chave estrangeira</strong>: o número guardado aqui tem de ser um <code>id</code> que existe em <code>categorias</code>. O nome termina em <code>_id</code> por costume, para avisar quem lê que é um número de outra tabela (aula <a href="foreign-key.html">FOREIGN KEY</a>).</dd>
+  <dt>preco REAL NOT NULL</dt><dd>O preço, com casas decimais. Todo produto tem preço.</dd>
+  <dt>estoque INTEGER NOT NULL DEFAULT 0</dt><dd>Se o <code>INSERT</code> não disser o estoque, vale 0 (aula <a href="default.html">DEFAULT</a>).</dd>
+  <dt>descontinuado … DEFAULT 0</dt><dd>0 = à venda, 1 = saiu de linha. O <code>INSERT</code> não informou essa coluna, e mesmo assim o resultado mostra 0 nos três produtos: foi o <code>DEFAULT</code>.</dd>
+  <dt>JOIN categorias c ON c.id = p.categoria_id</dt><dd>Na hora de ler, o <a href="inner-join.html">JOIN</a> segue o número até a mãe e traz o nome de volta. Guarda-se o número, mostra-se o nome.</dd>
+</dl>
+
+<p>Agora a prova de que a chave funciona. O produto 7, Fone de Ouvido Bluetooth, é da categoria 2 (Eletrônicos) e do fornecedor 3 (Atlântico Importados). Nenhum dos dois existe nesta versão.</p>
+
+<div class="trysql" data-goal="mudou:produtos=4;;contem:Fone de Ouvido Bluetooth|Eletrônicos">
+<p class="try-task"><strong>Missão:</strong> rode como está e veja o SQLite recusar o fone (<code>FOREIGN KEY constraint failed</code>: "a regra da chave estrangeira falhou"). Conserte <strong>sem mexer no INSERT do fone</strong>: antes dele, cadastre a categoria <code>2, 'Eletrônicos', 'Acessórios e dispositivos eletrônicos'</code> e o fornecedor <code>3, 'Atlântico Importados', 'São Paulo', 'SP', 'Brasil', '(11) 97654-8899'</code>.</p>
+<pre class="script" data-file="versao-2.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. categorias
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+INSERT INTO categorias VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+-- 2. fornecedores
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina',  'PI', 'Brasil', '(86) 99821-4455'),
+(2, 'Loja D''Água',               'Fortaleza', 'CE', 'Brasil', '(85) 98712-3344');
+
+-- 3. produtos
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1,  'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(14, 'Jogo de Panelas 5 peças',   3, 2, 249.9, 12),
+(20, 'Dicionário Escolar',        4, 1, 34.6,  40);
+
+-- NOVO: o fone (categoria 2, fornecedor 3)
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(7, 'Fone de Ouvido Bluetooth', 2, 3, 129.9, 44);
+
+SELECT p.nome AS produto, c.nome AS categoria, f.nome AS fornecedor
+FROM produtos p
+JOIN categorias c   ON c.id = p.categoria_id
+JOIN fornecedores f ON f.id = p.fornecedor_id;
+</pre>
+<pre class="solucao" data-file="versao-2.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1. categorias
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+INSERT INTO categorias VALUES
+(1, 'Papelaria',      'Material escolar e de escritório'),
+(3, 'Casa e Cozinha', 'Utensílios para o lar'),
+(4, 'Livros',         'Livros, dicionários e guias');
+
+-- 2. fornecedores
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina',  'PI', 'Brasil', '(86) 99821-4455'),
+(2, 'Loja D''Água',               'Fortaleza', 'CE', 'Brasil', '(85) 98712-3344');
+
+-- 3. produtos
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1,  'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(14, 'Jogo de Panelas 5 peças',   3, 2, 249.9, 12),
+(20, 'Dicionário Escolar',        4, 1, 34.6,  40);
+
+-- as mães do fone, ANTES dele
+INSERT INTO categorias VALUES (2, 'Eletrônicos', 'Acessórios e dispositivos eletrônicos');
+INSERT INTO fornecedores VALUES (3, 'Atlântico Importados', 'São Paulo', 'SP', 'Brasil', '(11) 97654-8899');
+
+-- NOVO: o fone (categoria 2, fornecedor 3)
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(7, 'Fone de Ouvido Bluetooth', 2, 3, 129.9, 44);
+
+SELECT p.nome AS produto, c.nome AS categoria, f.nome AS fornecedor
+FROM produtos p
+JOIN categorias c   ON c.id = p.categoria_id
+JOIN fornecedores f ON f.id = p.fornecedor_id;
+</pre>
+</div>
+
+<p>Repare que, nesta caixa, as categorias e os fornecedores foram escritos numa linha só e o <code>INSERT</code> deles não lista as colunas. Funciona porque os valores vêm <strong>na ordem exata</strong> em que as colunas foram criadas. É mais curto, mas mais frágil: se um dia a tabela ganhar uma coluna no meio, esse <code>INSERT</code> quebra. No banco "de verdade", prefira listar as colunas, como na versão 1.</p>
+
+<hr>
+
+<h2>Versão 3: clientes e funcionários</h2>
+<p>Os pedidos apontam para quem comprou e para quem vendeu, então essas duas mães vêm agora. Nenhuma delas depende de categorias nem de produtos, e por isso esta caixa é curta: só o bloco 0 e as duas tabelas novas.</p>
+
+<pre class="file" data-file="versao-3.sql" data-resultado>-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 4. NOVO: clientes
+CREATE TABLE clientes (
+    id         INTEGER PRIMARY KEY,
+    nome       TEXT NOT NULL,
+    email      TEXT,
+    cidade     TEXT,
+    estado     TEXT,
+    nascimento TEXT,
+    vip        INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO clientes (id, nome, email, cidade, estado, nascimento, vip) VALUES
+(1, 'José Ribamar Silva', 'jose.ribamar@exemplo.com.br', 'Teresina',  'PI', '1985-03-12', 1),
+(3, 'Ana Beatriz Sousa',  'ana.beatriz@exemplo.com.br',  'São Paulo', 'SP', '1998-11-03', 1),
+(7, 'Luís Otávio Brito',  NULL,                          'Parnaíba',  'PI', '1988-12-02', 0);
+
+SELECT * FROM clientes;
+</pre>
+
+<dl class="anatomy">
+  <dt>email TEXT</dt><dd>Opcional: o Luís (cliente 7) não deu email, e o banco guarda <code>NULL</code>, "sem valor" (aula <a href="null.html">O Valor NULL</a>).</dd>
+  <dt>nascimento TEXT</dt><dd>O SQLite não tem um tipo próprio para datas. A Aurora guarda a data como texto no formato <code>AAAA-MM-DD</code>, que se ordena certinho e que as funções de data entendem (aula <a href="datas.html">Datas e Horas</a>).</dd>
+  <dt>vip INTEGER NOT NULL DEFAULT 0</dt><dd>Sim ou não, como 1 ou 0. Quem não for informado como VIP, não é.</dd>
+</dl>
+
+<p>A tabela <code>funcionarios</code> tem uma novidade curiosa: a chave estrangeira <code>chefe_id</code> aponta para a <strong>própria</strong> tabela. O chefe de um funcionário é outro funcionário. A gerente, Marta Lustosa, não tem chefe: o <code>chefe_id</code> dela é <code>NULL</code>.</p>
+
+<div class="trysql" data-goal="mudou:funcionarios=4;;contem:Sofia Rocha|Luana Castelo">
+<p class="try-task"><strong>Missão:</strong> a tabela já tem a Marta, o Caio e a Luana. Cadastre a <code>7, 'Sofia Rocha', 'Vendedora', 3025.4</code>, cujo chefe é a Luana (id 5). Depois troque a consulta do fim por uma que mostre cada funcionário ao lado do <strong>nome</strong> do chefe, juntando a tabela com ela mesma (aula <a href="self-join.html">Self Join</a>).</p>
+<pre class="script" data-file="versao-3.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 5. NOVO: funcionarios (chefe_id aponta para a própria tabela)
+CREATE TABLE funcionarios (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    cargo    TEXT NOT NULL,
+    salario  REAL NOT NULL,
+    chefe_id INTEGER REFERENCES funcionarios(id)
+);
+INSERT INTO funcionarios (id, nome, cargo, salario, chefe_id) VALUES
+(1, 'Marta Lustosa', 'Gerente',     9800.0,  NULL),
+(2, 'Caio Teles',    'Vendedor',    3200.5,  1),
+(5, 'Luana Castelo', 'Supervisora', 5400.25, 1);
+
+SELECT nome, cargo, chefe_id FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="versao-3.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 5. NOVO: funcionarios (chefe_id aponta para a própria tabela)
+CREATE TABLE funcionarios (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    cargo    TEXT NOT NULL,
+    salario  REAL NOT NULL,
+    chefe_id INTEGER REFERENCES funcionarios(id)
+);
+INSERT INTO funcionarios (id, nome, cargo, salario, chefe_id) VALUES
+(1, 'Marta Lustosa', 'Gerente',     9800.0,  NULL),
+(2, 'Caio Teles',    'Vendedor',    3200.5,  1),
+(5, 'Luana Castelo', 'Supervisora', 5400.25, 1),
+(7, 'Sofia Rocha',   'Vendedora',   3025.4,  5);
+
+SELECT f.nome AS funcionario, chefe.nome AS chefe
+FROM funcionarios f
+LEFT JOIN funcionarios chefe ON chefe.id = f.chefe_id;
+</pre>
+</div>
+
+<p>Com <code>LEFT JOIN</code>, a Marta aparece na lista com o chefe <em>NULL</em>; com <code>JOIN</code> comum, ela some, porque não há ninguém para casar com o <code>chefe_id</code> vazio dela. As duas respostas cumprem a missão; escolha a que conta a história que você quer (aula <a href="left-join.html">LEFT JOIN</a>).</p>
+
+<p>E a ordem de inserção dentro da própria tabela também importa: a Luana (5) tem de entrar <strong>antes</strong> da Sofia, que aponta para ela. No mesmo <code>INSERT</code> com várias linhas, a ordem das linhas resolve isso.</p>
+
+<hr>
+
+<h2>Versão 4: pedidos e itens, o coração da loja</h2>
+<p>Chegou a vez das filhas do fim da fila. Um <strong>pedido</strong> diz quem comprou, quem vendeu, quando e o frete. Os produtos do pedido ficam numa tabela à parte, <code>itens_pedido</code>, com uma linha por produto. Por que separar? Porque um pedido tem vários produtos e um produto aparece em vários pedidos: é uma relação <strong>muitos-para-muitos</strong>, e ela sempre pede uma tabela no meio (aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>).</p>
+
+<p>Esta é a primeira caixa com as 7 tabelas. Ela é longa porque repete tudo; as linhas novas são as do bloco 6 e do bloco 7. Os dados são o pedido 1 da Aurora de verdade: o José Ribamar comprou um caderno, uma caneta e lápis, atendido pelo Caio, em 5 de janeiro de 2024.</p>
+
+<pre class="file" data-file="versao-4.sql" data-resultado>-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+DROP TABLE produtos;
+DROP TABLE funcionarios;
+DROP TABLE clientes;
+DROP TABLE fornecedores;
+DROP TABLE categorias;
+
+-- 1 a 5. as mães (versões 1 a 3), só com o necessário para o pedido 1
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE clientes (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, email TEXT, cidade TEXT,
+                       estado TEXT, nascimento TEXT, vip INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE funcionarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cargo TEXT NOT NULL,
+                           salario REAL NOT NULL, chefe_id INTEGER REFERENCES funcionarios(id));
+
+INSERT INTO categorias VALUES (1, 'Papelaria', 'Material escolar e de escritório');
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455'),
+(6, 'Norte Suprimentos',          'Teresina', 'PI', 'Brasil', '(86) 99344-2211');
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1, 'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(2, 'Caneta Esferográfica Azul', 1, 1, 2.79,  500),
+(3, 'Lápis Grafite HB',          1, 6, 1.15,  430);
+INSERT INTO clientes (id, nome, email, cidade, estado, nascimento, vip) VALUES
+(1, 'José Ribamar Silva', 'jose.ribamar@exemplo.com.br', 'Teresina', 'PI', '1985-03-12', 1);
+INSERT INTO funcionarios VALUES
+(1, 'Marta Lustosa', 'Gerente',  9800.0, NULL),
+(2, 'Caio Teles',    'Vendedor', 3200.5, 1);
+
+-- 6. NOVO: pedidos
+CREATE TABLE pedidos (
+    id             INTEGER PRIMARY KEY,
+    cliente_id     INTEGER NOT NULL REFERENCES clientes(id),
+    funcionario_id INTEGER NOT NULL REFERENCES funcionarios(id),
+    data           TEXT NOT NULL,
+    entregue_em    TEXT,
+    frete          REAL NOT NULL DEFAULT 0
+);
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete) VALUES
+(1, 1, 2, '2024-01-05', '2024-01-10', 9.9);
+
+-- 7. NOVO: itens_pedido
+CREATE TABLE itens_pedido (
+    pedido_id      INTEGER NOT NULL REFERENCES pedidos(id),
+    produto_id     INTEGER NOT NULL REFERENCES produtos(id),
+    quantidade     INTEGER NOT NULL,
+    preco_unitario REAL NOT NULL,
+    PRIMARY KEY (pedido_id, produto_id)
+);
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+(1, 1, 2, 12.35),
+(1, 2, 1, 2.79),
+(1, 3, 3, 1.15);
+
+SELECT pr.nome AS produto, i.quantidade, i.preco_unitario,
+       i.quantidade * i.preco_unitario AS subtotal
+FROM itens_pedido i
+JOIN produtos pr ON pr.id = i.produto_id
+WHERE i.pedido_id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>entregue_em TEXT</dt><dd>Sem <code>NOT NULL</code>: enquanto o pedido não chega, a data de entrega fica vazia. Na Aurora, os pedidos 86 a 90 estão assim.</dd>
+  <dt>frete REAL NOT NULL DEFAULT 0</dt><dd>Frete grátis é 0, não "sem valor". Guardar 0 em vez de <code>NULL</code> deixa as contas simples: <code>soma + frete</code> nunca vira <code>NULL</code>.</dd>
+  <dt>PRIMARY KEY (pedido_id, produto_id)</dt><dd>Uma chave primária de <strong>duas colunas</strong> (chave composta). Nenhuma das duas sozinha identifica a linha: o pedido 1 tem três itens, e o caderno aparece em vários pedidos. Mas o par "pedido 1, produto 1" só pode existir uma vez. Para vender dois cadernos, aumenta-se a <code>quantidade</code>; não se repete a linha.</dd>
+  <dt>preco_unitario REAL NOT NULL</dt><dd>O preço <strong>no dia da venda</strong>. Por que guardar de novo, se o produto já tem preço? Porque o preço do catálogo muda; o do pedido antigo não pode mudar junto. Na Aurora, o pedido 7 levou o Dicionário Escolar a 29.9, numa promoção, embora o catálogo diga 34.6.</dd>
+</dl>
+
+<p>Os subtotais são 24.7, 2.79 e 3.45, que somam <strong>30.94</strong> em produtos. Com o frete de 9.9, o pedido 1 fecha em <strong>40.84</strong>. Esse número é o teste da sua construção: a mesma conta na Aurora de verdade tem de dar o mesmo resultado.</p>
+
+<div class="trysql" data-goal="contem:1|José Ribamar Silva|Caio Teles|40.84">
+<p class="try-task"><strong>Missão:</strong> troque a consulta do fim por uma que mostre o pedido 1 numa linha só: o <code>id</code> do pedido, o nome do cliente, o nome do vendedor e o <strong>total</strong> (soma de <code>quantidade * preco_unitario</code> mais o <code>frete</code>). Você vai precisar de três <code>JOIN</code> e de um <code>GROUP BY p.id</code> (aula <a href="group-by.html">GROUP BY</a>). Use as colunas nessa ordem.</p>
+<pre class="script" data-file="versao-4.sql">-- (os blocos 0 a 7 estão resumidos: é a mesma construção de cima)
+DROP TABLE itens_pedido; DROP TABLE pedidos; DROP TABLE produtos; DROP TABLE funcionarios;
+DROP TABLE clientes; DROP TABLE fornecedores; DROP TABLE categorias;
+
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+CREATE TABLE produtos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco REAL NOT NULL, estoque INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE clientes (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, email TEXT, cidade TEXT,
+                       estado TEXT, nascimento TEXT, vip INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE funcionarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cargo TEXT NOT NULL,
+                           salario REAL NOT NULL, chefe_id INTEGER REFERENCES funcionarios(id));
+CREATE TABLE pedidos (id INTEGER PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+    funcionario_id INTEGER NOT NULL REFERENCES funcionarios(id),
+    data TEXT NOT NULL, entregue_em TEXT, frete REAL NOT NULL DEFAULT 0);
+CREATE TABLE itens_pedido (
+    pedido_id INTEGER NOT NULL REFERENCES pedidos(id),
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    quantidade INTEGER NOT NULL, preco_unitario REAL NOT NULL,
+    PRIMARY KEY (pedido_id, produto_id));
+
+INSERT INTO categorias VALUES (1, 'Papelaria', 'Material escolar e de escritório');
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455'),
+(6, 'Norte Suprimentos',          'Teresina', 'PI', 'Brasil', '(86) 99344-2211');
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1, 'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(2, 'Caneta Esferográfica Azul', 1, 1, 2.79,  500),
+(3, 'Lápis Grafite HB',          1, 6, 1.15,  430);
+INSERT INTO clientes (id, nome, email, cidade, estado, nascimento, vip) VALUES
+(1, 'José Ribamar Silva', 'jose.ribamar@exemplo.com.br', 'Teresina', 'PI', '1985-03-12', 1);
+INSERT INTO funcionarios VALUES
+(1, 'Marta Lustosa', 'Gerente',  9800.0, NULL),
+(2, 'Caio Teles',    'Vendedor', 3200.5, 1);
+INSERT INTO pedidos VALUES (1, 1, 2, '2024-01-05', '2024-01-10', 9.9);
+INSERT INTO itens_pedido VALUES (1, 1, 2, 12.35), (1, 2, 1, 2.79), (1, 3, 3, 1.15);
+
+-- NOVO: o pedido 1 numa linha só
+SELECT * FROM pedidos;
+</pre>
+<pre class="solucao" data-file="versao-4.sql">-- (os blocos 0 a 7 estão resumidos: é a mesma construção de cima)
+DROP TABLE itens_pedido; DROP TABLE pedidos; DROP TABLE produtos; DROP TABLE funcionarios;
+DROP TABLE clientes; DROP TABLE fornecedores; DROP TABLE categorias;
+
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+CREATE TABLE produtos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco REAL NOT NULL, estoque INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE clientes (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, email TEXT, cidade TEXT,
+                       estado TEXT, nascimento TEXT, vip INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE funcionarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cargo TEXT NOT NULL,
+                           salario REAL NOT NULL, chefe_id INTEGER REFERENCES funcionarios(id));
+CREATE TABLE pedidos (id INTEGER PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+    funcionario_id INTEGER NOT NULL REFERENCES funcionarios(id),
+    data TEXT NOT NULL, entregue_em TEXT, frete REAL NOT NULL DEFAULT 0);
+CREATE TABLE itens_pedido (
+    pedido_id INTEGER NOT NULL REFERENCES pedidos(id),
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    quantidade INTEGER NOT NULL, preco_unitario REAL NOT NULL,
+    PRIMARY KEY (pedido_id, produto_id));
+
+INSERT INTO categorias VALUES (1, 'Papelaria', 'Material escolar e de escritório');
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455'),
+(6, 'Norte Suprimentos',          'Teresina', 'PI', 'Brasil', '(86) 99344-2211');
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco, estoque) VALUES
+(1, 'Caderno Pautado 96 folhas', 1, 1, 12.35, 120),
+(2, 'Caneta Esferográfica Azul', 1, 1, 2.79,  500),
+(3, 'Lápis Grafite HB',          1, 6, 1.15,  430);
+INSERT INTO clientes (id, nome, email, cidade, estado, nascimento, vip) VALUES
+(1, 'José Ribamar Silva', 'jose.ribamar@exemplo.com.br', 'Teresina', 'PI', '1985-03-12', 1);
+INSERT INTO funcionarios VALUES
+(1, 'Marta Lustosa', 'Gerente',  9800.0, NULL),
+(2, 'Caio Teles',    'Vendedor', 3200.5, 1);
+INSERT INTO pedidos VALUES (1, 1, 2, '2024-01-05', '2024-01-10', 9.9);
+INSERT INTO itens_pedido VALUES (1, 1, 2, 12.35), (1, 2, 1, 2.79), (1, 3, 3, 1.15);
+
+-- NOVO: o pedido 1 numa linha só
+SELECT p.id, c.nome AS cliente, f.nome AS vendedor,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN funcionarios f ON f.id = p.funcionario_id
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id;
+</pre>
+</div>
+
+<p>Agora a prova dos nove: a mesma consulta, sem bloco 0, na Aurora que o editor carrega. Se a sua construção está certa, o pedido 1 dá o mesmo número:</p>
+
+<pre class="file" data-file="conferir.sql" data-resultado>SELECT p.id, c.nome AS cliente, f.nome AS vendedor,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN funcionarios f ON f.id = p.funcionario_id
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE p.id = 1
+GROUP BY p.id;
+</pre>
+
+<p>40.84 nos dois. A sua Aurora e a de verdade concordam.</p>
+
+<hr>
+
+<h2>Versão 5: uma Aurora mais rigorosa que a original</h2>
+<p>Agora que a construção está de pé, dá para melhorar. A Aurora original confia em quem digita: ela aceita um produto com preço negativo, e aceita <code>descontinuado = 7</code>. Teste na Aurora pronta, sem bloco 0:</p>
+
+<pre class="file" data-file="preco-negativo.sql" data-resultado>INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco)
+VALUES (46, 'Caneta Vermelha', 1, 1, -5.0);
+
+SELECT id, nome, preco FROM produtos WHERE preco &lt; 0;
+</pre>
+
+<p>Entrou. Uma loja que vende caneta pagando 5 reais para o cliente levar está com um erro de digitação, não com uma promoção. A restrição <code>CHECK</code> ("verifique") faz o banco recusar valores que não fazem sentido (aula <a href="check.html">CHECK</a>).</p>
+
+<div class="trysql" data-goal="erro:CHECK constraint failed">
+<p class="try-task"><strong>Missão:</strong> rode como está: a caneta de -5.0 entra. Acrescente à tabela <code>produtos</code> as regras <code>CHECK (preco &gt;= 0)</code> na coluna <code>preco</code> e <code>CHECK (descontinuado IN (0, 1))</code> na coluna <code>descontinuado</code>. Rode de novo: agora o banco tem de <strong>recusar</strong> a caneta, com um erro que começa por <code>CHECK constraint failed</code>.</p>
+<pre class="script" data-file="versao-5.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido; DROP TABLE pedidos; DROP TABLE produtos; DROP TABLE funcionarios;
+DROP TABLE clientes; DROP TABLE fornecedores; DROP TABLE categorias;
+
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+INSERT INTO categorias VALUES (1, 'Papelaria', 'Material escolar e de escritório');
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455');
+
+-- NOVO: produtos com regras
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco)
+VALUES (46, 'Caneta Vermelha', 1, 1, -5.0);
+
+SELECT id, nome, preco FROM produtos;
+</pre>
+<pre class="solucao" data-file="versao-5.sql">-- 0. Abre espaço: apaga a Aurora pronta (filhas antes das mães)
+DROP TABLE itens_pedido; DROP TABLE pedidos; DROP TABLE produtos; DROP TABLE funcionarios;
+DROP TABLE clientes; DROP TABLE fornecedores; DROP TABLE categorias;
+
+CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT);
+CREATE TABLE fornecedores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cidade TEXT,
+                           estado TEXT, pais TEXT NOT NULL, telefone TEXT);
+INSERT INTO categorias VALUES (1, 'Papelaria', 'Material escolar e de escritório');
+INSERT INTO fornecedores VALUES
+(1, 'Distribuidora Piauí Center', 'Teresina', 'PI', 'Brasil', '(86) 99821-4455');
+
+-- NOVO: produtos com regras
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL CHECK (preco &gt;= 0),
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0 CHECK (descontinuado IN (0, 1))
+);
+INSERT INTO produtos (id, nome, categoria_id, fornecedor_id, preco)
+VALUES (46, 'Caneta Vermelha', 1, 1, -5.0);
+
+SELECT id, nome, preco FROM produtos;
+</pre>
+</div>
+
+<p>O erro que aparece é <code>CHECK constraint failed: preco &gt;= 0</code>: o SQLite repete a regra que foi quebrada, o que ajuda muito a achar o problema. Outras regras que caberiam na Aurora: <code>CHECK (quantidade &gt; 0)</code> em <code>itens_pedido</code>, <code>CHECK (vip IN (0, 1))</code> em <code>clientes</code>, <code>CHECK (estoque &gt;= 0)</code> em <code>produtos</code>. Toda regra que o banco garante é uma regra que nenhum programa esquecido consegue quebrar.</p>
+
+<hr>
+
+<h2>Versão 6: o banco completo, consultado</h2>
+<p>A sua construção tinha meia dúzia de linhas por tabela. A Aurora que o editor carrega tem exatamente as mesmas tabelas, com os dados todos. Para conferir que o molde é o mesmo, peça ao catálogo o <code>CREATE TABLE</code> que o SQLite guardou da tabela <code>itens_pedido</code> e compare com o seu bloco 7:</p>
+
+<pre class="file" data-file="molde.sql" data-resultado>SELECT sql
+FROM sqlite_schema
+WHERE name = 'itens_pedido';
+</pre>
+
+<p>Linha por linha, é o que você escreveu. Com o banco completo, a planta mostra para que serve: qualquer pergunta sobre a loja vira uma consulta que segue as chaves. Quantas linhas tem cada tabela?</p>
+
+<pre class="file" data-file="contagens.sql" data-resultado>SELECT 'categorias' AS tabela, COUNT(*) AS linhas FROM categorias
+UNION ALL SELECT 'fornecedores', COUNT(*) FROM fornecedores
+UNION ALL SELECT 'produtos',     COUNT(*) FROM produtos
+UNION ALL SELECT 'clientes',     COUNT(*) FROM clientes
+UNION ALL SELECT 'funcionarios', COUNT(*) FROM funcionarios
+UNION ALL SELECT 'pedidos',      COUNT(*) FROM pedidos
+UNION ALL SELECT 'itens_pedido', COUNT(*) FROM itens_pedido;
+</pre>
+
+<p>O <a href="union-all.html">UNION ALL</a> empilha as sete contagens numa tabela só. São 220 itens em 90 pedidos.</p>
+
+<div class="trysql" data-goal="colunas:produto,categoria,fornecedor;;linhas:45">
+<p class="try-task"><strong>Missão:</strong> na Aurora completa (sem bloco 0), a consulta abaixo mostra números no lugar dos nomes. Troque-a por uma que mostre os 45 produtos com três colunas chamadas exatamente <code>produto</code>, <code>categoria</code> e <code>fornecedor</code>, com os <strong>nomes</strong> de cada um.</p>
+<pre class="script" data-file="versao-6.sql">SELECT nome, categoria_id, fornecedor_id
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="versao-6.sql">SELECT p.nome AS produto, c.nome AS categoria, f.nome AS fornecedor
+FROM produtos p
+JOIN categorias c   ON c.id = p.categoria_id
+JOIN fornecedores f ON f.id = p.fornecedor_id;
+</pre>
+</div>
+
+<p>Os relatórios de verdade da loja (faturamento por mês, melhores clientes, produtos encalhados) ficam para o próximo projeto: <a href="projeto-relatorios.html">Relatórios da Loja</a>.</p>
+
+<hr>
+
+<h2>Guardando num arquivo de verdade</h2>
+<p>O editor esquece tudo a cada Rodar. Para a sua loja existir de verdade, ela precisa morar num <strong>arquivo</strong>. No terminal, a Ana abre o <code>sqlite3</code> com o nome de um arquivo novo; ele é criado na hora (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>). Ela começa pelas duas primeiras tabelas e faz um teste com a chave estrangeira:</p>
+
+<pre class="term">$ sqlite3 minha-loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE categorias (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+sqlite&gt; CREATE TABLE produtos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, categoria_id INTEGER NOT NULL REFERENCES categorias(id));
+sqlite&gt; INSERT INTO produtos VALUES (1, 'Caderno Pautado 96 folhas', 9);   « a categoria 9 não existe… e entrou!
+sqlite&gt; PRAGMA foreign_keys;
+0
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; INSERT INTO produtos VALUES (2, 'Caneta Esferográfica Azul', 9);
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite&gt; .tables
+categorias  produtos
+sqlite&gt; .quit</pre>
+
+<p>Surpresa: o primeiro <code>INSERT</code>, com a categoria 9 que não existe, <strong>entrou</strong>. No programa <code>sqlite3</code>, as chaves estrangeiras vêm <strong>desligadas</strong> em cada conexão nova, por compatibilidade com bancos antigos: <code>PRAGMA foreign_keys</code> respondeu <code>0</code>. Depois do <code>PRAGMA foreign_keys = ON</code>, o segundo produto foi recusado, como no editor. (No editor elas estão ligadas porque o <code>aurora.sql</code> começa justamente com <code>PRAGMA foreign_keys = ON;</code>.) Mais sobre isso em <a href="pragma.html">PRAGMAs Úteis</a>.</p>
+
+<div class="warning">
+<strong>Ligue as chaves em toda conexão</strong>
+<p>O <code>PRAGMA foreign_keys = ON</code> vale só para a conexão aberta, não fica gravado no arquivo. Ponha essa linha no começo de todo script que mexe no banco, como o <code>aurora.sql</code> faz. E o caderno órfão que entrou antes do <code>PRAGMA</code>? Ele continua lá; o comando <code>PRAGMA foreign_key_check;</code> lista as linhas que apontam para mães inexistentes.</p>
+</div>
+
+<p>Na prática, ninguém digita o banco inteiro no prompt. Você junta os blocos deste projeto num arquivo de texto, digamos <code>minha-loja.sql</code>, começando por <code>PRAGMA foreign_keys = ON;</code> e <strong>sem</strong> o bloco 0 (o arquivo novo nasce vazio), e manda o <code>sqlite3</code> executar tudo de uma vez: <code>sqlite3 minha-loja.db &lt; minha-loja.sql</code>. É exatamente assim que o arquivo da Aurora é gerado. Os detalhes de ler e gravar arquivos ficam em <a href="dump-backup.html">Backup (.dump e .backup)</a> e no projeto <a href="projeto-csv.html">da Planilha ao Banco</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever a mesma tabela</h2>
+<p>A chave estrangeira pode ser escrita de dois jeitos. Os dois criam a mesma regra:</p>
+
+<pre class="file" data-file="duas-formas.sql" data-resultado>-- forma 1: na própria coluna (a da Aurora)
+CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    nota       INTEGER NOT NULL
+);
+
+-- forma 2: no fim, como uma regra da tabela
+CREATE TABLE avaliacoes2 (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    FOREIGN KEY (produto_id) REFERENCES produtos(id)
+);
+
+INSERT INTO avaliacoes  (produto_id, nota) VALUES (1, 5);
+INSERT INTO avaliacoes2 (produto_id, nota) VALUES (1, 5);
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>Repare que os <code>INSERT</code> não informaram o <code>id</code>: a coluna <code>INTEGER PRIMARY KEY</code> se numerou sozinha, começando em 1.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Na coluna</td><td><code>produto_id INTEGER REFERENCES produtos(id)</code></td><td>A chave tem uma coluna só (quase sempre). Mais curta, e a regra fica ao lado da coluna.</td></tr>
+<tr><td>No fim da tabela</td><td><code>FOREIGN KEY (produto_id) REFERENCES produtos(id)</code></td><td>Quando a chave tem <strong>duas ou mais</strong> colunas, ou quando você quer as regras todas juntas no fim.</td></tr>
+<tr><td>Chave primária na coluna</td><td><code>id INTEGER PRIMARY KEY</code></td><td>Uma coluna só: categorias, produtos, pedidos…</td></tr>
+<tr><td>Chave primária no fim</td><td><code>PRIMARY KEY (pedido_id, produto_id)</code></td><td>Chave composta, como em <code>itens_pedido</code>. É a única forma para duas colunas.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Construir um banco é ver o SQLite dizer "não" várias vezes. Cada "não" é uma regra sua funcionando. As mensagens abaixo são as reais, rodadas na Aurora do editor.</p>
+
+<div class="cenario">
+<strong>Criou uma tabela que já existe</strong>
+<pre class="file" data-file="duplicada.sql" data-resultado data-erro>CREATE TABLE produtos (id INTEGER PRIMARY KEY, nome TEXT);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>table produtos already exists</code>, "a tabela produtos já existe". No editor, é porque a Aurora vem carregada; num arquivo seu, é porque você rodou o script duas vezes.</p>
+<p><strong>Como consertar:</strong> apague antes (o bloco 0) ou escreva <code>CREATE TABLE IF NOT EXISTS produtos (…)</code>, que simplesmente não faz nada se a tabela já existir. Cuidado: o <code>IF NOT EXISTS</code> não confere se a tabela antiga tem as mesmas colunas da nova.</p>
+</div>
+
+<div class="cenario">
+<strong>Apagou a mãe antes da filha</strong>
+<pre class="file" data-file="drop-mae.sql" data-resultado data-erro>DROP TABLE clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>FOREIGN KEY constraint failed</code>. Com as chaves ligadas, apagar <code>clientes</code> deixaria os 90 pedidos apontando para ninguém.</p>
+<p><strong>Como consertar:</strong> apague as filhas primeiro: <code>itens_pedido</code>, depois <code>pedidos</code>, e só então <code>clientes</code>. É a ordem do bloco 0.</p>
+</div>
+
+<div class="cenario">
+<strong>Cadastrou a filha antes da mãe</strong>
+<pre class="file" data-file="filha-orfa.sql" data-resultado data-erro>INSERT INTO pedidos (id, cliente_id, funcionario_id, data)
+VALUES (91, 31, 2, '2026-10-18');
+</pre>
+<p><strong>O que aconteceu:</strong> <code>FOREIGN KEY constraint failed</code>. Não existe cliente 31 (a Aurora tem 30). A mensagem não diz <em>qual</em> chave falhou; num pedido com duas chaves, confira as duas.</p>
+<p><strong>Como consertar:</strong> cadastre o cliente antes, ou corrija o número.</p>
+</div>
+
+<div class="cenario">
+<strong>Repetiu a chave primária</strong>
+<pre class="file" data-file="item-repetido.sql" data-resultado data-erro>INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario)
+VALUES (1, 1, 5, 12.35);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id</code>, "a regra de valor único falhou". O pedido 1 já tem o produto 1. Repare que a mensagem cita as <strong>duas</strong> colunas da chave composta.</p>
+<p><strong>Como consertar:</strong> se a ideia era vender mais cadernos no mesmo pedido, aumente a quantidade com <code>UPDATE itens_pedido SET quantidade = 5 WHERE pedido_id = 1 AND produto_id = 1;</code> (aula <a href="update.html">UPDATE</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu uma coluna obrigatória</strong>
+<pre class="file" data-file="sem-preco.sql" data-resultado data-erro>INSERT INTO produtos (id, nome, categoria_id, fornecedor_id)
+VALUES (46, 'Caneta Vermelha', 1, 1);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>NOT NULL constraint failed: produtos.preco</code>. O <code>preco</code> é <code>NOT NULL</code> e não tem <code>DEFAULT</code>, então não há o que pôr ali. O <code>estoque</code> e o <code>descontinuado</code>, que também não foram informados, não deram erro: eles têm <code>DEFAULT 0</code>.</p>
+<p><strong>Como consertar:</strong> informe o preço.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas no texto</strong>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>INSERT INTO categorias (id, nome) VALUES (9, "Pet Shop");
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: "Pet Shop" - should this be a string literal in single-quotes?</code>, "não existe a coluna "Pet Shop"; isto deveria ser um texto entre aspas simples?". Em SQL, aspas <strong>duplas</strong> são para nomes de coluna ou tabela; o SQLite procurou uma coluna chamada "Pet Shop" e, gentil, já sugeriu o conserto.</p>
+<p><strong>Como consertar:</strong> texto vai sempre entre aspas <strong>simples</strong>: <code>'Pet Shop'</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>No PostgreSQL, no MySQL (com o motor InnoDB, o padrão) e no SQL Server, as chaves estrangeiras valem <strong>sempre</strong>; não existe um <code>PRAGMA</code> para ligá-las. Outras diferenças que você encontraria ao levar a planta da Aurora para lá: dinheiro costuma ir numa coluna <code>DECIMAL(10,2)</code> ou <code>NUMERIC(10,2)</code> em vez de <code>REAL</code>, datas ganham o tipo <code>DATE</code>, e a numeração automática do <code>id</code> se escreve de outro jeito (veja <a href="auto-increment.html">AUTOINCREMENT</a> e <a href="dialetos.html">As Diferenças entre os Bancos</a>). Este trecho é ilustrativo, de PostgreSQL, e não roda no editor:</p>
+<pre class="file" data-file="produtos-postgresql.sql">CREATE TABLE produtos (
+    id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    preco         NUMERIC(10,2) NOT NULL CHECK (preco &gt;= 0)
+);
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça da Aurora</th><th>SQL</th><th>Aula</th></tr>
+<tr><td>Chave primária</td><td><code>id INTEGER PRIMARY KEY</code></td><td><a href="primary-key.html">PRIMARY KEY</a></td></tr>
+<tr><td>Chave primária composta</td><td><code>PRIMARY KEY (pedido_id, produto_id)</code></td><td><a href="primary-key.html">PRIMARY KEY</a></td></tr>
+<tr><td>Chave estrangeira</td><td><code>categoria_id INTEGER NOT NULL REFERENCES categorias(id)</code></td><td><a href="foreign-key.html">FOREIGN KEY</a></td></tr>
+<tr><td>Chave para a própria tabela</td><td><code>chefe_id INTEGER REFERENCES funcionarios(id)</code></td><td><a href="self-join.html">Self Join</a></td></tr>
+<tr><td>Obrigatório</td><td><code>nome TEXT NOT NULL</code></td><td><a href="not-null.html">NOT NULL</a></td></tr>
+<tr><td>Valor padrão</td><td><code>estoque INTEGER NOT NULL DEFAULT 0</code></td><td><a href="default.html">DEFAULT</a></td></tr>
+<tr><td>Regra de valor</td><td><code>CHECK (preco &gt;= 0)</code></td><td><a href="check.html">CHECK</a></td></tr>
+<tr><td>Apagar uma tabela</td><td><code>DROP TABLE itens_pedido;</code> (filhas primeiro)</td><td><a href="drop-table.html">DROP TABLE</a></td></tr>
+<tr><td>Criar só se não existir</td><td><code>CREATE TABLE IF NOT EXISTS …</code></td><td><a href="create-table.html">CREATE TABLE</a></td></tr>
+<tr><td>Ver as tabelas do banco</td><td><code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td><td><a href="comandos-ponto.html">Comandos de Ponto</a> (<code>.tables</code>)</td></tr>
+<tr><td>Ligar as chaves no terminal</td><td><code>PRAGMA foreign_keys = ON;</code></td><td><a href="pragma.html">PRAGMAs Úteis</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A chave que aponta</h3>
+<p>Complete a coluna de <code>pedidos</code> que aponta para o cliente:</p>
+<div class="ex-code">cliente_id INTEGER NOT NULL <input data-answer="REFERENCES|references" aria-label="palavra-chave"> clientes(id)</div>
+</div>
+
+<div class="exercise">
+<h3>2. A chave de duas colunas</h3>
+<p>Complete a chave primária de <code>itens_pedido</code>:</p>
+<div class="ex-code">PRIMARY KEY (pedido_id, <input data-answer="produto_id" aria-label="segunda coluna">)</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Em que ordem as tabelas precisam ser <strong>criadas</strong>?</p>
+<label><input type="radio" name="q3"> itens_pedido, pedidos, produtos, categorias</label>
+<label><input type="radio" name="q3"> Qualquer ordem: o SQLite organiza sozinho</label>
+<label><input type="radio" name="q3"> As mães primeiro: categorias e fornecedores antes de produtos; produtos e pedidos antes de itens_pedido</label>
+<label><input type="radio" name="q3"> Em ordem alfabética</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>itens_pedido</code> guarda <code>preco_unitario</code>, se o produto já tem <code>preco</code>?</p>
+<label><input type="radio" name="q4"> Para o banco ficar mais rápido</label>
+<label><input type="radio" name="q4"> Porque o preço do catálogo muda, e o pedido antigo tem de guardar o preço do dia da venda</label>
+<label><input type="radio" name="q4"> Porque o SQLite exige</label>
+<label><input type="radio" name="q4"> Por engano: a coluna é repetida e deveria sair</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No programa <code>sqlite3</code>, a Ana inseriu um produto com uma categoria que não existe, e entrou. Por quê?</p>
+<label><input type="radio" name="q5"> Porque faltou <code>NOT NULL</code> na coluna</label>
+<label><input type="radio" name="q5"> Porque o terminal não confere chave primária</label>
+<label><input type="radio" name="q5"> Porque a tabela foi criada sem <code>PRIMARY KEY</code></label>
+<label><input type="radio" name="q5"> Porque as chaves estrangeiras vêm desligadas em cada conexão; falta <code>PRAGMA foreign_keys = ON</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual destas regras faria o banco recusar uma quantidade zero num item de pedido?</p>
+<label><input type="radio" name="q6"> <code>quantidade INTEGER NOT NULL CHECK (quantidade &gt; 0)</code></label>
+<label><input type="radio" name="q6"> <code>quantidade INTEGER NOT NULL</code></label>
+<label><input type="radio" name="q6"> <code>quantidade INTEGER DEFAULT 1</code></label>
+<label><input type="radio" name="q6"> <code>quantidade INTEGER PRIMARY KEY</code></label>
+</div>
+
+<h3>Missão final: um cliente novo, do cadastro à compra</h3>
+
+<div class="trysql" data-goal="mudou:clientes=31;;mudou:pedidos=91;;mudou:itens_pedido=222;;contem:Ana Paula Reis|">
+<p class="try-task"><strong>Missão:</strong> agora na Aurora completa (sem bloco 0). Uma cliente nova, <code>31, 'Ana Paula Reis'</code>, de Teresina (PI), com email <code>ana.reis@exemplo.com.br</code>, fez o pedido <code>91</code> em <code>'2026-10-18'</code>, atendida pelo Caio (funcionário 2), com frete 9.9 e ainda sem entrega. Ela levou 2 Cadernos Pautados (produto 1, 12.35 cada) e 1 Mochila Escolar Azul (produto 5, 89.99). Cadastre tudo <strong>na ordem certa</strong> e termine com a consulta que mostra o nome dela e o total do pedido. O código abaixo está na ordem errada: rode para ver o erro.</p>
+<pre class="script" data-file="missao-final.sql">INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+(91, 1, 2, 12.35),
+(91, 5, 1, 89.99);
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 31, 2, '2026-10-18', NULL, 9.9);
+
+INSERT INTO clientes (id, nome, email, cidade, estado)
+VALUES (31, 'Ana Paula Reis', 'ana.reis@exemplo.com.br', 'Teresina', 'PI');
+
+SELECT c.nome, SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE p.id = 91
+GROUP BY p.id;
+</pre>
+<pre class="solucao" data-file="missao-final.sql">INSERT INTO clientes (id, nome, email, cidade, estado)
+VALUES (31, 'Ana Paula Reis', 'ana.reis@exemplo.com.br', 'Teresina', 'PI');
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 31, 2, '2026-10-18', NULL, 9.9);
+
+INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES
+(91, 1, 2, 12.35),
+(91, 5, 1, 89.99);
+
+SELECT c.nome, SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE p.id = 91
+GROUP BY p.id;
+</pre>
+</div>
+
+<p>O pedido da Ana Paula fecha em 124.59 (24.7 de cadernos, 89.99 da mochila e 9.9 de frete). E repare: você não informou o <code>vip</code> nem o <code>nascimento</code> dela. O <code>vip</code> virou 0 pelo <code>DEFAULT</code>, e o <code>nascimento</code> ficou <em>NULL</em>. Cada decisão que você tomou na planta trabalhou sozinha.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Antes do SQL, a <strong>planta</strong>: que tabelas existem e quem aponta para quem. Quem aponta é a filha; quem é apontado é a mãe.</li>
+  <li>Crie e preencha as <strong>mães primeiro</strong> (categorias, fornecedores, clientes, funcionários) e as filhas depois (produtos, pedidos, itens). Para apagar, o caminho contrário.</li>
+  <li><code>INTEGER PRIMARY KEY</code> identifica cada linha; <code>PRIMARY KEY (a, b)</code> faz uma chave de duas colunas; <code>REFERENCES tabela(id)</code> cria a chave estrangeira, que pode apontar até para a própria tabela.</li>
+  <li><code>NOT NULL</code>, <code>DEFAULT</code> e <code>CHECK</code> transformam as regras da loja em regras do banco. Os erros <code>FOREIGN KEY constraint failed</code>, <code>UNIQUE constraint failed</code>, <code>NOT NULL constraint failed</code> e <code>CHECK constraint failed</code> são essas regras funcionando.</li>
+  <li>Confira a construção com um número conhecido: o pedido 1 dá 30.94 em produtos e 40.84 com o frete, na sua versão e na Aurora de verdade.</li>
+  <li>No terminal, o banco mora num arquivo, e as chaves estrangeiras só valem depois de <code>PRAGMA foreign_keys = ON</code>, em cada conexão.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
