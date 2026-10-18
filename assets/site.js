@@ -459,6 +459,15 @@ var NIVEIS = [
         cmds[cmds.length - 1] += "\n" + mc[1];
         return;
       }
+      // o prompt do sqlite3 ("sqlite> ") e a continuação dele ("   ...> ")
+      var ms = /^(sqlite>|\s*\.\.\.>)(?: (.*)|())$/.exec(l);
+      if (ms) {
+        var cs = ms[2] || "", ns = "", is = cs.indexOf("«");
+        if (is !== -1) { ns = '<span class="t-a">← ' + esc(cs.slice(is + 1).trim()) + "</span>"; cs = cs.slice(0, is).replace(/\s+$/, ""); }
+        html.push('<span class="t-p">' + esc(ms[1]) + ' </span><span class="t-c">' + esc(cs) + "</span>" + (ns ? "   " + ns : ""));
+        ultimoCmd = false;
+        return;
+      }
       var m = /^(\$|#>)(?: (.*)|())$/.exec(l);
       if (m && m[2] == null) m[2] = "";
       ultimoCmd = !!m;
