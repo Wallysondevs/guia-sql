@@ -76,11 +76,35 @@ Igual aos outros guias: `$ ` = `ana@notebook:~$`, `sqlite> ` = o prompt do sqlit
    - cada SELECT como **tabela** (cabeçalho = nomes das colunas; `NULL` aparece como *NULL* em itálico) com o total de linhas embaixo;
    - cada INSERT/UPDATE/DELETE como "N linha(s) afetada(s)";
    - os demais comandos como "CREATE TABLE: ok", "DROP TABLE: ok"…;
-   - um erro **para a execução ali** e aparece em vermelho com a mensagem **real** do SQLite (em inglês).
+   - um erro **para a execução ali** e aparece em vermelho com a mensagem **real** do SQLite (em inglês), depois de `Erro do SQLite:`. O que rodou antes do erro continua na tela.
 3. Limites que o autor precisa saber:
-   - comandos de ponto (`.tables`, `.mode`…) **não existem no editor** — são do programa `sqlite3`, não SQL; ali eles dão o erro real de sintaxe. Ensine-os só no `pre.term`;
+   - comandos de ponto (`.tables`, `.mode`…) **não existem no editor** — são do programa `sqlite3`, não SQL; ali eles dão o erro real de sintaxe (`near ".": syntax error`). Ensine-os só no `pre.term`;
    - um SQL sem fim (ex.: `WITH RECURSIVE` sem `LIMIT`) é interrompido depois de ~4 s com o erro `interrupted`;
-   - a tabela mostra até 500 linhas (as metas contam todas).
+   - a tabela mostra até 500 linhas (as metas contam todas);
+   - `random()`, `datetime('now')`, `date('now')` mudam a cada Rodar: nunca os use numa meta nem num resultado citado no texto.
+
+### Mensagens de erro: editor × terminal
+O motor é o mesmo (SQLite 3.50.4, mesmas opções), então **o miolo da mensagem é idêntico**. O que muda é a moldura que o programa `sqlite3` põe em volta. Exemplos reais (editor = `node tools/sim.js`; terminal = lab, `sqlite3 loja.db`):
+
+| SQL | No editor (`Erro do SQLite: …`) | No terminal, digitando no `sqlite>` |
+|---|---|---|
+| `SELECT nome FROM cliente;` | `no such table: cliente` | `Parse error: no such table: cliente` |
+| `SELEC nome FROM clientes;` | `near "SELEC": syntax error` | `Parse error: near "SELEC": syntax error` + duas linhas: o SQL e a seta `^--- error here` |
+| `SELECT "nomee" FROM clientes;` | `no such column: "nomee" - should this be a string literal in single-quotes?` | `Parse error: no such column: "nomee" - should this be …` + o SQL e a seta embaixo de `"nomee"` |
+| `SELECT abs(-9223372036854775808);` | `integer overflow` | `Runtime error: integer overflow` |
+| `INSERT INTO categorias (id, nome) VALUES (1, 'X');` | `UNIQUE constraint failed: categorias.id` | `Runtime error: UNIQUE constraint failed: categorias.id (19)` — o `(19)` é o código do erro |
+| `.tables` | `near ".": syntax error` | lista as tabelas (é comando do programa) |
+
+- `Parse error` = o SQLite nem conseguiu entender/preparar o comando; `Runtime error` = entendeu, mas deu errado ao executar.
+- Com o SQL vindo de **arquivo** (`sqlite3 loja.db < erro.sql`), a moldura ganha a linha: `Parse error near line 2: no such table: cliente`.
+- Com o SQL como **argumento** (`sqlite3 loja.db "SELECT nome FROM cliente;"`): `Error: in prepare, no such table: cliente`.
+- No texto da aula, cite a mensagem **do lugar onde o leitor vai vê-la**: no `pre.file`/`.trysql`, a do editor; no `pre.term`, a do terminal, copiada do lab. Explique em português o que ela quer dizer.
+
+### Editor × `sqlite3 loja.db` no terminal: o que pode dar diferente
+- **Chaves estrangeiras.** O `aurora.sql` liga `PRAGMA foreign_keys = ON;`, então no editor um `INSERT` com `categoria_id = 99` dá `FOREIGN KEY constraint failed`. No terminal, **cada conexão nova começa com `foreign_keys` desligado** (`PRAGMA foreign_keys;` → `0` no lab): o mesmo `INSERT` em `sqlite3 loja.db` **passa sem erro**. Na aula de chaves estrangeiras (e em qualquer `pre.term` que dependa delas), mostre o `PRAGMA foreign_keys = ON;` antes.
+- **O banco não volta sozinho.** No editor, cada Rodar parte do banco limpo; no terminal, um `DELETE` em `loja.db` é para valer (no lab: `lab -n SEUNOME -r` recomeça a home).
+- **Formato.** O terminal começa em `.mode list` sem cabeçalho (`Lápis Grafite HB|1.15`); o editor desenha tabela. Os valores (números, datas, `NULL`) saem iguais.
+- O testador com `--nativo` confere o resto; as diferenças achadas ficam em `tools/DIFERENCAS.md`.
 
 ### A saída canônica (o que as metas `out:` e `contem:` enxergam)
 Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .mode list`: valores separados por `|`, um registro por linha, `NULL` vira vazio, números como o SQLite os escreve (`4.9`, não `4.90`). Ex.: `Lápis Grafite HB|1.15`.
@@ -88,7 +112,7 @@ Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .m
 ### As metas (`data-goal`)
 | Meta | Passa quando |
 |---|---|
-| `out:REGEX` | a saída canônica casa com a regex (JavaScript, **sem flags**: maiúsculas contam, `^` só casa o começo do texto todo). `\|` dentro da regex casa um `\|` literal; `\|` sem escape é alternativa normal de regex |
+| `out:REGEX` | a saída canônica casa com a regex (JavaScript, **sem flags**: maiúsculas contam, `^` só casa o começo do texto todo). Cuidado com a barra vertical (nota abaixo) |
 | `linhas:N` | o **último** SELECT devolveu exatamente N linhas |
 | `colunas:a,b,c` | os nomes das colunas do último SELECT são exatamente esses, nessa ordem (use `AS`); `\,` é vírgula dentro de um nome |
 | `contem:TEXTO` | o TEXTO aparece literalmente na saída canônica |
@@ -97,21 +121,38 @@ Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .m
 | `tabela:nome` | a tabela existe depois de rodar (nome em minúsculas) |
 | `mudou:tabela=N` | depois de rodar, a tabela tem exatamente N linhas |
 
+- **A barra vertical no `out:`.** Na saída canônica, `|` separa as colunas, mas na regex `|` quer dizer "ou". Para casar o separador, escape com barra invertida: `out:^Papelaria\|` casa `Papelaria|…`. Sem a barra, `out:a|b` quer dizer "tem `a` ou tem `b`".
 - Combine com `;;`: `data-goal="colunas:nome,preco;;linhas:3"` — **todas** precisam passar.
 - Se o SQL deu erro, **só** metas `erro:` podem passar.
 - O código inicial da caixa **não pode** cumprir a meta; o `pre.solucao` **tem** de cumprir. O testador confere os dois.
-- Escape de HTML vale também dentro de `data-goal` (`&quot;` etc.) e dos `pre`.
 - Prefira metas que aceitem respostas equivalentes (`linhas:`, `mudou:`, `contem:`) a um `out:` que só casa com uma escrita exata.
+
+### Escape de HTML (o testador acusa)
+- Dentro de **todo** `<pre>` (`pre.file`, `pre.script`, `pre.solucao`, `pre.term`): escreva `<` como `&lt;` e `&` como `&amp;`. Um `<` cru pode virar uma tag e sumir com um pedaço do SQL (`WHERE a<b` vira negrito no navegador); o testador dá **FALHA**. O `>` pode ficar cru ou como `&gt;` (os dois funcionam).
+- Nos `pre` de SQL, entidades com nome que o testador não conhece (`&eacute;`…) também dão FALHA: escreva o caractere direto (`é`).
+- Dentro de `data-goal`, `"` vira `&quot;`: `data-goal="erro:no such column: &quot;?precoo"`.
+
+### Exemplos de erro de propósito: `data-erro`
+- Um `pre.file data-resultado` cujo SQL dá erro **de propósito** leva `data-erro`: `<pre class="file" data-resultado data-erro>`. Sem ele, o testador acusa FALHA ("o SQL dá erro"). Com ele e sem erro, também ("tem data-erro mas rodou sem erro").
+- O mesmo vale para uma caixa **livre** (sem `data-goal`) cujo SQL inicial dá erro: `<div class="trysql" data-erro>`. Numa missão não precisa: o inicial pode dar erro à vontade ("conserte este SQL").
 
 ### O testador (na VPS)
 ```bash
 node tools/testar-missoes.js pagina.html outra.html   # as missões da página
-node tools/testar-missoes.js --nativo pagina.html     # + compara com o sqlite3 do host
+node tools/testar-missoes.js --nativo pagina.html     # + compara com o sqlite3 do lab
+node tools/testar-missoes.js -q --todas               # todas as páginas, só FALHA/aviso
 node tools/sim.js consulta.sql                        # roda um .sql como o editor rodaria
+echo "SELECT 1;" | node tools/sim.js --goal "linhas:1" -   # testa uma meta solta
 ```
-- `testar-missoes.js` extrai cada `.trysql` e confere: contrato válido (meta conhecida, regex válida, missão com `pre.solucao`), **inicial falha** a meta, **solução passa**. Também roda cada `pre.file[data-resultado]` e acusa SQL que dá erro sem ser um exemplo de erro (marque exemplos de erro de propósito com `data-erro` no `pre`).
-- `--nativo` roda tudo também no `sqlite3` nativo e compara a saída canônica; diferenças ficam registradas em `tools/DIFERENCAS.md`.
+Do notebook: `~/guia-sql-lab/testar [--nativo] [-q] pagina.html` (já com `timeout`).
+
+- Uma linha por item, com o número da linha no HTML: `ok`, `FALHA` (precisa consertar) ou `aviso` (olhe, mas não bloqueia). Código de saída: 0 = sem FALHA; 1 = alguma FALHA; 2 = página não encontrada.
+- Em cada `.trysql`: meta conhecida e regex válida, um só `pre.script`, missão com `pre.solucao`, **o inicial falha** a meta, **a solução passa**. Caixa livre: o SQL roda sem erro (ou com `data-erro`).
+- Cada `pre.file[data-resultado]` roda: erro só com `data-erro`.
+- Também: `<`/`&` sem escape nos `pre`, link para página fora da NIVEIS (aviso), dado da máquina real (`/home/admin`, `ip-172-…` → FALHA), SQL que demora mais de 1,5 s ou devolve mais de 500 linhas (aviso), página sem missão (aviso).
+- `--nativo` roda cada SQL também no `sqlite3` do lab (`sqlite3 -bail -batch`, com a Loja Aurora carregada) e compara a saída canônica e o erro; diferença vira aviso e fica registrada em `tools/DIFERENCAS.md`, na seção da página.
 - `sim.js` serve para colher a saída real que você vai citar no texto da aula.
+- No navegador de verdade (Chromium da VPS): `node tools/testar-navegador.js pagina.html` — ver `tools/ESTADO.md`.
 
 ## 6. Fidelidade: o laboratório (`~/guia-sql-lab/lab`, na VPS)
 É a máquina da Ana (usuária `ana`, computador `notebook`, `/home/ana`, pt_BR) com o **sqlite3 3.50.4 de verdade** e o banco `~/loja.db` pronto. Toda saída de terminal mostrada numa aula vem de lá:
