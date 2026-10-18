@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Erros Comuns — as mensagens do SQLite traduzidas | Guia SQL</title>
+<meta name="description" content="Referência das mensagens de erro mais comuns do SQLite, exatamente como saem no editor e no terminal: no such table, no such column, syntax error, ambiguous column name, UNIQUE, NOT NULL, FOREIGN KEY e CHECK constraint failed, datatype mismatch, aspas duplas, misuse of aggregate, UNION, incomplete input, database is locked, readonly. Tradução, causa, conserto e a aula de cada uma.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Erros Comuns</span></h1>
+
+<p class="intro">Todo mundo erra SQL, todo dia: uma letra trocada no nome da tabela, uma vírgula sobrando, aspas do tipo errado. O SQLite sempre avisa, mas avisa <strong>em inglês</strong> e com poucas palavras. Esta página é um dicionário dessas mensagens: cada uma aparece exatamente como sai no editor do guia e no terminal do <code>sqlite3</code>, com a tradução, a causa mais comum, o conserto e a aula onde o assunto é explicado.</p>
+
+<div class="note">
+<strong>Como usar esta página</strong>
+<ul>
+  <li>Deu erro? Copie o começo da mensagem (por exemplo, <code>no such column</code>) e procure nesta página com <kbd>Ctrl</kbd>+<kbd>F</kbd>.</li>
+  <li>As mensagens foram colhidas no SQLite 3.50.4: no editor do guia e no terminal da Ana (<code>ana@notebook</code>), com o banco da <a href="banco-do-guia.html">Loja Aurora</a>. Nenhuma foi escrita de memória.</li>
+  <li>Os quadros "Resultado" desta página rodam o SQL errado de verdade no seu navegador: a mensagem em vermelho é a que o seu SQLite deu agora.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="ler">Como ler uma mensagem de erro</h2>
+<p>O mesmo erro aparece um pouco diferente em cada lugar. No <a href="simulador.html">editor do guia</a>, a mensagem sai <strong>crua</strong>, do jeito que o SQLite a escreveu:</p>
+
+<pre class="file" data-file="erro.sql" data-resultado data-erro>SELECT nomee FROM clientes;
+</pre>
+
+<p>No <a href="shell-sqlite.html">terminal do SQLite</a>, o programa <code>sqlite3</code> acrescenta um prefixo e, muitas vezes, uma seta mostrando <strong>onde</strong> ele se perdeu:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT nomee FROM clientes;
+Parse error: no such column: nomee
+  SELECT nomee FROM clientes;
+         ^--- error here</pre>
+
+<dl class="anatomy">
+  <dt>Parse error:</dt><dd>"Erro de análise". O SQLite nem começou a rodar: o problema foi achado ao <strong>ler</strong> o comando (nome que não existe, sintaxe errada). Nada no banco mudou.</dd>
+  <dt>no such column: nomee</dt><dd>A mensagem em si: "não existe a coluna <code>nomee</code>". É o mesmo texto que o editor mostra.</dd>
+  <dt>SELECT nomee FROM clientes;</dt><dd>O terminal repete o seu comando…</dd>
+  <dt>^--- error here</dt><dd>…e aponta o lugar do erro ("o erro está aqui"). Quando o ponto fica no fim da linha, a seta vira <code>error here ---^</code>, com o <code>^</code> à direita.</dd>
+</dl>
+
+<p>Os prefixos que você vai encontrar no terminal:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Prefixo</th><th>Onde aparece</th><th>Quer dizer</th></tr>
+<tr><td><code>Parse error:</code></td><td>no prompt <code>sqlite&gt;</code></td><td>O comando nem rodou: erro de nome ou de escrita.</td></tr>
+<tr><td><code>Runtime error: … (19)</code></td><td>no prompt <code>sqlite&gt;</code></td><td>O comando começou a rodar e parou no meio (uma regra da tabela foi quebrada, por exemplo). O número no fim é o código do erro (tabela <a href="#codigos">Os códigos numéricos</a>).</td></tr>
+<tr><td><code>Error: in prepare, …</code></td><td>com o SQL na linha de comando: <code>sqlite3 loja.db "SELECT …"</code></td><td>O mesmo que <code>Parse error</code>: falhou ao preparar (ler) o comando.</td></tr>
+<tr><td><code>Error: stepping, … (8)</code></td><td>com o SQL na linha de comando</td><td>O mesmo que <code>Runtime error</code>: falhou ao executar.</td></tr>
+<tr><td><code>Error: unknown command …</code></td><td>no prompt <code>sqlite&gt;</code>, depois de um ponto</td><td>Comando de ponto que não existe (veja <a href="#terminal">No terminal</a>).</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Um erro para tudo</strong>
+<p>Quando um comando dá erro, ele <strong>inteiro</strong> é cancelado: um <code>INSERT</code> de várias linhas que falha na terceira não grava nem a primeira. No editor, a execução também <strong>para</strong> no comando com erro; os comandos de baixo não rodam.</p>
+</div>
+
+<hr>
+
+<h2 id="nomes">1. Nomes que não existem</h2>
+<p>O grupo mais comum de todos: o SQLite não achou a tabela, a coluna ou a função com o nome que você escreveu. Quase sempre é uma letra trocada, um plural esquecido ou um apelido mal usado. Os nomes das tabelas do guia estão todos no <strong>plural</strong>: <code>clientes</code>, <code>produtos</code>, <code>pedidos</code>, <code>itens_pedido</code>…</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>no such table: cliente</code></td><td>não existe a tabela <code>cliente</code></td><td>Nome da tabela digitado errado (aqui, faltou o "s"); ou o banco aberto não é o que você pensa.</td><td>Confira o nome com <code>.tables</code> no terminal ou na aula do banco. No terminal, confira se abriu o arquivo certo (veja <a href="#terminal">nada.db</a>).</td><td><a href="select.html">SELECT</a></td></tr>
+<tr><td><code>no such column: nomee</code></td><td>não existe a coluna <code>nomee</code></td><td>Nome da coluna digitado errado, ou a coluna é de outra tabela.</td><td>Confira as colunas com <code>.schema clientes</code> no terminal ou com <code>SELECT * FROM clientes LIMIT 1;</code>.</td><td><a href="select-colunas.html">Escolhendo Colunas</a></td></tr>
+<tr><td><code>no such column: clientes.id</code></td><td>não existe a coluna <code>clientes.id</code></td><td>Você deu um apelido à tabela (<code>FROM clientes c</code>) e depois usou o nome original. Depois do apelido, a tabela só atende pelo apelido.</td><td>Use o apelido: <code>c.id</code>.</td><td><a href="aliases.html">Apelidos (AS)</a></td></tr>
+<tr><td><code>ambiguous column name: id</code></td><td>nome de coluna ambíguo: <code>id</code></td><td>Num JOIN, duas tabelas têm uma coluna com esse nome (<code>clientes.id</code> e <code>pedidos.id</code>) e o SQLite não sabe qual você quer.</td><td>Diga de qual tabela: <code>clientes.id</code> ou <code>c.id</code>.</td><td><a href="inner-join.html">INNER JOIN</a></td></tr>
+<tr><td><code>no such function: abc</code></td><td>não existe a função <code>abc</code></td><td>Nome errado, ou uma função de outro banco (como <code>NOW()</code> do MySQL ou <code>LEN()</code> do SQL Server).</td><td>Veja o nome no SQLite nas páginas de referência: <a href="ref-funcoes-texto.html">Texto</a>, <a href="ref-funcoes-numericas.html">Numéricas</a>, <a href="ref-funcoes-data.html">Data</a>.</td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>wrong number of arguments to function substr()</code></td><td>número errado de argumentos para a função <code>substr()</code></td><td>Faltou (ou sobrou) algum valor dentro dos parênteses.</td><td>Confira quantos argumentos a função recebe na referência.</td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>table clientes already exists</code></td><td>a tabela <code>clientes</code> já existe</td><td><code>CREATE TABLE</code> com um nome que já está no banco.</td><td>Escolha outro nome, ou use <code>CREATE TABLE IF NOT EXISTS</code> (cria só se não existir).</td><td><a href="create-table.html">CREATE TABLE</a></td></tr>
+<tr><td><code>no such table: nada</code> (no <code>DROP TABLE</code>)</td><td>não existe a tabela <code>nada</code></td><td>Apagar uma tabela que não existe.</td><td><code>DROP TABLE IF EXISTS nada;</code> não dá erro.</td><td><a href="drop-table.html">DROP TABLE</a></td></tr>
+<tr><td><code>duplicate column name: email</code></td><td>nome de coluna repetido: <code>email</code></td><td><code>ALTER TABLE … ADD COLUMN</code> de uma coluna que já existe, ou duas colunas com o mesmo nome no <code>CREATE TABLE</code>.</td><td>Use outro nome, ou confira com <code>.schema</code> se a coluna já está lá.</td><td><a href="alter-table.html">ALTER TABLE</a></td></tr>
+<tr><td><code>cannot drop PRIMARY KEY column: "id"</code></td><td>não dá para apagar a coluna de chave primária <code>"id"</code></td><td><code>ALTER TABLE … DROP COLUMN</code> na chave primária.</td><td>O SQLite não deixa. Para mudar a chave, crie uma tabela nova e copie os dados.</td><td><a href="alter-table.html">ALTER TABLE</a></td></tr>
+</table>
+</div>
+
+<p>Veja o caso do apelido rodando de verdade:</p>
+
+<pre class="file" data-file="apelido.sql" data-resultado data-erro>SELECT c.nome
+FROM clientes c
+WHERE clientes.id = 1;
+</pre>
+
+<p>E o do nome ambíguo, que só aparece quando há duas tabelas:</p>
+
+<pre class="file" data-file="ambiguo.sql" data-resultado data-erro>SELECT id, nome
+FROM clientes
+JOIN pedidos ON pedidos.cliente_id = clientes.id;
+</pre>
+
+<p>No terminal da Ana, a seta mostra exatamente qual <code>id</code> está ambíguo: o primeiro, depois do <code>SELECT</code>.</p>
+
+<pre class="term">sqlite&gt; SELECT id, nome FROM clientes JOIN pedidos ON pedidos.cliente_id = clientes.id;
+Parse error: ambiguous column name: id
+  SELECT id, nome FROM clientes JOIN pedidos ON pedidos.cliente_id = clientes.id
+         ^--- error here</pre>
+
+<hr>
+
+<h2 id="sintaxe">2. Erros de escrita (sintaxe)</h2>
+<p>Aqui o SQLite não conseguiu nem entender a frase. A mensagem típica é <code>near "X": syntax error</code>, "perto de X: erro de sintaxe". O <code>X</code> é a palavra onde ele <strong>percebeu</strong> o erro, que nem sempre é onde o erro <strong>está</strong>: muitas vezes o problema é a palavra logo antes.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>near "SELEC": syntax error</code></td><td>perto de "SELEC": erro de sintaxe</td><td>Palavra-chave digitada errado.</td><td>Corrija a palavra: <code>SELECT</code>.</td><td><a href="select.html">SELECT</a></td></tr>
+<tr><td><code>near "FROM": syntax error</code></td><td>perto de "FROM": erro de sintaxe</td><td>Vírgula sobrando antes do <code>FROM</code>: <code>SELECT nome, FROM clientes</code>.</td><td>Apague a vírgula depois da última coluna.</td><td><a href="select-colunas.html">Escolhendo Colunas</a></td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>perto de ";": erro de sintaxe</td><td>O comando acabou antes da hora: <code>WHERE</code>, <code>LIMIT</code> ou <code>OFFSET</code> sem nada depois, ou um parêntese aberto sem fechar.</td><td>Complete a parte que ficou vazia ou feche o parêntese.</td><td><a href="where.html">WHERE</a></td></tr>
+<tr><td><code>near "WHERE": syntax error</code></td><td>perto de "WHERE": erro de sintaxe</td><td>Partes fora de ordem, como um <code>WHERE</code> depois do <code>ORDER BY</code>.</td><td>A ordem é sempre <code>SELECT … FROM … WHERE … GROUP BY … HAVING … ORDER BY … LIMIT</code>.</td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>near "DESC": syntax error</code></td><td>perto de "DESC": erro de sintaxe</td><td>Palavra repetida: <code>ORDER BY nome DESC DESC</code>.</td><td>Apague a repetição.</td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>near ".": syntax error</code></td><td>perto de ".": erro de sintaxe</td><td>Um comando de ponto (<code>.tables</code>, <code>.schema</code>) digitado no editor do guia. Eles são do programa <code>sqlite3</code>, não são SQL.</td><td>Use comandos de ponto só no terminal. No editor, as tabelas se veem com <code>SELECT name FROM sqlite_schema;</code>.</td><td><a href="comandos-ponto.html">Comandos de Ponto</a></td></tr>
+<tr><td><code>unrecognized token: "'Ana"</code></td><td>pedaço não reconhecido: <code>"'Ana"</code></td><td>Aspa simples aberta e não fechada: <code>WHERE nome = 'Ana</code>.</td><td>Feche a aspa: <code>'Ana'</code>. Para escrever uma aspa dentro do texto, dobre-a: <code>'Loja D''Água'</code>.</td><td><a href="where.html">WHERE</a></td></tr>
+<tr><td><code>incomplete input</code></td><td>entrada incompleta</td><td>O SQL terminou no meio, sem fechar um parêntese ou uma aspa e sem <code>;</code>.</td><td>Feche o que ficou aberto. No terminal, isso aparece de outro jeito (veja abaixo).</td><td><a href="shell-sqlite.html">O Terminal do SQLite</a></td></tr>
+<tr><td><code>no such column: "Ana Carvalho Lima" - should this be a string literal in single-quotes?</code></td><td>não existe a coluna <code>"Ana Carvalho Lima"</code>; isto não deveria ser um texto entre aspas <strong>simples</strong>?</td><td>Texto entre aspas <strong>duplas</strong>. Em SQL, aspas duplas são para <strong>nomes</strong> (de tabela e coluna); texto vai entre aspas simples.</td><td>Troque por aspas simples: <code>'Ana Carvalho Lima'</code>.</td><td><a href="where.html">WHERE</a></td></tr>
+</table>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas no texto</strong>
+<p>Este é o erro de quem vem do Excel ou de outra linguagem de programação, onde texto vai entre aspas duplas:</p>
+<pre class="file" data-file="aspas.sql" data-resultado data-erro>SELECT nome, email
+FROM clientes
+WHERE nome = "Ana Carvalho Lima";
+</pre>
+<p>O SQLite leu <code>"Ana Carvalho Lima"</code> como o <strong>nome de uma coluna</strong> e não achou coluna nenhuma com esse nome. A própria mensagem dá a dica: <em>should this be a string literal in single-quotes?</em>, "isto não deveria ser um texto entre aspas simples?". No terminal, a seta aponta para as aspas:</p>
+<pre class="term">sqlite&gt; SELECT nome FROM clientes WHERE nome = "Ana Carvalho Lima";
+Parse error: no such column: "Ana Carvalho Lima" - should this be a string literal in single-quotes?
+  SELECT nome FROM clientes WHERE nome = "Ana Carvalho Lima";
+                           error here ---^</pre>
+<p><strong>Atenção:</strong> o editor do guia e o terminal da Ana usam um SQLite configurado como o padrão do SQL manda (a opção <code>DQS=0</code>). Muitos programas antigos usam um SQLite "tolerante", que, quando não acha a coluna, aceita o texto entre aspas duplas sem reclamar. Não conte com isso: além de fora do padrão, se um dia existir uma coluna com aquele nome, a consulta passa a comparar com a coluna, sem erro nenhum. Use sempre aspas simples para texto.</p>
+</div>
+
+<h3>O comando que não termina, no terminal</h3>
+<p>No editor, um parêntese aberto sem <code>;</code> dá <code>incomplete input</code>. No prompt do <code>sqlite3</code>, ninguém reclama: o terminal acha que você ainda vai continuar o comando e muda o prompt para <code>...&gt;</code> (continuação). Se houver um parêntese aberto, o prompt mostra quantos: <code>(x1...&gt;</code>.</p>
+
+<pre class="term">sqlite&gt; SELECT nome FROM clientes WHERE (id = 1
+(x1...&gt; ;
+Parse error: near ";": syntax error
+  SELECT nome FROM clientes WHERE (id = 1 ;
+                            error here ---^</pre>
+
+<p>Quando o <code>;</code> finalmente chega, o SQLite vê o parêntese que não fechou e reclama. Se o terminal "travou" mostrando <code>...&gt;</code>, quase sempre falta um <code>;</code> (ou uma aspa, ou um parêntese): digite o que falta e Enter. Já com o SQL na linha de comando, a mensagem é a mesma do editor:</p>
+
+<pre class="term">$ sqlite3 loja.db "SELECT nome FROM clientes WHERE (id = 1"
+Error: in prepare, incomplete input
+$ sqlite3 loja.db "SELECT nome FROM clientes WHERE nome = 'Ana"
+Error: in prepare, unrecognized token: "'Ana"
+  SELECT nome FROM clientes WHERE nome = 'Ana
+                           error here ---^</pre>
+
+<div class="trysql" data-erro data-goal="colunas:nome,email;;linhas:1">
+<p class="try-task"><strong>Missão:</strong> esta consulta tem <strong>dois</strong> erros. Rode, leia a mensagem, conserte, rode de novo e leia a próxima mensagem. No fim, ela deve mostrar o nome e o email da cliente Ana Carvalho Lima.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, email
+FROM cliente
+WHERE nome = "Ana Carvalho Lima";
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, email
+FROM clientes
+WHERE nome = 'Ana Carvalho Lima';
+</pre>
+</div>
+
+<hr>
+
+<h2 id="regras">3. Regras da tabela quebradas (constraint failed)</h2>
+<p>Estes erros aparecem quando o comando está bem escrito, mas os <strong>dados</strong> quebram uma regra que a tabela tem. <em>Constraint</em> quer dizer "restrição", e <em>failed</em>, "falhou": a regra não foi cumprida, e o comando inteiro foi recusado. No terminal, eles vêm como <code>Runtime error</code> com o código <code>(19)</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>UNIQUE constraint failed: clientes.id</code></td><td>restrição UNIQUE falhou: <code>clientes.id</code></td><td>Inserir um valor que já existe numa coluna que não aceita repetição (a chave primária ou uma coluna <code>UNIQUE</code>).</td><td>Não informe o <code>id</code> (o SQLite escolhe um livre), ou use um valor que não exista. Para "inserir ou atualizar", veja <code>INSERT … ON CONFLICT</code>.</td><td><a href="unique.html">UNIQUE</a>, <a href="primary-key.html">PRIMARY KEY</a></td></tr>
+<tr><td><code>NOT NULL constraint failed: categorias.nome</code></td><td>restrição NOT NULL falhou: <code>categorias.nome</code></td><td>Coluna obrigatória ficou vazia: o valor foi <code>NULL</code> ou a coluna ficou de fora do <code>INSERT</code> e não tem <code>DEFAULT</code>.</td><td>Informe um valor para a coluna.</td><td><a href="not-null.html">NOT NULL</a></td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>restrição de chave estrangeira falhou</td><td>Apontar para algo que não existe (um pedido do cliente 999) ou apagar algo que ainda é apontado (um cliente que tem pedidos).</td><td>Confira se o <code>id</code> apontado existe. A mensagem não diz qual coluna: confira uma por uma.</td><td><a href="foreign-key.html">FOREIGN KEY</a></td></tr>
+<tr><td><code>CHECK constraint failed: preco &gt; 0</code></td><td>restrição CHECK falhou: <code>preco &gt; 0</code></td><td>O valor não passou no teste da regra <code>CHECK</code>. A mensagem mostra a própria regra…</td><td>Use um valor que passe no teste.</td><td><a href="check.html">CHECK</a></td></tr>
+<tr><td><code>CHECK constraint failed: preco_positivo</code></td><td>restrição CHECK falhou: <code>preco_positivo</code></td><td>…ou o <strong>nome</strong> dela, se a regra foi criada com <code>CONSTRAINT preco_positivo CHECK (…)</code>.</td><td>Dê nomes claros às regras: a mensagem fica mais fácil de entender.</td><td><a href="check.html">CHECK</a></td></tr>
+<tr><td><code>datatype mismatch</code></td><td>tipo de dado incompatível</td><td>Um texto onde o SQLite exige um número inteiro: na chave <code>INTEGER PRIMARY KEY</code> (<code>id = 'abc'</code>) ou em <code>LIMIT 'x'</code>.</td><td>Use um número inteiro.</td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+<tr><td><code>cannot store TEXT value in INTEGER column t.n</code></td><td>não dá para guardar um valor TEXT na coluna INTEGER <code>t.n</code></td><td>Tabela <code>STRICT</code> (rígida) recebendo um valor do tipo errado.</td><td>Converta o valor ou corrija o dado.</td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+</table>
+</div>
+
+<p>Dois exemplos rodando de verdade. A categoria 1 (Papelaria) já existe:</p>
+
+<pre class="file" data-file="unique.sql" data-resultado data-erro>INSERT INTO categorias (id, nome, descricao)
+VALUES (1, 'Pet Shop', 'Ração e brinquedos para bichos');
+</pre>
+
+<p>E não existe cliente 999 para receber um pedido:</p>
+
+<pre class="file" data-file="fk.sql" data-resultado data-erro>INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (999, 2, '2026-10-18', 0);
+</pre>
+
+<p>No terminal, os mesmos erros saem com o prefixo <code>Runtime error</code> e o código <code>(19)</code> no fim:</p>
+
+<pre class="term">sqlite&gt; INSERT INTO clientes (id, nome) VALUES (1, 'Teste');
+Runtime error: UNIQUE constraint failed: clientes.id (19)
+sqlite&gt; INSERT INTO categorias (nome) VALUES (NULL);
+Runtime error: NOT NULL constraint failed: categorias.nome (19)
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; INSERT INTO pedidos (cliente_id, funcionario_id, data, frete) VALUES (999, 2, '2026-10-18', 0);
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite&gt; INSERT INTO clientes (id, nome) VALUES ('abc', 'Teste');
+Runtime error: datatype mismatch (20)</pre>
+
+<div class="warning">
+<strong>A chave estrangeira que não reclama</strong>
+<p>Repare no <code>PRAGMA foreign_keys = ON;</code> antes do pedido do cliente 999. No programa <code>sqlite3</code>, a checagem de chave estrangeira vem <strong>desligada</strong> e precisa ser ligada a cada vez que você abre o banco:</p>
+<pre class="term">sqlite&gt; PRAGMA foreign_keys;
+0</pre>
+<p>Com <code>0</code> (desligada), aquele <code>INSERT</code> do cliente 999 passa <strong>sem erro nenhum</strong>, e o banco fica com um pedido de um cliente que não existe. No editor do guia, a Loja Aurora já é carregada com a checagem ligada. Mais em <a href="foreign-key.html">FOREIGN KEY</a> e em <a href="ref-pragmas.html">PRAGMAs</a>.</p>
+</div>
+
+<div class="trysql" data-goal="mudou:categorias=9">
+<p class="try-task"><strong>Missão:</strong> a Ana quer criar a categoria "Pet Shop", mas o <code>INSERT</code> dá <code>UNIQUE constraint failed</code>. Conserte para que a categoria nova entre (a tabela deve ficar com 9 categorias). Dica: quem precisa escolher o <code>id</code>?</p>
+<pre class="script" data-file="nova-categoria.sql">INSERT INTO categorias (id, nome, descricao)
+VALUES (1, 'Pet Shop', 'Ração e brinquedos para bichos');
+</pre>
+<pre class="solucao" data-file="nova-categoria.sql">INSERT INTO categorias (nome, descricao)
+VALUES ('Pet Shop', 'Ração e brinquedos para bichos');
+</pre>
+</div>
+
+<hr>
+
+<h2 id="agrupar">4. Agregar e agrupar</h2>
+<p>As <a href="funcoes-agregadas.html">funções agregadas</a> (<code>COUNT</code>, <code>SUM</code>, <code>AVG</code>…) e as <a href="janelas.html">funções de janela</a> só podem aparecer em certos lugares da consulta. Usá-las no lugar errado dá um destes erros.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>misuse of aggregate function SUM()</code></td><td>uso errado da função agregada <code>SUM()</code></td><td>Função agregada no <code>WHERE</code>. O <code>WHERE</code> olha uma linha por vez; a soma só existe depois de juntar as linhas.</td><td>Filtre grupos com <code>HAVING</code>, depois do <code>GROUP BY</code>.</td><td><a href="having.html">HAVING</a></td></tr>
+<tr><td><code>aggregate functions are not allowed in the GROUP BY clause</code></td><td>funções agregadas não são permitidas no <code>GROUP BY</code></td><td><code>GROUP BY COUNT(*)</code>: agrupar pelo resultado de uma conta que depende do próprio agrupamento.</td><td>Agrupe por uma coluna (<code>GROUP BY cidade</code>).</td><td><a href="group-by.html">GROUP BY</a></td></tr>
+<tr><td><code>HAVING clause on a non-aggregate query</code></td><td>cláusula <code>HAVING</code> numa consulta sem agregação</td><td><code>HAVING</code> sem <code>GROUP BY</code> e sem função agregada.</td><td>Para filtrar linhas, use <code>WHERE</code>.</td><td><a href="having.html">HAVING</a></td></tr>
+<tr><td><code>DISTINCT aggregates must have exactly one argument</code></td><td>agregadas com <code>DISTINCT</code> precisam de exatamente um argumento</td><td><code>group_concat(DISTINCT nome, ', ')</code>: com <code>DISTINCT</code>, não dá para passar o separador.</td><td>Tire o <code>DISTINCT</code> ou o segundo argumento (o separador volta a ser a vírgula).</td><td><a href="ref-funcoes-agregadas.html">Funções Agregadas</a></td></tr>
+<tr><td><code>wrong number of arguments to function count()</code></td><td>número errado de argumentos para <code>count()</code></td><td><code>COUNT(DISTINCT nome, cidade)</code>: o SQLite conta uma coluna só.</td><td>Conte as combinações numa subconsulta: <code>SELECT COUNT(*) FROM (SELECT DISTINCT nome, cidade FROM clientes);</code></td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td><code>misuse of window function ROW_NUMBER()</code></td><td>uso errado da função de janela <code>ROW_NUMBER()</code></td><td>Função de janela sem <code>OVER (…)</code>, ou usada no <code>WHERE</code>.</td><td>Escreva o <code>OVER</code>. Para filtrar pelo número, calcule numa subconsulta ou CTE e filtre por fora.</td><td><a href="row-number.html">ROW_NUMBER</a></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="soma-no-where.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE SUM(id) &gt; 10;
+</pre>
+
+<hr>
+
+<h2 id="combinar">5. Contas de colunas que não fecham</h2>
+<p>Erros em que dois lados precisam ter a mesma quantidade de coisas e não têm: as colunas de um <code>UNION</code>, os valores de um <code>INSERT</code>, as colunas de uma subconsulta.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>SELECTs to the left and right of UNION do not have the same number of result columns</code></td><td>os SELECTs à esquerda e à direita do <code>UNION</code> não têm o mesmo número de colunas</td><td>Um lado com 2 colunas, o outro com 1.</td><td>Deixe os dois lados com as mesmas colunas, na mesma ordem. Se faltar uma, complete com <code>NULL</code>.</td><td><a href="union.html">UNION</a></td></tr>
+<tr><td><code>table categorias has 3 columns but 2 values were supplied</code></td><td>a tabela <code>categorias</code> tem 3 colunas, mas foram dados 2 valores</td><td><code>INSERT INTO categorias VALUES (…)</code> sem a lista de colunas e com valores de menos.</td><td>Escreva a lista de colunas: <code>INSERT INTO categorias (nome) VALUES (…)</code>.</td><td><a href="insert.html">INSERT INTO</a></td></tr>
+<tr><td><code>2 values for 3 columns</code></td><td>2 valores para 3 colunas</td><td>A lista de colunas tem 3 nomes e o <code>VALUES</code>, 2 valores.</td><td>Um valor para cada coluna da lista.</td><td><a href="insert.html">INSERT INTO</a></td></tr>
+<tr><td><code>sub-select returns 2 columns - expected 1</code></td><td>a subconsulta devolve 2 colunas; era esperada 1</td><td><code>WHERE id IN (SELECT id, nome …)</code>: o <code>IN</code> compara com uma coluna só.</td><td>Deixe só a coluna que interessa na subconsulta.</td><td><a href="subconsultas.html">Subconsultas</a></td></tr>
+<tr><td><code>1st ORDER BY term out of range - should be between 1 and 1</code></td><td>o 1º termo do <code>ORDER BY</code> está fora do intervalo: deveria estar entre 1 e 1</td><td><code>ORDER BY 9</code> numa consulta de 1 coluna: o número quer dizer "a 9ª coluna do resultado".</td><td>Use um número de coluna que exista, ou, melhor, o nome da coluna.</td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>1st GROUP BY term out of range - should be between 1 and 1</code></td><td>o mesmo, no <code>GROUP BY</code></td><td><code>GROUP BY 9</code> com 1 coluna.</td><td>Agrupe pelo nome da coluna.</td><td><a href="group-by.html">GROUP BY</a></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="union.sql" data-resultado data-erro>SELECT nome, cidade FROM clientes
+UNION
+SELECT nome FROM fornecedores;
+</pre>
+
+<hr>
+
+<h2 id="transacoes">6. Transações</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>cannot start a transaction within a transaction</code></td><td>não dá para começar uma transação dentro de outra</td><td>Dois <code>BEGIN</code> seguidos.</td><td>Termine a primeira com <code>COMMIT</code> ou <code>ROLLBACK</code>. Para "transação dentro de transação", use <code>SAVEPOINT</code>.</td><td><a href="rollback.html">ROLLBACK e Savepoints</a></td></tr>
+<tr><td><code>cannot commit - no transaction is active</code></td><td>não dá para confirmar: nenhuma transação está aberta</td><td><code>COMMIT</code> sem <code>BEGIN</code> antes (ou a transação já tinha terminado).</td><td>Nada a fazer: cada comando solto já foi gravado sozinho.</td><td><a href="transacoes.html">Transações</a></td></tr>
+<tr><td><code>cannot rollback - no transaction is active</code></td><td>não dá para desfazer: nenhuma transação está aberta</td><td><code>ROLLBACK</code> sem <code>BEGIN</code> antes.</td><td>Sem transação, não há o que desfazer. Use <code>BEGIN</code> <strong>antes</strong> de mudar dados.</td><td><a href="transacoes.html">Transações</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="terminal">7. No terminal: arquivo, trava e permissão</h2>
+<p>Estes só aparecem no programa <code>sqlite3</code>, com um banco de verdade num arquivo. O editor do guia usa um banco na memória, só seu, e nunca dá esses erros.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa comum</th><th>Como resolver</th><th>Aula</th></tr>
+<tr><td><code>database is locked (5)</code></td><td>o banco está trancado</td><td>Outro programa (ou outra janela do <code>sqlite3</code>) está no meio de uma transação de escrita no mesmo arquivo.</td><td>Termine a transação do outro lado (<code>COMMIT</code> ou <code>ROLLBACK</code>) e tente de novo. No <code>sqlite3</code>, <code>.timeout 5000</code> faz esperar até 5 segundos antes de desistir.</td><td><a href="transacoes.html">Transações</a></td></tr>
+<tr><td><code>attempt to write a readonly database (8)</code></td><td>tentativa de escrever num banco somente leitura</td><td>O banco foi aberto com <code>-readonly</code>, ou o arquivo (ou a pasta dele) não tem permissão de escrita.</td><td>Abra sem <code>-readonly</code>, ou dê permissão de escrita ao arquivo (<code>chmod u+w</code>).</td><td><a href="shell-sqlite.html">O Terminal do SQLite</a></td></tr>
+<tr><td><code>no such table: clientes</code> (num banco "vazio")</td><td>não existe a tabela <code>clientes</code></td><td>O nome do arquivo foi digitado errado. O <code>sqlite3</code> não reclama de arquivo inexistente: ele cria um banco novo, vazio, com aquele nome.</td><td>Confira o nome do arquivo (<code>ls</code>) e apague o banco vazio criado por engano.</td><td><a href="shell-sqlite.html">O Terminal do SQLite</a></td></tr>
+<tr><td><code>Error: unknown command or invalid arguments:  "tabels". Enter ".help" for help</code></td><td>comando desconhecido ou argumentos inválidos: "tabels". Digite <code>.help</code> para ajuda</td><td>Comando de ponto digitado errado.</td><td>Veja a lista com <code>.help</code> ou na <a href="ref-comandos-ponto.html">referência dos comandos de ponto</a>.</td><td><a href="comandos-ponto.html">Comandos de Ponto</a></td></tr>
+<tr><td><code>near "tables": syntax error</code></td><td>perto de "tables": erro de sintaxe</td><td>Esqueceu o ponto: <code>tables</code> virou uma tentativa de SQL.</td><td>Comandos de ponto começam com <code>.</code> e não levam <code>;</code>.</td><td><a href="comandos-ponto.html">Comandos de Ponto</a></td></tr>
+</table>
+</div>
+
+<p>A Ana reproduziu cada um. Primeiro, o banco trancado: um <code>sqlite3</code> rodando em segundo plano (o <code>&amp;</code> no fim) abre uma transação exclusiva e a segura por 3 segundos; enquanto isso, outro tenta mudar o estoque:</p>
+
+<pre class="term">$ (echo 'BEGIN EXCLUSIVE;'; sleep 3; echo 'COMMIT;') | sqlite3 loja.db &amp;
+[1] 11
+$ sleep 1
+$ sqlite3 loja.db "UPDATE produtos SET estoque = estoque + 1 WHERE id = 1;"
+Error: in prepare, database is locked (5)</pre>
+
+<p>Depois, o banco somente leitura, das duas formas: com a opção <code>-readonly</code> e com o arquivo sem permissão de escrita (<code>chmod 444</code>):</p>
+
+<pre class="term">$ sqlite3 -readonly loja.db "DELETE FROM clientes WHERE id = 30;"
+Error: stepping, attempt to write a readonly database (8)
+$ cp loja.db copia.db
+$ chmod 444 copia.db
+$ sqlite3 copia.db "DELETE FROM clientes WHERE id = 30;"
+Error: stepping, attempt to write a readonly database (8)</pre>
+
+<p>E o arquivo com nome errado, que vira um banco novo e vazio:</p>
+
+<pre class="term">$ sqlite3 nada.db "SELECT * FROM clientes;"
+Error: in prepare, no such table: clientes
+$ ls nada.db
+nada.db                « o sqlite3 criou o arquivo
+$ rm -f nada.db</pre>
+
+<p>Por fim, os comandos de ponto digitados errado no prompt:</p>
+
+<pre class="term">sqlite&gt; .tabels
+Error: unknown command or invalid arguments:  "tabels". Enter ".help" for help
+sqlite&gt; tables
+   ...&gt; ;
+Parse error: near "tables": syntax error
+  tables ;
+  ^--- error here</pre>
+
+<div class="note">
+<strong>E no editor do guia?</strong>
+<p>O editor tem dois limites próprios. Um comando de ponto vira <code>near ".": syntax error</code> (tabela da <a href="#sintaxe">seção 2</a>). E um SQL que nunca termina, como uma <a href="cte-recursiva.html">CTE recursiva</a> sem <code>LIMIT</code>, é interrompido depois de uns 4 segundos com a mensagem <code>interrupted</code> ("interrompido"). No terminal, o mesmo SQL ficaria rodando até você apertar <kbd>Ctrl</kbd>+<kbd>C</kbd>.</p>
+</div>
+
+<hr>
+
+<h2 id="silenciosos">8. Os erros que não dão erro</h2>
+<p>Os piores erros são os que o SQLite <strong>não</strong> acusa: a consulta roda, mostra um resultado, e o resultado está errado. Estes enganam todo iniciante pelo menos uma vez:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que você escreveu</th><th>O que esperava</th><th>O que o SQLite dá</th><th>Por quê</th><th>Aula</th></tr>
+<tr><td><code>WHERE email = NULL</code></td><td>os 3 clientes sem email</td><td>0 linhas</td><td>Nada é igual a <code>NULL</code>, nem o próprio <code>NULL</code>: a comparação dá "desconhecido". Use <code>IS NULL</code>.</td><td><a href="is-null.html">IS NULL</a></td></tr>
+<tr><td><code>WHERE nome = 'ana carvalho lima'</code></td><td>a cliente Ana Carvalho Lima</td><td>0 linhas</td><td>O <code>=</code> diferencia maiúsculas de minúsculas. O <code>LIKE</code> não diferencia (nas letras sem acento).</td><td><a href="like.html">LIKE</a></td></tr>
+<tr><td><code>SELECT 7/2</code></td><td>3.5</td><td>3</td><td>Inteiro dividido por inteiro dá inteiro (a parte decimal é jogada fora). Escreva <code>7/2.0</code> ou <code>7 * 1.0 / 2</code>.</td><td><a href="funcoes-numericas.html">Funções Numéricas</a></td></tr>
+<tr><td><code>SELECT 1/0</code></td><td>um erro</td><td><em>NULL</em></td><td>No SQLite, dividir por zero dá <code>NULL</code>, sem erro.</td><td><a href="ref-funcoes-numericas.html">Funções Numéricas</a></td></tr>
+<tr><td><code>SELECT 'abc' + 1</code></td><td>um erro, ou <code>abc1</code></td><td>1</td><td>O <code>+</code> só soma números; um texto que não parece número vale 0. Para juntar textos, use <code>||</code>.</td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>SELECT 'nome' FROM clientes</code></td><td>os nomes dos clientes</td><td>a palavra <code>nome</code> repetida 30 vezes</td><td>Entre aspas simples, <code>'nome'</code> é um <strong>texto</strong>, não a coluna. Nome de coluna vai sem aspas.</td><td><a href="select-colunas.html">Escolhendo Colunas</a></td></tr>
+<tr><td><code>UPDATE produtos SET preco = 10;</code></td><td>mudar o preço de um produto</td><td>45 linhas afetadas</td><td>Sem <code>WHERE</code>, o comando vale para a tabela inteira.</td><td><a href="perigo-sem-where.html">O Perigo do UPDATE sem WHERE</a></td></tr>
+</table>
+</div>
+
+<p>Veja três deles de uma vez, rodando de verdade:</p>
+
+<pre class="file" data-file="silenciosos.sql" data-resultado>SELECT 7/2, 7/2.0, 1/0, 'abc' + 1;
+SELECT COUNT(*) AS com_igual FROM clientes WHERE email = NULL;
+SELECT COUNT(*) AS com_is FROM clientes WHERE email IS NULL;
+</pre>
+
+<hr>
+
+<h2 id="codigos">Os códigos numéricos</h2>
+<p>O número entre parênteses no fim das mensagens do terminal é o <strong>código de resultado</strong> do SQLite. Programas (em PHP, Python…) costumam olhar esse número em vez do texto. Os que aparecem nesta página:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>Nome</th><th>Quer dizer</th><th>Exemplos nesta página</th></tr>
+<tr><td>1</td><td><code>SQLITE_ERROR</code></td><td>erro genérico de SQL</td><td>no such table, syntax error… (o terminal não mostra o número)</td></tr>
+<tr><td>5</td><td><code>SQLITE_BUSY</code></td><td>o banco está ocupado (trancado por outro)</td><td>database is locked</td></tr>
+<tr><td>8</td><td><code>SQLITE_READONLY</code></td><td>tentativa de escrever num banco somente leitura</td><td>attempt to write a readonly database</td></tr>
+<tr><td>19</td><td><code>SQLITE_CONSTRAINT</code></td><td>uma regra da tabela foi quebrada</td><td>UNIQUE, NOT NULL, FOREIGN KEY, CHECK</td></tr>
+<tr><td>20</td><td><code>SQLITE_MISMATCH</code></td><td>tipo de dado incompatível</td><td>datatype mismatch</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Cada banco escreve as mensagens do seu jeito, mas os erros são os mesmos. O MySQL numera cada mensagem; o PostgreSQL usa o código <strong>SQLSTATE</strong> do padrão SQL, que é o mais seguro para um programa conferir. Alguns exemplos, das documentações oficiais (MySQL 8.4 e PostgreSQL):</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Erro</th><th>SQLite</th><th>MySQL (número e mensagem)</th><th>PostgreSQL (SQLSTATE)</th></tr>
+<tr><td>tabela não existe</td><td><code>no such table</code></td><td>1146 <code>Table '%s.%s' doesn't exist</code></td><td><code>42P01</code> undefined_table</td></tr>
+<tr><td>coluna não existe</td><td><code>no such column</code></td><td>1054 <code>Unknown column '%s' in '%s'</code></td><td><code>42703</code> undefined_column</td></tr>
+<tr><td>coluna ambígua</td><td><code>ambiguous column name</code></td><td>1052 <code>Column '%s' in %s is ambiguous</code></td><td><code>42702</code> ambiguous_column</td></tr>
+<tr><td>erro de sintaxe</td><td><code>syntax error</code></td><td>1064 <code>%s near '%s' at line %d</code></td><td><code>42601</code> syntax_error</td></tr>
+<tr><td>valor repetido</td><td><code>UNIQUE constraint failed</code></td><td>1062 <code>Duplicate entry '%s' for key %d</code></td><td><code>23505</code> unique_violation</td></tr>
+<tr><td>obrigatório vazio</td><td><code>NOT NULL constraint failed</code></td><td>1048 <code>Column '%s' cannot be null</code></td><td><code>23502</code> not_null_violation</td></tr>
+<tr><td>chave estrangeira</td><td><code>FOREIGN KEY constraint failed</code></td><td>1452 <code>Cannot add or update a child row: a foreign key constraint fails</code></td><td><code>23503</code> foreign_key_violation</td></tr>
+<tr><td>CHECK</td><td><code>CHECK constraint failed</code></td><td>3819 <code>Check constraint '%s' is violated.</code></td><td><code>23514</code> check_violation</td></tr>
+<tr><td>agregada no lugar errado</td><td><code>misuse of aggregate function</code></td><td>1111 <code>Invalid use of group function</code></td><td><code>42803</code> grouping_error</td></tr>
+<tr><td>UNION com colunas diferentes</td><td><code>SELECTs to the left and right of UNION…</code></td><td>1222 <code>The used SELECT statements have a different number of columns</code></td><td>—</td></tr>
+</table>
+</div>
+<p>O <code>%s</code> e o <code>%d</code> são os lugares onde o banco põe o nome da tabela, da coluna ou o número da linha. Uma diferença importante: no PostgreSQL, dividir por zero <strong>é</strong> erro (<code>22012</code> division_by_zero), e as aspas duplas são sempre nome, nunca texto, como no editor do guia.</p>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. A Ana rodou <code>SELECT nome FROM produto;</code> e recebeu <code>no such table: produto</code>. O que aconteceu?</p>
+<label><input type="radio" name="q1"> A tabela está vazia</label>
+<label><input type="radio" name="q1"> O nome da tabela está errado: ela se chama <code>produtos</code></label>
+<label><input type="radio" name="q1"> Falta o <code>WHERE</code></label>
+<label><input type="radio" name="q1"> A coluna <code>nome</code> não existe</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Qual mensagem o SQLite dá para <code>WHERE cidade = "Teresina"</code>?</p>
+<label><input type="radio" name="q2"> Nenhuma: funciona igual a <code>'Teresina'</code></label>
+<label><input type="radio" name="q2"> <code>near "Teresina": syntax error</code></label>
+<label><input type="radio" name="q2"> <code>no such column: "Teresina" - should this be a string literal in single-quotes?</code></label>
+<label><input type="radio" name="q2"> <code>unrecognized token: "Teresina"</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. <code>misuse of aggregate function COUNT()</code> apareceu numa consulta com <code>WHERE COUNT(*) &gt; 2</code>. Qual é o conserto?</p>
+<label><input type="radio" name="q3"> Agrupar com <code>GROUP BY</code> e filtrar com <code>HAVING COUNT(*) &gt; 2</code></label>
+<label><input type="radio" name="q3"> Trocar <code>COUNT(*)</code> por <code>COUNT(id)</code> no <code>WHERE</code></label>
+<label><input type="radio" name="q3"> Pôr o <code>WHERE</code> depois do <code>ORDER BY</code></label>
+<label><input type="radio" name="q3"> Usar aspas duplas em <code>"COUNT(*)"</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. No terminal, depois de Enter, o prompt virou <code>   ...&gt;</code> e nada aconteceu. O que falta, provavelmente?</p>
+<label><input type="radio" name="q4"> Reinstalar o SQLite</label>
+<label><input type="radio" name="q4"> Um comando de ponto</label>
+<label><input type="radio" name="q4"> Fechar o terminal: o banco travou</label>
+<label><input type="radio" name="q4"> O <code>;</code> no fim do comando (ou uma aspa ou um parêntese que ficou aberto)</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>SELECT COUNT(*) FROM clientes WHERE email = NULL;</code> mostrou <code>0</code>, mas há clientes sem email. Por quê?</p>
+<label><input type="radio" name="q5"> Porque o SQLite apaga os <code>NULL</code></label>
+<label><input type="radio" name="q5"> Porque nada é igual a <code>NULL</code>: o certo é <code>WHERE email IS NULL</code></label>
+<label><input type="radio" name="q5"> Porque faltou <code>DISTINCT</code></label>
+<label><input type="radio" name="q5"> Porque <code>COUNT(*)</code> não conta linhas com <code>NULL</code></label>
+</div>
+
+<div class="exercise">
+<h3>6. Traduza a mensagem</h3>
+<p>Complete: <code>UNIQUE constraint failed: clientes.id</code> quer dizer que o valor da coluna <code>id</code> já <input data-answer="existe" aria-label="palavra que falta"> na tabela.</p>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No editor, a mensagem sai crua (<code>no such table: cliente</code>). No terminal, vem com prefixo: <code>Parse error</code> (o comando nem rodou), <code>Runtime error … (19)</code> (parou no meio), ou <code>Error: in prepare</code> / <code>Error: stepping</code> com o SQL na linha de comando.</li>
+  <li><code>no such table</code>, <code>no such column</code>, <code>ambiguous column name</code>: confira o nome (as tabelas do guia estão no plural) e, num JOIN, diga de qual tabela é a coluna.</li>
+  <li><code>near "X": syntax error</code>: o erro está em X ou <strong>logo antes</strong> dele. Vírgula sobrando, palavra errada, partes fora de ordem.</li>
+  <li>Texto vai entre aspas <strong>simples</strong>. Aspas duplas são para nomes, e dão <code>no such column: "…"</code>.</li>
+  <li><code>… constraint failed</code>: o comando estava certo, os dados quebraram uma regra da tabela (UNIQUE, NOT NULL, FOREIGN KEY, CHECK). No <code>sqlite3</code>, a chave estrangeira só é checada com <code>PRAGMA foreign_keys = ON</code>.</li>
+  <li>Agregada no <code>WHERE</code> dá <code>misuse of aggregate</code>: filtre grupos com <code>HAVING</code>.</li>
+  <li>Cuidado com o que não dá erro: <code>= NULL</code>, <code>7/2</code>, <code>1/0</code>, <code>'abc' + 1</code> e o <code>UPDATE</code> sem <code>WHERE</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
