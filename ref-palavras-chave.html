@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Palavras-chave — referência rápida com exemplos | Guia SQL</title>
+<meta name="description" content="Referência das palavras-chave do SQL usadas no guia: SELECT, FROM, WHERE, JOIN, GROUP BY, INSERT, UPDATE, CREATE TABLE, BEGIN e muitas outras, com o que cada uma faz, um exemplo curto que roda no SQLite 3.50 com a Loja Aurora e o link para a aula, mais a ordem das cláusulas de um SELECT e o que fazer quando uma coluna tem nome de palavra-chave.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Palavras-chave</span></h1>
+
+<p class="intro">As <strong>palavras-chave</strong> são as palavras que o próprio SQL entende: <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>, <code>INSERT</code>… Esta página reúne as que aparecem no guia, separadas por assunto, cada uma com o que faz, um exemplo curto e o link para a aula onde ela é explicada com calma. Use-a como um dicionário: quando encontrar uma palavra que não lembra, procure aqui.</p>
+
+<div class="note">
+<strong>Como ler esta página</strong>
+<ul>
+  <li>Todo exemplo roda no SQLite 3.50.4 do guia, com o banco da Loja Aurora. Copie para o editor de qualquer aula e clique em Rodar; cada Rodar parte do banco limpo, então os exemplos de <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code> não estragam nada.</li>
+  <li>As palavras-chave não ligam para maiúsculas: <code>SELECT</code> e <code>select</code> são a mesma coisa. O costume, seguido no guia, é escrevê-las em MAIÚSCULAS (aula <a href="select.html">SELECT</a>).</li>
+  <li>Algumas palavras só funcionam juntas, como <code>ORDER BY</code> ou <code>IS NOT NULL</code>; elas aparecem juntas na tabela.</li>
+</ul>
+</div>
+
+<p>Atalhos: <a href="#consultar">Consultar</a> · <a href="#filtrar">Filtrar e comparar</a> · <a href="#juntar">Juntar tabelas</a> · <a href="#combinar">Combinar consultas</a> · <a href="#subconsultas">Subconsultas e CASE</a> · <a href="#janelas">Janelas</a> · <a href="#dados">Mudar dados</a> · <a href="#tabelas">Criar tabelas</a> · <a href="#restricoes">Regras das colunas</a> · <a href="#transacoes">Transações</a> · <a href="#ferramentas">Ferramentas do SQLite</a> · <a href="#ordem">A ordem das cláusulas</a></p>
+
+<hr>
+
+<h2 id="consultar">Consultar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>SELECT</code></td><td>"Selecione": pede dados e diz quais colunas mostrar</td><td><code>SELECT nome FROM categorias;</code></td><td><a href="select.html">SELECT</a></td></tr>
+<tr><td><code>FROM</code></td><td>"De": a tabela de onde os dados vêm</td><td><code>SELECT * FROM clientes;</code></td><td><a href="select.html">SELECT</a></td></tr>
+<tr><td><code>DISTINCT</code></td><td>Tira as linhas repetidas do resultado</td><td><code>SELECT DISTINCT cidade FROM clientes;</code></td><td><a href="select-distinct.html">SELECT DISTINCT</a></td></tr>
+<tr><td><code>ALL</code></td><td>Mantém as repetições (o normal, quase nunca escrito)</td><td><code>SELECT ALL cidade FROM clientes;</code></td><td><a href="select-distinct.html">SELECT DISTINCT</a></td></tr>
+<tr><td><code>AS</code></td><td>Dá um apelido a uma coluna ou tabela</td><td><code>SELECT nome AS produto FROM produtos;</code></td><td><a href="aliases.html">Apelidos (AS)</a></td></tr>
+<tr><td><code>WHERE</code></td><td>"Onde": filtra as linhas</td><td><code>SELECT nome FROM clientes WHERE estado = 'PI';</code></td><td><a href="where.html">WHERE</a></td></tr>
+<tr><td><code>ORDER BY</code></td><td>Ordena as linhas do resultado</td><td><code>SELECT nome, preco FROM produtos ORDER BY preco;</code></td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>ASC</code> / <code>DESC</code></td><td>Ordem crescente (o normal) / decrescente</td><td><code>SELECT nome, preco FROM produtos ORDER BY preco DESC;</code></td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>NULLS FIRST</code> / <code>NULLS LAST</code></td><td>Põe os <em>NULL</em> no começo ou no fim da ordenação</td><td><code>SELECT nome, email FROM clientes ORDER BY email NULLS LAST;</code></td><td><a href="order-by.html">ORDER BY</a></td></tr>
+<tr><td><code>LIMIT</code></td><td>Mostra no máximo N linhas</td><td><code>SELECT nome FROM produtos LIMIT 5;</code></td><td><a href="limit.html">LIMIT e OFFSET</a></td></tr>
+<tr><td><code>OFFSET</code></td><td>Pula as primeiras N linhas (usado com <code>LIMIT</code>)</td><td><code>SELECT nome FROM produtos LIMIT 5 OFFSET 10;</code></td><td><a href="limit.html">LIMIT e OFFSET</a></td></tr>
+<tr><td><code>GROUP BY</code></td><td>Junta as linhas em grupos, um por valor</td><td><code>SELECT estado, count(*) FROM clientes GROUP BY estado;</code></td><td><a href="group-by.html">GROUP BY</a></td></tr>
+<tr><td><code>HAVING</code></td><td>Filtra os <strong>grupos</strong> (o <code>WHERE</code> filtra linhas)</td><td><code>SELECT estado, count(*) FROM clientes GROUP BY estado HAVING count(*) &gt; 5;</code></td><td><a href="having.html">HAVING</a></td></tr>
+<tr><td><code>FILTER</code></td><td>Só as linhas que passam na condição entram numa função agregada</td><td><code>SELECT count(*) FILTER (WHERE vip = 1) FROM clientes;</code></td><td><a href="funcoes-agregadas.html">Funções Agregadas</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="filtrar">Filtrar e comparar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>AND</code></td><td>"E": todas as condições precisam ser verdadeiras</td><td><code>SELECT nome FROM clientes WHERE estado = 'PI' AND vip = 1;</code></td><td><a href="and.html">AND</a></td></tr>
+<tr><td><code>OR</code></td><td>"Ou": basta uma condição ser verdadeira</td><td><code>SELECT nome FROM clientes WHERE estado = 'PE' OR estado = 'CE';</code></td><td><a href="or.html">OR</a></td></tr>
+<tr><td><code>NOT</code></td><td>Inverte uma condição</td><td><code>SELECT nome FROM clientes WHERE NOT vip = 1;</code></td><td><a href="not.html">NOT</a></td></tr>
+<tr><td><code>IN</code></td><td>O valor está numa lista</td><td><code>SELECT nome FROM clientes WHERE estado IN ('PE', 'CE');</code></td><td><a href="in.html">IN</a></td></tr>
+<tr><td><code>BETWEEN … AND</code></td><td>O valor está numa faixa (as duas pontas incluídas)</td><td><code>SELECT nome FROM produtos WHERE preco BETWEEN 20 AND 30;</code></td><td><a href="between.html">BETWEEN</a></td></tr>
+<tr><td><code>LIKE</code></td><td>Compara com um padrão de texto</td><td><code>SELECT nome FROM clientes WHERE nome LIKE 'Ana %';</code></td><td><a href="like.html">LIKE</a></td></tr>
+<tr><td><code>ESCAPE</code></td><td>Escolhe o caractere que faz <code>%</code> e <code>_</code> valerem como texto num <code>LIKE</code></td><td><code>SELECT nome FROM produtos WHERE nome LIKE '%!%%' ESCAPE '!';</code></td><td><a href="curingas.html">Curingas (% e _)</a></td></tr>
+<tr><td><code>GLOB</code></td><td>Padrão de texto no estilo dos arquivos (<code>*</code>, <code>?</code>), que liga para maiúsculas; só no SQLite</td><td><code>SELECT nome FROM produtos WHERE nome GLOB 'C*';</code></td><td><a href="curingas.html">Curingas (% e _)</a></td></tr>
+<tr><td><code>NULL</code></td><td>"Sem valor"</td><td><code>SELECT NULL;</code></td><td><a href="null.html">O Valor NULL</a></td></tr>
+<tr><td><code>IS NULL</code></td><td>O campo está vazio</td><td><code>SELECT nome FROM clientes WHERE email IS NULL;</code></td><td><a href="is-null.html">IS NULL e IS NOT NULL</a></td></tr>
+<tr><td><code>IS NOT NULL</code></td><td>O campo tem valor</td><td><code>SELECT nome FROM clientes WHERE email IS NOT NULL;</code></td><td><a href="is-null.html">IS NULL e IS NOT NULL</a></td></tr>
+<tr><td><code>TRUE</code> / <code>FALSE</code></td><td>Verdadeiro e falso; no SQLite, outros nomes para 1 e 0</td><td><code>SELECT nome FROM clientes WHERE vip = TRUE;</code></td><td><a href="ref-tipos.html">Tipos de Dados</a></td></tr>
+<tr><td><code>COLLATE</code></td><td>Escolhe a regra de comparação de textos; <code>NOCASE</code> ignora maiúsculas (só nas letras sem acento)</td><td><code>SELECT nome FROM clientes WHERE cidade = 'teresina' COLLATE NOCASE;</code></td><td><a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td><code>CAST … AS</code></td><td>Converte um valor para outro tipo</td><td><code>SELECT CAST('42' AS INTEGER);</code></td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="juntar">Juntar tabelas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>JOIN</code> / <code>INNER JOIN</code></td><td>Junta as linhas das duas tabelas que combinam</td><td><code>SELECT p.nome, c.nome FROM produtos AS p JOIN categorias AS c ON c.id = p.categoria_id;</code></td><td><a href="inner-join.html">INNER JOIN</a></td></tr>
+<tr><td><code>ON</code></td><td>A condição que liga as duas tabelas</td><td>(no exemplo acima: <code>ON c.id = p.categoria_id</code>)</td><td><a href="joins.html">O que é um JOIN</a></td></tr>
+<tr><td><code>USING</code></td><td>Liga pelas colunas que têm o mesmo nome nas duas tabelas</td><td><code>SELECT c.nome, f.nome FROM clientes AS c JOIN fornecedores AS f USING (cidade);</code></td><td><a href="inner-join.html">INNER JOIN</a></td></tr>
+<tr><td><code>LEFT JOIN</code></td><td>Todas as linhas da tabela da esquerda, com ou sem par</td><td><code>SELECT c.nome, p.id FROM clientes AS c LEFT JOIN pedidos AS p ON p.cliente_id = c.id;</code></td><td><a href="left-join.html">LEFT JOIN</a></td></tr>
+<tr><td><code>RIGHT JOIN</code></td><td>Todas as linhas da tabela da direita, com ou sem par</td><td><code>SELECT c.nome, p.id FROM pedidos AS p RIGHT JOIN clientes AS c ON p.cliente_id = c.id;</code></td><td><a href="right-join.html">RIGHT JOIN</a></td></tr>
+<tr><td><code>FULL JOIN</code></td><td>Todas as linhas das duas tabelas, com ou sem par</td><td><code>SELECT c.nome, p.id FROM clientes AS c FULL JOIN pedidos AS p ON p.cliente_id = c.id;</code></td><td><a href="full-join.html">FULL JOIN</a></td></tr>
+<tr><td><code>CROSS JOIN</code></td><td>Todas as combinações possíveis (cada linha com cada linha)</td><td><code>SELECT c.nome, f.nome FROM categorias AS c CROSS JOIN fornecedores AS f;</code></td><td><a href="joins.html">O que é um JOIN</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="combinar">Combinar consultas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>UNION</code></td><td>Junta os resultados de duas consultas, sem repetições</td><td><code>SELECT cidade FROM clientes UNION SELECT cidade FROM fornecedores;</code></td><td><a href="union.html">UNION</a></td></tr>
+<tr><td><code>UNION ALL</code></td><td>Junta os resultados, com repetições</td><td><code>SELECT cidade FROM clientes UNION ALL SELECT cidade FROM fornecedores;</code></td><td><a href="union-all.html">UNION ALL</a></td></tr>
+<tr><td><code>INTERSECT</code></td><td>Só o que aparece nas duas consultas</td><td><code>SELECT cidade FROM clientes INTERSECT SELECT cidade FROM fornecedores;</code></td><td><a href="union.html">UNION</a></td></tr>
+<tr><td><code>EXCEPT</code></td><td>O que aparece na primeira e não na segunda</td><td><code>SELECT cidade FROM clientes EXCEPT SELECT cidade FROM fornecedores;</code></td><td><a href="union.html">UNION</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="subconsultas">Subconsultas, CTE e CASE</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>EXISTS</code></td><td>Verdadeiro se a subconsulta devolve pelo menos uma linha</td><td><code>SELECT nome FROM clientes AS c WHERE EXISTS (SELECT 1 FROM pedidos AS p WHERE p.cliente_id = c.id);</code></td><td><a href="exists.html">EXISTS</a></td></tr>
+<tr><td><code>ANY</code> / <code>SOME</code> / <code>ALL</code></td><td>Compara um valor com uma lista vinda de uma subconsulta. <strong>Não existem no SQLite</strong> (dão <code>syntax error</code>); a aula mostra o equivalente</td><td>—</td><td><a href="any-all.html">ANY e ALL</a></td></tr>
+<tr><td><code>CASE WHEN … THEN … ELSE … END</code></td><td>Escolhe um valor conforme condições, como um "se… então… senão"</td><td><code>SELECT nome, CASE WHEN preco &gt; 100 THEN 'caro' ELSE 'barato' END FROM produtos;</code></td><td><a href="case.html">CASE</a></td></tr>
+<tr><td><code>WITH</code></td><td>Dá nome a uma consulta para usar logo em seguida (CTE)</td><td><code>WITH caros AS (SELECT * FROM produtos WHERE preco &gt; 100) SELECT nome FROM caros;</code></td><td><a href="with-cte.html">CTE (WITH)</a></td></tr>
+<tr><td><code>RECURSIVE</code></td><td>Uma CTE que usa a si mesma, para repetir um passo</td><td><code>WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x &lt; 5) SELECT x FROM n;</code></td><td><a href="cte-recursiva.html">CTE Recursiva</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="janelas">Funções de janela</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>OVER</code></td><td>Calcula uma função olhando um conjunto de linhas, sem juntá-las numa só</td><td><code>SELECT nome, preco, rank() OVER (ORDER BY preco DESC) FROM produtos;</code></td><td><a href="janelas.html">Funções de Janela (OVER)</a></td></tr>
+<tr><td><code>PARTITION BY</code></td><td>Divide as linhas da janela em grupos</td><td><code>SELECT nome, categoria_id, rank() OVER (PARTITION BY categoria_id ORDER BY preco DESC) FROM produtos;</code></td><td><a href="partition-by.html">PARTITION BY</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="dados">Mudar dados</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>INSERT INTO</code></td><td>Acrescenta linhas a uma tabela</td><td><code>INSERT INTO categorias (nome, descricao) VALUES ('Pet', 'Artigos para animais');</code></td><td><a href="insert.html">INSERT INTO</a></td></tr>
+<tr><td><code>VALUES</code></td><td>Os valores da linha nova (vários grupos = várias linhas)</td><td>(no exemplo acima)</td><td><a href="insert-varios.html">Inserindo Várias Linhas</a></td></tr>
+<tr><td><code>UPDATE … SET</code></td><td>Muda valores de linhas que já existem</td><td><code>UPDATE produtos SET estoque = 50 WHERE id = 12;</code></td><td><a href="update.html">UPDATE</a></td></tr>
+<tr><td><code>DELETE FROM</code></td><td>Apaga linhas</td><td><code>DELETE FROM itens_pedido WHERE pedido_id = 90;</code></td><td><a href="delete.html">DELETE</a></td></tr>
+<tr><td><code>RETURNING</code></td><td>Mostra as linhas que o comando inseriu, mudou ou apagou</td><td><code>DELETE FROM itens_pedido WHERE pedido_id = 90 RETURNING produto_id;</code></td><td><a href="delete.html">DELETE</a></td></tr>
+<tr><td><code>INSERT INTO … SELECT</code></td><td>Insere o resultado de uma consulta</td><td><code>INSERT INTO categorias (nome) SELECT 'Cópia de ' || nome FROM categorias WHERE id = 1;</code></td><td><a href="insert-select.html">INSERT INTO SELECT</a></td></tr>
+<tr><td><code>ON CONFLICT … DO</code></td><td>Diz o que fazer quando o <code>INSERT</code> bate numa chave repetida ("upsert")</td><td><code>INSERT INTO categorias (id, nome, descricao) VALUES (1, 'Papelaria', 'Novo texto') ON CONFLICT (id) DO UPDATE SET descricao = excluded.descricao;</code></td><td><a href="ref-erros.html">Erros Comuns</a></td></tr>
+<tr><td><code>REPLACE INTO</code></td><td>Insere; se a chave já existe, apaga a linha antiga e põe a nova (extensão fora do padrão; existe no SQLite e no MySQL)</td><td><code>REPLACE INTO categorias (id, nome, descricao) VALUES (8, 'Jardim', 'Plantas');</code></td><td><a href="insert.html">INSERT INTO</a></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong><code>UPDATE</code> e <code>DELETE</code> sem <code>WHERE</code></strong>
+<p>Sem <code>WHERE</code>, o comando vale para <strong>todas</strong> as linhas da tabela. Veja a aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a> antes de usar esses comandos num banco de verdade.</p>
+</div>
+
+<hr>
+
+<h2 id="tabelas">Criar e mudar tabelas</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>CREATE TABLE</code></td><td>Cria uma tabela</td><td><code>CREATE TABLE notas (id INTEGER PRIMARY KEY, texto TEXT NOT NULL);</code></td><td><a href="create-table.html">CREATE TABLE</a></td></tr>
+<tr><td><code>IF NOT EXISTS</code></td><td>Só cria se ainda não existir (sem erro se já existe)</td><td><code>CREATE TABLE IF NOT EXISTS notas (id INTEGER PRIMARY KEY, texto TEXT);</code></td><td><a href="create-table.html">CREATE TABLE</a></td></tr>
+<tr><td><code>CREATE TABLE … AS</code></td><td>Cria uma tabela com o resultado de uma consulta</td><td><code>CREATE TABLE caros AS SELECT nome, preco FROM produtos WHERE preco &gt; 100;</code></td><td><a href="create-table-as.html">Criar Tabela a partir de Consulta</a></td></tr>
+<tr><td><code>STRICT</code></td><td>Tabela rígida: recusa valores do tipo errado (só no SQLite)</td><td><code>CREATE TABLE medidas (n INTEGER) STRICT;</code></td><td><a href="tipos-sqlite.html">Os Tipos no SQLite</a></td></tr>
+<tr><td><code>ALTER TABLE … ADD COLUMN</code></td><td>Acrescenta uma coluna</td><td><code>ALTER TABLE clientes ADD COLUMN telefone TEXT;</code></td><td><a href="alter-table.html">ALTER TABLE</a></td></tr>
+<tr><td><code>ALTER TABLE … RENAME</code></td><td>Muda o nome de uma coluna (<code>RENAME COLUMN … TO</code>) ou da tabela (<code>RENAME TO</code>)</td><td><code>ALTER TABLE clientes RENAME COLUMN vip TO cliente_vip;</code></td><td><a href="alter-table.html">ALTER TABLE</a></td></tr>
+<tr><td><code>DROP TABLE</code></td><td>Apaga a tabela inteira, com os dados</td><td><code>DROP TABLE itens_pedido;</code></td><td><a href="drop-table.html">DROP TABLE</a></td></tr>
+<tr><td><code>IF EXISTS</code></td><td>Só apaga se existir (sem erro se não existe)</td><td><code>DROP TABLE IF EXISTS rascunho;</code></td><td><a href="drop-table.html">DROP TABLE</a></td></tr>
+<tr><td><code>CREATE INDEX</code></td><td>Cria um índice, para as buscas ficarem mais rápidas</td><td><code>CREATE INDEX idx_clientes_cidade ON clientes (cidade);</code></td><td><a href="indices.html">Índices (CREATE INDEX)</a></td></tr>
+<tr><td><code>CREATE VIEW</code></td><td>Guarda uma consulta com um nome, para usar como se fosse tabela</td><td><code>CREATE VIEW vips AS SELECT nome FROM clientes WHERE vip = 1;</code></td><td><a href="views.html">Views</a></td></tr>
+</table>
+</div>
+
+<h3 id="restricoes">Regras das colunas (restrições)</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>PRIMARY KEY</code></td><td>A coluna que identifica cada linha: única e nunca vazia</td><td><code>CREATE TABLE t (id INTEGER PRIMARY KEY, nome TEXT);</code></td><td><a href="primary-key.html">PRIMARY KEY</a></td></tr>
+<tr><td><code>AUTOINCREMENT</code></td><td>Nunca reaproveita um número de <code>id</code> já usado</td><td><code>CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT);</code></td><td><a href="auto-increment.html">AUTOINCREMENT</a></td></tr>
+<tr><td><code>NOT NULL</code></td><td>A coluna não aceita ficar vazia</td><td><code>CREATE TABLE t (nome TEXT NOT NULL);</code></td><td><a href="not-null.html">NOT NULL</a></td></tr>
+<tr><td><code>DEFAULT</code></td><td>O valor usado quando o <code>INSERT</code> não diz nada</td><td><code>CREATE TABLE t (estoque INTEGER DEFAULT 0);</code></td><td><a href="default.html">DEFAULT</a></td></tr>
+<tr><td><code>UNIQUE</code></td><td>Não deixa dois valores iguais na coluna</td><td><code>CREATE TABLE t (email TEXT UNIQUE);</code></td><td><a href="unique.html">UNIQUE</a></td></tr>
+<tr><td><code>CHECK</code></td><td>Só aceita valores que passam numa condição</td><td><code>CREATE TABLE t (preco REAL CHECK (preco &gt;= 0));</code></td><td><a href="check.html">CHECK</a></td></tr>
+<tr><td><code>FOREIGN KEY … REFERENCES</code></td><td>A coluna aponta para o <code>id</code> de outra tabela</td><td><code>CREATE TABLE t (cat INTEGER, FOREIGN KEY (cat) REFERENCES categorias (id));</code></td><td><a href="foreign-key.html">FOREIGN KEY</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="transacoes">Transações</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>BEGIN</code> (ou <code>BEGIN TRANSACTION</code>)</td><td>Começa uma transação: as mudanças só valem de vez no fim</td><td><code>BEGIN; UPDATE produtos SET estoque = estoque - 1 WHERE id = 2; COMMIT;</code></td><td><a href="transacoes.html">Transações (BEGIN e COMMIT)</a></td></tr>
+<tr><td><code>COMMIT</code></td><td>Confirma as mudanças da transação</td><td>(no exemplo acima)</td><td><a href="transacoes.html">Transações (BEGIN e COMMIT)</a></td></tr>
+<tr><td><code>ROLLBACK</code></td><td>Desfaz as mudanças da transação</td><td><code>BEGIN; UPDATE produtos SET estoque = 0; ROLLBACK;</code></td><td><a href="rollback.html">ROLLBACK e Savepoints</a></td></tr>
+<tr><td><code>SAVEPOINT</code></td><td>Marca um ponto dentro da transação, para voltar até ele</td><td><code>SAVEPOINT antes;</code></td><td><a href="rollback.html">ROLLBACK e Savepoints</a></td></tr>
+<tr><td><code>ROLLBACK TO</code></td><td>Desfaz só o que veio depois do ponto marcado</td><td><code>ROLLBACK TO antes;</code></td><td><a href="rollback.html">ROLLBACK e Savepoints</a></td></tr>
+<tr><td><code>RELEASE</code></td><td>Apaga o ponto marcado (mantendo as mudanças)</td><td><code>RELEASE antes;</code></td><td><a href="rollback.html">ROLLBACK e Savepoints</a></td></tr>
+</table>
+</div>
+
+<p>Os quatro juntos, numa transação só. O <code>DELETE</code> apaga 2 itens, o <code>ROLLBACK TO</code> os traz de volta, e a contagem final continua 220:</p>
+
+<pre class="file" data-file="savepoint.sql" data-resultado>BEGIN;
+SAVEPOINT antes;
+DELETE FROM itens_pedido WHERE pedido_id = 90;
+ROLLBACK TO antes;
+RELEASE antes;
+COMMIT;
+SELECT count(*) FROM itens_pedido;
+</pre>
+
+<hr>
+
+<h2 id="ferramentas">Ferramentas do SQLite</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>EXPLAIN QUERY PLAN</code></td><td>Mostra como o banco vai procurar os dados (se usa índice ou lê tudo)</td><td><code>EXPLAIN QUERY PLAN SELECT nome FROM clientes WHERE id = 5;</code></td><td><a href="explain.html">EXPLAIN QUERY PLAN</a></td></tr>
+<tr><td><code>PRAGMA</code></td><td>Lê ou muda uma configuração do SQLite</td><td><code>PRAGMA table_info(produtos);</code></td><td><a href="pragma.html">PRAGMAs Úteis</a></td></tr>
+<tr><td><code>VACUUM</code></td><td>Reorganiza o arquivo do banco e devolve o espaço que sobrou</td><td><code>VACUUM;</code></td><td><a href="vacuum.html">VACUUM e ANALYZE</a></td></tr>
+<tr><td><code>ANALYZE</code></td><td>Coleta estatísticas para o banco escolher melhor os índices</td><td><code>ANALYZE;</code></td><td><a href="vacuum.html">VACUUM e ANALYZE</a></td></tr>
+</table>
+</div>
+
+<p>Comandos que começam com ponto, como <code>.tables</code> e <code>.schema</code>, <strong>não</strong> são palavras-chave do SQL: são comandos do programa <code>sqlite3</code> e só funcionam no terminal. Eles têm a sua própria referência: <a href="ref-comandos-ponto.html">Comandos de Ponto do sqlite3</a>.</p>
+
+<hr>
+
+<h2 id="ordem">A ordem das cláusulas num <code>SELECT</code></h2>
+<p>As partes de um <code>SELECT</code> têm um lugar fixo. Nenhuma é obrigatória além do <code>SELECT</code>, mas as que aparecerem têm de vir nesta ordem:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ordem</th><th>Cláusula</th><th>Pergunta que responde</th></tr>
+<tr><td>1</td><td><code>WITH</code></td><td>Há consultas com nome para usar abaixo?</td></tr>
+<tr><td>2</td><td><code>SELECT</code> (<code>DISTINCT</code>)</td><td>Quais colunas mostrar?</td></tr>
+<tr><td>3</td><td><code>FROM</code> (+ <code>JOIN … ON</code>)</td><td>De quais tabelas?</td></tr>
+<tr><td>4</td><td><code>WHERE</code></td><td>Quais linhas?</td></tr>
+<tr><td>5</td><td><code>GROUP BY</code></td><td>Agrupar por quê?</td></tr>
+<tr><td>6</td><td><code>HAVING</code></td><td>Quais grupos?</td></tr>
+<tr><td>7</td><td><code>ORDER BY</code></td><td>Em que ordem?</td></tr>
+<tr><td>8</td><td><code>LIMIT</code> (<code>OFFSET</code>)</td><td>Quantas linhas, a partir de qual?</td></tr>
+</table>
+</div>
+
+<p>Uma consulta com quase todas elas. Quais estados têm mais de 2 clientes que não são VIP, do maior para o menor, no máximo 3:</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>SELECT estado, count(*) AS clientes
+FROM clientes
+WHERE vip = 0
+GROUP BY estado
+HAVING count(*) &gt; 2
+ORDER BY clientes DESC
+LIMIT 3;
+</pre>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> mude a consulta: tire o <code>WHERE</code>, troque o <code>DESC</code> por <code>ASC</code>, mude o <code>LIMIT</code>. Veja como cada parte muda o resultado.</p>
+<pre class="script" data-file="consulta.sql">SELECT estado, count(*) AS clientes
+FROM clientes
+WHERE vip = 0
+GROUP BY estado
+HAVING count(*) &gt; 2
+ORDER BY clientes DESC
+LIMIT 3;
+</pre>
+</div>
+
+<p>Fora de ordem, vem erro de sintaxe. Aqui o <code>ORDER BY</code> veio antes do <code>GROUP BY</code>:</p>
+
+<pre class="file" data-file="fora-de-ordem.sql" data-resultado data-erro>SELECT estado, count(*)
+FROM clientes
+ORDER BY estado
+GROUP BY estado;
+</pre>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a consulta quer mostrar quantos clientes há em cada estado, em ordem alfabética de estado, mas as cláusulas estão fora de ordem. Ponha-as no lugar certo.</p>
+<pre class="script" data-file="consulta.sql">SELECT estado, count(*)
+FROM clientes
+ORDER BY estado
+GROUP BY estado;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT estado, count(*)
+FROM clientes
+GROUP BY estado
+ORDER BY estado;
+</pre>
+</div>
+
+<hr>
+
+<h2 id="nomes">Uma coluna com nome de palavra-chave</h2>
+<p>As palavras-chave são <strong>reservadas</strong>: o banco as reconhece em qualquer lugar. Se você tentar dar a uma coluna o nome <code>order</code> ("pedido", em inglês, mas também o <code>ORDER</code> de <code>ORDER BY</code>), vem erro:</p>
+
+<pre class="file" data-file="nome-reservado.sql" data-resultado data-erro>CREATE TABLE t (order INTEGER);
+</pre>
+
+<p>Entre <strong>aspas duplas</strong>, que no SQL servem para nomes, a palavra vira um nome comum e funciona:</p>
+
+<pre class="file" data-file="nome-com-aspas.sql" data-resultado>CREATE TABLE t ("order" INTEGER);
+SELECT * FROM t;
+</pre>
+
+<p>Funciona, mas daí em diante você vai ter de escrever <code>"order"</code> com aspas toda vez. O melhor é escolher outro nome: <code>pedido</code>, <code>ordem</code>, <code>posicao</code>. Em português, quase nunca há choque, e esse é um bom motivo para nomear as colunas na nossa língua, como a Loja Aurora faz.</p>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Palavra</th><th>No SQLite do guia</th><th>Nos outros</th></tr>
+<tr><td><code>ANY</code>, <code>SOME</code>, <code>ALL</code> (com subconsulta)</td><td>Não existem: <code>syntax error</code></td><td>Existem no MySQL, no PostgreSQL e no SQL Server (aula <a href="any-all.html">ANY e ALL</a>)</td></tr>
+<tr><td><code>||</code></td><td>Junta textos</td><td>No MySQL, é um "ou" (obsoleto), a não ser com o modo <code>PIPES_AS_CONCAT</code> (aula <a href="or.html">OR</a>)</td></tr>
+<tr><td><code>&amp;&amp;</code></td><td>Não existe: <code>syntax error</code></td><td>No MySQL, é um "e" (obsoleto) (aula <a href="and.html">AND</a>)</td></tr>
+<tr><td><code>"texto"</code></td><td>Aspas duplas são nomes</td><td>No MySQL, aspas duplas também podem ser texto, a não ser com o modo <code>ANSI_QUOTES</code> (aula <a href="where.html">WHERE</a>)</td></tr>
+<tr><td><code>STRICT</code>, <code>GLOB</code>, <code>PRAGMA</code></td><td>Existem</td><td>São só do SQLite</td></tr>
+</table>
+</div>
+
+<p>As outras diferenças entre os bancos (como limitar linhas, criar números automáticos, os tipos de dados) estão em <a href="dialetos.html">As Diferenças entre os Bancos</a> e em <a href="ref-tipos.html">Tipos de Dados</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Palavras-chave são as palavras do próprio SQL. Não ligam para maiúsculas; o costume é escrevê-las em MAIÚSCULAS.</li>
+  <li>Consultar: <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>, <code>GROUP BY</code>, <code>HAVING</code>, <code>ORDER BY</code>, <code>LIMIT</code>, nessa ordem.</li>
+  <li>Mudar dados: <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>. Criar estruturas: <code>CREATE</code>, <code>ALTER</code>, <code>DROP</code>. Transações: <code>BEGIN</code>, <code>COMMIT</code>, <code>ROLLBACK</code>.</li>
+  <li>Uma palavra-chave não pode ser nome de coluna sem aspas duplas; prefira outro nome.</li>
+  <li>Comandos de ponto (<code>.tables</code>) não são SQL: são do programa <code>sqlite3</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
