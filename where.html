@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL WHERE — filtrando as linhas do resultado | Guia SQL</title>
+<meta name="description" content="A cláusula WHERE para quem está começando: como filtrar as linhas de um SELECT, números sem aspas e textos entre aspas simples, por que comparar texto liga para maiúsculas e acentos, o apóstrofo dentro do texto, o erro das aspas duplas no SQLite e as mensagens reais, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">WHERE</span></h1>
+
+<p class="intro">Até aqui, todo <code>SELECT</code> trouxe <strong>todas</strong> as linhas da tabela: os 30 clientes, os 45 produtos. Mas as perguntas do dia a dia da Loja Aurora quase nunca são sobre todos. "Quais clientes são do Piauí?" "Quais produtos acabaram no estoque?" "Quem são as vendedoras?" Para pedir só as linhas que interessam, você acrescenta ao <code>SELECT</code> a cláusula <code>WHERE</code> (em inglês, "onde"): <strong>mostre só as linhas onde</strong> tal coisa for verdade.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A filtrar as linhas com <code>WHERE coluna = valor</code>, e onde o <code>WHERE</code> entra na consulta.</li>
+  <li>Como o banco decide, linha por linha, o que entra no resultado.</li>
+  <li>A regra de ouro: <strong>números sem aspas, textos entre aspas simples</strong>.</li>
+  <li>Por que <code>'PI'</code> e <code>'pi'</code> não são a mesma coisa, e por que "nenhuma linha" não é erro.</li>
+  <li>Como escrever um texto que tem apóstrofo, como <code>Loja D'Água</code>.</li>
+  <li>Os erros reais do SQLite: aspas duplas, texto sem aspas, <code>WHERE</code> no lugar errado.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: separar as fichas que servem</h2>
+<p>A Ana tem na mão as 30 fichas de clientes e precisa mandar um catálogo para quem mora no Piauí. Ela passa as fichas uma por uma e, em cada uma, olha o campo "estado": se for PI, a ficha vai para a pilha do catálogo; se não for, fica de fora. No fim, a pilha tem só os clientes do Piauí.</p>
+
+<p>O <code>WHERE</code> é essa pergunta feita para cada ficha. Você escreve uma <strong>condição</strong> (<code>estado = 'PI'</code>), e o banco testa a condição em cada linha da tabela. As linhas em que ela é <strong>verdadeira</strong> entram no resultado; as outras ficam de fora.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Pergunta que responde</th><th>Exemplo</th></tr>
+<tr><td><code>SELECT</code></td><td>Quais <strong>colunas</strong> mostrar?</td><td><code>SELECT nome, cidade</code></td></tr>
+<tr><td><code>FROM</code></td><td>De qual <strong>tabela</strong>?</td><td><code>FROM clientes</code></td></tr>
+<tr><td><code>WHERE</code></td><td>Quais <strong>linhas</strong>?</td><td><code>WHERE estado = 'PI'</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro <code>WHERE</code></h2>
+
+<pre class="file" data-file="piaui.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT nome, cidade</dt><dd>As colunas que vão aparecer, como na aula <a href="select-colunas.html">Escolhendo Colunas</a>.</dd>
+  <dt>FROM clientes</dt><dd>A tabela.</dd>
+  <dt>WHERE</dt><dd>"Onde": a partir daqui vem a condição que cada linha precisa cumprir.</dd>
+  <dt>estado</dt><dd>A coluna que vai ser testada em cada linha.</dd>
+  <dt>=</dt><dd>"É igual a". A comparação mais simples; as outras (maior, menor, diferente) estão na aula <a href="operadores-comparacao.html">Comparações</a>.</dd>
+  <dt>'PI'</dt><dd>O valor procurado. É um <strong>texto</strong>, por isso vai entre <strong>aspas simples</strong>.</dd>
+  <dt>;</dt><dd>Fim do comando.</dd>
+</dl>
+
+<p>Vieram <strong>14 clientes</strong>, de cinco cidades do Piauí. Repare em duas coisas:</p>
+<ul>
+  <li>A coluna <code>estado</code> nem aparece no resultado. A coluna testada no <code>WHERE</code> não precisa estar na lista do <code>SELECT</code>: uma coisa é o que você <strong>mostra</strong>, outra é o que você <strong>testa</strong>.</li>
+  <li>A consulta foi escrita em três linhas, uma parte em cada. É o costume quando aparece o <code>WHERE</code>: fica fácil ler de cima para baixo.</li>
+</ul>
+
+<h3>A ordem das partes é fixa</h3>
+<p>O <code>WHERE</code> vem <strong>depois</strong> do <code>FROM</code>. Sempre: primeiro o que mostrar, depois de onde, depois quais linhas. Mais adiante você vai conhecer outras partes (<code>ORDER BY</code>, <code>LIMIT</code>), e cada uma tem o seu lugar; a seção <a href="#errado">Quando dá errado</a> mostra o que acontece se você trocar.</p>
+
+<hr>
+
+<h2>2. Como o banco pensa, linha por linha</h2>
+<p>Para cada um dos 30 clientes, o banco faz o mesmo teste:</p>
+
+<ol class="passo">
+  <li>Pega a linha do cliente 1, José Ribamar Silva. O <code>estado</code> dele é <code>'PI'</code>. <code>'PI' = 'PI'</code>? <strong>Sim</strong>: a linha entra no resultado.</li>
+  <li>Pega a linha do cliente 2, Maria Clara Mendes: <code>'PI'</code>. Sim: entra.</li>
+  <li>Pega a linha do cliente 3, Ana Beatriz Sousa: <code>'SP'</code>. <code>'SP' = 'PI'</code>? <strong>Não</strong>: fica de fora.</li>
+  <li>…e assim até o cliente 30.</li>
+</ol>
+
+<p>Só depois de escolher as linhas o banco monta as colunas do <code>SELECT</code>. Por isso dá para testar o <code>estado</code> sem mostrá-lo: o teste acontece antes.</p>
+
+<hr>
+
+<h2>3. Números: sem aspas</h2>
+<p>Quando a coluna guarda um número, escreva o número <strong>sem aspas</strong>, do jeito que você escreveria numa conta. Os clientes VIP têm o número 1 na coluna <code>vip</code>:</p>
+
+<pre class="file" data-file="vips.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE vip = 1;
+</pre>
+
+<p>São 5 clientes VIP. Outro caso muito comum é procurar uma linha pelo seu número, o <code>id</code>. Como cada <code>id</code> é único, vem uma linha só:</p>
+
+<pre class="file" data-file="produto-7.sql" data-resultado>SELECT *
+FROM produtos
+WHERE id = 7;
+</pre>
+
+<p>E os produtos que acabaram no estoque? Estoque igual a zero:</p>
+
+<pre class="file" data-file="acabou.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque = 0;
+</pre>
+
+<p>Dois produtos: o pen drive e o carrinho de fricção. (São os dois produtos que a loja deixou de vender; a coluna <code>descontinuado</code> deles vale 1.)</p>
+
+<div class="tip">
+<strong>Número com casas decimais</strong>
+<p>Nos números, a casa decimal é separada por <strong>ponto</strong>, nunca por vírgula: <code>59.95</code>, e não <code>59,95</code>. A vírgula, no SQL, separa as colunas. A aula <a href="operadores-comparacao.html">Comparações</a> mostra o que acontece quando se usa a vírgula.</p>
+</div>
+
+<hr>
+
+<h2>4. Textos: entre aspas simples</h2>
+<p>Quando o valor é um <strong>texto</strong> (um nome, uma cidade, uma sigla), ele vai entre <strong>aspas simples</strong>: <code>'São Paulo'</code>. As aspas mostram ao banco onde o texto começa e onde termina, e que aquilo é um valor, e não o nome de uma coluna.</p>
+
+<pre class="file" data-file="sao-paulo.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'São Paulo';
+</pre>
+
+<p>O espaço no meio de <code>'São Paulo'</code> não atrapalha: tudo o que está entre as aspas faz parte do texto. Mais um exemplo, com os cargos:</p>
+
+<pre class="file" data-file="vendedoras.sql" data-resultado>SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Vendedora';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo do valor</th><th>Como escrever</th><th>Exemplo</th></tr>
+<tr><td>Número inteiro</td><td>Sem aspas</td><td><code>WHERE vip = 1</code></td></tr>
+<tr><td>Número com decimais</td><td>Sem aspas, com ponto</td><td><code>WHERE preco = 59.95</code></td></tr>
+<tr><td>Texto</td><td>Entre aspas simples</td><td><code>WHERE estado = 'PI'</code></td></tr>
+<tr><td>Data</td><td>Entre aspas simples, no formato ano-mês-dia</td><td><code>WHERE nascimento = '1985-03-12'</code></td></tr>
+</table>
+</div>
+
+<p>As datas da Loja Aurora são guardadas como texto, no formato <code>AAAA-MM-DD</code> (ano, mês, dia). Por isso também levam aspas. Datas têm aula própria: <a href="datas.html">Datas e Horas</a>.</p>
+
+<div class="trysql" data-goal="linhas:7">
+<p class="try-task"><strong>Missão:</strong> a loja vai abrir uma filial no Ceará e quer conhecer os clientes de <strong>Fortaleza</strong>. Acrescente um <code>WHERE</code> para mostrar só eles.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Fortaleza';
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O texto tem de ser exato</h2>
+<p>Para o SQLite, dois textos só são iguais se forem iguais <strong>letra por letra</strong>: mesmas maiúsculas, mesmos acentos, mesmos espaços. Olhe o que acontece com a sigla em minúsculas:</p>
+
+<pre class="file" data-file="minusculas.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'pi';
+</pre>
+
+<p><strong>Nenhuma linha.</strong> E nenhuma mensagem de erro, também: a consulta está certa, só que nenhum cliente tem o estado <code>'pi'</code> (todos estão gravados como <code>'PI'</code>, em maiúsculas). Sem o acento acontece o mesmo:</p>
+
+<pre class="file" data-file="sem-acento.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Sao Paulo';
+</pre>
+
+<p>De novo, nada. Na tabela está <code>'São Paulo'</code>, com til. Um espaço sobrando no fim (<code>'Ana Beatriz Sousa '</code>) também faz a busca não achar nada.</p>
+
+<div class="warning">
+<strong>"Nenhuma linha" não é erro</strong>
+<p>Quando o <code>WHERE</code> não encontra nada, o banco responde com uma tabela vazia, sem reclamar. Ele não tem como saber se você esperava encontrar alguém. Se o resultado veio vazio e você tinha certeza de que havia dados, desconfie do <strong>valor</strong> procurado: maiúsculas, acentos e espaços. Um <code>SELECT DISTINCT estado FROM clientes;</code> mostra como os valores estão gravados de verdade.</p>
+</div>
+
+<p>Existem jeitos de buscar ignorando as maiúsculas: o <code>LIKE</code> (aula <a href="like.html">LIKE</a>) e as funções que convertem o texto, como <code>lower()</code> (aula <a href="funcoes-texto.html">Funções de Texto</a>). Por enquanto, a regra é escrever o valor exatamente como ele está na tabela.</p>
+
+<hr>
+
+<h2>6. Texto com apóstrofo</h2>
+<p>Um dos fornecedores da loja se chama <code>Loja D'Água</code>. O nome tem um apóstrofo, que é o mesmo caractere da aspa simples. Como escrever esse texto, se a aspa simples marca o fim dele? O SQL padrão tem uma resposta: <strong>escreva a aspa duas vezes</strong>.</p>
+
+<pre class="file" data-file="apostrofo.sql" data-resultado>SELECT nome, cidade
+FROM fornecedores
+WHERE nome = 'Loja D''Água';
+</pre>
+
+<dl class="anatomy">
+  <dt>'</dt><dd>Abre o texto.</dd>
+  <dt>Loja D</dt><dd>O começo do texto.</dd>
+  <dt>''</dt><dd>Duas aspas simples seguidas, sem espaço: dentro de um texto, elas querem dizer "<strong>um</strong> apóstrofo". Não são aspas duplas (<code>"</code>); são duas aspas simples (<code>'</code> e <code>'</code>).</dd>
+  <dt>Água</dt><dd>O resto do texto.</dd>
+  <dt>'</dt><dd>Fecha o texto.</dd>
+</dl>
+
+<p>O resultado mostra o nome com um apóstrofo só, <code>Loja D'Água</code>, porque é assim que ele está gravado. As duas aspas são só o jeito de <strong>escrever</strong> o apóstrofo dentro da consulta. Com uma aspa só, o banco acha que o texto acabou em <code>'Loja D'</code> e se perde; você vai ver a mensagem em <a href="#errado">Quando dá errado</a>.</p>
+
+<hr>
+
+<h2>7. <code>WHERE</code> com o que você já sabe</h2>
+<p>O <code>WHERE</code> se junta a tudo o que você aprendeu nas aulas anteriores. Em quais cidades do Piauí a loja tem clientes? <code>DISTINCT</code> para não repetir, <code>WHERE</code> para ficar só com o Piauí:</p>
+
+<pre class="file" data-file="cidades-piaui.sql" data-resultado>SELECT DISTINCT cidade
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+
+<p>São 5 cidades. Primeiro o <code>WHERE</code> escolheu os 14 clientes do Piauí; depois, o <code>DISTINCT</code> tirou as repetições de Teresina.</p>
+
+<div class="trysql" data-goal="linhas:2;;colunas:nome,preco,estoque">
+<p class="try-task"><strong>Missão:</strong> quais produtos a loja deixou de vender? Eles têm o número 1 na coluna <code>descontinuado</code>. Mostre o nome, o preço e o estoque deles.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco, estoque
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco, estoque
+FROM produtos
+WHERE descontinuado = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever a mesma condição</h2>
+<p>As três consultas abaixo trazem os mesmos 14 clientes do Piauí:</p>
+
+<pre class="file" data-file="forma1.sql">SELECT nome FROM clientes WHERE estado = 'PI';
+</pre>
+
+<pre class="file" data-file="forma2.sql" data-resultado>SELECT nome FROM clientes WHERE 'PI' = estado;
+</pre>
+
+<pre class="file" data-file="forma3.sql">SELECT nome FROM clientes WHERE estado == 'PI';
+</pre>
+
+<p>A segunda inverte os lados: <code>'PI' = estado</code> é o mesmo que <code>estado = 'PI'</code>, como 2 = x é o mesmo que x = 2. A terceira usa <code>==</code>, um "igual" duplo que o SQLite aceita, mas que não é SQL padrão.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>WHERE estado = 'PI'</code></td><td>Sempre. É o padrão, funciona em todos os bancos e é o que todo mundo espera ler</td></tr>
+<tr><td><code>WHERE 'PI' = estado</code></td><td>Funciona, mas é estranho de ler. Evite</td></tr>
+<tr><td><code>WHERE estado == 'PI'</code></td><td>Evite: o <code>==</code> é uma extensão do SQLite, não faz parte do SQL padrão</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Aspas duplas no lugar de aspas simples</strong>
+<p>Quem vem de outras linguagens de programação costuma escrever texto entre aspas duplas. No SQLite do guia, isso dá erro:</p>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE nome = "Mouse Sem Fio";
+</pre>
+<p>A mensagem diz: "não existe a coluna <code>"Mouse Sem Fio"</code>; isso deveria ser um texto entre aspas simples?". O próprio SQLite dá a dica. No SQL padrão, aspas <strong>duplas</strong> servem para <strong>nomes</strong> (de colunas, de tabelas), e não para textos. Então o banco procurou uma coluna chamada <code>Mouse Sem Fio</code> e, claro, não achou. No terminal, a mesma mensagem vem com uma seta apontando o lugar exato:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT nome, preco FROM produtos WHERE nome = "Mouse Sem Fio";
+Parse error: no such column: "Mouse Sem Fio" - should this be a string literal in single-quotes?
+  SELECT nome, preco FROM produtos WHERE nome = "Mouse Sem Fio";
+                                  error here ---^
+sqlite> SELECT nome, preco FROM produtos WHERE nome = 'Mouse Sem Fio';
+Mouse Sem Fio|59.95
+sqlite> .quit</pre>
+<p><strong>Como consertar:</strong> textos sempre entre <strong>aspas simples</strong>: <code>WHERE nome = 'Mouse Sem Fio'</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Por que tanta gente escreve aspas duplas? Porque alguns bancos aceitam. No <strong>MySQL</strong>, um texto pode ficar entre aspas simples ou duplas (a não ser que o modo <code>ANSI_QUOTES</code> esteja ligado; aí as duplas viram nomes, como no padrão). No <strong>PostgreSQL</strong>, aspas duplas são sempre nomes, e textos só vão entre aspas simples, como no SQLite do guia. Com aspas simples, a consulta funciona em todos eles; é por isso que o guia usa só elas.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto sem aspas</strong>
+<pre class="file" data-file="sem-aspas.sql" data-resultado data-erro>SELECT nome, cidade
+FROM clientes
+WHERE estado = PI;
+</pre>
+<p><code>no such column: PI</code>. Sem aspas, <code>PI</code> parece o nome de uma coluna, e a tabela <code>clientes</code> não tem coluna nenhuma chamada <code>PI</code>. É o mesmo erro de um nome de coluna digitado errado. <strong>Como consertar:</strong> <code>WHERE estado = 'PI'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O apóstrofo sem dobrar</strong>
+<pre class="file" data-file="apostrofo-errado.sql" data-resultado data-erro>SELECT nome, cidade
+FROM fornecedores
+WHERE nome = 'Loja D'Água';
+</pre>
+<p><code>near "Água": syntax error</code>. O banco leu o texto <code>'Loja D'</code> (a segunda aspa fechou o texto) e, logo depois, encontrou a palavra <code>Água</code>, que não faz sentido ali. <strong>Como consertar:</strong> dobre o apóstrofo: <code>'Loja D''Água'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>WHERE</code> antes do <code>FROM</code></strong>
+<pre class="file" data-file="ordem-errada.sql" data-resultado data-erro>SELECT nome, cidade
+WHERE estado = 'PI'
+FROM clientes;
+</pre>
+<p><code>near "FROM": syntax error</code>. A ordem das partes é fixa: <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>. O banco aceitou o <code>WHERE</code> ali (ele acha que é uma consulta sem tabela, como o <code>SELECT 2 + 2</code>), mas não esperava um <code>FROM</code> depois dele. <strong>Como consertar:</strong> mova o <code>WHERE</code> para depois do <code>FROM</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Procurar quem não tem valor com <code>= NULL</code></strong>
+<p>A Ana quer os clientes sem email. Ela sabe que são 3, mas:</p>
+<pre class="file" data-file="igual-null.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email = NULL;
+</pre>
+<p>Nenhuma linha, e nenhum erro. O <code>NULL</code> quer dizer "sem valor", e nada é "igual" a um valor que não existe, nem outro <code>NULL</code>. Para procurar os campos vazios existe um teste próprio, o <code>IS NULL</code>, que você vai aprender na aula <a href="is-null.html">IS NULL e IS NOT NULL</a>. Por enquanto, lembre: <code>= NULL</code> nunca encontra nada.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:2">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os clientes de <strong>Recife</strong>, mas a consulta dá erro. Conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = "Recife";
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE cidade = 'Recife';
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT … FROM … WHERE condição;</code></td><td>Mostra só as linhas em que a condição é verdadeira</td></tr>
+<tr><td><code>WHERE vip = 1</code></td><td>Número: sem aspas</td></tr>
+<tr><td><code>WHERE preco = 59.95</code></td><td>Número com decimais: ponto, sem aspas</td></tr>
+<tr><td><code>WHERE estado = 'PI'</code></td><td>Texto: entre aspas simples, exatamente como está gravado</td></tr>
+<tr><td><code>WHERE nome = 'Loja D''Água'</code></td><td>Apóstrofo dentro do texto: duas aspas simples</td></tr>
+<tr><td><code>SELECT DISTINCT cidade … WHERE …</code></td><td>Filtra as linhas e depois tira as repetições</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Causa provável</th></tr>
+<tr><td><code>no such column: "Mouse Sem Fio" - should this be a string literal in single-quotes?</code></td><td>Texto entre aspas duplas: troque por aspas simples</td></tr>
+<tr><td><code>no such column: PI</code></td><td>Texto sem aspas</td></tr>
+<tr><td><code>near "Água": syntax error</code></td><td>Apóstrofo dentro do texto sem dobrar</td></tr>
+<tr><td><code>near "FROM": syntax error</code></td><td><code>WHERE</code> antes do <code>FROM</code></td></tr>
+<tr><td>Nenhuma linha, sem erro</td><td>Nenhuma linha cumpre a condição: confira maiúsculas, acentos e espaços (ou é um <code>= NULL</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os clientes de Teresina</h3>
+<p>Complete a palavra-chave e as aspas:</p>
+<div class="ex-code">SELECT nome FROM clientes <input data-answer="WHERE|where" aria-label="palavra-chave"> cidade = <input data-answer="'Teresina'" aria-label="valor">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os livros</h3>
+<p>Os livros são a categoria de número 4. Complete o valor:</p>
+<div class="ex-code">SELECT nome, preco FROM produtos WHERE categoria_id = <input data-answer="4" aria-label="valor">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destas condições está escrita do jeito certo para o SQLite do guia?</p>
+<label><input type="radio" name="q3"> <code>WHERE estado = "CE"</code></label>
+<label><input type="radio" name="q3"> <code>WHERE estado = CE</code></label>
+<label><input type="radio" name="q3"> <code>WHERE estado = 'CE'</code></label>
+<label><input type="radio" name="q3"> <code>WHERE 'estado' = 'CE'</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. <code>SELECT nome FROM clientes WHERE cidade = 'fortaleza';</code> trouxe nenhuma linha, sem erro. Por quê?</p>
+<label><input type="radio" name="q4"> Não existe nenhum cliente em Fortaleza</label>
+<label><input type="radio" name="q4"> Na tabela está <code>'Fortaleza'</code>, com F maiúsculo, e o texto tem de ser exato</label>
+<label><input type="radio" name="q4"> O <code>WHERE</code> não funciona com textos</label>
+<label><input type="radio" name="q4"> Faltou o <code>DISTINCT</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Como se escreve, dentro de uma consulta, o nome do fornecedor <code>Loja D'Água</code>?</p>
+<label><input type="radio" name="q5"> <code>'Loja D'Água'</code></label>
+<label><input type="radio" name="q5"> <code>"Loja D'Água"</code></label>
+<label><input type="radio" name="q5"> <code>Loja D'Água</code>, sem aspas</label>
+<label><input type="radio" name="q5"> <code>'Loja D''Água'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em que ordem as partes da consulta são escritas?</p>
+<label><input type="radio" name="q6"> <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code></label>
+<label><input type="radio" name="q6"> <code>SELECT</code>, <code>WHERE</code>, <code>FROM</code></label>
+<label><input type="radio" name="q6"> <code>WHERE</code>, <code>SELECT</code>, <code>FROM</code></label>
+<label><input type="radio" name="q6"> Qualquer ordem</label>
+</div>
+
+<h3>Missão final: a equipe da Luana</h3>
+
+<div class="trysql" data-goal="colunas:nome,cargo;;linhas:3">
+<p class="try-task"><strong>Missão:</strong> a supervisora Luana Castelo é a funcionária de número 5. Na tabela <code>funcionarios</code>, a coluna <code>chefe_id</code> guarda o número do chefe de cada um. Mostre o nome e o cargo de quem trabalha diretamente com a Luana.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cargo
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cargo
+FROM funcionarios
+WHERE chefe_id = 5;
+</pre>
+</div>
+
+<p>São três: Igor, Sofia e Davi. Experimente trocar o 5 por 1 para ver a equipe da gerente, Marta.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>WHERE</code> ("onde") filtra as <strong>linhas</strong>: o banco testa a condição em cada linha e só mostra aquelas em que ela é verdadeira.</li>
+  <li>A ordem é fixa: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code>. A coluna testada não precisa aparecer no <code>SELECT</code>.</li>
+  <li>Números sem aspas (com ponto nos decimais); textos e datas entre <strong>aspas simples</strong>.</li>
+  <li>Aspas duplas são para <strong>nomes</strong>, não para textos: <code>"Mouse Sem Fio"</code> dá <code>no such column</code>.</li>
+  <li>Comparar texto é exato: maiúsculas, acentos e espaços contam. "Nenhuma linha" não é erro; confira o valor.</li>
+  <li>Apóstrofo dentro do texto se escreve com duas aspas simples: <code>'Loja D''Água'</code>.</li>
+  <li><code>= NULL</code> nunca encontra nada; para os campos vazios existe o <code>IS NULL</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
