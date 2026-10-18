@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL no MySQL e MariaDB — instalar, entrar e o que muda no SQL | Guia SQL</title>
+<meta name="description" content="MySQL e MariaDB para quem já sabe SQL no SQLite: instalar no Debian/Ubuntu, criar o usuário, entrar com mariadb -u -p, o arquivo ~/.my.cnf, SHOW TABLES e DESCRIBE, e as diferenças do SQL (LIMIT, crase, AUTO_INCREMENT, CONCAT, datas, maiúsculas e acentos, ON DUPLICATE KEY UPDATE), com sessões reais no MariaDB 11.8 e os erros mais comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL no <span class="hl">MySQL e MariaDB</span></h1>
+
+<p class="intro">O MySQL é o banco de dados por trás de muitos sites que você usa: lojas virtuais, blogs, sistemas de escola. O MariaDB é o irmão dele, feito pelos mesmos criadores, e é o que o Debian instala quando alguém pede "o MySQL". Nesta aula a Ana instala o MariaDB no notebook dela, cria um usuário, leva a Loja Aurora para lá e descobre o que muda no SQL que ela aprendeu no SQLite: algumas coisas melhoram, outras pegam de surpresa (por exemplo, <code>'ana'</code> é igual a <code>'ANA'</code> lá).</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre MySQL e MariaDB, e por que o Debian instala o MariaDB.</li>
+  <li>Instalar, criar um banco e um usuário, e entrar com <code>mariadb -u ana -p loja</code>.</li>
+  <li>Guardar a senha com segurança no <code>~/.my.cnf</code> e rodar um arquivo <code>.sql</code>.</li>
+  <li>Os comandos do terminal: <code>SHOW TABLES</code>, <code>DESCRIBE</code>, <code>\G</code>, <code>SOURCE</code>, <code>quit</code> (os "comandos de ponto" deles).</li>
+  <li>O que muda no SQL: <code>LIMIT</code>, crase nos nomes, <code>AUTO_INCREMENT</code>, <code>CONCAT</code>, datas, booleanos, maiúsculas e acentos, <code>ON DUPLICATE KEY UPDATE</code> e o modo estrito.</li>
+  <li>As diferenças entre o próprio MySQL e o MariaDB, e os erros mais comuns com o número de cada um.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>O que é real nesta aula</strong>
+<p>Todas as sessões de terminal são reais: rodaram num <strong>MariaDB 11.8</strong> (a versão do Debian 13) na máquina da Ana, com a Loja Aurora. O <strong>MySQL</strong> da Oracle nós <strong>não</strong> rodamos: o que é só dele está marcado e foi conferido no manual oficial do MySQL 8.4 (dev.mysql.com). Os quadros "Resultado" continuam sendo o SQLite do seu navegador, para comparar.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: dois irmãos</h2>
+<p>O MySQL nasceu nos anos 1990 e virou um dos bancos mais usados na internet. Hoje ele pertence à Oracle. Os desenvolvedores originais do MySQL criaram o <strong>MariaDB</strong>, que o site oficial descreve como "feito pelos desenvolvedores originais do MySQL e garantido como código aberto" (licença GPLv2). No começo ele era uma troca direta pelo MySQL; com os anos, cada um ganhou recursos próprios.</p>
+<p>Pense em dois irmãos gêmeos que foram morar em cidades diferentes: continuam falando igual, mas cada um pegou algumas gírias novas. Para quem está começando, <strong>90% do que você faz é igual nos dois</strong>. Nesta aula, quando algo for diferente entre eles, vai aparecer escrito.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>MySQL</th><th>MariaDB</th></tr>
+<tr><td>Quem faz</td><td>Oracle</td><td>a comunidade MariaDB, com os desenvolvedores originais do MySQL</td></tr>
+<tr><td>Programa de terminal</td><td><code>mysql</code>, prompt <code>mysql&gt;</code></td><td><code>mariadb</code>, prompt <code>MariaDB [banco]&gt;</code> (no Debian, <code>mysql</code> também funciona: é um atalho para o <code>mariadb</code>)</td></tr>
+<tr><td>No Debian 13</td><td>não vem no Debian; a Oracle oferece um repositório APT próprio</td><td>vem no Debian: pacote <code>mariadb-server</code>, versão 11.8</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Instalar</h2>
+<p>Diferente do SQLite, que é só um arquivo, o MySQL e o MariaDB são <strong>servidores</strong>: um programa fica rodando o tempo todo, guardando os bancos, e você conversa com ele por um programa cliente. Para entender bem essa diferença, veja <a href="bancos-famosos.html">Os Bancos Famosos</a>.</p>
+
+<p>No Debian ou no Ubuntu, o MariaDB vem do próprio <code>apt</code> (estes comandos são <strong>ilustrativos</strong>: não instalamos pacotes na máquina da Ana para esta aula, porque ela já tinha o MariaDB):</p>
+
+<pre class="file" data-file="instalar (ilustrativo)">sudo apt update
+sudo apt install mariadb-server
+</pre>
+
+<p>O pacote <code>mariadb-server</code> traz o servidor e, junto, o cliente <code>mariadb</code>. Para o <strong>MySQL</strong> da Oracle, o manual do MySQL 8.4 diz que o jeito preferido no Debian é o <strong>repositório APT do MySQL</strong> (um repositório extra que você adiciona ao <code>apt</code>, baixado em dev.mysql.com); depois disso o pacote se chama <code>mysql-server</code>.</p>
+
+<hr>
+
+<h2>2. Criar o banco e o usuário</h2>
+<p>Num servidor, cada pessoa entra com um <strong>usuário</strong> e uma <strong>senha</strong>, e cada usuário só mexe no que tem permissão (aula <a href="usuarios-permissoes.html">Usuários e Permissões</a>). Logo depois de instalar, só existe o administrador, o <code>root</code>. No MariaDB do Debian, o <code>root</code> entra pelo próprio usuário do sistema: a documentação do MariaDB diz que a conta <code>'root'@'localhost'</code> usa por padrão o plugin <code>unix_socket</code>, que confere quem você é no Linux em vez de pedir senha. Então a Ana digitou <code>sudo mariadb</code> (o <code>sudo</code> pediu a senha <em>dela</em>, do Linux) e, já dentro, criou o banco e o usuário:</p>
+
+<pre class="term">Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 32
+Server version: 11.8.6-MariaDB-0+deb13u1 from Debian -- Please help get to 10k stars at https://github.com/MariaDB/Server
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [(none)]&gt; CREATE DATABASE loja;
+Query OK, 1 row affected (0,000 sec)
+
+MariaDB [(none)]&gt; CREATE USER 'ana'@'localhost' IDENTIFIED BY 'Loja#Aurora26';
+Query OK, 0 rows affected (0,005 sec)
+
+MariaDB [(none)]&gt; GRANT ALL PRIVILEGES ON loja.* TO 'ana'@'localhost';
+Query OK, 0 rows affected (0,002 sec)
+
+MariaDB [(none)]&gt; SHOW DATABASES;
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| loja               |
+| mysql              |
+| performance_schema |
+| sys                |
++--------------------+
+5 rows in set (0,000 sec)
+
+MariaDB [(none)]&gt; quit
+Bye</pre>
+
+<dl class="anatomy">
+  <dt>MariaDB [(none)]&gt;</dt><dd>O prompt. Entre colchetes fica o banco em uso; <code>(none)</code> quer dizer "nenhum banco escolhido ainda".</dd>
+  <dt>CREATE DATABASE loja;</dt><dd>Cria um banco vazio chamado <code>loja</code>. Num servidor cabem muitos bancos; no SQLite, cada banco é um arquivo.</dd>
+  <dt>CREATE USER 'ana'@'localhost' IDENTIFIED BY '…';</dt><dd>Cria a usuária <code>ana</code>, que só pode entrar <strong>desta mesma máquina</strong> (<code>localhost</code>), com essa senha. Escolha uma senha sua, forte.</dd>
+  <dt>GRANT ALL PRIVILEGES ON loja.* TO …;</dt><dd>"Conceda todos os privilégios em todas as tabelas do banco <code>loja</code>" para a Ana. Ela não ganha acesso aos outros bancos.</dd>
+  <dt>SHOW DATABASES;</dt><dd>Lista os bancos. Os outros quatro são do próprio servidor: não mexa neles.</dd>
+  <dt>Query OK, 1 row affected (0,000 sec)</dt><dd>"Comando aceito, 1 linha afetada, em 0 segundos." A vírgula decimal aparece porque o sistema da Ana está em português.</dd>
+</dl>
+
+<hr>
+
+<h2>3. Entrar como Ana</h2>
+<p>Agora a Ana entra com o usuário dela. O comando tem três partes importantes:</p>
+
+<pre class="term">$ mariadb --version
+mariadb from 11.8.6-MariaDB, client 15.2 for debian-linux-gnu (x86_64) using  EditLine wrapper
+$ mariadb -u ana -p loja
+Enter password:
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 35
+Server version: 11.8.6-MariaDB-0+deb13u1 from Debian -- Please help get to 10k stars at https://github.com/MariaDB/Server
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [loja]&gt; SHOW TABLES;
++----------------+
+| Tables_in_loja |
++----------------+
+| categorias     |
+| clientes       |
+| fornecedores   |
+| funcionarios   |
+| itens_pedido   |
+| pedidos        |
+| produtos       |
++----------------+
+7 rows in set (0,000 sec)
+
+MariaDB [loja]&gt; DESCRIBE clientes;
++------------+--------------+------+-----+---------+----------------+
+| Field      | Type         | Null | Key | Default | Extra          |
++------------+--------------+------+-----+---------+----------------+
+| id         | int(11)      | NO   | PRI | NULL    | auto_increment |
+| nome       | varchar(100) | NO   |     | NULL    |                |
+| email      | varchar(100) | YES  |     | NULL    |                |
+| cidade     | varchar(60)  | YES  |     | NULL    |                |
+| estado     | char(2)      | YES  |     | NULL    |                |
+| nascimento | date         | YES  |     | NULL    |                |
+| vip        | tinyint(1)   | NO   |     | 0       |                |
++------------+--------------+------+-----+---------+----------------+
+7 rows in set (0,001 sec)
+
+MariaDB [loja]&gt; quit
+Bye</pre>
+
+<dl class="anatomy">
+  <dt>-u ana</dt><dd><em>user</em>: entra como a usuária <code>ana</code> do banco (não é o usuário do Linux).</dd>
+  <dt>-p</dt><dd><em>password</em>: pergunte a senha. Ela aparece como <code>Enter password:</code> ("digite a senha") e <strong>não aparece na tela</strong> enquanto você digita.</dd>
+  <dt>loja</dt><dd>O banco que já fica em uso ao entrar: por isso o prompt mostra <code>[loja]</code>.</dd>
+  <dt>Reading table information…</dt><dd>O cliente leu os nomes das tabelas e colunas para completar com a tecla Tab. Com <code>-A</code> ele pula isso.</dd>
+  <dt>Commands end with ; or \g.</dt><dd>"Os comandos terminam com <code>;</code> ou <code>\g</code>": igual ao <code>sqlite3</code>, sem o <code>;</code> o comando não roda.</dd>
+</dl>
+
+<p>Este banco já tem as tabelas da Loja Aurora: a Ana as importou de um arquivo, como você vai ver na seção 5. No MySQL da Oracle a sessão é igual, só trocando o comando para <code>mysql -u ana -p loja</code> e o prompt para <code>mysql&gt;</code> (assim aparece no manual do MySQL 8.4); para sair, <code>QUIT</code> ou <code>\q</code>.</p>
+
+<p>E se a senha estiver errada? O servidor recusa, com o erro 1045:</p>
+
+<pre class="term">$ mariadb -u ana -p loja
+Enter password:
+ERROR 1045 (28000): Access denied for user 'ana'@'localhost' (using password: YES)</pre>
+
+<p>"Acesso negado para a usuária ana em localhost (usando senha: SIM)". O <code>using password: YES</code> só diz que uma senha foi enviada; não diz se o problema é a senha ou o usuário (de propósito, para não ajudar um invasor).</p>
+
+<hr>
+
+<h2>4. Guardar a senha no ~/.my.cnf</h2>
+<p>Digitar a senha toda vez cansa. Escrever a senha no próprio comando (<code>-pLoja#Aurora26</code>) é pior: ela fica no histórico do terminal e aparece para outros programas. O manual do MySQL recomenda guardá-la num <strong>arquivo de opções</strong> na sua pasta pessoal, o <code>~/.my.cnf</code>, que o MySQL e o MariaDB leem sozinhos:</p>
+
+<pre class="file" data-file="~/.my.cnf">[client]
+user=ana
+password="Loja#Aurora26"
+</pre>
+
+<dl class="anatomy">
+  <dt>[client]</dt><dd>O grupo de opções que todos os programas clientes leem (<code>mariadb</code>, <code>mysql</code>, <code>mariadb-dump</code>…), mas não o servidor.</dd>
+  <dt>user=ana</dt><dd>Equivale a <code>-u ana</code>.</dd>
+  <dt>password="…"</dt><dd>A senha. As <strong>aspas</strong> são necessárias aqui porque a senha tem <code>#</code>, e num arquivo de opções o <code>#</code> começa um comentário: sem as aspas, a senha lida seria só <code>Loja</code> e o servidor responderia <code>Access denied</code>.</dd>
+</dl>
+
+<p>Depois, deixe o arquivo legível só por você (o manual pede o modo <code>400</code> ou <code>600</code>), e entre sem <code>-u</code> nem <code>-p</code>:</p>
+
+<pre class="file" data-file="terminal (ilustrativo)">chmod 600 ~/.my.cnf
+mariadb loja
+</pre>
+
+<p>Daqui em diante, as sessões da aula usam <code>mariadb loja</code>.</p>
+
+<hr>
+
+<h2>5. Levar a Loja Aurora para o MariaDB</h2>
+<p>O arquivo <code>aurora.sql</code> do guia foi escrito para o SQLite. Para o MariaDB, a Ana fez o <code>loja-mariadb.sql</code>: os mesmos <code>INSERT</code> (eles funcionam igual), mas com o <code>CREATE TABLE</code> nos tipos do MariaDB. A tabela de clientes ficou assim:</p>
+
+<pre class="file" data-file="loja-mariadb.sql (trecho)">CREATE TABLE clientes (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    nome       VARCHAR(100) NOT NULL,
+    email      VARCHAR(100),
+    cidade     VARCHAR(60),
+    estado     CHAR(2),
+    nascimento DATE,
+    vip        BOOLEAN NOT NULL DEFAULT FALSE
+);
+</pre>
+
+<p>Compare com a do SQLite (aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a>): <code>TEXT</code> virou <code>VARCHAR(100)</code> (texto de até 100 caracteres), a data virou <code>DATE</code>, o <code>vip</code> virou <code>BOOLEAN</code> e o <code>id</code> ganhou <code>AUTO_INCREMENT</code>. Para rodar um arquivo inteiro de fora do cliente, use o <code>&lt;</code> do terminal; para um comando só, a opção <code>-e</code> (<em>execute</em>):</p>
+
+<pre class="term">$ ls *.sql
+estoque-baixo.sql  loja-mariadb.sql
+$ mariadb loja &lt; loja-mariadb.sql
+$ mariadb loja -e "SELECT COUNT(*) AS clientes FROM clientes"
++----------+
+| clientes |
++----------+
+|       30 |
++----------+</pre>
+
+<p>O <code>&lt; loja-mariadb.sql</code> não mostra nada quando dá certo. Os 30 clientes chegaram.</p>
+
+<hr>
+
+<h2>6. Explorando o banco</h2>
+<p>Os "comandos de ponto" do <code>sqlite3</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>) não existem aqui. No MySQL e no MariaDB, quase tudo é SQL mesmo (<code>SHOW</code>, <code>DESCRIBE</code>), mais alguns comandos do cliente que começam com <code>\</code>:</p>
+
+<pre class="term">$ mariadb loja
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 43
+Server version: 11.8.6-MariaDB-0+deb13u1 from Debian -- Please help get to 10k stars at https://github.com/MariaDB/Server
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [loja]&gt; SELECT DATABASE();
++------------+
+| DATABASE() |
++------------+
+| loja       |
++------------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT * FROM clientes WHERE id = 1\G
+*************************** 1. row ***************************
+        id: 1
+      nome: José Ribamar Silva
+     email: jose.ribamar@exemplo.com.br
+    cidade: Teresina
+    estado: PI
+nascimento: 1985-03-12
+       vip: 1
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SOURCE estoque-baixo.sql
++-----------------------------------+---------+
+| nome                              | estoque |
++-----------------------------------+---------+
+| Jogo de Panelas 5 peças           |      12 |
+| Tesoura de Poda                   |      17 |
+| Caixa de Som Portátil             |      18 |
+| Tapete de Yoga                    |      19 |
+| Vaso de Cerâmica Médio            |      20 |
+| Jogo de Tabuleiro Trilha Mística  |      21 |
+| Faqueiro Inox 24 peças            |      22 |
+| Par de Halteres 2kg               |      24 |
+| Teclado Compacto                  |      25 |
+| Atlas Geográfico                  |      26 |
+| Boneca de Pano Maria Flor         |      27 |
+| Guia de Receitas do Nordeste      |      29 |
++-----------------------------------+---------+
+12 rows in set (0,000 sec)
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT DATABASE();</dt><dd>Mostra o banco em uso. Para trocar: <code>USE outro_banco;</code>.</dd>
+  <dt>\G</dt><dd>No lugar do <code>;</code>, mostra cada linha "em pé": uma coluna por linha. Ótimo para tabelas largas.</dd>
+  <dt>SOURCE estoque-baixo.sql</dt><dd>Roda os comandos de um arquivo, como o <code>.read</code> do <code>sqlite3</code>. O arquivo tem um <code>SELECT … WHERE estoque &lt; 30 AND descontinuado = FALSE ORDER BY estoque;</code>.</dd>
+</dl>
+
+<p>Se você esquecer o <code>;</code>, o cliente espera mais texto e mostra <code>-&gt;</code>, como o <code>...&gt;</code> do <code>sqlite3</code>. Basta digitar o <code>;</code>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT nome FROM clientes WHERE estado = 'PI'
+    -&gt; ;
++-----------------------+
+| nome                  |
++-----------------------+
+| José Ribamar Silva    |
+| Maria Clara Mendes    |
+| Conceição Prado       |
+| Luís Otávio Brito     |
+| Antônio Carlos Neves  |
+| Tiago Fontes          |
+| Camila Duarte         |
+| Larissa Macêdo        |
+| Ana Carvalho Lima     |
+| Sebastião Moura       |
+| Henrique Sales        |
+| Otávio Bezerra        |
+| Paulo Sérgio Andrade  |
+| Elias Furtado         |
++-----------------------+
+14 rows in set (0,000 sec)
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No <code>sqlite3</code></th><th>No <code>mariadb</code> / <code>mysql</code></th><th>O que faz</th></tr>
+<tr><td><code>sqlite3 loja.db</code></td><td><code>mariadb -u ana -p loja</code></td><td>abre o banco</td></tr>
+<tr><td><code>.databases</code></td><td><code>SHOW DATABASES;</code></td><td>lista os bancos</td></tr>
+<tr><td><code>.tables</code></td><td><code>SHOW TABLES;</code></td><td>lista as tabelas</td></tr>
+<tr><td><code>.schema clientes</code></td><td><code>DESCRIBE clientes;</code> ou <code>SHOW CREATE TABLE clientes;</code></td><td>mostra a estrutura da tabela</td></tr>
+<tr><td><code>.mode line</code></td><td>terminar com <code>\G</code></td><td>uma coluna por linha</td></tr>
+<tr><td><code>.read arquivo.sql</code></td><td><code>SOURCE arquivo.sql</code></td><td>roda um arquivo</td></tr>
+<tr><td><code>sqlite3 loja.db "SELECT …"</code></td><td><code>mariadb loja -e "SELECT …"</code></td><td>um comando só, sem entrar</td></tr>
+<tr><td><code>.quit</code></td><td><code>quit</code>, <code>exit</code> ou <code>\q</code></td><td>sai</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>7. O que muda no SQL</h2>
+<p>A Ana rodou as consultas que conhece. Quase tudo funcionou igual. As diferenças estão abaixo, cada uma comparada com o SQLite.</p>
+
+<h3>7.1 LIMIT: as duas formas</h3>
+<p>O MySQL e o MariaDB aceitam <code>LIMIT 3 OFFSET 3</code> e a forma curta <code>LIMIT 3, 3</code> (primeiro o deslocamento, depois a quantidade; o manual do MySQL explica que a forma com <code>OFFSET</code> existe "por compatibilidade com o PostgreSQL"). O MariaDB, desde a versão 10.6, também aceita a forma do padrão, com <code>OFFSET … ROWS FETCH …</code>; a sintaxe do <code>SELECT</code> do MySQL 8.4 só tem o <code>LIMIT</code>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 3, 3;
++-------------------------+--------+
+| nome                    | preco  |
++-------------------------+--------+
+| Faqueiro Inox 24 peças  | 119.40 |
+| Teclado Compacto        |  99.00 |
+| Mochila Escolar Azul    |  89.99 |
++-------------------------+--------+
+3 rows in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY;
++-------------------------+--------+
+| nome                    | preco  |
++-------------------------+--------+
+| Faqueiro Inox 24 peças  | 119.40 |
+| Teclado Compacto        |  99.00 |
+| Mochila Escolar Azul    |  89.99 |
++-------------------------+--------+
+3 rows in set (0,000 sec)
+</pre>
+
+<p>O SQLite também entende <code>LIMIT 3, 3</code>. A diferença que salta aos olhos é o preço: <code>119.40</code> lá, <code>119.4</code> aqui, porque a coluna no MariaDB é <code>DECIMAL(10,2)</code>, que guarda sempre duas casas:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3, 3;
+</pre>
+
+<h3>7.2 Crase nos nomes; aspas duplas são texto</h3>
+<p>Nomes de tabela e coluna que precisam de aspas vão entre crases: <code>`nome`</code>. As aspas <strong>duplas</strong> são texto, iguais às simples (a não ser que o modo <code>ANSI_QUOTES</code> esteja ligado). Por isso <code>SELECT "nome" FROM clientes</code> devolve a palavra "nome" em todas as linhas, sem erro. Isso foi mostrado em <a href="dialetos.html">As Diferenças entre os Bancos</a>. Outra pegadinha: no Linux, o nome da <strong>tabela</strong> diferencia maiúsculas (<code>CLIENTES</code> não é <code>clientes</code>), mas o da coluna não.</p>
+
+<h3>7.3 AUTO_INCREMENT, LAST_INSERT_ID e RETURNING</h3>
+<p>Com <code>AUTO_INCREMENT</code>, quem dá o número é o servidor. Para saber que número ele deu, use <code>LAST_INSERT_ID()</code> ("o último id inserido", na sua conexão). O MariaDB também tem o <code>RETURNING</code>, que devolve a linha inserida na hora, como no SQLite; o MySQL 8.4 não tem <code>RETURNING</code> no <code>INSERT</code> (o manual indica o <code>LAST_INSERT_ID()</code>):</p>
+
+<pre class="term">MariaDB [loja]&gt; INSERT INTO categorias (nome, descricao) VALUES ('Pet Shop', 'Rações e acessórios');
+Query OK, 1 row affected (0,001 sec)
+
+MariaDB [loja]&gt; SELECT LAST_INSERT_ID();
++------------------+
+| LAST_INSERT_ID() |
++------------------+
+|                9 |
++------------------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; INSERT INTO categorias (nome) VALUES ('Material de Construção') RETURNING id, nome;
++----+--------------------------+
+| id | nome                     |
++----+--------------------------+
+| 10 | Material de Construção   |
++----+--------------------------+
+1 row in set (0,001 sec)
+</pre>
+
+<p>No SQLite, o equivalente do <code>LAST_INSERT_ID()</code> é <code>last_insert_rowid()</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>INSERT INTO categorias (nome, descricao) VALUES ('Pet Shop', 'Rações e acessórios');
+SELECT last_insert_rowid();
+</pre>
+
+<h3>7.4 Juntar textos: CONCAT, não ||</h3>
+<p>No MySQL e no MariaDB o <code>||</code> é "ou" lógico (o manual do MySQL 8.4 avisa que esse uso está descontinuado). Use <code>CONCAT(a, b, …)</code> ou <code>CONCAT_WS(separador, a, b, …)</code> (<em>with separator</em>, "com separador"). O <code>CONCAT_WS</code> pula os <code>NULL</code>; o <code>CONCAT</code> fica <code>NULL</code> se um pedaço for <code>NULL</code>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT CONCAT_WS(' - ', nome, cidade, estado) AS cliente FROM clientes WHERE id IN (1, 7);
++--------------------------------------+
+| cliente                              |
++--------------------------------------+
+| José Ribamar Silva - Teresina - PI   |
+| Luís Otávio Brito - Parnaíba - PI    |
++--------------------------------------+
+2 rows in set (0,000 sec)
+</pre>
+
+<p>O SQLite 3.50 tem as mesmas duas funções (desde a 3.44), então este SQL roda nos dois:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT concat_ws(' - ', nome, cidade, estado) AS cliente
+FROM clientes
+WHERE id IN (1, 7);
+</pre>
+
+<h3>7.5 Datas</h3>
+<p>No MySQL e no MariaDB a data é um tipo de verdade (<code>DATE</code>), com funções próprias: <code>CURDATE()</code> (hoje), <code>NOW()</code> (agora), <code>DATE_ADD(d, INTERVAL 7 DAY)</code>, <code>DATEDIFF(fim, início)</code>, <code>YEAR(d)</code>, <code>MONTH(d)</code>, <code>DAY(d)</code> e <code>DATE_FORMAT(d, formato)</code>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT CURDATE() AS hoje;
++------------+
+| hoje       |
++------------+
+| 2026-10-18 |
++------------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT id, DATE_FORMAT(data, '%d/%m/%Y') AS data_br, YEAR(data) AS ano FROM pedidos WHERE id IN (1, 90);
++----+------------+------+
+| id | data_br    | ano  |
++----+------------+------+
+|  1 | 05/01/2024 | 2024 |
+| 90 | 14/10/2026 | 2026 |
++----+------------+------+
+2 rows in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT YEAR(data) AS ano, COUNT(*) AS pedidos FROM pedidos GROUP BY ano ORDER BY ano;
++------+---------+
+| ano  | pedidos |
++------+---------+
+| 2024 |      32 |
+| 2025 |      32 |
+| 2026 |      26 |
++------+---------+
+3 rows in set (0,001 sec)
+</pre>
+
+<p>Os códigos do <code>DATE_FORMAT</code> (<code>%d</code>, <code>%m</code>, <code>%Y</code>) são quase os mesmos do <code>strftime</code> do SQLite. A tabela completa de equivalências está em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+
+<div class="trysql" data-goal="colunas:id,data_br;;linhas:2;;contem:90|14/10/2026">
+<p class="try-task"><strong>Experimente:</strong> esta é a consulta do MariaDB acima, sem o ano. No SQLite ela dá erro, porque <code>DATE_FORMAT</code> não existe aqui. Troque por <code>strftime</code> com os mesmos códigos, mantendo o apelido <code>data_br</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, DATE_FORMAT(data, '%d/%m/%Y') AS data_br
+FROM pedidos
+WHERE id IN (1, 90);
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, strftime('%d/%m/%Y', data) AS data_br
+FROM pedidos
+WHERE id IN (1, 90);
+</pre>
+</div>
+
+<h3>7.6 Booleanos e divisão</h3>
+<p><code>BOOLEAN</code> no MySQL/MariaDB é só outro nome para <code>TINYINT(1)</code>, um número pequeno: o <code>DESCRIBE</code> da seção 3 mostrou <code>vip | tinyint(1)</code>, e <code>TRUE</code> vale <code>1</code>. Já a divisão é diferente do SQLite: <code>7 / 2</code> dá <code>3.5000</code>; para a divisão inteira existe o <code>DIV</code>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT TRUE, FALSE, 7 / 2 AS divisao, 7 DIV 2 AS inteira, 7 % 2 AS resto;
++------+-------+---------+---------+-------+
+| TRUE | FALSE | divisao | inteira | resto |
++------+-------+---------+---------+-------+
+|    1 |     0 |  3.5000 |       3 |     1 |
++------+-------+---------+---------+-------+
+1 row in set (0,000 sec)
+</pre>
+
+<p>No SQLite, inteiro dividido por inteiro dá inteiro (aula <a href="funcoes-numericas.html">Funções Numéricas</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT 7 / 2 AS divisao, 7 / 2.0 AS decimal, 7 % 2 AS resto;
+</pre>
+
+<h3>7.7 Maiúsculas e acentos: 'ana' = 'ANA'</h3>
+<p>Esta é a diferença que mais surpreende quem vem do SQLite. Cada texto no MySQL/MariaDB tem uma <strong>collation</strong> (a regra de comparação e ordenação). A padrão do MySQL 8.4 é <code>utf8mb4_0900_ai_ci</code>; a do MariaDB 11.8 que a Ana usa é <code>utf8mb4_uca1400_ai_ci</code>. O final <code>_ai_ci</code> quer dizer, segundo o manual do MySQL, <em>accent-insensitive</em> e <em>case-insensitive</em>: <strong>ignora acentos e maiúsculas</strong>:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT 'ana' = 'ANA' AS maiusculas, 'Jose' = 'José' AS acento;
++------------+--------+
+| maiusculas | acento |
++------------+--------+
+|          1 |      1 |
++------------+--------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT @@character_set_server, @@collation_server;
++------------------------+-----------------------+
+| @@character_set_server | @@collation_server    |
++------------------------+-----------------------+
+| utf8mb4                | utf8mb4_uca1400_ai_ci |
++------------------------+-----------------------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT nome FROM clientes WHERE nome = 'jose ribamar silva';
++---------------------+
+| nome                |
++---------------------+
+| José Ribamar Silva  |
++---------------------+
+1 row in set (0,001 sec)
+</pre>
+
+<p>Uma busca por "jose ribamar silva", tudo minúsculo e sem acento, achou o "José Ribamar Silva". Para um campo de busca isso é ótimo; para um login, pode ser um problema. No SQLite, o <code>=</code> compara letra por letra; para ignorar maiúsculas (só nas letras sem acento) existe o <code>COLLATE NOCASE</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT 'ana' = 'ANA' AS maiusculas,
+       'ana' = 'ANA' COLLATE NOCASE AS com_nocase,
+       'Jose' = 'José' AS acento;
+</pre>
+
+<h3>7.8 Conversões silenciosas e o modo estrito</h3>
+<p>Quando o MySQL/MariaDB não consegue converter um valor, às vezes ele <strong>não dá erro</strong>: troca o valor e deixa um aviso. <code>'dez' + 5</code> vira <code>5</code> (o texto vira 0):</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT 'dez' + 5 AS conta;
++-------+
+| conta |
++-------+
+|     5 |
++-------+
+1 row in set, 1 warning (0,000 sec)
+
+MariaDB [loja]&gt; SHOW WARNINGS;
++---------+------+-----------------------------------------+
+| Level   | Code | Message                                 |
++---------+------+-----------------------------------------+
+| Warning | 1292 | Truncated incorrect DOUBLE value: 'dez' |
++---------+------+-----------------------------------------+
+1 row in set (0,000 sec)
+</pre>
+
+<p>Em <strong>gravações</strong>, porém, o <strong>modo estrito</strong> (<code>STRICT_TRANS_TABLES</code>, ligado por padrão no MySQL 8.4 e no MariaDB) transforma o problema em erro. A coluna <code>estado</code> é <code>CHAR(2)</code>, e a Ana tentou gravar "Piauí":</p>
+
+<pre class="term">MariaDB [loja]&gt; INSERT INTO clientes (nome, estado) VALUES ('Cliente Teste', 'Piauí');
+ERROR 1406 (22001): Data too long for column 'estado' at row 1
+MariaDB [loja]&gt; SELECT @@sql_mode;
++-------------------------------------------------------------------------------------------+
+| @@sql_mode                                                                                |
++-------------------------------------------------------------------------------------------+
+| STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION |
++-------------------------------------------------------------------------------------------+
+1 row in set (0,000 sec)
+</pre>
+
+<p>"Dado longo demais para a coluna estado, na linha 1". O SQLite, nesse caso, gravaria "Piauí" sem reclamar, porque não confere o tamanho (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). O <code>@@sql_mode</code> mostra os modos ligados; o manual do MySQL 8.4 explica que, sem o modo estrito, o valor seria cortado com um aviso.</p>
+
+<h3>7.9 Inserir ou atualizar: ON DUPLICATE KEY UPDATE</h3>
+<p>O UPSERT do MySQL/MariaDB é o <code>ON DUPLICATE KEY UPDATE</code> ("em chave duplicada, atualize"). A Ana quer renomear a categoria 1:</p>
+
+<pre class="term">MariaDB [loja]&gt; INSERT INTO categorias (id, nome) VALUES (1, 'Papelaria e Escritório');
+ERROR 1062 (23000): Duplicate entry '1' for key 'PRIMARY'
+MariaDB [loja]&gt; INSERT INTO categorias (id, nome) VALUES (1, 'Papelaria e Escritório') ON DUPLICATE KEY UPDATE nome = VALUE(nome);
+Query OK, 2 rows affected (0,001 sec)
+
+MariaDB [loja]&gt; INSERT INTO categorias (id, nome) VALUES (1, 'Papelaria e Escritório') ON DUPLICATE KEY UPDATE nome = VALUE(nome);
+Query OK, 0 rows affected (0,000 sec)
+</pre>
+
+<dl class="anatomy">
+  <dt>ERROR 1062 … Duplicate entry '1' for key 'PRIMARY'</dt><dd>Sem o UPSERT, o <code>INSERT</code> falha: "entrada duplicada '1' na chave PRIMARY" (a chave primária).</dd>
+  <dt>ON DUPLICATE KEY UPDATE</dt><dd>Se a chave já existe, em vez de falhar, atualize aquela linha.</dd>
+  <dt>nome = VALUE(nome)</dt><dd><code>VALUE(nome)</code> é "o <code>nome</code> que eu tentei inserir". No MariaDB a função se chama <code>VALUE()</code> (o <code>VALUES()</code> antigo também funciona nesse lugar).</dd>
+  <dt>2 rows affected / 0 rows affected</dt><dd>A convenção do MySQL, segundo o manual: 1 = inseriu uma linha nova, 2 = atualizou uma existente, 0 = a linha já tinha esses valores. Na segunda vez nada mudou, por isso 0.</dd>
+</dl>
+
+<p>No <strong>MySQL 8.4</strong>, o manual marca o <code>VALUES()</code> desse lugar como descontinuado e recomenda dar um apelido à linha nova (ilustrativo, sintaxe do manual):</p>
+
+<pre class="file" data-file="mysql.sql (ilustrativo)">INSERT INTO categorias (id, nome) VALUES (1, 'Papelaria e Escritório') AS nova
+ON DUPLICATE KEY UPDATE nome = nova.nome;
+</pre>
+
+<p>O MariaDB 11.8 <strong>não</strong> aceita esse apelido; é uma das diferenças entre os irmãos:</p>
+
+<pre class="term">MariaDB [loja]&gt; INSERT INTO categorias (id, nome) VALUES (8, 'Jardim e Quintal') AS nova ON DUPLICATE KEY UPDATE nome = nova.nome;
+ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'AS nova ON DUPLICATE KEY UPDATE nome = nova.nome' at line 1
+</pre>
+
+<h3>7.10 GROUP BY com coluna solta</h3>
+<p>No MariaDB, esta consulta roda: ela agrupa por estado, mas pede também o <code>nome</code>, que não está no <code>GROUP BY</code> nem numa função agregada. O banco escolhe um nome qualquer do grupo:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT estado, COUNT(*) AS clientes, nome FROM clientes GROUP BY estado;
++--------+----------+----------------------+
+| estado | clientes | nome                 |
++--------+----------+----------------------+
+| CE     |        7 | Carlos Eduardo Lima  |
+| PE     |        2 | Juliana Paes Barbosa |
+| PI     |       14 | José Ribamar Silva   |
+| SP     |        7 | Ana Beatriz Sousa    |
++--------+----------+----------------------+
+4 rows in set (0,001 sec)
+</pre>
+
+<p>O SQLite também aceita (veja o quadro abaixo). O <strong>MySQL 8.4</strong>, não: o modo <code>ONLY_FULL_GROUP_BY</code> está ligado por padrão lá e, segundo o manual, rejeita consultas que pedem colunas "não agregadas" fora do <code>GROUP BY</code> (erro 1055). O <code>@@sql_mode</code> do MariaDB, na seção 7.8, não tem esse modo. Escreva sempre como o MySQL exige: toda coluna do <code>SELECT</code> ou está no <code>GROUP BY</code>, ou dentro de uma função como <code>MIN(nome)</code> (aula <a href="group-by.html">GROUP BY</a>).</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT estado, COUNT(*) AS clientes, nome
+FROM clientes
+GROUP BY estado;
+</pre>
+
+<hr>
+
+<h2>Formas diferentes: inserir sem duplicar</h2>
+<p>Quando a linha pode já existir, há três jeitos de escrever o <code>INSERT</code> no MariaDB, com equivalentes no SQLite:</p>
+
+<pre class="term">MariaDB [loja]&gt; INSERT IGNORE INTO categorias (id, nome) VALUES (2, 'Eletrônicos e Informática');
+Query OK, 0 rows affected, 1 warning (0,000 sec)
+
+MariaDB [loja]&gt; SHOW WARNINGS;
++---------+------+---------------------------------------+
+| Level   | Code | Message                               |
++---------+------+---------------------------------------+
+| Warning | 1062 | Duplicate entry '2' for key 'PRIMARY' |
++---------+------+---------------------------------------+
+1 row in set (0,000 sec)
+</pre>
+
+<p>O <code>INSERT IGNORE</code> transformou o erro 1062 num aviso e não mudou nada. No SQLite, o mesmo se escreve <code>INSERT OR IGNORE</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>INSERT OR IGNORE INTO categorias (id, nome) VALUES (2, 'Eletrônicos e Informática');
+SELECT id, nome FROM categorias WHERE id = 2;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>MySQL / MariaDB</th><th>SQLite</th></tr>
+<tr><td>falhar se já existe (o normal)</td><td><code>INSERT …</code> → erro 1062</td><td><code>INSERT …</code> → <code>UNIQUE constraint failed</code></td></tr>
+<tr><td>ignorar se já existe</td><td><code>INSERT IGNORE …</code></td><td><code>INSERT OR IGNORE …</code> ou <code>… ON CONFLICT DO NOTHING</code></td></tr>
+<tr><td>atualizar se já existe</td><td><code>… ON DUPLICATE KEY UPDATE col = VALUE(col)</code> (MySQL: <code>AS nova … nova.col</code>)</td><td><code>… ON CONFLICT (id) DO UPDATE SET col = excluded.col</code></td></tr>
+</table>
+</div>
+
+<p>Qual usar? <strong>Atualizar</strong> quando o dado novo deve valer (um preço novo). <strong>Ignorar</strong> só quando você tem certeza de que a linha antiga está certa: o <code>IGNORE</code> engole o erro, e erros engolidos escondem problemas.</p>
+
+<hr>
+
+<h2>MySQL × MariaDB: o que é diferente entre os irmãos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>MySQL 8.4 (manual)</th><th>MariaDB 11.8 (rodado)</th></tr>
+<tr><td>Cliente</td><td><code>mysql</code>, prompt <code>mysql&gt;</code></td><td><code>mariadb</code>, prompt <code>MariaDB [loja]&gt;</code></td></tr>
+<tr><td><code>OFFSET … FETCH …</code></td><td>não (só <code>LIMIT</code>)</td><td>sim (desde a 10.6)</td></tr>
+<tr><td><code>INSERT … RETURNING</code></td><td>não (use <code>LAST_INSERT_ID()</code>)</td><td>sim</td></tr>
+<tr><td>UPSERT</td><td><code>VALUES (…) AS nova ON DUPLICATE KEY UPDATE c = nova.c</code></td><td><code>ON DUPLICATE KEY UPDATE c = VALUE(c)</code></td></tr>
+<tr><td><code>ONLY_FULL_GROUP_BY</code> por padrão</td><td>sim</td><td>não</td></tr>
+<tr><td>Collation padrão</td><td><code>utf8mb4_0900_ai_ci</code></td><td><code>utf8mb4_uca1400_ai_ci</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Os erros do MySQL e do MariaDB têm sempre o mesmo formato: <code>ERROR número (SQLSTATE): mensagem</code>. O <strong>número</strong> é o mesmo nos dois bancos e é ótimo para pesquisar; o <strong>SQLSTATE</strong>, entre parênteses, é um código de 5 caracteres definido pelo padrão SQL. As mensagens saem em inglês.</p>
+
+<div class="cenario">
+<strong>Tabela com nome errado: ERROR 1146</strong>
+<pre class="term">MariaDB [loja]&gt; SELECT nome FROM cliente;
+ERROR 1146 (42S02): Table 'loja.cliente' doesn't exist</pre>
+<p>"A tabela loja.cliente não existe": faltou o <strong>s</strong>. O banco mostra o nome completo, <code>banco.tabela</code>. No SQLite a mesma falha é <code>no such table: cliente</code>.</p>
+<p><strong>Como consertar:</strong> <code>SHOW TABLES;</code> para ver os nomes certos. Lembre que no Linux <code>Clientes</code> e <code>clientes</code> são tabelas diferentes.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna com nome errado: ERROR 1054</strong>
+<pre class="term">MariaDB [loja]&gt; SELECT nome, cidad FROM clientes;
+ERROR 1054 (42S22): Unknown column 'cidad' in 'SELECT'</pre>
+<p>"Coluna desconhecida 'cidad' no SELECT". O MySQL escreve o fim de outro jeito (o manual registra a mensagem como <code>Unknown column '%s' in '%s'</code>, e o segundo pedaço varia), mas o número 1054 é o mesmo.</p>
+<p><strong>Como consertar:</strong> <code>DESCRIBE clientes;</code> e corrija para <code>cidade</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Erro de sintaxe: ERROR 1064</strong>
+<pre class="term">MariaDB [loja]&gt; SELECT TOP 3 nome FROM produtos;
+ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '3 nome FROM produtos' at line 1</pre>
+<p>"Você tem um erro na sintaxe SQL; confira no manual da sua versão a sintaxe certa para usar perto de '3 nome FROM produtos', na linha 1." O trecho depois do <code>near</code> começa <strong>exatamente onde o banco se perdeu</strong>: aqui, no <code>3</code> depois do <code>TOP</code> (que é do SQL Server). Leia o que vem logo antes desse trecho.</p>
+<p><strong>Como consertar:</strong> <code>SELECT nome FROM produtos ORDER BY preco DESC LIMIT 3;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Chave repetida: ERROR 1062</strong>
+<p>Visto na seção 7.9: <code>ERROR 1062 (23000): Duplicate entry '1' for key 'PRIMARY'</code>. Você tentou inserir um <code>id</code> que já existe. <strong>Como consertar:</strong> não informe o <code>id</code> (deixe o <code>AUTO_INCREMENT</code> escolher) ou use <code>ON DUPLICATE KEY UPDATE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto grande demais: ERROR 1406</strong>
+<p>Visto na seção 7.8: <code>ERROR 1406 (22001): Data too long for column 'estado' at row 1</code>. <strong>Como consertar:</strong> grave o valor no tamanho da coluna (<code>'PI'</code>) ou aumente a coluna com <code>ALTER TABLE</code> (aula <a href="alter-table.html">ALTER TABLE</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Senha ou usuário: ERROR 1045</strong>
+<p>Visto na seção 3: <code>ERROR 1045 (28000): Access denied for user 'ana'@'localhost' (using password: YES)</code>. Confira a senha; se ela está no <code>~/.my.cnf</code> e tem <code>#</code>, ponha-a entre aspas. Se aparecer <code>using password: NO</code>, nenhuma senha foi enviada: faltou o <code>-p</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas errado: aspas duplas e ||</strong>
+<p>Os dois mais traiçoeiros não dão erro nenhum: <code>WHERE "estado" = 'PI'</code> compara o texto "estado" com "PI" (volta vazio), e <code>nome || cidade</code> devolve <code>0</code> com avisos. Ambos estão em <a href="dialetos.html">As Diferenças entre os Bancos</a>. Se aparecer <code>warnings</code> no fim do resultado, rode <code>SHOW WARNINGS;</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando / SQL</th><th>O que faz</th></tr>
+<tr><td><code>sudo apt install mariadb-server</code></td><td>instala o MariaDB no Debian/Ubuntu</td></tr>
+<tr><td><code>sudo mariadb</code></td><td>entra como administrador (<code>root</code>)</td></tr>
+<tr><td><code>CREATE DATABASE loja;</code></td><td>cria um banco</td></tr>
+<tr><td><code>CREATE USER 'ana'@'localhost' IDENTIFIED BY '…';</code></td><td>cria um usuário</td></tr>
+<tr><td><code>GRANT ALL PRIVILEGES ON loja.* TO 'ana'@'localhost';</code></td><td>dá permissão no banco</td></tr>
+<tr><td><code>mariadb -u ana -p loja</code></td><td>entra (pede a senha)</td></tr>
+<tr><td><code>mariadb loja &lt; arquivo.sql</code> / <code>-e "SQL"</code></td><td>roda um arquivo / um comando, sem entrar</td></tr>
+<tr><td><code>SHOW DATABASES;</code> <code>SHOW TABLES;</code> <code>DESCRIBE t;</code></td><td>lista bancos, tabelas, colunas</td></tr>
+<tr><td><code>\G</code> · <code>SOURCE f.sql</code> · <code>quit</code></td><td>uma coluna por linha · roda arquivo · sai</td></tr>
+<tr><td><code>SHOW WARNINGS;</code></td><td>lê os avisos do último comando</td></tr>
+<tr><td><code>`nome`</code></td><td>aspas de nome (identificador)</td></tr>
+<tr><td><code>AUTO_INCREMENT</code> · <code>LAST_INSERT_ID()</code></td><td>id automático · último id gerado</td></tr>
+<tr><td><code>CONCAT()</code> · <code>CONCAT_WS()</code></td><td>juntar textos</td></tr>
+<tr><td><code>CURDATE()</code> · <code>NOW()</code> · <code>DATE_ADD(d, INTERVAL n DAY)</code> · <code>DATEDIFF(fim, início)</code> · <code>DATE_FORMAT(d, '%d/%m/%Y')</code> · <code>YEAR(d)</code></td><td>datas</td></tr>
+<tr><td><code>7 DIV 2</code></td><td>divisão inteira</td></tr>
+<tr><td><code>INSERT IGNORE</code> · <code>ON DUPLICATE KEY UPDATE</code></td><td>ignorar / atualizar se a chave já existe</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Entrar pedindo a senha</h3>
+<p>Complete o comando para a Ana entrar no banco <code>loja</code> com a usuária <code>ana</code>, pedindo a senha:</p>
+<div class="ex-code">mariadb -u ana <input data-answer="-p" aria-label="opção da senha"> loja</div>
+</div>
+
+<div class="exercise">
+<h3>2. Listar as tabelas</h3>
+<p>Qual comando, dentro do <code>mariadb</code>, faz o mesmo que o <code>.tables</code> do <code>sqlite3</code>?</p>
+<div class="ex-code"><input data-answer="SHOW TABLES;|SHOW TABLES" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. No MariaDB, a Ana rodou <code>SELECT nome FROM clientes WHERE nome = 'ana beatriz sousa';</code>. O que acontece?</p>
+<label><input type="radio" name="q3"> Volta vazio, porque as maiúsculas são diferentes</label>
+<label><input type="radio" name="q3"> Acha "Ana Beatriz Sousa", porque a collation padrão ignora maiúsculas e acentos</label>
+<label><input type="radio" name="q3"> Dá erro 1054</label>
+<label><input type="radio" name="q3"> Dá erro de sintaxe por causa das aspas</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que quer dizer <code>Query OK, 2 rows affected</code> depois de um <code>INSERT … ON DUPLICATE KEY UPDATE</code> de uma linha só?</p>
+<label><input type="radio" name="q4"> Que foram inseridas duas linhas iguais</label>
+<label><input type="radio" name="q4"> Que deu erro em duas linhas</label>
+<label><input type="radio" name="q4"> Que a linha já existia e foi atualizada</label>
+<label><input type="radio" name="q4"> Que nada mudou</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A senha da Ana no <code>~/.my.cnf</code> é <code>Sol#2026</code>. Como ela deve escrever a linha?</p>
+<label><input type="radio" name="q5"> <code>password="Sol#2026"</code></label>
+<label><input type="radio" name="q5"> <code>password=Sol#2026</code></label>
+<label><input type="radio" name="q5"> <code>password=Sol\#2026;</code></label>
+<label><input type="radio" name="q5"> <code>-pSol#2026</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Qual destes só funciona no MariaDB, e não no MySQL 8.4?</p>
+<label><input type="radio" name="q6"> <code>LIMIT 3, 3</code></label>
+<label><input type="radio" name="q6"> <code>CONCAT_WS(' - ', nome, cidade)</code></label>
+<label><input type="radio" name="q6"> <code>AUTO_INCREMENT</code></label>
+<label><input type="radio" name="q6"> <code>INSERT … RETURNING id</code></label>
+</div>
+
+<h3>Missão final: o relatório por ano</h3>
+
+<div class="trysql" data-goal="colunas:ano,pedidos;;linhas:3;;contem:2026|26">
+<p class="try-task"><strong>Missão:</strong> esta consulta conta os pedidos por ano no MariaDB (você viu o resultado na seção 7.5: 32, 32 e 26). No SQLite, <code>YEAR()</code> não existe. Reescreva para o SQLite, mantendo os apelidos <code>ano</code> e <code>pedidos</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT YEAR(data) AS ano, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY ano
+ORDER BY ano;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT strftime('%Y', data) AS ano, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY ano
+ORDER BY ano;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>MySQL (Oracle) e MariaDB (dos criadores originais do MySQL) são irmãos: o SQL do dia a dia é igual. O Debian instala o MariaDB (<code>sudo apt install mariadb-server</code>).</li>
+  <li>São servidores: crie o banco e o usuário como <code>root</code> (<code>sudo mariadb</code>, depois <code>CREATE DATABASE</code>, <code>CREATE USER</code>, <code>GRANT</code>) e entre com <code>mariadb -u ana -p loja</code>. A senha pode ficar no <code>~/.my.cnf</code>, com <code>chmod 600</code> (e aspas se tiver <code>#</code>).</li>
+  <li>No lugar dos comandos de ponto: <code>SHOW TABLES</code>, <code>DESCRIBE</code>, <code>\G</code>, <code>SOURCE</code>, <code>quit</code>.</li>
+  <li>No SQL: crase para nomes (aspas duplas são texto), <code>AUTO_INCREMENT</code>, <code>CONCAT</code> (não <code>||</code>), datas com <code>DATE_ADD</code>/<code>DATEDIFF</code>/<code>DATE_FORMAT</code>/<code>YEAR</code>, <code>BOOLEAN</code> = <code>TINYINT(1)</code>, <code>7 / 2 = 3.5000</code>.</li>
+  <li>A collation padrão ignora maiúsculas e acentos: <code>'ana' = 'ANA'</code> e <code>'Jose' = 'José'</code> são verdadeiros.</li>
+  <li>Leituras convertem em silêncio (com <code>warnings</code>); gravações, com o modo estrito, dão erro (1406). UPSERT: <code>ON DUPLICATE KEY UPDATE</code>.</li>
+  <li>Erros têm número: 1045 (acesso), 1054 (coluna), 1062 (duplicado), 1064 (sintaxe), 1146 (tabela), 1406 (grande demais).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
