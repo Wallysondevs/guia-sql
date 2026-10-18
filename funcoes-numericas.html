@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções Numéricas — round, abs, ceil, floor e a divisão inteira | Guia SQL</title>
+<meta name="description" content="Funções numéricas em SQL para quem está começando: as quatro operações, a divisão inteira do SQLite (7 / 2 = 3) e como evitá-la, o resto com %, abs, round e as casas decimais, ceil, floor e trunc, sqrt, pow, log e pi, random, e as caudas de ponto flutuante, com as armadilhas reais e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções Numéricas</span></h1>
+
+<p class="intro">A Loja Aurora vive de números: preços, estoques, fretes, salários. A Ana precisa de contas o tempo todo: o preço com 10% de desconto, arredondado em centavos; quantas caixas de 12 unidades cabem no estoque; a porcentagem de clientes VIP. O SQL faz essas contas direto no <code>SELECT</code>. Nesta aula você vai ver as operações e as <strong>funções numéricas</strong> do SQLite, e duas armadilhas que pegam até gente experiente: a <strong>divisão inteira</strong> (no SQLite, <code>7 / 2</code> dá <code>3</code>!) e os números "quebrados" do ponto flutuante.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As quatro operações e o resto da divisão (<code>%</code>).</li>
+  <li>Por que <code>7 / 2</code> dá <code>3</code> e <code>7 / 2.0</code> dá <code>3.5</code>, e como isso estraga médias e porcentagens.</li>
+  <li><code>round</code> para arredondar em casas decimais, e por que ele não mostra <code>4.90</code>.</li>
+  <li><code>ceil</code>, <code>floor</code> e <code>trunc</code>: arredondar para cima, para baixo e cortar.</li>
+  <li><code>abs</code>, <code>sign</code> e as funções matemáticas: <code>sqrt</code>, <code>pow</code>, <code>log</code>, <code>pi</code>…</li>
+  <li><code>random()</code>, o sorteio, e por que ele não serve para resultados fixos.</li>
+  <li>Por que <code>0.1 + 0.2 = 0.3</code> dá "falso".</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, num SQLite com o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada exemplo parte do banco limpo. As funções matemáticas (<code>sqrt</code>, <code>pow</code>, <code>log</code>…) são opcionais no SQLite; o editor do guia e o <code>sqlite3</code> da Ana vêm com elas ligadas, assim como as versões oficiais do SQLite para Linux, Windows e Mac.</p>
+
+<hr>
+
+<h2>A ideia: a calculadora do caixa</h2>
+<p>No caixa da loja, a calculadora faz as contas e a Ana decide o que fazer com o resultado: arredondar os centavos, arredondar para cima ("preciso de 3 caixas, não de 2,9"), cortar a parte quebrada. O SQL tem a calculadora (os operadores <code>+ - * / %</code>) e as decisões (as funções <code>round</code>, <code>ceil</code>, <code>floor</code>…). Como nas <a href="funcoes-texto.html">Funções de Texto</a>, nada disso muda a tabela: só o que o <code>SELECT</code> mostra.</p>
+
+<hr>
+
+<h2>1. As operações</h2>
+<pre class="file" data-file="operacoes.sql" data-resultado>SELECT nome, preco, estoque,
+       preco * estoque     AS valor_em_estoque,
+       preco + 5           AS mais_5,
+       preco - 1.5         AS menos_1_e_50
+FROM produtos
+WHERE id IN (1, 2, 3);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>+</code></td><td>Soma</td><td><code>7 + 2</code></td><td><code>9</code></td></tr>
+<tr><td><code>-</code></td><td>Subtração</td><td><code>7 - 2</code></td><td><code>5</code></td></tr>
+<tr><td><code>*</code></td><td>Multiplicação</td><td><code>7 * 2</code></td><td><code>14</code></td></tr>
+<tr><td><code>/</code></td><td>Divisão</td><td><code>7 / 2</code></td><td><code>3</code> (!) — seção 2</td></tr>
+<tr><td><code>%</code></td><td>Resto da divisão</td><td><code>7 % 2</code></td><td><code>1</code></td></tr>
+</table>
+</div>
+
+<p>A ordem é a da escola: <code>*</code>, <code>/</code> e <code>%</code> antes de <code>+</code> e <code>-</code>. Na dúvida, use parênteses: <code>(preco + 5) * 2</code>. E <em>NULL</em> em qualquer conta dá <em>NULL</em> (aula <a href="null.html">O Valor NULL</a>).</p>
+
+<hr>
+
+<h2>2. A divisão inteira: <code>7 / 2 = 3</code></h2>
+<p>Esta é a armadilha número um do SQLite. Veja:</p>
+
+<pre class="file" data-file="divisao.sql" data-resultado>SELECT 7 / 2    AS inteiro_por_inteiro,
+       7 / 2.0  AS com_ponto_zero,
+       7.0 / 2  AS outro_com_ponto,
+       7 % 2    AS resto,
+       -7 / 2   AS negativo;
+</pre>
+
+<p>Quando os <strong>dois</strong> lados da divisão são números inteiros (<code>INTEGER</code>), o SQLite faz uma <strong>divisão inteira</strong>: divide e joga fora a parte depois da vírgula. <code>7 / 2</code> é 3,5, e o SQLite fica só com o <code>3</code>. É como dividir 7 bombons entre 2 crianças sem partir nenhum: cada uma ganha 3, e o resto (<code>7 % 2</code>) é 1 bombom. Com números negativos, o corte é em direção ao zero: <code>-7 / 2</code> dá <code>-3</code>.</p>
+
+<p>Basta um dos lados ser número real (com ponto) para a divisão ser "de verdade": <code>7 / 2.0</code> e <code>7.0 / 2</code> dão <code>3.5</code>.</p>
+
+<h3>Onde isso morde: médias e porcentagens</h3>
+<p>A coluna <code>estoque</code> é inteira. A Ana quis calcular a média de estoque dos produtos "na mão", somando e dividindo pela quantidade:</p>
+
+<pre class="file" data-file="media-errada.sql" data-resultado>SELECT SUM(estoque)                AS total,
+       COUNT(*)                    AS produtos,
+       SUM(estoque) / COUNT(*)     AS media_na_mao,
+       AVG(estoque)                AS media_avg
+FROM produtos;
+</pre>
+
+<p>3301 ÷ 45 é 73,355…, mas a conta "na mão" deu <code>73</code>: inteiro dividido por inteiro. A <code>AVG</code> (aula <a href="avg.html">AVG()</a>) sempre devolve um número real, por isso acertou. Com porcentagens o estrago é maior:</p>
+
+<pre class="file" data-file="porcentagem.sql" data-resultado>SELECT SUM(vip)                              AS vips,
+       COUNT(*)                              AS clientes,
+       SUM(vip) * 100 / COUNT(*)             AS pct_errada,
+       ROUND(SUM(vip) * 100.0 / COUNT(*), 1) AS pct_certa
+FROM clientes;
+</pre>
+
+<p>5 VIPs em 30 clientes são 16,67%. A conta só com inteiros deu <code>16</code>; trocando o <code>100</code> por <code>100.0</code>, a conta inteira passa a ser real e dá <code>16.7</code> (com o <code>ROUND</code> da seção 3).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito de evitar a divisão inteira</th><th>Exemplo</th></tr>
+<tr><td>Escrever um dos números com <code>.0</code></td><td><code>SUM(vip) * 100.0 / COUNT(*)</code></td></tr>
+<tr><td>Multiplicar por <code>1.0</code></td><td><code>SUM(estoque) * 1.0 / COUNT(*)</code></td></tr>
+<tr><td>Converter com <code>CAST</code></td><td><code>CAST(SUM(estoque) AS REAL) / COUNT(*)</code></td></tr>
+<tr><td>Usar a função pronta, quando existe</td><td><code>AVG(estoque)</code></td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="out:^73\.3">
+<p class="try-task"><strong>Experimente:</strong> a média de estoque "na mão" saiu <code>73</code>, sem as casas decimais. Mude a conta para ela dar o valor certo, 73,3…, sem usar <code>AVG</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT SUM(estoque) / COUNT(*) AS media
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT SUM(estoque) * 1.0 / COUNT(*) AS media
+FROM produtos;
+</pre>
+</div>
+
+<h3>A divisão inteira também é útil</h3>
+<p>Às vezes cortar a parte quebrada é exatamente o que se quer. Os produtos vão para caixas de 12 unidades: quantas caixas <strong>cheias</strong> dá para montar, e quantas unidades <strong>sobram</strong>?</p>
+
+<pre class="file" data-file="caixas.sql" data-resultado>SELECT nome, estoque,
+       estoque / 12 AS caixas_cheias,
+       estoque % 12 AS sobram
+FROM produtos
+WHERE id IN (1, 5, 11, 14);
+</pre>
+
+<p>A mochila tem 35 no estoque: 2 caixas cheias (24 mochilas) e sobram 11. A divisão inteira dá as caixas; o <code>%</code> dá a sobra. Um uso clássico do <code>%</code> é descobrir se um número é par: <code>id % 2 = 0</code>.</p>
+
+<hr>
+
+<h2>3. <code>round</code>: arredondar</h2>
+<p><code>round</code> ("arredondar") recebe o número e quantas casas decimais manter. Sem o segundo argumento, arredonda para o inteiro mais próximo:</p>
+
+<pre class="file" data-file="round.sql" data-resultado>SELECT nome, preco,
+       preco * 0.9            AS com_desconto,
+       round(preco * 0.9, 2)  AS em_centavos,
+       round(preco * 0.9)     AS em_reais
+FROM produtos
+WHERE id IN (1, 7, 14);
+</pre>
+
+<dl class="anatomy">
+  <dt>preco * 0.9</dt><dd>10% de desconto (paga-se 90% do preço). O caderno de 12.35 sai por 11.115: três casas, que não existem em dinheiro.</dd>
+  <dt>round(…, 2)</dt><dd>Duas casas, os centavos: 11.115 vira <code>11.12</code>. A metade (o 5) arredonda para cima.</dd>
+  <dt>round(…)</dt><dd>Sem casas: o real mais próximo, <code>11.0</code>.</dd>
+</dl>
+
+<p>Repare que o <code>round</code> sempre devolve um número <strong>real</strong>: mesmo <code>round(…)</code> sem casas mostra <code>11.0</code>, com o <code>.0</code>.</p>
+
+<h3>O <code>round</code> não "completa" as casas</h3>
+<p>Um engano comum é achar que o <code>round(x, 2)</code> mostra sempre duas casas:</p>
+
+<pre class="file" data-file="round-casas.sql" data-resultado>SELECT nome, salario,
+       round(salario * 1.05, 2)              AS com_aumento,
+       printf('%.2f', salario * 1.05)        AS com_aumento_2_casas
+FROM funcionarios
+WHERE id IN (2, 8);
+</pre>
+
+<p>O Davi passa a ganhar <code>2782.5</code>, e não <code>2782.50</code>. O <code>round</code> arredonda o <strong>número</strong>; o número 2782.50 é o mesmo que 2782.5, e o SQLite escreve o mais curto. Para <strong>mostrar</strong> duas casas, quem resolve é a <code>printf</code> (aula <a href="funcoes-texto.html">Funções de Texto</a>), que devolve texto. A regra: <code>round</code> para fazer contas e guardar; <code>printf</code> para exibir.</p>
+
+<h3>As metades</h3>
+<pre class="file" data-file="metades.sql" data-resultado>SELECT round(2.5)       AS dois_e_meio,
+       round(-2.5)      AS menos_dois_e_meio,
+       round(3.14159, 2) AS pi_2_casas,
+       round(2.675, 2)  AS surpresa;
+</pre>
+
+<p>No SQLite, a metade arredonda para <strong>longe do zero</strong>: <code>2.5</code> vira <code>3.0</code> e <code>-2.5</code> vira <code>-3.0</code>. E o <code>2.675</code>? Deveria dar <code>2.68</code>, mas deu <code>2.67</code>. Não é defeito do <code>round</code>: o computador não consegue guardar 2,675 exato e guarda algo como 2,67499999…, que arredonda para baixo. A seção 6 explica.</p>
+
+<hr>
+
+<h2>4. <code>ceil</code>, <code>floor</code> e <code>trunc</code>: para cima, para baixo, cortar</h2>
+<p>O <code>round</code> vai para o mais perto. Às vezes você precisa de uma direção:</p>
+
+<pre class="file" data-file="ceil-floor.sql" data-resultado>SELECT ceil(4.1)    AS ceil_41,
+       floor(4.9)   AS floor_49,
+       trunc(4.9)   AS trunc_49,
+       ceil(-4.9)   AS ceil_menos_49,
+       floor(-4.1)  AS floor_menos_41,
+       trunc(-4.9)  AS trunc_menos_49;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Faz</th><th><code>4.9</code></th><th><code>-4.9</code></th></tr>
+<tr><td><code>ceil(x)</code> ou <code>ceiling(x)</code></td><td>Para <strong>cima</strong>: o menor inteiro que não é menor que x (<em>ceiling</em> = "teto")</td><td><code>5.0</code></td><td><code>-4.0</code></td></tr>
+<tr><td><code>floor(x)</code></td><td>Para <strong>baixo</strong>: o maior inteiro que não é maior que x (<em>floor</em> = "chão")</td><td><code>4.0</code></td><td><code>-5.0</code></td></tr>
+<tr><td><code>trunc(x)</code></td><td><strong>Corta</strong> a parte depois do ponto (<em>truncate</em>), em direção ao zero</td><td><code>4.0</code></td><td><code>-4.0</code></td></tr>
+<tr><td><code>round(x)</code></td><td>O inteiro mais <strong>perto</strong></td><td><code>5.0</code></td><td><code>-5.0</code></td></tr>
+</table>
+</div>
+
+<p>Para números positivos, <code>floor</code> e <code>trunc</code> dão o mesmo; a diferença aparece nos negativos. O caso de uso clássico do <code>ceil</code> é "quantas caixas eu preciso para guardar tudo?": com 35 mochilas e caixas de 12, são 2,9 caixas, e ninguém compra 0,9 caixa: são <strong>3</strong>.</p>
+
+<pre class="file" data-file="caixas-precisas.sql" data-resultado>SELECT nome, estoque,
+       estoque / 12        AS caixas_cheias,
+       ceil(estoque / 12.0) AS caixas_precisas
+FROM produtos
+WHERE id IN (1, 5, 11, 14);
+</pre>
+
+<p>Repare no <code>12.0</code>: com <code>estoque / 12</code>, a divisão inteira já cortaria o 2,9 para 2 antes do <code>ceil</code> agir, e o <code>ceil(2)</code> continuaria 2.</p>
+
+<hr>
+
+<h2>5. <code>abs</code>, <code>sign</code> e as funções matemáticas</h2>
+<p><code>abs</code> ("absoluto") tira o sinal: a distância até o zero. <code>sign</code> ("sinal") diz só o sinal: -1, 0 ou 1. Servem, por exemplo, para comparar o preço de catálogo com o preço cobrado num pedido, sem se importar se a diferença foi para cima ou para baixo:</p>
+
+<pre class="file" data-file="abs.sql" data-resultado>SELECT i.pedido_id, p.nome,
+       p.preco                                AS catalogo,
+       i.preco_unitario                       AS cobrado,
+       round(i.preco_unitario - p.preco, 2)   AS diferenca,
+       abs(round(i.preco_unitario - p.preco, 2)) AS distancia,
+       sign(i.preco_unitario - p.preco)      AS sinal
+FROM itens_pedido AS i
+JOIN produtos AS p ON p.id = i.produto_id
+WHERE i.preco_unitario &lt;&gt; p.preco;
+</pre>
+
+<p>Os três itens vendidos em promoção (os casos de "preço histórico" da loja): todos com sinal <code>-1</code>, ou seja, cobrados <strong>abaixo</strong> do catálogo.</p>
+
+<h3>As funções matemáticas</h3>
+<pre class="file" data-file="matematica.sql" data-resultado>SELECT sqrt(16)       AS raiz_de_16,
+       pow(2, 10)     AS dois_elevado_a_10,
+       pi()           AS pi,
+       log10(1000)    AS log10_de_1000,
+       ln(exp(1))     AS ln_de_e,
+       log(2, 8)      AS log_base_2_de_8,
+       mod(7.5, 2)    AS mod_com_real;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>sqrt(x)</code></td><td>Raiz quadrada (<em>square root</em>)</td><td><code>sqrt(16)</code> → <code>4.0</code>; <code>sqrt(-1)</code> → <em>NULL</em></td></tr>
+<tr><td><code>pow(x, y)</code> ou <code>power(x, y)</code></td><td>x elevado a y (<em>power</em>, "potência")</td><td><code>pow(2, 10)</code> → <code>1024.0</code></td></tr>
+<tr><td><code>exp(x)</code></td><td>e (2,718…) elevado a x</td><td><code>exp(1)</code> → <code>2.71828182845905</code></td></tr>
+<tr><td><code>ln(x)</code></td><td>Logaritmo natural (base e)</td><td><code>ln(exp(1))</code> → <code>1.0</code></td></tr>
+<tr><td><code>log(x)</code> ou <code>log10(x)</code></td><td>Logaritmo na base <strong>10</strong></td><td><code>log(1000)</code> → <code>3.0</code></td></tr>
+<tr><td><code>log2(x)</code></td><td>Logaritmo na base 2</td><td><code>log2(8)</code> → <code>3.0</code></td></tr>
+<tr><td><code>log(b, x)</code></td><td>Logaritmo de x na base b</td><td><code>log(2, 8)</code> → <code>3.0</code></td></tr>
+<tr><td><code>pi()</code></td><td>O número π</td><td><code>3.14159265358979</code></td></tr>
+<tr><td><code>mod(x, y)</code></td><td>Resto da divisão, também com números reais</td><td><code>mod(7.5, 2)</code> → <code>1.5</code></td></tr>
+<tr><td><code>sin</code>, <code>cos</code>, <code>tan</code>, <code>degrees</code>, <code>radians</code>…</td><td>Trigonometria (ângulos em radianos)</td><td><code>degrees(pi())</code> → <code>180.0</code></td></tr>
+</table>
+</div>
+
+<p>O <code>mod</code> e o <code>%</code> parecem iguais, mas o <code>%</code> transforma os dois lados em inteiros antes: <code>7.5 % 2</code> dá <code>1.0</code> (ele calculou <code>7 % 2</code>), enquanto <code>mod(7.5, 2)</code> dá <code>1.5</code>.</p>
+
+<h3><code>random()</code>: o sorteio</h3>
+<p><code>random()</code> ("aleatório") devolve um número inteiro sorteado, enorme, positivo ou negativo, diferente a cada chamada. Como o resultado muda toda vez, ele aparece aqui numa sessão de terminal da Ana, e não num quadro de resultado:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT random();
+-5499406115346342480
+sqlite&gt; SELECT random();
+-8850731515571685751                 « outro número
+sqlite&gt; SELECT abs(random()) % 6 + 1 AS dado;
+4
+sqlite&gt; SELECT abs(random()) % 6 + 1 AS dado;
+1                                    « um dado de 6 faces
+sqlite&gt; SELECT nome FROM produtos ORDER BY random() LIMIT 1;
+Jogo de Panelas 5 peças
+sqlite&gt; SELECT nome FROM produtos ORDER BY random() LIMIT 1;
+Jogo de Tabuleiro Trilha Mística     « um produto sorteado
+sqlite&gt; .quit</pre>
+
+<ol class="passo">
+  <li><code>abs(random())</code> tira o sinal: um número enorme e positivo.</li>
+  <li><code>% 6</code> fica com o resto da divisão por 6: um número de 0 a 5.</li>
+  <li><code>+ 1</code> passa para 1 a 6: um dado.</li>
+</ol>
+
+<p>O <code>ORDER BY random()</code> embaralha as linhas: com <code>LIMIT 1</code>, sorteia um produto, por exemplo para o "produto do dia". No editor do guia, <code>random()</code> também funciona, e dá um número diferente a cada Rodar.</p>
+
+<hr>
+
+<h2>6. Os números "quebrados": ponto flutuante</h2>
+<p>Os números com ponto (o tipo <code>REAL</code>) são guardados em <strong>binário</strong>, e muitos números que parecem simples para nós, como 0,1, não têm escrita exata em binário, assim como 1/3 não tem escrita exata em decimal (0,3333…). O computador guarda um valor <strong>quase</strong> igual. Na maioria das vezes ninguém percebe, mas numa comparação aparece:</p>
+
+<pre class="file" data-file="flutuante.sql" data-resultado>SELECT 0.1 + 0.2                    AS soma,
+       0.1 + 0.2 = 0.3              AS igual_a_0_3,
+       (0.1 + 0.2) - 0.3            AS diferenca,
+       round(0.1 + 0.2, 2) = 0.3    AS arredondado_igual;
+</pre>
+
+<p>A soma <strong>aparece</strong> como <code>0.3</code> (o SQLite mostra só 15 algarismos), mas a comparação <code>= 0.3</code> deu <code>0</code>, falso! A diferença é minúscula, 0,0000000000000000555 (o <code>e-17</code> quer dizer "vezes 10 elevado a −17"), mas existe. Arredondando antes de comparar, a igualdade volta a ser verdadeira.</p>
+
+<p>Com dinheiro, isso aparece nas somas grandes e nas médias: a média do valor dos itens vendidos é <code>84.2609090909091</code>, com uma cauda de casas que não são centavos de nada.</p>
+
+<pre class="file" data-file="cauda.sql" data-resultado>SELECT AVG(quantidade * preco_unitario)            AS media_crua,
+       round(AVG(quantidade * preco_unitario), 2)  AS media_em_centavos
+FROM itens_pedido;
+</pre>
+
+<div class="tip">
+<strong>Regras para dinheiro</strong>
+<ul>
+  <li>Arredonde com <code>round(x, 2)</code> o resultado final das contas com dinheiro.</li>
+  <li>Nunca compare reais com <code>=</code> sem arredondar antes: <code>round(a, 2) = round(b, 2)</code>.</li>
+  <li>Sistemas que precisam de exatidão total (bancos, contabilidade) costumam guardar <strong>centavos em inteiros</strong>: 12,35 vira <code>1235</code>. Inteiros são sempre exatos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Quero…</th><th>Use</th><th>Exemplo com 35 mochilas, caixas de 12</th></tr>
+<tr><td>caixas cheias (cortar)</td><td><code>estoque / 12</code> (dois inteiros) ou <code>floor(estoque / 12.0)</code></td><td><code>2</code> / <code>2.0</code></td></tr>
+<tr><td>caixas necessárias (para cima)</td><td><code>ceil(estoque / 12.0)</code> ou <code>(estoque + 11) / 12</code></td><td><code>3.0</code> / <code>3</code></td></tr>
+<tr><td>o que sobra</td><td><code>estoque % 12</code> ou <code>mod(estoque, 12)</code></td><td><code>11</code> / <code>11.0</code></td></tr>
+<tr><td>a divisão exata</td><td><code>estoque / 12.0</code> ou <code>estoque * 1.0 / 12</code></td><td><code>2.91666666666667</code></td></tr>
+<tr><td>arredondar em centavos</td><td><code>round(x, 2)</code></td><td>—</td></tr>
+<tr><td>mostrar com 2 casas</td><td><code>printf('%.2f', x)</code> (texto)</td><td>—</td></tr>
+</table>
+</div>
+
+<p>O <code>(estoque + 11) / 12</code> é um truque antigo de programador: somar "divisor − 1" antes da divisão inteira faz ela arredondar para cima, e o resultado fica inteiro.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As contas quase nunca dão erro no SQLite: elas devolvem um resultado errado, ou <em>NULL</em>. Por isso os casos abaixo merecem atenção.</p>
+
+<div class="cenario">
+<strong>Divisão por zero</strong>
+<pre class="file" data-file="zero.sql" data-resultado>SELECT 7 / 0    AS inteiro,
+       7.0 / 0  AS real,
+       7 % 0    AS resto;
+</pre>
+<p><strong>O que aconteceu:</strong> três <em>NULL</em>, sem erro. Uma média com <code>COUNT(*)</code> igual a 0 no divisor dá <em>NULL</em> em silêncio. (No PostgreSQL e no SQL Server, dividir por zero dá erro.)</p>
+<p><strong>Como consertar:</strong> se o divisor pode ser zero, decida o que mostrar: <code>coalesce(a / b, 0)</code>, ou um <code>CASE WHEN b = 0 THEN … END</code> (aula <a href="case.html">CASE</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>A porcentagem que vira zero</strong>
+<pre class="file" data-file="pct-zero.sql" data-resultado>SELECT COUNT(*) / 45 * 100     AS pct_errada,
+       COUNT(*) * 100.0 / 45   AS pct_certa
+FROM produtos
+WHERE descontinuado = 1;
+</pre>
+<p><strong>O que aconteceu:</strong> 2 produtos descontinuados em 45 deveriam dar 4,4%, mas a primeira conta deu <code>0</code>. Ela faz primeiro <code>2 / 45</code>, que na divisão inteira é <code>0</code>, e depois <code>0 * 100</code>. Duas armadilhas juntas: a divisão inteira e a ordem da conta.</p>
+<p><strong>Como consertar:</strong> multiplique primeiro e use <code>100.0</code>: <code>COUNT(*) * 100.0 / 45</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Casas decimais negativas</strong>
+<pre class="file" data-file="round-negativo.sql" data-resultado>SELECT round(1234.5678, -2) AS centenas;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>1235.0</code>, e não <code>1200</code>. Em outros bancos, <code>round(x, -2)</code> arredonda para a centena; no SQLite, um número de casas negativo é tratado como 0.</p>
+<p><strong>Como consertar:</strong> divida, arredonde e multiplique de volta: <code>round(1234.5678 / 100) * 100</code> dá <code>1200.0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Número escrito como texto</strong>
+<pre class="file" data-file="texto.sql" data-resultado>SELECT '12.35' * 2   AS texto_numero,
+       '3 bananas' + 1 AS texto_com_letras,
+       'R$ 12,35' * 2 AS com_moeda;
+</pre>
+<p><strong>O que aconteceu:</strong> o SQLite tenta transformar o texto em número. <code>'12.35'</code> funciona (<code>24.7</code>). <code>'3 bananas'</code> vira <code>3</code>, aproveitando só o começo. E <code>'R$ 12,35'</code> vira <code>0</code>, porque começa com letra. Nenhum erro.</p>
+<p><strong>Como consertar:</strong> guarde números em colunas numéricas (<code>INTEGER</code> ou <code>REAL</code>), com ponto e sem símbolo de moeda (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Um número grande demais</strong>
+<pre class="file" data-file="overflow.sql" data-resultado data-erro>SELECT abs(-9223372036854775808);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>integer overflow</code>, "estouro de inteiro". O maior inteiro do SQLite é 9223372036854775807 (cerca de 9 quintilhões), e o menor é −9223372036854775808. O <code>abs</code> do menor não cabe. É um dos poucos erros de conta de verdade; na prática, só aparece com números absurdos (ou com <code>abs(random())</code>, numa chance em 18 quintilhões).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>Divisão inteira:</strong> no PostgreSQL e no SQL Server, <code>7 / 2</code> também dá <code>3</code>, como no SQLite. No <strong>MySQL</strong>, não: <code>7 / 2</code> dá <code>3.5000</code>, e a divisão inteira é um operador separado, <code>7 DIV 2</code>.</li>
+  <li><strong>Divisão por zero:</strong> o MySQL devolve <em>NULL</em>, como o SQLite; o PostgreSQL e o SQL Server dão erro.</li>
+  <li><strong><code>log(x)</code> com um argumento:</strong> no SQLite e no PostgreSQL é o logaritmo na base 10; no MySQL e no SQL Server é o logaritmo <strong>natural</strong>. Para não se confundir, use os nomes explícitos <code>log10</code> e <code>ln</code> (o SQL Server não tem <code>ln</code>: lá, o natural é o <code>LOG</code>).</li>
+  <li><strong><code>round</code> com metades:</strong> o MySQL arredonda <code>2.5</code> para <code>3</code> em números exatos (<code>DECIMAL</code>), mas um número aproximado como <code>25E-1</code> pode ir para <code>2</code> (o par mais próximo). Os bancos com servidor têm o tipo <code>DECIMAL</code>/<code>NUMERIC</code> exato, bom para dinheiro; no SQLite, ele vira <code>REAL</code> ou <code>INTEGER</code>.</li>
+</ul>
+<pre class="file" data-file="mysql.sql (ilustrativo)">-- MySQL
+SELECT 7 / 2;     -- 3.5000
+SELECT 7 DIV 2;   -- 3
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>a / b</code></td><td>Divisão (inteira se os dois forem inteiros)</td><td><code>7 / 2</code> → <code>3</code>; <code>7 / 2.0</code> → <code>3.5</code></td></tr>
+<tr><td><code>a % b</code></td><td>Resto da divisão inteira</td><td><code>7 % 2</code> → <code>1</code></td></tr>
+<tr><td><code>abs(x)</code></td><td>Valor sem sinal</td><td><code>abs(-4.9)</code> → <code>4.9</code></td></tr>
+<tr><td><code>sign(x)</code></td><td>-1, 0 ou 1</td><td><code>sign(-5)</code> → <code>-1</code></td></tr>
+<tr><td><code>round(x, n)</code></td><td>Arredonda em n casas (real); metade vai para longe do zero</td><td><code>round(11.115, 2)</code> → <code>11.12</code></td></tr>
+<tr><td><code>ceil(x)</code> / <code>ceiling(x)</code></td><td>Para cima</td><td><code>ceil(2.1)</code> → <code>3.0</code></td></tr>
+<tr><td><code>floor(x)</code></td><td>Para baixo</td><td><code>floor(2.9)</code> → <code>2.0</code></td></tr>
+<tr><td><code>trunc(x)</code></td><td>Corta a parte decimal</td><td><code>trunc(-2.9)</code> → <code>-2.0</code></td></tr>
+<tr><td><code>sqrt(x)</code>, <code>pow(x, y)</code>, <code>exp(x)</code></td><td>Raiz, potência, e elevado a x</td><td><code>pow(2, 3)</code> → <code>8.0</code></td></tr>
+<tr><td><code>ln(x)</code>, <code>log(x)</code>/<code>log10(x)</code>, <code>log2(x)</code>, <code>log(b, x)</code></td><td>Logaritmos</td><td><code>log(100)</code> → <code>2.0</code></td></tr>
+<tr><td><code>mod(x, y)</code></td><td>Resto, também com reais</td><td><code>mod(7.5, 2)</code> → <code>1.5</code></td></tr>
+<tr><td><code>pi()</code></td><td>π</td><td><code>3.14159265358979</code></td></tr>
+<tr><td><code>random()</code></td><td>Inteiro sorteado (muda a cada chamada)</td><td><code>abs(random()) % 6 + 1</code> → um dado</td></tr>
+<tr><td><code>CAST(x AS REAL)</code> / <code>CAST(x AS INTEGER)</code></td><td>Converte (para inteiro, corta)</td><td><code>CAST(4.9 AS INTEGER)</code> → <code>4</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quanto dá?</h3>
+<p>No SQLite, quanto vale <code>9 / 4</code>?</p>
+<div class="ex-code">SELECT 9 / 4;  -- resultado: <input data-answer="2" aria-label="resultado"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Duas casas</h3>
+<p>Complete para arredondar o preço com desconto em centavos:</p>
+<div class="ex-code">SELECT round(preco * 0.9, <input data-answer="2" aria-label="casas">) FROM produtos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual destas contas dá <code>3.5</code> no SQLite?</p>
+<label><input type="radio" name="q3"> <code>7 / 2</code></label>
+<label><input type="radio" name="q3"> <code>7 / 2.0</code></label>
+<label><input type="radio" name="q3"> <code>7 % 2</code></label>
+<label><input type="radio" name="q3"> <code>round(7 / 2, 1)</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A loja tem 35 mochilas e as guarda em caixas de 12. Qual expressão dá o número de caixas <strong>necessárias</strong> para guardar todas?</p>
+<label><input type="radio" name="q4"> <code>35 / 12</code></label>
+<label><input type="radio" name="q4"> <code>floor(35 / 12.0)</code></label>
+<label><input type="radio" name="q4"> <code>ceil(35 / 12)</code></label>
+<label><input type="radio" name="q4"> <code>ceil(35 / 12.0)</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que <code>round(2782.5, 2)</code> mostra no SQLite?</p>
+<label><input type="radio" name="q5"> <code>2782.5</code></label>
+<label><input type="radio" name="q5"> <code>2782.50</code></label>
+<label><input type="radio" name="q5"> <code>2783</code></label>
+<label><input type="radio" name="q5"> <code>2782</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Por que <code>0.1 + 0.2 = 0.3</code> dá <code>0</code> (falso) no SQLite?</p>
+<label><input type="radio" name="q6"> Porque o SQLite soma só a parte inteira</label>
+<label><input type="radio" name="q6"> Porque falta o <code>CAST</code></label>
+<label><input type="radio" name="q6"> Porque 0,1 e 0,2 não têm escrita exata em binário, e a soma fica um tiquinho diferente de 0,3</label>
+<label><input type="radio" name="q6"> Porque <code>=</code> não funciona com números</label>
+</div>
+
+<h3>Missão final: as caixas da papelaria</h3>
+
+<div class="trysql" data-goal="colunas:nome,estoque,caixas;;linhas:6;;out:Mochila Escolar Azul\|35\|3(\.0)?\n">
+<p class="try-task"><strong>Missão:</strong> o estoque da papelaria (categoria 1) vai ser guardado em caixas de 12 unidades. A consulta calcula as caixas com <code>estoque / 12</code>, e a Ana descobriu que faltou caixa: as 35 mochilas precisam de 3 caixas, e a conta disse 2. Conserte a coluna <code>caixas</code> para dar o número de caixas <strong>necessárias</strong> para guardar todo o estoque de cada produto.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estoque, estoque / 12 AS caixas
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, estoque, ceil(estoque / 12.0) AS caixas
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+</div>
+
+<p>Com <code>ceil(estoque / 12.0)</code>, as mochilas dão <code>3.0</code>; com o truque <code>(estoque + 11) / 12</code>, dão <code>3</code>. As duas respostas estão certas. Repare que <code>ceil(estoque / 12)</code>, sem o <code>.0</code>, continua errado: a divisão inteira corta antes do <code>ceil</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Operadores: <code>+ - * /</code> e <code>%</code> (resto). <em>NULL</em> em qualquer conta dá <em>NULL</em>; dividir por zero dá <em>NULL</em>, sem erro.</li>
+  <li>No SQLite, <strong>inteiro / inteiro = divisão inteira</strong>: <code>7 / 2</code> dá <code>3</code>. Ponha um <code>.0</code> (<code>7 / 2.0</code>, <code>* 100.0</code>) para a divisão de verdade. Cuidado com médias e porcentagens feitas "na mão".</li>
+  <li><code>round(x, n)</code> arredonda em n casas e devolve real; ele não completa zeros (<code>2782.5</code>). Para mostrar <code>2782.50</code>, use <code>printf('%.2f', x)</code>.</li>
+  <li><code>ceil</code> arredonda para cima, <code>floor</code> para baixo, <code>trunc</code> corta; <code>abs</code> tira o sinal e <code>sign</code> diz qual é.</li>
+  <li>Funções matemáticas: <code>sqrt</code>, <code>pow</code>, <code>exp</code>, <code>ln</code>, <code>log</code> (base 10 no SQLite), <code>log2</code>, <code>mod</code>, <code>pi</code>.</li>
+  <li><code>random()</code> sorteia um inteiro a cada chamada; nunca use em resultados que precisam ser fixos.</li>
+  <li>Números reais são aproximados: <code>0.1 + 0.2 = 0.3</code> é falso. Com dinheiro, arredonde com <code>round(x, 2)</code> antes de comparar e de mostrar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
