@@ -173,15 +173,24 @@ sqlite&gt; </pre>
 
 <p>Às vezes a seta vem do outro lado, com o texto antes dela, e às vezes nem aparece. Veja os dois casos:</p>
 
-<pre class="term">sqlite&gt; SELECT nome FROM produtos WHERE nome = "Lápis Grafite HB";
-Parse error: no such column: "Lápis Grafite HB" - should this be a string literal in single-quotes?
-  SELECT nome FROM produtos WHERE nome = "Lápis Grafite HB";
+<pre class="term">sqlite&gt; SELECT nome FROM produtos WHERE nome = Lapis;
+Parse error: no such column: Lapis
+  SELECT nome FROM produtos WHERE nome = Lapis;
                            error here ---^
 sqlite&gt; SELECT nome FROM produto;
 Parse error: no such table: produto
 sqlite&gt; </pre>
 
-<p>A primeira é a das aspas duplas (texto vai entre aspas <strong>simples</strong>), com a seta apontando para o começo do <code>"Lápis…</code>. A segunda, a da tabela com nome errado, vem sem seta: o nome <code>produto</code> já diz tudo.</p>
+<p>A primeira é a do texto sem aspas (texto vai entre aspas <strong>simples</strong>: <code>'Lápis Grafite HB'</code>), com a seta apontando para o começo do <code>Lapis</code>. A segunda, a da tabela com nome errado, vem sem seta: o nome <code>produto</code> já diz tudo.</p>
+
+<div class="warning">
+<strong>E as aspas duplas?</strong>
+<p>No editor do guia, <code>WHERE nome = "Lápis Grafite HB"</code> dá erro (<code>no such column</code>). Já o <code>sqlite3</code> do Debian, no terminal, roda calado: quando não acha uma coluna com aquele nome, ele trata as aspas duplas como texto.</p>
+<pre class="term">sqlite&gt; SELECT nome FROM produtos WHERE nome = "Lápis Grafite HB";
+Lápis Grafite HB
+sqlite&gt; </pre>
+<p>Não se acostume: no dia em que existir uma coluna com aquele nome, a consulta muda de sentido sem avisar. A aula <a href="where.html">WHERE</a> mostra isso acontecendo. Use sempre aspas simples para texto.</p>
+</div>
 
 <h3>Erro durante a execução: <code>Runtime error</code></h3>
 <p>Alguns comandos são entendidos, começam a rodar e só então dão problema. Aí o prefixo é outro. A Ana tentou cadastrar uma categoria com o id 1, que já é da Papelaria:</p>
