@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL BETWEEN — filtrar por faixa de valores e de datas | Guia SQL</title>
+<meta name="description" content="BETWEEN em SQL para quem nunca mexeu num banco: filtrar preços, salários e datas dentro de uma faixa, por que as pontas entram, a ordem menor-maior, NOT BETWEEN, datas como texto ISO, nomes por letra, o NULL que fica de fora e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">BETWEEN</span></h1>
+
+<p class="intro">A Ana vai montar uma vitrine de "presentes de 20 a 30 reais" na Loja Aurora. Ela precisa da lista de produtos cujo preço está <strong>dentro dessa faixa</strong>. Dá para escrever isso com duas comparações e um <code>AND</code>, como você viu nas aulas anteriores, mas o SQL tem uma palavra feita sob medida para faixas: <code>BETWEEN</code> ("entre", em inglês). Nesta aula você vai usá-la com preços, salários, datas e até nomes, e vai ver as três armadilhas que pegam quase todo mundo: <strong>as pontas entram</strong>, <strong>a ordem importa</strong> e <strong>data em formato brasileiro não funciona</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>coluna BETWEEN menor AND maior</code> e o que cada parte faz.</li>
+  <li>Por que as duas pontas da faixa <strong>entram</strong> no resultado.</li>
+  <li>Por que o menor valor vem sempre primeiro, e o que acontece se você inverter.</li>
+  <li><code>NOT BETWEEN</code>: tudo o que está <strong>fora</strong> da faixa.</li>
+  <li>Faixas de datas com texto no formato ISO (<code>'2026-01-01'</code>) e a armadilha do último dia.</li>
+  <li><code>BETWEEN</code> com texto (nomes por letra) e com outras condições no mesmo <code>WHERE</code>.</li>
+  <li>Por que as linhas com <code>NULL</code> ficam de fora tanto do <code>BETWEEN</code> quanto do <code>NOT BETWEEN</code>.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade, no seu navegador, contra o banco da <a href="banco-do-guia.html">Loja Aurora</a>. O quadro "Resultado" embaixo de cada código é a resposta real do SQLite.</p>
+
+<hr>
+
+<h2>A ideia: a régua com duas marcas</h2>
+<p>Pense numa régua. Você faz uma marca no 20 e outra no 30 e pergunta: "quais produtos caem entre as duas marcas?". Um produto de R$ 24,75 cai dentro. Um de R$ 12,35 fica antes da primeira marca; um de R$ 89,99 fica depois da segunda. E um produto de exatamente R$ 20,00, bem em cima da marca? Para o <code>BETWEEN</code>, <strong>ele entra</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na régua</th><th>No SQL</th></tr>
+<tr><td>O que você está medindo</td><td>A coluna (ou expressão): <code>preco</code></td></tr>
+<tr><td>A primeira marca (a menor)</td><td>O valor depois de <code>BETWEEN</code>: <code>20</code></td></tr>
+<tr><td>A segunda marca (a maior)</td><td>O valor depois de <code>AND</code>: <code>30</code></td></tr>
+<tr><td>Em cima de uma marca</td><td>Entra no resultado (as pontas são <strong>inclusivas</strong>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro BETWEEN</h2>
+<p>A vitrine da Ana: produtos de 20 a 30 reais.</p>
+
+<pre class="file" data-file="vitrine.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco BETWEEN 20 AND 30;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>"Onde": o filtro de linhas, que você conheceu em <a href="where.html">WHERE</a>. Só passam as linhas em que a condição é verdadeira.</dd>
+  <dt>preco</dt><dd>O valor que vai ser medido em cada linha: a coluna <code>preco</code> da tabela <code>produtos</code>.</dd>
+  <dt>BETWEEN</dt><dd>"Entre". Avisa que vem uma faixa.</dd>
+  <dt>20</dt><dd>A ponta de baixo da faixa (o menor valor).</dd>
+  <dt>AND</dt><dd>Aqui o <code>AND</code> não é o "e" lógico da aula <a href="and.html">AND</a>: ele faz parte do <code>BETWEEN</code> e só separa as duas pontas. Leia "entre 20 <strong>e</strong> 30".</dd>
+  <dt>30</dt><dd>A ponta de cima da faixa (o maior valor).</dd>
+</dl>
+
+<p>Saíram 9 produtos, do Avental de Cozinha (R$ 22,90) ao Pen Drive (R$ 29,90). Repare que os preços aparecem como o SQLite os guarda: <code>22.9</code>, com ponto e sem o zero do fim. No SQL, número decimal se escreve <strong>sempre com ponto</strong>.</p>
+
+<p>A ordem das linhas é a ordem em que elas estão na tabela. Para ver a vitrine do mais barato ao mais caro, junte um <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>) no fim; o <code>BETWEEN</code> não muda nada nisso:</p>
+
+<pre class="file" data-file="vitrine-ordenada.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco BETWEEN 20 AND 30
+ORDER BY preco;
+</pre>
+
+<hr>
+
+<h2>2. As pontas entram</h2>
+<p>O <code>BETWEEN</code> é <strong>inclusivo</strong>: um valor igual a uma das pontas também passa. Para ver isso, escolha pontas que são preços que existem no banco. O Estojo Duplo custa exatamente 19.5 e o Avental de Cozinha, exatamente 22.9:</p>
+
+<pre class="file" data-file="pontas.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco BETWEEN 19.5 AND 22.9;
+</pre>
+
+<p>Os dois aparecem, junto com a Garrafa Squeeze (21.75), que está no meio. Por isso o <code>BETWEEN</code> é exatamente a mesma coisa que duas comparações com <code>&gt;=</code> e <code>&lt;=</code> (as da aula <a href="operadores-comparacao.html">Comparações</a>):</p>
+
+<pre class="file" data-file="sem-between.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt;= 19.5 AND preco &lt;= 22.9;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com BETWEEN</th><th>É o mesmo que</th></tr>
+<tr><td><code>preco BETWEEN 19.5 AND 22.9</code></td><td><code>preco &gt;= 19.5 AND preco &lt;= 22.9</code></td></tr>
+<tr><td><code>x BETWEEN a AND b</code></td><td><code>x &gt;= a AND x &lt;= b</code></td></tr>
+</table>
+</div>
+
+<p>O resultado é idêntico. A vantagem do <code>BETWEEN</code> é ler melhor e escrever o nome da coluna uma vez só. A desvantagem: ele <strong>sempre</strong> inclui as duas pontas. Se você quer "maior que 20 e menor que 30", sem as pontas, volte para <code>preco &gt; 20 AND preco &lt; 30</code>.</p>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Experimente:</strong> a Loja Aurora quer saber quais funcionários ganham de R$ 3.000 a R$ 3.500. Hoje a consulta mostra todos os 8. Acrescente um <code>WHERE</code> com <code>BETWEEN</code> no <code>salario</code>. (Lembre: no SQL, 3.000 reais se escreve <code>3000</code>, sem ponto de milhar.)</p>
+<pre class="script" data-file="salarios.sql">SELECT nome, salario
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="salarios.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario BETWEEN 3000 AND 3500;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A ordem importa: o menor vem primeiro</h2>
+<p>Na régua, tanto faz dizer "entre o 20 e o 30" ou "entre o 30 e o 20". No SQL, <strong>não</strong>. Como <code>x BETWEEN a AND b</code> quer dizer <code>x &gt;= a AND x &lt;= b</code>, trocar as pontas de lugar dá uma condição impossível: "maior ou igual a 30 <strong>e</strong> menor ou igual a 20".</p>
+
+<pre class="file" data-file="invertido.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco BETWEEN 30 AND 20;
+</pre>
+
+<p>Nenhuma linha, e <strong>nenhuma mensagem de erro</strong>. O SQLite fez exatamente o que foi pedido. É por isso que esse engano é perigoso: a consulta "funciona" e só devolve vazio. Se um <code>BETWEEN</code> voltar sem nada quando você esperava resultado, confira a ordem das pontas antes de qualquer outra coisa.</p>
+
+<p>Dá para ver o <code>BETWEEN</code> trabalhando sozinho, sem tabela, com um <code>SELECT</code> de valores soltos. Para o SQLite, uma condição verdadeira vale <code>1</code> e uma falsa vale <code>0</code>:</p>
+
+<pre class="file" data-file="teste.sql" data-resultado>SELECT 5 BETWEEN 1 AND 10,
+       5 BETWEEN 10 AND 1,
+       10 BETWEEN 1 AND 10,
+       NULL BETWEEN 1 AND 10;
+</pre>
+
+<ol class="passo">
+  <li><code>5 BETWEEN 1 AND 10</code> → <code>1</code>: o 5 está na faixa.</li>
+  <li><code>5 BETWEEN 10 AND 1</code> → <code>0</code>: com as pontas invertidas, nada cabe.</li>
+  <li><code>10 BETWEEN 1 AND 10</code> → <code>1</code>: em cima da ponta de cima também conta.</li>
+  <li><code>NULL BETWEEN 1 AND 10</code> → <em>NULL</em>: um valor desconhecido não está nem dentro nem fora. Isso volta na seção 8.</li>
+</ol>
+
+<hr>
+
+<h2>4. NOT BETWEEN: o que está fora da faixa</h2>
+<p>O estoquista da Aurora quer ver os produtos com estoque "fora do normal": abaixo de 20 unidades (hora de repor) ou acima de 100 (estoque parado). É o contrário de "entre 20 e 100", então basta pôr <code>NOT</code> antes do <code>BETWEEN</code>:</p>
+
+<pre class="file" data-file="estoque.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque NOT BETWEEN 20 AND 100
+ORDER BY estoque;
+</pre>
+
+<dl class="anatomy">
+  <dt>NOT BETWEEN 20 AND 100</dt><dd>"Não entre 20 e 100": passa quem está <strong>abaixo</strong> de 20 ou <strong>acima</strong> de 100.</dd>
+  <dt>As pontas</dt><dd>Ficam de fora. Um produto com estoque exatamente 20 (o Vaso de Cerâmica Médio) está <strong>dentro</strong> da faixa, então o <code>NOT BETWEEN</code> não o mostra. O mesmo valeria para um estoque de exatamente 100.</dd>
+</dl>
+
+<p>Os 12 produtos vão dos dois descontinuados, com estoque 0, até a Caneta Esferográfica Azul, com 500. Sem o <code>BETWEEN</code>, a mesma pergunta usa <code>OR</code> (aula <a href="or.html">OR</a>):</p>
+
+<pre class="file" data-file="estoque-or.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque &lt; 20 OR estoque &gt; 100
+ORDER BY estoque;
+</pre>
+
+<p>Repare que no <code>NOT BETWEEN</code> as comparações viram <code>&lt;</code> e <code>&gt;</code> (sem o "igual"), e o <code>AND</code> vira <code>OR</code>. É a mesma regra do <code>NOT</code> que você viu em <a href="not.html">NOT</a>.</p>
+
+<hr>
+
+<h2>5. Faixas de datas</h2>
+<p>O SQLite não tem um tipo especial para datas. Na Loja Aurora, a coluna <code>pedidos.data</code> guarda <strong>texto</strong> no formato ISO: <code>'AAAA-MM-DD'</code> (ano com 4 dígitos, mês com 2, dia com 2), como <code>'2026-01-08'</code>. Texto se escreve entre <strong>aspas simples</strong>.</p>
+
+<p>Os pedidos do primeiro trimestre de 2026 (janeiro a março):</p>
+
+<pre class="file" data-file="trimestre.sql" data-resultado>SELECT id, data, frete
+FROM pedidos
+WHERE data BETWEEN '2026-01-01' AND '2026-03-31';
+</pre>
+
+<p>Sete pedidos, do 65 (8 de janeiro) ao 71 (20 de março). Mas espere: se a data é texto, como o SQLite sabe que <code>'2026-02-13'</code> vem depois de <code>'2026-01-01'</code>? Ele <strong>não sabe</strong> nada de datas. Ele compara os textos letra por letra, da esquerda para a direita, como na ordem do dicionário:</p>
+
+<pre class="file" data-file="letra por letra">'2026-02-13'
+'2026-01-01'
+ ^^^^^^         iguais: 2, 0, 2, 6, -, 0
+       ^        primeira diferença: '2' &gt; '1', então '2026-02-13' vem depois
+</pre>
+
+<p>O formato ISO foi pensado exatamente para isso: o mais importante (o ano) vem primeiro, depois o mês, depois o dia, sempre com o mesmo número de dígitos. Assim, a ordem do texto é a ordem do calendário. É por isso que as datas da Aurora estão nesse formato, e é a primeira coisa a conferir em qualquer banco que guarda data como texto. A aula <a href="datas.html">Datas e Horas</a> aprofunda o assunto.</p>
+
+<p>Funciona com qualquer coluna de data. Os clientes nascidos de 1990 a 1994:</p>
+
+<pre class="file" data-file="nascidos.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento BETWEEN '1990-01-01' AND '1994-12-31';
+</pre>
+
+<h3>A armadilha do último dia</h3>
+<p>No Aurora, as datas não têm hora, então <code>AND '2026-03-31'</code> pega o dia 31 inteiro. Mas muitos bancos guardam data <strong>e hora</strong> juntas, como <code>'2026-03-31 14:20'</code>. Veja o que o <code>BETWEEN</code> faz com uma dessas:</p>
+
+<pre class="file" data-file="ultimo-dia.sql" data-resultado>SELECT '2026-03-31 14:20' BETWEEN '2026-01-01' AND '2026-03-31';
+</pre>
+
+<p>Deu <code>0</code>: ficou de fora! Comparando letra por letra, <code>'2026-03-31 14:20'</code> é <strong>maior</strong> que <code>'2026-03-31'</code> (é o mesmo começo, com mais coisa depois, como "casaco" vem depois de "casa" no dicionário). Tudo o que aconteceu no dia 31 depois da meia-noite escaparia do relatório. A forma segura, que funciona com ou sem hora, é "a partir do primeiro dia, e <strong>antes</strong> do primeiro dia do período seguinte":</p>
+
+<pre class="file" data-file="meio-aberto.sql" data-resultado>SELECT id, data, frete
+FROM pedidos
+WHERE data &gt;= '2026-01-01' AND data &lt; '2026-04-01';
+</pre>
+
+<p>Mesmo resultado aqui (7 pedidos), e à prova de hora. Bônus: você não precisa saber se o mês acaba no dia 28, 29, 30 ou 31.</p>
+
+<hr>
+
+<h2>6. BETWEEN com texto</h2>
+<p>Como o <code>BETWEEN</code> só compara, ele funciona com qualquer texto, não só com datas. A Ana quer ligar para os clientes cujo nome começa com A, B ou C, e tenta:</p>
+
+<pre class="file" data-file="letras.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome BETWEEN 'A' AND 'C'
+ORDER BY nome;
+</pre>
+
+<p>Só 4 nomes, e nenhum com C. Onde estão Camila Duarte, Carlos Eduardo Lima e Conceição Prado? O texto <code>'Camila Duarte'</code> começa igual a <code>'C'</code> e tem mais letras depois, então é <strong>maior</strong> que <code>'C'</code> e passa da ponta de cima. É a mesma armadilha do último dia. O conserto é o mesmo: "a partir de A, e antes de D":</p>
+
+<pre class="file" data-file="letras-certo.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome &gt;= 'A' AND nome &lt; 'D'
+ORDER BY nome;
+</pre>
+
+<p>Agora vêm os 7. Para "começa com" de uma letra só, a aula <a href="like.html">LIKE</a> costuma ser mais clara (<code>nome LIKE 'C%'</code>).</p>
+
+<div class="warning">
+<strong>Letras com acento ficam no fim</strong>
+<p>O SQLite compara texto pelo código de cada caractere, e as letras acentuadas têm códigos maiores que todas as letras sem acento. Por isso <code>SELECT 'Ávila' BETWEEN 'A' AND 'Z';</code> dá <code>0</code>: para o SQLite, "Á" vem depois de "Z". Na Aurora, nenhum cliente tem acento na <strong>primeira</strong> letra, mas tenha isso em mente com nomes como Ângela ou Érica.</p>
+</div>
+
+<hr>
+
+<h2>7. BETWEEN junto com outras condições</h2>
+<p>A vitrine de 20 a 30 reais só pode ter produtos com bom estoque, mais de 50 unidades. Junte as duas condições com <code>AND</code>:</p>
+
+<pre class="file" data-file="vitrine-estoque.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE preco BETWEEN 20 AND 30 AND estoque &gt; 50;
+</pre>
+
+<p>Aqui aparecem dois <code>AND</code> com papéis diferentes. Como o SQLite sabe qual é qual? Depois de um <code>BETWEEN</code>, o <strong>primeiro</strong> <code>AND</code> sempre pertence a ele (separa as pontas). O segundo é o "e" lógico, que junta as condições. Saíram 7 produtos: o Pen Drive e o Regador ficaram de fora porque têm estoque 0 e 31.</p>
+
+<p>Para quem lê, os parênteses deixam tudo mais claro, e o resultado é o mesmo:</p>
+
+<pre class="file" data-file="vitrine-parenteses.sql">SELECT nome, preco, estoque
+FROM produtos
+WHERE (preco BETWEEN 20 AND 30) AND estoque &gt; 50;
+</pre>
+
+<hr>
+
+<h2>8. E o NULL?</h2>
+<p>Dois clientes da Aurora não têm data de nascimento cadastrada: Antônio Carlos Neves e Sebastião Moura. No lugar da data, a coluna tem <code>NULL</code>, que quer dizer "valor desconhecido". Veja quem nasceu <strong>fora</strong> da faixa de 1980 a 1999:</p>
+
+<pre class="file" data-file="fora-faixa.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento NOT BETWEEN '1980-01-01' AND '1999-12-31';
+</pre>
+
+<p>Antônio e Sebastião não aparecem. Nem aqui, nem no <code>BETWEEN</code> sem o <code>NOT</code>. Se a data é desconhecida, o SQLite não tem como dizer se ela está dentro ou fora; a resposta é <em>NULL</em> (você viu na seção 3), e o <code>WHERE</code> só deixa passar o que for verdadeiro. Somando os dois lados, faltam sempre essas duas pessoas. Por que isso acontece, e como encontrar essas linhas, é o assunto das próximas aulas: <a href="null.html">O Valor NULL</a> e <a href="is-null.html">IS NULL e IS NOT NULL</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma faixa</h2>
+<p>A mesma pergunta, "pedidos de fevereiro de 2026", escrita de três jeitos:</p>
+
+<pre class="file" data-file="fevereiro-between.sql" data-resultado>SELECT id, data FROM pedidos
+WHERE data BETWEEN '2026-02-01' AND '2026-02-28';
+</pre>
+
+<pre class="file" data-file="fevereiro-meio-aberto.sql" data-resultado>SELECT id, data FROM pedidos
+WHERE data &gt;= '2026-02-01' AND data &lt; '2026-03-01';
+</pre>
+
+<pre class="file" data-file="fevereiro-like.sql" data-resultado>SELECT id, data FROM pedidos
+WHERE data LIKE '2026-02%';
+</pre>
+
+<p>As três devolvem os pedidos 67, 68 e 69. Qual usar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th><th>Cuidado</th></tr>
+<tr><td><code>x BETWEEN a AND b</code></td><td>Faixas de números e datas <strong>sem hora</strong>, com as duas pontas incluídas. É a mais fácil de ler.</td><td>Menor primeiro. Com hora, perde o último dia.</td></tr>
+<tr><td><code>x &gt;= a AND x &lt; b</code></td><td>Períodos de datas (com ou sem hora) e faixas de texto ("de A até antes de D").</td><td>Lembre que o <code>b</code> é o começo do período <strong>seguinte</strong>.</td></tr>
+<tr><td><code>x &gt; a AND x &lt; b</code></td><td>Quando as pontas <strong>não</strong> podem entrar.</td><td>O <code>BETWEEN</code> não faz isso.</td></tr>
+<tr><td><code>x NOT BETWEEN a AND b</code></td><td>Tudo fora da faixa.</td><td>As pontas ficam de fora; o <code>NULL</code> também.</td></tr>
+<tr><td><code>data LIKE '2026-02%'</code></td><td>Um mês ou um ano inteiro, rapidinho.</td><td>Só serve para "começa com"; não faz faixas como "15 de janeiro a 10 de março".</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Pontas invertidas: nenhum resultado, nenhum erro</strong>
+<pre class="file" data-file="invertido.sql" data-resultado>SELECT id, data FROM pedidos
+WHERE data BETWEEN '2026-03-31' AND '2026-01-01';
+</pre>
+<p><strong>O que acontece:</strong> o SQLite procura datas que sejam ao mesmo tempo "depois de 31 de março" e "antes de 1º de janeiro". Não existe nenhuma, e o resultado vem vazio, sem aviso.</p>
+<p><strong>Como consertar:</strong> o menor valor (a data mais antiga) sempre logo depois do <code>BETWEEN</code>: <code>BETWEEN '2026-01-01' AND '2026-03-31'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Data no formato brasileiro</strong>
+<p>A Ana escreveu as datas do jeito que usa no dia a dia:</p>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT id, data FROM pedidos
+WHERE data BETWEEN '01/01/2026' AND '31/03/2026';
+</pre>
+<p><strong>O que acontece:</strong> vieram os <strong>90</strong> pedidos, de 2024 a 2026! O SQLite não sabe que aquilo é uma data; ele compara texto letra por letra. Todo pedido começa com <code>'2'</code> (de 2024, 2025, 2026). <code>'2'</code> é maior que o <code>'0'</code> de <code>'01/01/2026'</code> e menor que o <code>'3'</code> de <code>'31/03/2026'</code>, então tudo cabe na "faixa". Sem erro, e com o resultado completamente errado: é o pior tipo de engano.</p>
+<p><strong>Como consertar:</strong> escreva as datas no mesmo formato da coluna, o ISO: <code>'2026-01-01'</code> e <code>'2026-03-31'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula no lugar do ponto (ou do AND)</strong>
+<pre class="file" data-file="virgula.sql" data-resultado data-erro>SELECT nome, preco FROM produtos
+WHERE preco BETWEEN 19,90 AND 30;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ",": syntax error</code>, ou seja, "perto da vírgula: erro de sintaxe". No SQL, a vírgula separa itens de uma lista (como as colunas do <code>SELECT</code>); ela nunca é a vírgula decimal. O mesmo erro aparece se você trocar o <code>AND</code> por vírgula: <code>BETWEEN 20, 30</code>.</p>
+<p><strong>Como consertar:</strong> decimal com ponto (<code>19.90</code>) e as pontas separadas por <code>AND</code>: <code>BETWEEN 19.90 AND 30</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a segunda ponta</strong>
+<pre class="file" data-file="sem-ponta.sql" data-resultado data-erro>SELECT nome, preco FROM produtos
+WHERE preco BETWEEN 20;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ";": syntax error</code>. O SQLite leu <code>BETWEEN 20</code> e ficou esperando o <code>AND</code> e a segunda ponta; em vez disso, chegou o ponto e vírgula. Quando a mensagem aponta para o <code>;</code>, quase sempre está faltando um pedaço antes dele. O mesmo acontece com <code>BETWEEN 20 OR 30</code>: o <code>OR</code> não serve de separador, e o SQLite reclama do <code>;</code>. Já <code>BETWEEN 20 TO 30</code> dá <code>near "TO": syntax error</code>.</p>
+<p><strong>Como consertar:</strong> sempre as duas pontas, com <code>AND</code> no meio: <code>BETWEEN 20 AND 30</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Data entre aspas duplas</strong>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT id, data FROM pedidos
+WHERE data BETWEEN "2026-01-01" AND "2026-03-31";
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: "2026-01-01" - should this be a string literal in single-quotes?</code> ("não existe a coluna "2026-01-01"; isto deveria ser um texto entre aspas simples?"). No SQL padrão, aspas <strong>duplas</strong> são para nomes de coluna e de tabela; texto vai entre aspas <strong>simples</strong>. O próprio SQLite dá a dica.</p>
+<p><strong>Como consertar:</strong> <code>BETWEEN '2026-01-01' AND '2026-03-31'</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>BETWEEN</code> é do SQL padrão e funciona igual no MySQL, no PostgreSQL e no SQL Server: pontas incluídas, menor primeiro. Duas diferenças que valem saber:</p>
+<ul>
+  <li>O <strong>PostgreSQL</strong> tem o <code>BETWEEN SYMMETRIC</code>, que aceita as pontas em qualquer ordem (ele troca as duas se precisar). O SQLite não tem essa forma. Trecho só ilustrativo:
+<pre class="file" data-file="postgresql (ilustrativo)">SELECT nome, preco FROM produtos
+WHERE preco BETWEEN SYMMETRIC 30 AND 20;
+</pre></li>
+  <li>Esses bancos têm tipos próprios de data (<code>DATE</code>, <code>DATETIME</code>, <code>TIMESTAMP</code>). A armadilha do último dia continua valendo numa coluna com hora: o manual do MySQL recomenda converter os valores para o mesmo tipo da coluna (com <code>CAST()</code>) ao usar <code>BETWEEN</code> com datas. A forma <code>&gt;= início AND &lt; início-do-próximo</code> funciona em todos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>x BETWEEN a AND b</code></td><td>Verdadeiro se <code>a &lt;= x &lt;= b</code> (pontas incluídas)</td></tr>
+<tr><td><code>x NOT BETWEEN a AND b</code></td><td>Verdadeiro se <code>x &lt; a</code> ou <code>x &gt; b</code></td></tr>
+<tr><td><code>BETWEEN 30 AND 20</code></td><td>Nunca é verdadeiro: o menor vem primeiro</td></tr>
+<tr><td><code>data BETWEEN '2026-01-01' AND '2026-03-31'</code></td><td>Faixa de datas em texto ISO (sem hora)</td></tr>
+<tr><td><code>data &gt;= '2026-01-01' AND data &lt; '2026-04-01'</code></td><td>Período de datas à prova de hora</td></tr>
+<tr><td><code>NULL BETWEEN a AND b</code></td><td>Dá <code>NULL</code>: a linha não passa no <code>WHERE</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near ",": syntax error</code></td><td>Vírgula decimal (<code>19,90</code>) ou vírgula no lugar do <code>AND</code></td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Faltou o <code>AND</code> e a segunda ponta</td></tr>
+<tr><td><code>no such column: "2026-01-01" - should this be a string literal in single-quotes?</code></td><td>Data entre aspas duplas; use simples</td></tr>
+<tr><td>(sem mensagem, 0 linhas)</td><td>Pontas invertidas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete a faixa</h3>
+<p>Produtos de 10 a 50 reais:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE preco <input data-answer="BETWEEN" aria-label="palavra-chave"> 10 <input data-answer="AND" aria-label="separador"> 50;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Fora da faixa</h3>
+<p>Pedidos com frete abaixo de 5 ou acima de 20 reais:</p>
+<div class="ex-code">SELECT id, frete FROM pedidos WHERE frete <input data-answer="NOT" aria-label="palavra que inverte"> BETWEEN 5 AND 20;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O Estojo Duplo custa exatamente 19.5. Ele aparece em <code>WHERE preco BETWEEN 19.5 AND 25</code>?</p>
+<label><input type="radio" name="q3"> Não, porque o BETWEEN não inclui as pontas</label>
+<label><input type="radio" name="q3"> Sim, porque o BETWEEN inclui as duas pontas</label>
+<label><input type="radio" name="q3"> Só se a consulta tiver ORDER BY</label>
+<label><input type="radio" name="q3"> Dá erro, porque 19.5 tem casa decimal</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. O que <code>WHERE preco BETWEEN 100 AND 50</code> devolve?</p>
+<label><input type="radio" name="q4"> Os produtos de 50 a 100, porque o SQLite troca as pontas</label>
+<label><input type="radio" name="q4"> Uma mensagem de erro</label>
+<label><input type="radio" name="q4"> Nenhuma linha, sem erro</label>
+<label><input type="radio" name="q4"> Todos os produtos</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Na coluna <code>data</code>, que guarda texto, qual forma acha os pedidos de março de 2026?</p>
+<label><input type="radio" name="q5"> <code>data BETWEEN '01/03/2026' AND '31/03/2026'</code></label>
+<label><input type="radio" name="q5"> <code>data BETWEEN "2026-03-01" AND "2026-03-31"</code></label>
+<label><input type="radio" name="q5"> <code>data BETWEEN '2026-03-31' AND '2026-03-01'</code></label>
+<label><input type="radio" name="q5"> <code>data BETWEEN '2026-03-01' AND '2026-03-31'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Um cliente tem <code>nascimento</code> NULL. Em qual destas consultas ele aparece?</p>
+<label><input type="radio" name="q6"> Em nenhuma das duas</label>
+<label><input type="radio" name="q6"> Só em <code>WHERE nascimento BETWEEN '1980-01-01' AND '1999-12-31'</code></label>
+<label><input type="radio" name="q6"> Só em <code>WHERE nascimento NOT BETWEEN '1980-01-01' AND '1999-12-31'</code></label>
+<label><input type="radio" name="q6"> Nas duas</label>
+</div>
+
+<h3>Missão final: o frete de 2025</h3>
+
+<div class="trysql" data-goal="linhas:12">
+<p class="try-task"><strong>Missão:</strong> o gerente quer os pedidos feitos em <strong>2025</strong> cujo frete ficou <strong>de 10 a 20 reais</strong> (pontas incluídas). A consulta abaixo já pega o ano de 2025, mas ainda não olha o frete. Acrescente a segunda condição. Dica: são dois <code>BETWEEN</code> ligados por um <code>AND</code>.</p>
+<pre class="script" data-file="frete2025.sql">SELECT id, data, frete
+FROM pedidos
+WHERE data BETWEEN '2025-01-01' AND '2025-12-31';
+</pre>
+<pre class="solucao" data-file="frete2025.sql">SELECT id, data, frete
+FROM pedidos
+WHERE data BETWEEN '2025-01-01' AND '2025-12-31'
+  AND frete BETWEEN 10 AND 20;
+</pre>
+</div>
+
+<p>Se você chegou a 12 pedidos, acertou. Repare que nenhum deles tem frete de exatamente 10 ou 20; as pontas entrariam, mas nenhum pedido de 2025 caiu em cima delas.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>x BETWEEN a AND b</code> é o mesmo que <code>x &gt;= a AND x &lt;= b</code>: as <strong>duas pontas entram</strong>.</li>
+  <li>O menor valor vem primeiro. Pontas invertidas não dão erro: dão <strong>zero linhas</strong>.</li>
+  <li><code>NOT BETWEEN</code> pega o que está fora (abaixo ou acima); as pontas ficam de fora.</li>
+  <li>Datas em texto só funcionam no formato ISO <code>'AAAA-MM-DD'</code>, entre aspas simples. <code>'01/01/2026'</code> compara errado, sem aviso.</li>
+  <li>Com hora na data, ou com texto ("de A a C"), prefira <code>&gt;= início AND &lt; começo-do-próximo</code>.</li>
+  <li>Decimal com ponto (<code>19.90</code>); vírgula dá <code>near ",": syntax error</code>.</li>
+  <li>Linhas com <code>NULL</code> na coluna não aparecem nem no <code>BETWEEN</code> nem no <code>NOT BETWEEN</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
