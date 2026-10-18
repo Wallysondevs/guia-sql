@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Comandos de Ponto — .tables, .schema, .headers e .mode | Guia SQL</title>
+<meta name="description" content="Os comandos de ponto do sqlite3 para quem está começando: .help, .tables, .schema, .show, .headers on, .mode list, column, box, table, csv, line e markdown, .nullvalue, .read e .databases, com sessões reais do terminal, os erros mais comuns e o jeito de ver as tabelas no editor do guia com sqlite_schema.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Comandos de <span class="hl">Ponto</span></h1>
+
+<p class="intro">Você entrou no <code>sqlite3</code>, abriu o <code>loja.db</code> e fez consultas. Mas como saber quais tabelas existem ali? Quais colunas tem a tabela de produtos? E dá para a resposta sair numa tabela bonita, com o nome das colunas, em vez daquela fila de valores separados por <code>|</code>? Para isso o <code>sqlite3</code> tem os <strong>comandos de ponto</strong>: <code>.tables</code>, <code>.schema</code>, <code>.headers</code>, <code>.mode</code> e outros. Eles não são SQL; são as ferramentas do próprio programa. Nesta aula você vai usar cada um no terminal da Ana, ver os erros mais comuns e aprender o jeito de fazer o mesmo no editor do guia, onde eles não existem.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um comando de ponto e por que ele não é SQL.</li>
+  <li><code>.help</code> e <code>.show</code>: a ajuda e as configurações atuais.</li>
+  <li><code>.tables</code>: listar as tabelas do banco (e filtrar pelo nome).</li>
+  <li><code>.schema</code>: ver como uma tabela foi criada, com as suas colunas.</li>
+  <li><code>.headers on</code> e os modos de saída: <code>.mode list</code>, <code>column</code>, <code>box</code>, <code>table</code>, <code>csv</code>, <code>line</code> e <code>markdown</code>.</li>
+  <li><code>.nullvalue</code>, <code>.read</code> e <code>.databases</code>.</li>
+  <li>As regras: começa na margem, sem ponto e vírgula, minúsculas.</li>
+  <li>Como ver as tabelas e as colunas <strong>em SQL</strong>, no editor do guia.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: os botões do balcão</h2>
+<p>Pense de novo no <code>sqlite3</code> como o balcão do estoque. O <strong>SQL</strong> são os pedidos que você faz ao estoquista: "me traga os produtos com preço menor que 5". Os <strong>comandos de ponto</strong> são os botões do próprio balcão: "acenda a luz", "imprima em formato de tabela", "mostre a planta do depósito". Eles não mexem nos dados; mexem no <strong>programa</strong>: no que ele mostra e em como mostra.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>SQL</th><th>Comando de ponto</th></tr>
+<tr><td>Exemplo</td><td><code>SELECT nome FROM produtos;</code></td><td><code>.tables</code></td></tr>
+<tr><td>Quem entende</td><td>Todo banco: SQLite, MySQL, PostgreSQL…</td><td>Só o programa <code>sqlite3</code></td></tr>
+<tr><td>Como começa</td><td>Com uma palavra-chave (<code>SELECT</code>, <code>INSERT</code>…)</td><td>Com um ponto, na primeira coluna da linha</td></tr>
+<tr><td>Como termina</td><td>Com <code>;</code></td><td>No fim da linha, <strong>sem</strong> <code>;</code></td></tr>
+<tr><td>No editor do guia</td><td>Funciona</td><td><strong>Não existe</strong> (dá erro)</td></tr>
+</table>
+</div>
+
+<p>Você já conhece três: <code>.quit</code>, <code>.exit</code> e <code>.open</code>, de <a href="shell-sqlite.html">O Terminal do SQLite</a>. Agora vêm os outros. Todas as sessões abaixo começaram com <code>sqlite3 loja.db</code>, na pasta pessoal da Ana.</p>
+
+<hr>
+
+<h2>1. <code>.help</code>: a lista de comandos</h2>
+<p>O próprio <code>sqlite3</code> avisa ao abrir: <code>Enter ".help" for usage hints</code>. O <code>.help</code> lista todos os comandos de ponto, um por linha, com uma frase em inglês. São muitos (no SQLite 3.50.4, a lista tem 66 linhas), e você vai usar poucos. Para ver a ajuda de um só, escreva o nome dele depois do <code>.help</code>:</p>
+
+<pre class="term">sqlite&gt; .help tables
+.tables ?TABLE?          List names of tables matching LIKE pattern TABLE
+sqlite&gt; .help schema
+.schema ?PATTERN?        Show the CREATE statements matching PATTERN
+   Options:
+      --indent             Try to pretty-print the schema
+      --nosys              Omit objects whose names start with "sqlite_"
+sqlite&gt; </pre>
+
+<dl class="anatomy">
+  <dt>.tables ?TABLE?</dt><dd>O comando e o que ele aceita. O que está entre <code>?</code> é <strong>opcional</strong>: você pode escrever só <code>.tables</code> ou <code>.tables</code> seguido de um nome.</dd>
+  <dt>List names of tables matching LIKE pattern TABLE</dt><dd>"Lista os nomes das tabelas que casam com o padrão TABLE", no estilo do <code>LIKE</code> (aula <a href="like.html">LIKE</a>). Você vai usar isso na seção 2.</dd>
+  <dt>Options: --indent, --nosys</dt><dd>Opções extras do <code>.schema</code>. Não precisa delas agora.</dd>
+</dl>
+
+<p>Os que este guia usa, tirados da lista do <code>.help</code> (os textos em inglês são do próprio programa):</p>
+
+<pre class="term">$ sqlite3 loja.db ".help" | grep -E "^\.(tables|schema|mode|headers|quit|exit|open|read|show|help|nullvalue|databases) "
+.databases               List names and files of attached databases
+.exit ?CODE?             Exit this program with return-code CODE
+.headers on|off          Turn display of headers on or off
+.help ?-all? ?PATTERN?   Show help text for PATTERN
+.mode ?MODE? ?OPTIONS?   Set output mode
+.nullvalue STRING        Use STRING in place of NULL values
+.open ?OPTIONS? ?FILE?   Close existing database and reopen FILE
+.quit                    Stop interpreting input stream, exit if primary.
+.read FILE               Read input from FILE or command output
+.schema ?PATTERN?        Show the CREATE statements matching PATTERN
+.show                    Show the current values for various settings
+.tables ?TABLE?          List names of tables matching LIKE pattern TABLE</pre>
+
+<p>(O <code>grep</code> do sistema filtrou a lista inteira para mostrar só essas linhas. Não se preocupe com ele.)</p>
+
+<hr>
+
+<h2>2. <code>.tables</code>: quais gavetas existem?</h2>
+<p>O comando que você mais vai usar ao abrir um banco que não conhece. Ele lista as tabelas em ordem alfabética, em colunas:</p>
+
+<pre class="term">sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  produtos
+clientes      funcionarios  pedidos
+sqlite&gt; </pre>
+
+<p>As 7 tabelas da Loja Aurora. Leia de cima para baixo, coluna por coluna: categorias, clientes, fornecedores, funcionarios, itens_pedido, pedidos, produtos. É a "etiqueta das gavetas" do fichário: antes de pedir alguma coisa, você sabe o nome exato de cada uma (e evita o <code>no such table: produto</code>).</p>
+
+<p>Com um padrão depois, o <code>.tables</code> filtra. O <code>%</code> quer dizer "qualquer coisa", como no <code>LIKE</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db ".tables p%"
+pedidos   produtos
+$ sqlite3 loja.db ".tables %pedido%"
+itens_pedido  pedidos     </pre>
+
+<p>"As tabelas que começam com p" e "as que têm <code>pedido</code> em algum lugar do nome". Repare que comandos de ponto também funcionam como argumento, entre aspas, igual ao SQL.</p>
+
+<hr>
+
+<h2>3. <code>.schema</code>: a planta de uma tabela</h2>
+<p>O <code>.tables</code> diz quais gavetas existem; o <code>.schema</code> mostra <strong>como cada uma foi montada</strong>: o comando <code>CREATE TABLE</code> que a criou, com todas as colunas. "Schema" quer dizer "esquema", a planta do banco.</p>
+
+<pre class="term">sqlite&gt; .schema produtos
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+sqlite&gt; </pre>
+
+<p>Você ainda não aprendeu a criar tabelas, mas já dá para ler muita coisa:</p>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE produtos ( … );</dt><dd>"Crie a tabela produtos com estas colunas." Cada linha de dentro é uma coluna.</dd>
+  <dt>id INTEGER PRIMARY KEY</dt><dd>A coluna <code>id</code>, de números inteiros (<code>INTEGER</code>), é a <strong>chave primária</strong>: o número da ficha, que não se repete.</dd>
+  <dt>nome TEXT NOT NULL</dt><dd>O nome é texto (<code>TEXT</code>) e <strong>não pode ficar vazio</strong> (<code>NOT NULL</code>, "não nulo").</dd>
+  <dt>REFERENCES categorias(id)</dt><dd>"Faz referência ao <code>id</code> da tabela <code>categorias</code>": é a ligação entre as gavetas que você viu em <a href="introducao.html">O que é um Banco de Dados</a>.</dd>
+  <dt>preco REAL</dt><dd>O preço é um número com casas decimais (<code>REAL</code>).</dd>
+  <dt>DEFAULT 0</dt><dd>Se ninguém disser o estoque de um produto novo, ele começa com 0.</dd>
+</dl>
+
+<p>Cada uma dessas palavras tem aula própria no Nível 2 (<a href="create-table.html">CREATE TABLE</a>, <a href="tipos-sqlite.html">Os Tipos no SQLite</a>, <a href="not-null.html">NOT NULL</a>, <a href="default.html">DEFAULT</a>, <a href="foreign-key.html">FOREIGN KEY</a>). Por enquanto, use o <code>.schema</code> para descobrir <strong>os nomes das colunas</strong> antes de escrever um <code>SELECT</code>. Uma tabela menor, a de categorias:</p>
+
+<pre class="term">sqlite&gt; .schema categorias
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+sqlite&gt; </pre>
+
+<p>O <code>.schema</code> sozinho, sem nome, mostra a planta de <strong>todas</strong> as tabelas, uma depois da outra: bom para conhecer um banco novo de uma vez, mas é um texto comprido.</p>
+
+<hr>
+
+<h2>4. <code>.headers on</code>: o nome das colunas</h2>
+<p>Lembra que, no terminal, o resultado vem sem cabeçalho? O <code>.headers on</code> ("cabeçalhos ligados") resolve:</p>
+
+<pre class="term">sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+1|Caderno Pautado 96 folhas|12.35
+2|Caneta Esferográfica Azul|2.79
+3|Lápis Grafite HB|1.15
+sqlite&gt; .headers on
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+id|nome|preco
+1|Caderno Pautado 96 folhas|12.35
+2|Caneta Esferográfica Azul|2.79
+3|Lápis Grafite HB|1.15
+sqlite&gt; </pre>
+
+<p>O <code>.headers on</code> não mostra nada: ele só muda a configuração, e vale para tudo o que vier depois, até você sair do programa ou digitar <code>.headers off</code>. A primeira linha do resultado agora diz o que é cada valor.</p>
+
+<hr>
+
+<h2>5. <code>.mode</code>: o formato da resposta</h2>
+<p>O <code>.mode</code> ("modo") escolhe <strong>como</strong> o resultado é desenhado. Os dados são os mesmos; muda a "embalagem". Aqui está a mesma consulta em cada modo, numa sessão só, com o <code>.headers on</code> da seção anterior ainda ligado:</p>
+
+<h3><code>.mode column</code>: colunas alinhadas</h3>
+<pre class="term">sqlite&gt; .mode column
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+id  nome                       preco
+--  -------------------------  -----
+1   Caderno Pautado 96 folhas  12.35
+2   Caneta Esferográfica Azul  2.79
+3   Lápis Grafite HB           1.15
+sqlite&gt; </pre>
+
+<h3><code>.mode box</code>: uma tabela com linhas desenhadas</h3>
+<pre class="term">sqlite&gt; .mode box
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+┌────┬───────────────────────────┬───────┐
+│ id │           nome            │ preco │
+├────┼───────────────────────────┼───────┤
+│ 1  │ Caderno Pautado 96 folhas │ 12.35 │
+│ 2  │ Caneta Esferográfica Azul │ 2.79  │
+│ 3  │ Lápis Grafite HB          │ 1.15  │
+└────┴───────────────────────────┴───────┘
+sqlite&gt; </pre>
+
+<h3><code>.mode table</code>: a mesma tabela, só com <code>+</code>, <code>-</code> e <code>|</code></h3>
+<pre class="term">sqlite&gt; .mode table
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
++----+---------------------------+-------+
+| id |           nome            | preco |
++----+---------------------------+-------+
+| 1  | Caderno Pautado 96 folhas | 12.35 |
+| 2  | Caneta Esferográfica Azul | 2.79  |
+| 3  | Lápis Grafite HB          | 1.15  |
++----+---------------------------+-------+
+sqlite&gt; </pre>
+
+<h3><code>.mode csv</code>: para abrir numa planilha</h3>
+<pre class="term">sqlite&gt; .mode csv
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+id,nome,preco
+1,"Caderno Pautado 96 folhas",12.35
+2,"Caneta Esferográfica Azul",2.79
+3,"Lápis Grafite HB",1.15
+sqlite&gt; </pre>
+
+<h3><code>.mode line</code>: uma coluna por linha, como uma ficha</h3>
+<pre class="term">sqlite&gt; .mode line
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 2;
+   id = 1
+ nome = Caderno Pautado 96 folhas
+preco = 12.35
+
+   id = 2
+ nome = Caneta Esferográfica Azul
+preco = 2.79
+sqlite&gt; </pre>
+
+<h3><code>.mode markdown</code>: para colar num documento</h3>
+<pre class="term">sqlite&gt; .mode markdown
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+| id |           nome            | preco |
+|----|---------------------------|-------|
+| 1  | Caderno Pautado 96 folhas | 12.35 |
+| 2  | Caneta Esferográfica Azul | 2.79  |
+| 3  | Lápis Grafite HB          | 1.15  |
+sqlite&gt; </pre>
+
+<h3><code>.mode list</code>: de volta ao padrão</h3>
+<pre class="term">sqlite&gt; .mode list
+sqlite&gt; SELECT id, nome, preco FROM produtos LIMIT 3;
+id|nome|preco
+1|Caderno Pautado 96 folhas|12.35
+2|Caneta Esferográfica Azul|2.79
+3|Lápis Grafite HB|1.15
+sqlite&gt; .mode
+current output mode: list --escape ascii
+sqlite&gt; </pre>
+
+<p>O <code>.mode</code> sozinho diz em que modo você está (o <code>--escape ascii</code> é um detalhe de como caracteres especiais são mostrados; pode ignorar).</p>
+
+<h3>Qual modo usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Cara</th><th>Quando usar</th></tr>
+<tr><td><code>list</code> (padrão)</td><td>Valores separados por <code>|</code></td><td>Respostas curtas; scripts que leem a saída</td></tr>
+<tr><td><code>column</code></td><td>Colunas alinhadas, cabeçalho sublinhado</td><td>Ler no terminal, sem enfeite</td></tr>
+<tr><td><code>box</code></td><td>Tabela com linhas desenhadas</td><td><strong>Estudar</strong>: é o mais fácil de ler, e o mais parecido com o editor do guia</td></tr>
+<tr><td><code>table</code></td><td>Tabela com <code>+ - |</code></td><td>Como o box, para terminais ou textos que não mostram as linhas desenhadas</td></tr>
+<tr><td><code>csv</code></td><td>Separado por vírgulas</td><td>Levar para uma planilha (aula <a href="import-export.html">Importar e Exportar CSV</a>)</td></tr>
+<tr><td><code>line</code></td><td>Uma coluna por linha</td><td>Linhas com muitas colunas, ou textos compridos</td></tr>
+<tr><td><code>markdown</code></td><td>Tabela de Markdown</td><td>Colar em documentação, fóruns, README</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Os modos que já trazem cabeçalho</strong>
+<p>O <code>box</code>, o <code>table</code>, o <code>markdown</code> e o <code>column</code> mostram o nome das colunas mesmo sem <code>.headers on</code>. Numa sessão nova, sem mexer em nada:</p>
+<pre class="term">sqlite&gt; .mode column
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+id  nome
+--  -----------
+1   Papelaria
+2   Eletrônicos
+sqlite&gt; </pre>
+<p>E no <code>box</code> o cabeçalho aparece até com <code>.headers off</code>. O <code>.headers</code> faz diferença mesmo no <code>list</code> e no <code>csv</code>.</p>
+</div>
+
+<div class="trysql" data-goal="colunas:id,nome,preco;;linhas:3">
+<p class="try-task"><strong>Experimente:</strong> no editor do guia o resultado já sai como uma tabela, parecida com o <code>.mode box</code>, e os comandos de ponto não existem. Rode a caixa e veja o erro do <code>.mode box</code>. Depois apague a primeira linha e rode de novo: a consulta dos três produtos, a mesma das sessões acima, aparece em forma de tabela.</p>
+<pre class="script" data-file="consulta.sql">.mode box
+SELECT id, nome, preco FROM produtos LIMIT 3;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, nome, preco FROM produtos LIMIT 3;
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Outros três úteis: <code>.nullvalue</code>, <code>.read</code> e <code>.databases</code></h2>
+
+<h3><code>.nullvalue</code>: deixar o NULL visível</h3>
+<p>O cliente 7 não tem email (o valor é <code>NULL</code>, "sem valor"). No terminal, o NULL aparece como um <strong>espaço em branco</strong>, fácil de confundir com um texto vazio. O <code>.nullvalue</code> escolhe uma palavra para ele:</p>
+
+<pre class="term">sqlite&gt; .mode box
+sqlite&gt; SELECT id, nome, email FROM clientes WHERE id BETWEEN 6 AND 8;
+┌────┬───────────────────┬──────────────────────────────────┐
+│ id │       nome        │              email               │
+├────┼───────────────────┼──────────────────────────────────┤
+│ 6  │ Rafael Monteiro   │ rafael.monteiro@exemplo.com.br   │
+│ 7  │ Luís Otávio Brito │                                  │
+│ 8  │ Fernanda Carvalho │ fernanda.carvalho@exemplo.com.br │
+└────┴───────────────────┴──────────────────────────────────┘
+sqlite&gt; .nullvalue NULL
+sqlite&gt; SELECT id, nome, email FROM clientes WHERE id BETWEEN 6 AND 8;
+┌────┬───────────────────┬──────────────────────────────────┐
+│ id │       nome        │              email               │
+├────┼───────────────────┼──────────────────────────────────┤
+│ 6  │ Rafael Monteiro   │ rafael.monteiro@exemplo.com.br   │
+│ 7  │ Luís Otávio Brito │ NULL                             │
+│ 8  │ Fernanda Carvalho │ fernanda.carvalho@exemplo.com.br │
+└────┴───────────────────┴──────────────────────────────────┘
+sqlite&gt; </pre>
+
+<p>No editor do guia, o NULL já aparece em itálico, sem precisar de nada. O NULL tem aula própria: <a href="null.html">O Valor NULL</a>.</p>
+
+<h3><code>.read</code>: rodar um arquivo de comandos</h3>
+<p>O <code>.read</code> lê um arquivo de SQL e executa tudo o que há nele, sem sair do programa. A Ana tinha um arquivo <code>conta.sql</code> com <code>SELECT COUNT(*) FROM clientes;</code> dentro:</p>
+
+<pre class="term">sqlite&gt; .read conta.sql
+30
+sqlite&gt; </pre>
+
+<p>É o mesmo que <code>sqlite3 loja.db &lt; conta.sql</code>, só que de dentro do <code>sqlite3</code>. No Windows, com o PowerShell, é o jeito de criar o banco da loja: <code>.read aurora.sql</code> (veja <a href="instalar.html#banco">Instalar o SQLite</a>).</p>
+
+<h3><code>.databases</code>: qual arquivo está aberto?</h3>
+<pre class="term">sqlite&gt; .databases
+main: /home/ana/loja.db r/w
+sqlite&gt; </pre>
+
+<p>O banco principal (<code>main</code>) é o arquivo <code>/home/ana/loja.db</code>, aberto para leitura e escrita (<code>r/w</code>, de <em>read/write</em>). Útil quando você não lembra em qual banco está mexendo.</p>
+
+<h3><code>.show</code>: todas as configurações</h3>
+<pre class="term">sqlite&gt; .show
+        echo: off
+         eqp: off
+     explain: auto
+     headers: off
+        mode: list
+   nullvalue: ""
+      output: stdout
+colseparator: "|"
+rowseparator: "\n"
+       stats: off
+       width:
+    filename: loja.db
+sqlite&gt; </pre>
+
+<p>Numa sessão nova: cabeçalho desligado (<code>headers: off</code>), modo <code>list</code>, NULL mostrado como texto vazio (<code>nullvalue: ""</code>), separador <code>|</code>. Cada <code>.headers</code>, <code>.mode</code> e <code>.nullvalue</code> que você usar muda uma dessas linhas.</p>
+
+<div class="note">
+<strong>Sem entrar no programa: as opções da linha de comando</strong>
+<p>Vários modos também existem como <strong>opções</strong> do <code>sqlite3</code>, escritas antes do nome do banco. Para uma pergunta rápida já em tabela:</p>
+<pre class="term">$ sqlite3 -box loja.db "SELECT id, nome FROM categorias LIMIT 2;"
+┌────┬─────────────┐
+│ id │    nome     │
+├────┼─────────────┤
+│ 1  │ Papelaria   │
+│ 2  │ Eletrônicos │
+└────┴─────────────┘
+$ sqlite3 -header -csv loja.db "SELECT id, nome FROM categorias LIMIT 2;"
+id,nome
+1,Papelaria
+2,"Eletrônicos"</pre>
+<p>Repare no CSV: o SQLite pôs aspas em <code>"Eletrônicos"</code>, por causa da letra acentuada, mas não em <code>Papelaria</code>. As duas formas são CSV válido, e uma planilha lê as duas do mesmo jeito.</p>
+</div>
+
+<hr>
+
+<h2>7. As regras dos comandos de ponto</h2>
+<ol class="passo">
+  <li><strong>O ponto fica na primeira coluna.</strong> Nada de espaço antes.</li>
+  <li><strong>Sem ponto e vírgula.</strong> O comando termina no fim da linha.</li>
+  <li><strong>Um por linha</strong>, e sozinho na linha: não dá para pôr um <code>.tables</code> depois de um <code>SELECT</code>.</li>
+  <li><strong>Minúsculas.</strong> <code>.tables</code> funciona; <code>.Tables</code>, não.</li>
+  <li><strong>Pode abreviar</strong>, desde que não fique ambíguo: <code>.tab</code> e <code>.ta</code> funcionam como <code>.tables</code>. Mas escreva o nome inteiro enquanto aprende.</li>
+</ol>
+
+<p>Cada regra quebrada dá um erro diferente, todos em <a href="#errado">Quando dá errado</a>.</p>
+
+<hr>
+
+<h2>8. E no editor do guia? Use SQL</h2>
+<p>O editor das aulas é o motor do SQLite, sem o programa <code>sqlite3</code> em volta. Por isso ele não conhece nenhum comando de ponto:</p>
+
+<pre class="file" data-file="ponto-no-editor.sql" data-resultado data-erro>.tables
+</pre>
+
+<p>Para o motor, aquilo é SQL, e SQL não começa com ponto: <code>near ".": syntax error</code>. Mas tudo o que o <code>.tables</code> e o <code>.schema</code> mostram está guardado no próprio banco, numa tabela especial chamada <code>sqlite_schema</code>, o "catálogo" do banco. E essa você pode consultar com SQL comum, em qualquer lugar:</p>
+
+<pre class="file" data-file="tabelas.sql" data-resultado>SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;
+</pre>
+
+<dl class="anatomy">
+  <dt>sqlite_schema</dt><dd>A tabela-catálogo: uma linha para cada tabela (e índice, view…) do banco. Ela existe em todo banco SQLite, sem você criar.</dd>
+  <dt>name</dt><dd>A coluna com o nome de cada objeto. (Os nomes do catálogo são em inglês.)</dd>
+  <dt>WHERE type = 'table'</dt><dd>Só as tabelas, sem os outros tipos de objeto.</dd>
+  <dt>ORDER BY name</dt><dd>Em ordem alfabética, como o <code>.tables</code> mostra (aula <a href="order-by.html">ORDER BY</a>).</dd>
+</dl>
+
+<p>E a "planta" de uma tabela está na coluna <code>sql</code> do catálogo: é exatamente o texto que o <code>.schema</code> mostra.</p>
+
+<pre class="file" data-file="planta.sql" data-resultado>SELECT sql FROM sqlite_schema WHERE name = 'categorias';
+</pre>
+
+<p>Um terceiro jeito, só com os nomes e os tipos das colunas, é o <code>PRAGMA table_info</code>. Um <strong>PRAGMA</strong> é um comando especial do SQLite para ler ou mudar configurações do banco (aula <a href="pragma.html">PRAGMAs Úteis</a>):</p>
+
+<pre class="file" data-file="colunas.sql" data-resultado>PRAGMA table_info(produtos);
+</pre>
+
+<p>Uma linha por coluna: a posição (<code>cid</code>, começando do 0), o nome, o tipo, se é obrigatória (<code>notnull</code> = 1), o valor padrão (<code>dflt_value</code>) e se faz parte da chave primária (<code>pk</code> = 1).</p>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>No terminal <code>sqlite3</code></th><th>Em SQL (editor, programas, terminal)</th></tr>
+<tr><td>Listar as tabelas</td><td><code>.tables</code></td><td><code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td></tr>
+<tr><td>Ver como uma tabela foi criada</td><td><code>.schema produtos</code></td><td><code>SELECT sql FROM sqlite_schema WHERE name = 'produtos';</code></td></tr>
+<tr><td>Só as colunas e os tipos</td><td><code>.schema produtos</code> (e ler)</td><td><code>PRAGMA table_info(produtos);</code></td></tr>
+<tr><td>Mudar o formato da resposta</td><td><code>.mode</code>, <code>.headers</code></td><td>Não existe: quem desenha é o programa (no editor, já sai em tabela)</td></tr>
+</table>
+</div>
+
+<p>Regra prática: no terminal, use os comandos de ponto, que são mais curtos. Num programa, ou no editor do guia, use as consultas.</p>
+
+<div class="trysql" data-goal="linhas:7;;contem:itens_pedido">
+<p class="try-task"><strong>Experimente:</strong> a Ana tentou o <code>.tables</code> no editor e deu erro. Troque pela consulta ao catálogo <code>sqlite_schema</code>, para listar os nomes das 7 tabelas da loja.</p>
+<pre class="script" data-file="consulta.sql">.tables
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT name FROM sqlite_schema WHERE type = 'table';
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Cada banco tem o seu jeito de mostrar as tabelas, e os comandos "de barra" ou "de ponto" são sempre do <strong>programa de terminal</strong>, não do SQL: no MySQL, <code>SHOW TABLES;</code> (que ali é um comando do próprio servidor); no PostgreSQL, <code>\dt</code> no terminal <code>psql</code>; no SQL Server, <code>SELECT name FROM sys.tables;</code>. Veja a tabela em <a href="bancos-famosos.html">Os Bancos Famosos</a>. Nenhum deles roda no SQLite.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Todas as mensagens abaixo saíram do <code>sqlite3</code> da Ana.</p>
+
+<div class="cenario">
+<strong>O ponto e vírgula no fim</strong>
+<pre class="term">sqlite&gt; .tables;
+Error: unknown command or invalid arguments:  "tables;". Enter ".help" for help
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> costume do SQL. O <code>sqlite3</code> leu o comando como <code>tables;</code>, com o ponto e vírgula grudado, e não conhece nenhum comando com esse nome: "comando desconhecido ou argumentos inválidos".</p>
+<p><strong>Como consertar:</strong> <code>.tables</code>, sem <code>;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Maiúscula</strong>
+<pre class="term">sqlite&gt; .Tables
+Error: unknown command or invalid arguments:  "Tables". Enter ".help" for help
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> no SQL, <code>SELECT</code> e <code>select</code> são iguais; nos comandos de ponto, não. <code>Tables</code> com T maiúsculo é outro nome.</p>
+<p><strong>Como consertar:</strong> comandos de ponto sempre em minúsculas: <code>.tables</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Modo que não existe</strong>
+<pre class="term">sqlite&gt; .mode boxx
+Error: mode should be one of: ascii box column csv html insert json line list markdown qbox quote table tabs tcl
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> um <code>x</code> a mais. Aqui o erro é até útil: "o modo deve ser um destes", e vem a lista de todos os modos que o <code>sqlite3</code> conhece. Além dos desta aula, há outros, como <code>json</code> e <code>html</code>.</p>
+<p><strong>Como consertar:</strong> <code>.mode box</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Espaço antes do ponto</strong>
+<pre class="term">sqlite&gt;   .tables
+   ...&gt; ;
+Parse error: near ".": syntax error
+  .tables ;
+  ^--- error here
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> com espaços antes, o <code>sqlite3</code> não reconhece o comando de ponto e acha que aquilo é o começo de um SQL. Mostra o prompt de continuação, espera o <code>;</code> e, quando ele chega, o motor do SQLite reclama do ponto: o mesmo <code>near ".": syntax error</code> do editor do guia.</p>
+<p><strong>Como consertar:</strong> o ponto na primeira coluna da linha, sem nada antes.</p>
+</div>
+
+<div class="cenario">
+<strong>Comando de ponto depois de um SQL, na mesma linha</strong>
+<pre class="term">sqlite&gt; SELECT COUNT(*) FROM categorias; .tables
+   ...&gt; ;
+8
+Parse error: near ".": syntax error
+  .tables ;
+  ^--- error here
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> o <code>SELECT</code> rodou (as 8 categorias), mas o <code>.tables</code> não estava no começo da linha, então virou "mais SQL" e deu o mesmo erro do caso anterior.</p>
+<p><strong>Como consertar:</strong> um comando de ponto por linha, sozinho.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>.schema</code> que não mostra nada</strong>
+<pre class="term">$ sqlite3 loja.db ".schema produto"
+$ </pre>
+<p><strong>O que aconteceu:</strong> nenhum erro, nenhuma resposta. Não existe tabela chamada <code>produto</code> (é <code>produtos</code>), e o <code>.schema</code>, em vez de reclamar, simplesmente não acha nada para mostrar.</p>
+<p><strong>Como consertar:</strong> confira o nome com <code>.tables</code> e repita: <code>.schema produtos</code>. Moral: resposta vazia também é uma pista.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>.help</code></td><td>Lista os comandos de ponto (<code>.help mode</code>: a ajuda de um só)</td></tr>
+<tr><td><code>.tables</code></td><td>Lista as tabelas (<code>.tables p%</code>: as que começam com p)</td></tr>
+<tr><td><code>.schema tabela</code></td><td>Mostra o <code>CREATE TABLE</code> da tabela (sem nome: de todas)</td></tr>
+<tr><td><code>.headers on</code> / <code>off</code></td><td>Liga / desliga o nome das colunas no resultado</td></tr>
+<tr><td><code>.mode list</code></td><td>Valores separados por <code>|</code> (o padrão)</td></tr>
+<tr><td><code>.mode column</code></td><td>Colunas alinhadas</td></tr>
+<tr><td><code>.mode box</code></td><td>Tabela com linhas desenhadas</td></tr>
+<tr><td><code>.mode table</code></td><td>Tabela com <code>+ - |</code></td></tr>
+<tr><td><code>.mode csv</code></td><td>Separado por vírgulas, para planilhas</td></tr>
+<tr><td><code>.mode line</code></td><td>Uma coluna por linha</td></tr>
+<tr><td><code>.mode markdown</code></td><td>Tabela de Markdown</td></tr>
+<tr><td><code>.mode</code></td><td>Mostra o modo atual</td></tr>
+<tr><td><code>.nullvalue TEXTO</code></td><td>Mostra o NULL com esse texto</td></tr>
+<tr><td><code>.read arquivo.sql</code></td><td>Executa os comandos de um arquivo</td></tr>
+<tr><td><code>.databases</code></td><td>Mostra qual arquivo de banco está aberto</td></tr>
+<tr><td><code>.show</code></td><td>Mostra as configurações atuais</td></tr>
+<tr><td><code>.open arquivo.db</code></td><td>Abre outro banco</td></tr>
+<tr><td><code>.quit</code> / <code>.exit</code></td><td>Sai do <code>sqlite3</code></td></tr>
+</table>
+</div>
+
+<p>A lista completa, com todos os comandos de ponto, está na referência <a href="ref-comandos-ponto.html">Comandos de Ponto do sqlite3</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. As gavetas</h3>
+<p>Complete o comando de ponto que lista as tabelas do banco:</p>
+<div class="ex-code">sqlite&gt; .<input data-answer="tables" aria-label="comando de ponto"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O formato de tabela</h3>
+<p>Complete para o resultado sair numa tabela com linhas desenhadas:</p>
+<div class="ex-code">sqlite&gt; .mode <input data-answer="box" aria-label="modo"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana digitou <code>.tables;</code> e recebeu <code>Error: unknown command or invalid arguments</code>. Por quê?</p>
+<label><input type="radio" name="q3"> O banco não tem tabelas</label>
+<label><input type="radio" name="q3"> Faltou abrir o banco com <code>.open</code></label>
+<label><input type="radio" name="q3"> Comandos de ponto não levam ponto e vírgula</label>
+<label><input type="radio" name="q3"> O comando certo é <code>.TABLES</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana quer saber quais colunas tem a tabela <code>pedidos</code>, no terminal. Qual comando?</p>
+<label><input type="radio" name="q4"> <code>.tables pedidos</code></label>
+<label><input type="radio" name="q4"> <code>.schema pedidos</code></label>
+<label><input type="radio" name="q4"> <code>.mode pedidos</code></label>
+<label><input type="radio" name="q4"> <code>.headers pedidos</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No editor do guia, <code>.tables</code> dá <code>near ".": syntax error</code>. Como listar as tabelas ali?</p>
+<label><input type="radio" name="q5"> Não tem como</label>
+<label><input type="radio" name="q5"> <code>SHOW TABLES;</code></label>
+<label><input type="radio" name="q5"> <code>.tables;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Para levar o resultado de uma consulta para uma planilha, qual modo combina mais?</p>
+<label><input type="radio" name="q6"> <code>.mode csv</code></label>
+<label><input type="radio" name="q6"> <code>.mode line</code></label>
+<label><input type="radio" name="q6"> <code>.mode box</code></label>
+<label><input type="radio" name="q6"> <code>.mode list</code></label>
+</div>
+
+<h3>Missão final: a planta dos produtos, em SQL</h3>
+
+<div class="trysql" data-goal="contem:descontinuado">
+<p class="try-task"><strong>Missão:</strong> no terminal, a Ana veria a planta da tabela de produtos com <code>.schema produtos</code>. No editor, isso se faz pelo catálogo. A consulta abaixo mostra a planta da tabela <code>categorias</code>; mude-a para mostrar a da tabela <code>produtos</code>. Confira no resultado: a última coluna da tabela de produtos é a que diz se o produto saiu de linha.</p>
+<pre class="script" data-file="consulta.sql">SELECT sql FROM sqlite_schema WHERE name = 'categorias';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT sql FROM sqlite_schema WHERE name = 'produtos';
+</pre>
+</div>
+
+<p>Quer as colunas uma por linha? Tente também <code>PRAGMA table_info(produtos);</code> na mesma caixa.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Comandos de ponto são do programa <code>sqlite3</code>, não do SQL: mudam o que o programa mostra, não os dados. No editor do guia eles não existem (<code>near ".": syntax error</code>).</li>
+  <li><code>.tables</code> lista as tabelas; <code>.schema tabela</code> mostra como ela foi criada, com as colunas; <code>.help</code> lista os comandos.</li>
+  <li><code>.headers on</code> liga o nome das colunas. <code>.mode</code> escolhe o formato: <code>list</code> (padrão), <code>column</code>, <code>box</code>, <code>table</code>, <code>csv</code>, <code>line</code>, <code>markdown</code>. O <code>box</code> é o melhor para estudar.</li>
+  <li><code>.nullvalue NULL</code> deixa o NULL visível; <code>.read</code> roda um arquivo; <code>.databases</code> mostra o arquivo aberto; <code>.show</code> mostra as configurações.</li>
+  <li>As regras: o ponto na primeira coluna, sem <code>;</code>, um por linha, em minúsculas.</li>
+  <li>Em SQL, em qualquer lugar: <code>SELECT name FROM sqlite_schema WHERE type = 'table'</code> (as tabelas), <code>SELECT sql FROM sqlite_schema WHERE name = '…'</code> (a planta) e <code>PRAGMA table_info(…)</code> (as colunas).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
