@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL CASE — "se isso, então aquilo" numa consulta | Guia SQL</title>
+<meta name="description" content="CASE em SQL para quem está começando: o CASE buscado (WHEN condição) e o CASE simples (CASE coluna WHEN valor), a ordem dos WHEN, o ELSE e o NULL, CASE no ORDER BY e com SUM e COUNT para contar por condição, iif(), e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">CASE</span></h1>
+
+<p class="intro">No estoque da Loja Aurora, a Ana cola uma etiqueta em cada prateleira: <strong>se</strong> o produto acabou, etiqueta vermelha "esgotado"; <strong>se</strong> está acabando, amarela "repor"; <strong>senão</strong>, verde "ok". Essa decisão de "se isso, então aquilo" também cabe numa consulta. Quem faz isso em SQL é o <code>CASE</code> ("caso"): ele examina cada linha e devolve um valor diferente conforme a situação.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O <strong>CASE buscado</strong>: <code>CASE WHEN condição THEN valor … ELSE … END</code>.</li>
+  <li>Por que a <strong>ordem</strong> dos <code>WHEN</code> importa, e o que acontece sem <code>ELSE</code>.</li>
+  <li>O <strong>CASE simples</strong>: <code>CASE coluna WHEN valor THEN …</code>, e quando ele não serve.</li>
+  <li>O <code>CASE</code> no <code>ORDER BY</code>, para uma ordem que não é alfabética nem numérica.</li>
+  <li>O <code>CASE</code> com <code>SUM</code> e <code>COUNT</code>, para contar só o que interessa.</li>
+  <li>O atalho <code>iif()</code> e os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora (veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>).</p>
+
+<hr>
+
+<h2>A ideia: as etiquetas da prateleira</h2>
+<p>A regra da Ana, escrita em português, é uma lista de perguntas feitas <strong>em ordem</strong>, parando na primeira resposta "sim":</p>
+
+<pre class="file" data-file="regra da etiqueta">Caso o estoque seja 0           → "esgotado"
+senão, caso seja menor que 20   → "repor"
+senão                           → "ok"
+</pre>
+
+<p>Em SQL, a mesma regra fica quase igual, só que em inglês: <code>CASE</code> = "caso", <code>WHEN</code> = "quando", <code>THEN</code> = "então", <code>ELSE</code> = "senão", <code>END</code> = "fim".</p>
+
+<hr>
+
+<h2>1. O primeiro CASE: faixas de preço</h2>
+<p>Comece com uma regra de três faixas para os eletrônicos: abaixo de 20 é "barato", abaixo de 100 é "médio", o resto é "caro".</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       preco,
+       CASE
+         WHEN preco &lt; 20  THEN 'barato'
+         WHEN preco &lt; 100 THEN 'médio'
+         ELSE 'caro'
+       END AS faixa
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+
+<dl class="anatomy">
+  <dt>CASE</dt><dd>Abre a decisão. Tudo até o <code>END</code> é <strong>uma coluna só</strong> do resultado.</dd>
+  <dt>WHEN preco &lt; 20 THEN 'barato'</dt><dd>"Quando o preço for menor que 20, então o valor é 'barato'." Depois do <code>WHEN</code> vem qualquer condição, igual às do <a href="where.html">WHERE</a>.</dd>
+  <dt>WHEN preco &lt; 100 THEN 'médio'</dt><dd>Só é examinado se o <code>WHEN</code> de cima deu "não". Por isso não precisa escrever <code>preco &gt;= 20 AND preco &lt; 100</code>: quem chegou aqui já não é menor que 20.</dd>
+  <dt>ELSE 'caro'</dt><dd>"Senão": o valor para quem não se encaixou em nenhum <code>WHEN</code>.</dd>
+  <dt>END AS faixa</dt><dd>Fecha o <code>CASE</code>. O <code>AS faixa</code> dá nome à coluna; sem ele, o cabeçalho seria o texto inteiro do <code>CASE</code>.</dd>
+</dl>
+
+<p>Repare que a tabela <code>produtos</code> não tem coluna <code>faixa</code>: ela foi <strong>calculada</strong> na hora, linha por linha. O banco não muda nada; só a resposta ganha uma coluna.</p>
+
+<p>Este jeito, com uma condição depois de cada <code>WHEN</code>, se chama <strong>CASE buscado</strong> (<em>searched CASE</em>): o banco "busca" a primeira condição verdadeira.</p>
+
+<hr>
+
+<h2>2. A ordem dos WHEN importa</h2>
+<p>O <code>CASE</code> para no <strong>primeiro</strong> <code>WHEN</code> verdadeiro e ignora os seguintes. Veja o que acontece se a Ana inverter as duas primeiras linhas, na Papelaria:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       preco,
+       CASE
+         WHEN preco &lt; 100 THEN 'médio'
+         WHEN preco &lt; 20  THEN 'barato'
+         ELSE 'caro'
+       END AS faixa
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<p>Tudo virou "médio", até o lápis de 1.15. Ele é menor que 100, então o primeiro <code>WHEN</code> já respondeu, e o <code>WHEN preco &lt; 20</code> nunca chega a ser examinado. Com a ordem certa (a mais restrita primeiro):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       preco,
+       CASE
+         WHEN preco &lt; 20  THEN 'barato'
+         WHEN preco &lt; 100 THEN 'médio'
+         ELSE 'caro'
+       END AS faixa
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<div class="tip">
+<strong>Como acertar a ordem</strong>
+<p>Com faixas de "menor que", vá do menor limite para o maior (20, depois 100). Com "maior que", do maior para o menor. Em qualquer caso, leia o <code>CASE</code> de cima para baixo e pergunte: "algum <code>WHEN</code> de cima já pega este caso?".</p>
+</div>
+
+<hr>
+
+<h2>3. Sem ELSE, vem NULL</h2>
+<p>O <code>ELSE</code> é opcional. Mas, sem ele, a linha que não se encaixa em nenhum <code>WHEN</code> recebe <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       preco,
+       CASE WHEN preco &gt;= 100 THEN 'caro' END AS faixa
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+
+<p>Só os dois eletrônicos de 100 para cima ganharam "caro"; os outros, <em>NULL</em>. Às vezes é isso que você quer (a seção 6 usa esse comportamento de propósito). Quando não for, escreva o <code>ELSE</code>.</p>
+
+<div class="trysql" data-goal="linhas:10;;contem:José Ribamar Silva|VIP;;contem:Maria Clara Mendes|comum">
+<p class="try-task"><strong>Missão:</strong> a coluna <code>vip</code> guarda 1 ou 0, e a Ana quer ler "VIP" ou "comum". Troque a coluna <code>vip</code> por um <code>CASE</code> com o nome <code>tipo</code>: quando <code>vip = 1</code>, 'VIP'; senão, 'comum'.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, vip
+FROM clientes
+WHERE cidade = 'Teresina';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome,
+       CASE WHEN vip = 1 THEN 'VIP' ELSE 'comum' END AS tipo
+FROM clientes
+WHERE cidade = 'Teresina';
+</pre>
+</div>
+
+<hr>
+
+<h2>4. O CASE simples</h2>
+<p>Quando todas as perguntas são "a coluna é <strong>igual</strong> a tal valor?", existe uma escrita mais curta: o nome da coluna vem logo depois do <code>CASE</code>, e cada <code>WHEN</code> traz só o valor.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       estoque,
+       CASE descontinuado
+         WHEN 0 THEN 'à venda'
+         WHEN 1 THEN 'fora de linha'
+       END AS situacao
+FROM produtos
+WHERE categoria_id = 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>CASE descontinuado</dt><dd>A coluna (ou expressão) que vai ser comparada. Ela aparece <strong>uma vez só</strong>.</dd>
+  <dt>WHEN 0 THEN 'à venda'</dt><dd>"Quando <code>descontinuado</code> for igual a 0, então…". O <code>=</code> fica implícito.</dd>
+</dl>
+
+<p>Isso se chama <strong>CASE simples</strong>. Ele é o mesmo que escrever <code>CASE WHEN descontinuado = 0 THEN … WHEN descontinuado = 1 THEN … END</code>, só que mais curto. O Carrinho de Fricção é um dos dois produtos descontinuados da loja.</p>
+
+<h3>Simples × buscado: qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>CASE simples</th><th>CASE buscado</th></tr>
+<tr><td>Escrita</td><td><code>CASE coluna WHEN valor THEN …</code></td><td><code>CASE WHEN condição THEN …</code></td></tr>
+<tr><td>Compara</td><td>Só igualdade (<code>=</code>) com uma coluna</td><td>Qualquer condição: <code>&lt;</code>, <code>&gt;</code>, <code>LIKE</code>, <code>IN</code>, <code>IS NULL</code>, <code>AND</code>, <code>OR</code>, colunas diferentes…</td></tr>
+<tr><td>Bom para</td><td>Traduzir códigos: 0/1, siglas, tipos</td><td>Faixas, regras com várias colunas, <code>NULL</code></td></tr>
+<tr><td>Funciona com <code>NULL</code>?</td><td><strong>Não</strong> (veja <a href="#errado">Quando dá errado</a>)</td><td>Sim, com <code>WHEN coluna IS NULL</code></td></tr>
+</table>
+</div>
+
+<p>Na dúvida, use o buscado: ele faz tudo o que o simples faz, e mais.</p>
+
+<hr>
+
+<h2>5. CASE no ORDER BY: uma ordem sob medida</h2>
+<p>O <code>CASE</code> pode ir em qualquer lugar onde caberia um valor, inclusive no <a href="order-by.html">ORDER BY</a>. A Ana quer a lista de funcionários na ordem da hierarquia: gerente, supervisora, vendedores, estoquista. Essa ordem não é alfabética (Estoquista viria antes de Gerente). A saída é dar um número a cada cargo e ordenar pelo número:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, cargo
+FROM funcionarios
+ORDER BY CASE cargo
+           WHEN 'Gerente'     THEN 1
+           WHEN 'Supervisora' THEN 2
+           WHEN 'Estoquista'  THEN 4
+           ELSE 3
+         END,
+         nome;
+</pre>
+
+<p>O <code>CASE</code> calcula um número para cada linha, e o <code>ORDER BY</code> ordena por ele, sem mostrá-lo. Os vendedores e vendedoras caíram no <code>ELSE 3</code>, e o segundo critério, <code>nome</code>, põe os cinco em ordem alfabética.</p>
+
+<p>Outro uso comum: "os pendentes primeiro". Os pedidos de agosto de 2026 para cá, com os não entregues no topo:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, data, entregue_em
+FROM pedidos
+WHERE data &gt;= '2026-08-01'
+ORDER BY CASE WHEN entregue_em IS NULL THEN 0 ELSE 1 END,
+         data;
+</pre>
+
+<hr>
+
+<h2>6. CASE com SUM e COUNT: contar por condição</h2>
+<p>Esta é uma das combinações mais úteis do SQL. A Ana quer, para cada atendente, o total de pedidos, quantos tiveram frete grátis e quantos ainda estão pendentes, tudo <strong>numa linha só</strong> por pessoa. Com <code>WHERE</code>, ela precisaria de três consultas. Com <code>CASE</code> dentro do <a href="sum.html">SUM</a>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS atendente,
+       COUNT(*) AS pedidos,
+       SUM(CASE WHEN pe.frete = 0 THEN 1 ELSE 0 END) AS frete_gratis,
+       SUM(CASE WHEN pe.entregue_em IS NULL THEN 1 ELSE 0 END) AS pendentes
+FROM pedidos AS pe
+INNER JOIN funcionarios AS f ON f.id = pe.funcionario_id
+GROUP BY f.id, f.nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>CASE WHEN pe.frete = 0 THEN 1 ELSE 0 END</dt><dd>Para cada pedido, vale 1 se o frete foi grátis e 0 se não foi.</dd>
+  <dt>SUM( … )</dt><dd>Somando esses 1 e 0, sobra a <strong>quantidade</strong> de pedidos com frete grátis. É como passar o dedo na lista e fazer um risquinho só nos que interessam.</dd>
+</dl>
+
+<p>Cada atendente tem 15 pedidos; a Luana e o Igor deram 4 fretes grátis cada um; só o Caio não tem pedido pendente. O mesmo truque funciona com <a href="count.html">COUNT</a>, aproveitando o comportamento da seção 3: sem <code>ELSE</code>, o <code>CASE</code> devolve <code>NULL</code>, e o <code>COUNT(coluna)</code> não conta <code>NULL</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COUNT(CASE WHEN vip = 1 THEN 1 END) AS vips,
+       COUNT(*) AS total
+FROM clientes;
+</pre>
+
+<p>Cinco VIPs em 30 clientes. Também dá para <strong>agrupar</strong> por um <code>CASE</code>: quantos produtos há em cada situação de estoque.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT CASE
+         WHEN estoque = 0  THEN 'esgotado'
+         WHEN estoque &lt; 20 THEN 'repor'
+         ELSE 'ok'
+       END AS situacao,
+       COUNT(*) AS produtos
+FROM produtos
+GROUP BY situacao;
+</pre>
+
+<div class="trysql" data-goal="colunas:clientes,piaui,ceara;;contem:30|14|7">
+<p class="try-task"><strong>Missão:</strong> numa linha só, mostre o total de clientes e quantos são do Piauí e do Ceará. A coluna <code>piaui</code> já está pronta; acrescente a coluna <code>ceara</code> do mesmo jeito (<code>estado = 'CE'</code>).</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) AS clientes,
+       SUM(CASE WHEN estado = 'PI' THEN 1 ELSE 0 END) AS piaui
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*) AS clientes,
+       SUM(CASE WHEN estado = 'PI' THEN 1 ELSE 0 END) AS piaui,
+       SUM(CASE WHEN estado = 'CE' THEN 1 ELSE 0 END) AS ceara
+FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes: iif() e CASE com EXISTS</h2>
+<p>Para a decisão mais comum, "se isso, um valor; senão, outro", o SQLite tem um atalho, a função <code>iif()</code>. A documentação do SQLite diz que <code>iif(X, Y, Z)</code> é equivalente a <code>CASE WHEN X THEN Y ELSE Z END</code> e gera o mesmo código por dentro. Ela também aceita o nome <code>if()</code>.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, iif(vip = 1, 'VIP', 'comum') AS tipo
+FROM clientes
+WHERE cidade = 'Recife' OR vip = 1;
+</pre>
+
+<p>O <code>CASE</code> também combina com o <a href="exists.html">EXISTS</a>, para trocar o 0/1 por palavras:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome,
+       CASE WHEN EXISTS (SELECT 1 FROM pedidos AS pe WHERE pe.cliente_id = c.id)
+            THEN 'sim' ELSE 'não'
+       END AS ja_comprou
+FROM clientes AS c
+WHERE c.cidade = 'Fortaleza';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>CASE WHEN … THEN … ELSE … END</code></td><td>Sempre funciona, em qualquer banco. A escolha padrão.</td></tr>
+<tr><td><code>CASE coluna WHEN valor THEN … END</code></td><td>Traduzir códigos de uma coluna (sem <code>NULL</code>)</td></tr>
+<tr><td><code>iif(condição, sim, não)</code></td><td>Atalho para dois resultados; não existe em todo banco (veja a nota abaixo)</td></tr>
+<tr><td><code>IFNULL</code> / <code>COALESCE</code></td><td>Só para trocar <code>NULL</code> por outro valor: aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>END</code></strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome,
+       CASE WHEN preco &lt; 20 THEN 'barato' ELSE 'caro' AS faixa
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "AS": syntax error</code>, "erro de sintaxe perto de AS". O banco ainda estava dentro do <code>CASE</code> esperando o <code>END</code> quando encontrou o <code>AS</code>. Sem o <code>AS</code>, o erro aparece mais adiante: <code>near "FROM": syntax error</code>.</p>
+<p><strong>Como consertar:</strong> todo <code>CASE</code> termina em <code>END</code>: <code>… ELSE 'caro' END AS faixa</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>THEN</code></strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome,
+       CASE WHEN preco &lt; 20 'barato' ELSE 'caro' END AS faixa
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "'barato'": syntax error</code>. Depois da condição, o banco esperava o <code>THEN</code>.</p>
+<p><strong>Como consertar:</strong> <code>WHEN preco &lt; 20 THEN 'barato'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>WHEN NULL</code> no CASE simples: nunca acontece</strong>
+<p>A Ana quis escrever "sem email" para quem não tem email, com um CASE simples:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       CASE email WHEN NULL THEN 'sem email' ELSE email END AS contato
+FROM clientes
+WHERE id IN (6, 7, 15);
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, mas o Luís e o Roberto, que não têm email, continuam com <em>NULL</em>. O CASE simples compara com <code>=</code>, e <code>email = NULL</code> nunca é verdadeiro, nem quando o email é <code>NULL</code> (aula <a href="is-null.html">IS NULL</a>). Esse <code>WHEN</code> nunca dispara.</p>
+<p><strong>Como consertar:</strong> use o CASE buscado com <code>IS NULL</code>:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       CASE WHEN email IS NULL THEN 'sem email' ELSE email END AS contato
+FROM clientes
+WHERE id IN (6, 7, 15);
+</pre>
+<p>(Para esse caso específico, trocar <code>NULL</code> por um texto, existe um atalho ainda mais curto: <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>.)</p>
+</div>
+
+<div class="cenario">
+<strong><code>OR</code> dentro do <code>WHEN</code> do CASE simples</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       CASE cargo WHEN 'Vendedor' OR 'Vendedora' THEN 'vendas' ELSE 'outro' END AS setor
+FROM funcionarios;
+</pre>
+<p><strong>O que acontece:</strong> todo mundo virou "outro", até os cinco vendedores. O banco calculou primeiro <code>'Vendedor' OR 'Vendedora'</code>, que vale 0 (falso: um texto que não parece número conta como 0), e depois comparou <code>cargo = 0</code>. Nenhum cargo é 0.</p>
+<p><strong>Como consertar:</strong> use o CASE buscado com <code>IN</code> (aula <a href="in.html">IN</a>): <code>CASE WHEN cargo IN ('Vendedor', 'Vendedora') THEN 'vendas' ELSE 'outro' END</code>. No CASE simples, cada valor vai num <code>WHEN</code> próprio.</p>
+</div>
+
+<div class="cenario">
+<strong>Resultados de tipos diferentes</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       CASE WHEN vip = 1 THEN 'VIP' ELSE 0 END AS tipo
+FROM clientes
+WHERE cidade = 'Recife' OR vip = 1;
+</pre>
+<p><strong>O que acontece:</strong> o SQLite aceita uma coluna com texto ('VIP') em umas linhas e número (0) em outras. Funciona, mas confunde quem lê, e os outros bancos podem recusar ou converter os valores.</p>
+<p><strong>Como consertar:</strong> faça todos os <code>THEN</code> e o <code>ELSE</code> devolverem o mesmo tipo: <code>ELSE 'comum'</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li>O <code>CASE</code>, nas duas formas, é SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server; sem <code>ELSE</code>, também devolve <code>NULL</code>.</li>
+  <li><strong>O atalho muda de nome:</strong> no MySQL é <code>IF(condição, sim, não)</code>; no SQL Server, <code>IIF(condição, sim, não)</code>, que o manual da Microsoft chama de "um jeito abreviado de escrever um CASE". Para funcionar em qualquer lugar, prefira o <code>CASE</code>.</li>
+  <li><strong>Apelido no WHERE:</strong> o SQLite aceita usar o nome dado pelo <code>AS</code> (por exemplo, <code>WHERE faixa = 'caro'</code>), mas o manual do MySQL lembra que o SQL padrão <strong>não</strong> permite apelidos de coluna no <code>WHERE</code>. Para um código que funcione em todo banco, repita o <code>CASE</code> no <code>WHERE</code> ou use uma <a href="subconsultas.html">subconsulta</a> no <code>FROM</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>CASE WHEN c1 THEN v1 WHEN c2 THEN v2 ELSE v3 END</code></td><td>CASE buscado: o valor do primeiro <code>WHEN</code> verdadeiro</td></tr>
+<tr><td><code>CASE col WHEN a THEN v1 WHEN b THEN v2 ELSE v3 END</code></td><td>CASE simples: compara <code>col = a</code>, <code>col = b</code>…</td></tr>
+<tr><td>Sem <code>ELSE</code></td><td>Quem não se encaixa recebe <code>NULL</code></td></tr>
+<tr><td><code>… END AS nome</code></td><td>Dá nome à coluna calculada</td></tr>
+<tr><td><code>ORDER BY CASE … END</code></td><td>Ordem sob medida</td></tr>
+<tr><td><code>SUM(CASE WHEN c THEN 1 ELSE 0 END)</code></td><td>Conta as linhas em que <code>c</code> é verdadeira</td></tr>
+<tr><td><code>COUNT(CASE WHEN c THEN 1 END)</code></td><td>O mesmo, usando o <code>NULL</code> do <code>CASE</code> sem <code>ELSE</code></td></tr>
+<tr><td><code>iif(c, sim, não)</code></td><td>Atalho do SQLite para <code>CASE WHEN c THEN sim ELSE não END</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td><code>near "AS": syntax error</code> / <code>near "FROM": syntax error</code></td><td>Faltou o <code>END</code></td></tr>
+<tr><td><code>near "'barato'": syntax error</code></td><td>Faltou o <code>THEN</code></td></tr>
+<tr><td>Tudo caiu no mesmo <code>WHEN</code></td><td>A ordem dos <code>WHEN</code> está errada (o mais amplo veio primeiro)</td></tr>
+<tr><td><code>WHEN NULL</code> nunca dispara</td><td>CASE simples compara com <code>=</code>; use <code>WHEN col IS NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Feche o CASE</h3>
+<p>Complete a palavra que falta:</p>
+<div class="ex-code">CASE WHEN estoque = 0 THEN 'esgotado' ELSE 'ok' <input data-answer="END|end" aria-label="palavra que fecha"> AS situacao</div>
+</div>
+
+<div class="exercise">
+<h3>2. O CASE simples</h3>
+<p>Complete o CASE simples que traduz o <code>vip</code>:</p>
+<div class="ex-code">CASE vip <input data-answer="WHEN|when" aria-label="palavra"> 1 THEN 'VIP' ELSE 'comum' END</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Com <code>CASE WHEN preco &lt; 100 THEN 'médio' WHEN preco &lt; 20 THEN 'barato' ELSE 'caro' END</code>, qual é a faixa do Lápis (1.15)?</p>
+<label><input type="radio" name="q3"> 'barato'</label>
+<label><input type="radio" name="q3"> 'caro'</label>
+<label><input type="radio" name="q3"> 'médio', porque o primeiro <code>WHEN</code> verdadeiro é o <code>preco &lt; 100</code></label>
+<label><input type="radio" name="q3"> NULL</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que um <code>CASE</code> sem <code>ELSE</code> devolve para a linha que não se encaixa em nenhum <code>WHEN</code>?</p>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> NULL</label>
+<label><input type="radio" name="q4"> Um texto vazio</label>
+<label><input type="radio" name="q4"> Dá erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Por que <code>CASE email WHEN NULL THEN 'sem email' END</code> não funciona?</p>
+<label><input type="radio" name="q5"> Porque o <code>CASE</code> não aceita textos</label>
+<label><input type="radio" name="q5"> Porque faltou o <code>ELSE</code></label>
+<label><input type="radio" name="q5"> Porque <code>email</code> é uma palavra reservada</label>
+<label><input type="radio" name="q5"> Porque o CASE simples compara com <code>=</code>, e nada é igual a <code>NULL</code>; é preciso <code>WHEN email IS NULL</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Para contar, numa linha só, quantos pedidos tiveram frete grátis, a Ana pode usar:</p>
+<label><input type="radio" name="q6"> <code>SUM(CASE WHEN frete = 0 THEN 1 ELSE 0 END)</code></label>
+<label><input type="radio" name="q6"> <code>CASE WHEN frete = 0 THEN COUNT(*) END</code> sem <code>GROUP BY</code></label>
+<label><input type="radio" name="q6"> <code>SUM(frete = 0 THEN 1)</code></label>
+<label><input type="radio" name="q6"> <code>COUNT(frete)</code></label>
+</div>
+
+<h3>Missão final: as etiquetas do estoque</h3>
+
+<div class="trysql" data-goal="colunas:nome,estoque,situacao;;linhas:45;;contem:Pen Drive 32GB|0|esgotado;;contem:Tapete de Yoga|19|repor;;contem:Vaso de Cerâmica Médio|20|ok">
+<p class="try-task"><strong>Missão:</strong> faça as etiquetas da Ana para os 45 produtos. Acrescente a coluna <code>situacao</code>: estoque 0 é 'esgotado'; menor que 20 é 'repor'; o resto é 'ok'. Cuidado com a ordem dos <code>WHEN</code>. Se quiser, ordene para os esgotados aparecerem primeiro.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estoque
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome,
+       estoque,
+       CASE
+         WHEN estoque = 0  THEN 'esgotado'
+         WHEN estoque &lt; 20 THEN 'repor'
+         ELSE 'ok'
+       END AS situacao
+FROM produtos
+ORDER BY estoque;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>CASE</code> é o "se isso, então aquilo" do SQL: ele calcula um valor para cada linha. Termina sempre em <code>END</code>; dê um nome com <code>AS</code>.</li>
+  <li><strong>CASE buscado</strong> (<code>CASE WHEN condição THEN …</code>): qualquer condição. <strong>CASE simples</strong> (<code>CASE coluna WHEN valor THEN …</code>): só igualdade, e não serve para <code>NULL</code>.</li>
+  <li>O <code>CASE</code> para no <strong>primeiro</strong> <code>WHEN</code> verdadeiro: a ordem importa. Sem <code>ELSE</code>, quem sobra recebe <code>NULL</code>.</li>
+  <li>No <code>ORDER BY</code>, o <code>CASE</code> cria uma ordem sob medida.</li>
+  <li>Com <code>SUM(CASE WHEN … THEN 1 ELSE 0 END)</code>, você conta por condição, várias contagens numa linha só.</li>
+  <li><code>iif()</code> é um atalho do SQLite (no MySQL, <code>IF()</code>; no SQL Server, <code>IIF()</code>); o <code>CASE</code> funciona em todos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
