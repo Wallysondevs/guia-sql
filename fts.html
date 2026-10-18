@@ -1,0 +1,637 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Busca de Texto — FTS5, MATCH, relevância e destaque | Guia SQL</title>
+<meta name="description" content="Busca de texto completo no SQLite com FTS5 para quem está começando: CREATE VIRTUAL TABLE USING fts5, MATCH, AND/OR/NOT, frases, prefixo cad*, ordem por relevância com rank e bm25, highlight e snippet, acentos com remove_diacritics 2, a diferença para o LIKE e as mensagens reais de erro, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Busca de Texto (FTS5)</span></h1>
+
+<p class="intro">O site da Loja Aurora vai ganhar uma caixa de busca. O cliente digita "lapis", sem acento, e espera achar o "Lápis Grafite HB". Digita "escolar" e espera ver primeiro a Mochila Escolar, e não um caderno qualquer. Com o <code>LIKE</code> (aula <a href="like.html">LIKE</a>) isso não dá certo. Para isso existe a <strong>busca de texto completo</strong>, que no SQLite se chama <strong>FTS5</strong>. Nesta aula você monta a busca da loja: palavras, frases, começo de palavra, ordem por relevância, a palavra encontrada em destaque e o problema dos acentos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma busca de texto completo e por que ela é diferente do <code>LIKE</code>.</li>
+  <li>Criar uma tabela de busca com <code>CREATE VIRTUAL TABLE … USING fts5</code> e enchê-la com os produtos.</li>
+  <li>Buscar com <code>MATCH</code>: uma palavra, várias, <code>OR</code>, <code>NOT</code>, frase entre aspas, começo de palavra (<code>cad*</code>), uma coluna só.</li>
+  <li>Ordenar pelos melhores resultados com <code>rank</code> e <code>bm25()</code>.</li>
+  <li>Destacar a palavra encontrada com <code>highlight()</code> e mostrar um trecho com <code>snippet()</code>.</li>
+  <li>Acentos e maiúsculas: o <code>tokenize</code> e o <code>remove_diacritics 2</code>.</li>
+  <li>As mensagens reais de erro do FTS5, e o que acontece quando o produto muda.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam <strong>de verdade</strong> no seu navegador, no SQLite 3.50 com o banco da Loja Aurora. O FTS5 é uma extensão que vem junto no SQLite deste guia, no editor e no terminal da Ana.</p>
+
+<hr>
+
+<h2>A ideia: o índice remissivo do livro</h2>
+<p>No fim de um livro de receitas há um <strong>índice remissivo</strong>: uma lista de palavras em ordem alfabética, e ao lado de cada uma as páginas em que ela aparece. "Cenoura: 12, 47, 80." Para achar todas as receitas com cenoura, você não lê o livro inteiro: vai direto na palavra.</p>
+
+<p>O <code>LIKE '%cenoura%'</code> faz o contrário: lê o livro inteiro, página por página, procurando aquelas letras. Funciona, mas tem três problemas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O cliente quer…</th><th>Com <code>LIKE</code></th><th>Com FTS5</th></tr>
+<tr><td>Achar "Lápis" digitando <code>lapis</code></td><td>Não acha: <code>á</code> e <code>a</code> são letras diferentes</td><td>Acha: o índice guarda as palavras sem acento</td></tr>
+<tr><td>Ver primeiro o resultado mais certeiro</td><td>Não sabe: só diz "tem" ou "não tem"</td><td>Dá uma nota de <strong>relevância</strong> para cada resultado</td></tr>
+<tr><td>Buscar rápido numa loja com milhares de produtos</td><td>Lê todas as linhas, sempre</td><td>Vai direto na palavra, como o índice do livro</td></tr>
+</table>
+</div>
+
+<p>O FTS5 (de <em>Full-Text Search</em>, "busca de texto completo", versão 5) monta esse índice remissivo. Ele quebra cada texto em <strong>palavras</strong> (os <em>tokens</em>), deixa todas em minúsculas e sem acento, e anota em que linha cada palavra aparece. Quem faz a quebra é o <strong>tokenizador</strong>; você vai voltar a ele na seção 6.</p>
+
+<hr>
+
+<h2>1. Criando a tabela de busca</h2>
+<p>A busca fica numa tabela especial, uma <strong>tabela virtual</strong>: por fora ela se parece com uma tabela comum (tem colunas, aceita <code>INSERT</code> e <code>SELECT</code>), mas por dentro quem cuida dos dados é o FTS5, com o índice de palavras. A Ana cria a tabela <code>busca</code> com duas colunas de texto, o nome do produto e o texto da categoria, e copia os 45 produtos para lá:</p>
+
+<pre class="file" data-file="busca.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao
+FROM produtos p
+JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome, categoria
+FROM busca
+WHERE busca MATCH 'azul';
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE VIRTUAL TABLE busca</dt><dd>"Crie a tabela virtual <code>busca</code>". <code>VIRTUAL</code> quer dizer que uma extensão vai cuidar dela.</dd>
+  <dt>USING fts5</dt><dd>"Usando o FTS5": a extensão que cuida da tabela.</dd>
+  <dt>(nome, categoria)</dt><dd>As colunas, só com o nome. No FTS5 não se escreve tipo (<code>TEXT</code>, <code>INTEGER</code>…), nem <code>NOT NULL</code>, nem chave: toda coluna é texto para buscar.</dd>
+  <dt>INSERT INTO busca (rowid, nome, categoria) SELECT …</dt><dd>Copia os produtos (aula <a href="insert-select.html">INSERT INTO SELECT</a>). O <code>rowid</code> é o número de cada linha da tabela; a Ana guarda nele o <strong>id do produto</strong>, para depois voltar à tabela <code>produtos</code>.</dd>
+  <dt>c.nome || ': ' || c.descricao</dt><dd>O texto da categoria, como "Papelaria: Material escolar e de escritório". O <code>||</code> junta textos.</dd>
+  <dt>WHERE busca MATCH 'azul'</dt><dd>A busca. <code>MATCH</code> é "combina com". À esquerda vai o <strong>nome da tabela</strong> (quer dizer "em qualquer coluna"); à direita, o que procurar.</dd>
+</dl>
+
+<p>Achou os dois produtos com a palavra "azul", e o <code>rowid</code> de cada um é o id do produto na tabela <code>produtos</code>. Repare que a busca foi por <strong>palavra inteira</strong>, e que maiúsculas não importam: <code>'azul'</code> achou <code>Azul</code>.</p>
+
+<div class="note">
+<strong>Por que cada exemplo cria a tabela de novo?</strong>
+<p>A tabela <code>busca</code> não existe no banco da Aurora: ela é criada no exemplo, e cada Rodar do editor parte do banco limpo (aula <a href="simulador.html">O Editor do Guia</a>). Por isso, todos os exemplos desta aula começam com as mesmas duas linhas: o <code>CREATE VIRTUAL TABLE</code> e o <code>INSERT</code>. No banco de verdade, você cria uma vez só.</p>
+</div>
+
+<h3>Voltando aos produtos</h3>
+<p>A tabela de busca serve para <strong>achar</strong>; o preço, o estoque e o resto continuam em <code>produtos</code>. Um <code>JOIN</code> pelo <code>rowid</code> traz tudo:</p>
+
+<pre class="file" data-file="join.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT p.id, p.nome, p.preco, p.estoque
+FROM busca b
+JOIN produtos p ON p.id = b.rowid
+WHERE busca MATCH 'garrafa';
+</pre>
+
+<p>Repare que, mesmo com o apelido <code>b</code>, o <code>MATCH</code> continua usando o nome da tabela: <code>busca MATCH …</code>.</p>
+
+<hr>
+
+<h2>2. Uma palavra, várias palavras</h2>
+<p>Com duas palavras separadas por espaço, o FTS5 procura linhas que tenham <strong>as duas</strong>, em qualquer ordem e em qualquer coluna:</p>
+
+<pre class="file" data-file="duas.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome, categoria
+FROM busca
+WHERE busca MATCH 'escolar azul';
+</pre>
+
+<p>A Mochila tem "Escolar" e "Azul" no nome. A Caneta tem "Azul" no nome e "escolar" na categoria ("Material escolar e de escritório"). Para o FTS5, as duas linhas têm as duas palavras. Se você quer procurar só no nome, veja a seção 3.</p>
+
+<h3>Os operadores: <code>AND</code>, <code>OR</code>, <code>NOT</code></h3>
+<p>Dentro do texto da busca, três palavras em <strong>MAIÚSCULAS</strong> são operadores, como no <code>WHERE</code> (aulas <a href="and.html">AND</a>, <a href="or.html">OR</a> e <a href="not.html">NOT</a>):</p>
+
+<pre class="file" data-file="operadores.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'garrafa OR copos';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'jogo NOT panelas';
+SELECT rowid, nome FROM busca WHERE busca MATCH '(garrafa OR copos) NOT squeeze';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Busca</th><th>Acha as linhas que têm…</th></tr>
+<tr><td><code>'escolar azul'</code> ou <code>'escolar AND azul'</code></td><td>as duas palavras</td></tr>
+<tr><td><code>'garrafa OR copos'</code></td><td>pelo menos uma das duas</td></tr>
+<tr><td><code>'jogo NOT panelas'</code></td><td>"jogo" e não "panelas"</td></tr>
+<tr><td><code>'(garrafa OR copos) NOT squeeze'</code></td><td>os parênteses agrupam, como numa conta</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Operador em minúsculas vira palavra</strong>
+<p><code>'jogo and panelas'</code>, com <code>and</code> minúsculo, procura três palavras: "jogo", "and" e "panelas". Como nenhum produto tem a palavra "and", a busca volta vazia, sem erro nenhum. No FTS5, os operadores só valem em MAIÚSCULAS.</p>
+</div>
+
+<h3>Uma frase exata: aspas duplas</h3>
+<p>Entre aspas <strong>duplas</strong>, as palavras têm de aparecer juntas e nessa ordem. Como a busca inteira já é um texto do SQL, entre aspas simples, a frase fica assim: <code>'"de cozinha"'</code>.</p>
+
+<pre class="file" data-file="frase.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'cozinha';
+SELECT rowid, nome FROM busca WHERE busca MATCH '"de cozinha"';
+</pre>
+
+<p>A primeira busca achou 6 produtos: todos os da categoria "Casa e Cozinha" têm a palavra "cozinha" na coluna <code>categoria</code>. A frase "de cozinha" só aparece, assim, juntinha, no "Avental de Cozinha".</p>
+
+<h3>Palavras perto uma da outra: <code>NEAR</code></h3>
+<p><code>NEAR(jogo peças, 3)</code> acha as linhas em que "jogo" e "peças" aparecem com no máximo 3 palavras entre elas. Sem o número, o limite é 10.</p>
+
+<pre class="file" data-file="near.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'NEAR(jogo peças, 3)';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'NEAR(jogo peças, 2)';
+</pre>
+
+<p>Em "Jogo de Panelas 5 peças", entre "Jogo" e "peças" há três palavras: "de", "Panelas" e "5". Com limite 3, achou; com limite 2, não.</p>
+
+<hr>
+
+<h2>3. Começo de palavra e uma coluna só</h2>
+
+<h3>O prefixo: <code>cad*</code></h3>
+<p>O FTS5 procura palavras <strong>inteiras</strong>. Se o cliente digitou só "car", não acha nada, porque nenhum produto tem a palavra "car". Com um asterisco no fim, <code>car*</code> quer dizer "qualquer palavra que <strong>começa</strong> com car":</p>
+
+<pre class="file" data-file="prefixo.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'cad';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'cad*';
+</pre>
+
+<p>A busca <code>'cad'</code> volta vazia; a <code>'cad*'</code> acha o "Caderno". É o que uma caixa de busca faz enquanto o cliente ainda está digitando. O asterisco só funciona no <strong>fim</strong>: o FTS5 não procura "palavras que terminam com" (veja <a href="#errado">Quando dá errado</a>).</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Carrinho de Fricção">
+<p class="try-task"><strong>Missão:</strong> o cliente digitou só "car" na busca da loja e não apareceu nada. Faça a busca achar os produtos com alguma palavra que <strong>começa</strong> com "car" (são dois).</p>
+<pre class="script" data-file="car.sql">CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome
+FROM busca
+WHERE busca MATCH 'car';
+</pre>
+<pre class="solucao" data-file="car.sql">CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome
+FROM busca
+WHERE busca MATCH 'car*';
+</pre>
+</div>
+
+<h3>Buscar numa coluna só</h3>
+<p>Para procurar só no nome do produto, há duas escritas: o nome da <strong>coluna</strong> à esquerda do <code>MATCH</code>, ou o filtro <code>nome:</code> dentro da busca:</p>
+
+<pre class="file" data-file="coluna.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'escolar';
+SELECT rowid, nome FROM busca WHERE nome  MATCH 'escolar';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'nome: escolar';
+</pre>
+
+<p>Em todas as colunas, "escolar" acha 7 produtos: os 6 da Papelaria (pela categoria) e o Dicionário Escolar (pelo nome). Só no nome, acha 2. As duas escritas da coluna dão o mesmo resultado; o filtro <code>nome:</code> tem a vantagem de caber dentro de uma busca maior, como <code>'nome: escolar OR categoria: livros'</code>.</p>
+
+<hr>
+
+<h2>4. Os melhores primeiro: <code>rank</code> e <code>bm25()</code></h2>
+<p>O cliente que digita "escolar" quer ver primeiro a Mochila Escolar e o Dicionário Escolar, não o Lápis (que só tem "escolar" na categoria). O FTS5 calcula, para cada resultado, uma <strong>nota de relevância</strong>, e você ordena por ela com <code>ORDER BY rank</code>:</p>
+
+<pre class="file" data-file="rank.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome, round(rank, 3) AS nota
+FROM busca
+WHERE busca MATCH 'escolar'
+ORDER BY rank;
+</pre>
+
+<dl class="anatomy">
+  <dt>rank</dt><dd>Uma coluna escondida que toda tabela FTS5 tem. Ela só tem valor numa busca com <code>MATCH</code>: é a nota daquela linha para aquela busca.</dd>
+  <dt>ORDER BY rank</dt><dd>Do melhor para o pior. A nota é <strong>negativa</strong> e, quanto <strong>menor</strong>, melhor: −2.307 vem antes de −1.628. Por isso é <code>ORDER BY rank</code>, sem <code>DESC</code>.</dd>
+  <dt>round(rank, 3)</dt><dd>Só para mostrar a nota com três casas. Os números exatos não importam; importa a ordem.</dd>
+</dl>
+
+<p>A nota vem de uma fórmula chamada <strong>BM25</strong>, a mesma família usada por muitos buscadores. Em palavras simples, ela dá mais pontos quando:</p>
+<ul>
+  <li>a palavra é <strong>rara</strong> na tabela inteira (achar "jardinagem" vale mais que achar "de");</li>
+  <li>a palavra aparece <strong>mais vezes</strong> na linha;</li>
+  <li>a linha é <strong>curta</strong> (a palavra ocupa uma parte maior do texto).</li>
+</ul>
+
+<p>A Mochila ganhou porque tem "escolar" duas vezes (no nome e na categoria). O Dicionário veio em segundo: só tem "escolar" no nome, mas o texto dele é curto.</p>
+
+<h3>Pesos por coluna: <code>bm25()</code></h3>
+<p>O <code>rank</code> é o mesmo que a função <code>bm25(busca)</code>. Chamando a função direto, você pode dar um <strong>peso</strong> para cada coluna, na ordem em que elas foram criadas. A Ana acha que uma palavra no nome vale 10 vezes mais que na categoria:</p>
+
+<pre class="file" data-file="bm25.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome, round(bm25(busca, 10.0, 1.0), 3) AS nota
+FROM busca
+WHERE busca MATCH 'escolar'
+ORDER BY nota;
+</pre>
+
+<p>Com peso 10 no nome, o Dicionário Escolar passou na frente da Mochila: os dois têm "escolar" no nome, e o nome do Dicionário é mais curto. Os de baixo, que só têm a palavra na categoria, continuaram com as mesmas notas.</p>
+
+<hr>
+
+<h2>5. Destacando o que achou: <code>highlight()</code> e <code>snippet()</code></h2>
+<p>Num buscador, a palavra encontrada aparece em negrito. O <code>highlight()</code> ("destaque") devolve o texto de uma coluna com marcas em volta de cada palavra encontrada:</p>
+
+<pre class="file" data-file="highlight.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid,
+       highlight(busca, 0, '[', ']')          AS produto,
+       snippet(busca, 1, '[', ']', '…', 4)    AS onde
+FROM busca
+WHERE busca MATCH 'escolar'
+ORDER BY rank;
+</pre>
+
+<dl class="anatomy">
+  <dt>highlight(busca, 0, '[', ']')</dt><dd>Da tabela <code>busca</code>, a coluna <strong>0</strong> (a primeira, <code>nome</code>; a contagem começa do zero), com <code>[</code> antes e <code>]</code> depois de cada palavra encontrada. Num site, em vez de colchetes, o programa usaria as tags do negrito.</dd>
+  <dt>snippet(busca, 1, '[', ']', '…', 4)</dt><dd>"Trecho": um pedaço curto da coluna <strong>1</strong> (<code>categoria</code>) em volta da palavra encontrada. Os argumentos são: a coluna, a marca de antes, a de depois, o que pôr onde o texto foi cortado (<code>…</code>) e quantas palavras mostrar, no máximo (4). Use <code>-1</code> na coluna para o FTS5 escolher a melhor.</dd>
+</dl>
+
+<p>Repare na linha do Dicionário: a categoria dele ("Livros: Livros, dicionários e guias") não tem "escolar", então o <code>snippet()</code> mostrou só o começo, sem destaque. E a palavra destacada mantém a escrita original, com maiúscula e acento: o destaque é sobre o texto guardado, não sobre a busca.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque a busca por outra (<code>'jardim OR jardinagem'</code>, <code>'livro*'</code>, <code>'"de pano"'</code>), mude as marcas do destaque para <code>'**'</code> e <code>'**'</code>, ou dê pesos com <code>bm25(busca, 5.0, 1.0)</code>.</p>
+<pre class="script" data-file="busca.sql">CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, highlight(busca, 0, '[', ']') AS produto, round(rank, 3) AS nota
+FROM busca
+WHERE busca MATCH 'azul OR escolar'
+ORDER BY rank;
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Acentos e maiúsculas: o tokenizador</h2>
+<p>Lembra do tokenizador, que quebra o texto em palavras? O FTS5 usa, se você não disser nada, o tokenizador <code>unicode61</code>. Ele faz três coisas com cada palavra antes de guardar no índice: separa nos espaços e pontuação, põe em minúsculas e <strong>tira os acentos</strong>. A busca passa pelo mesmo tratamento. Por isso "lapis" acha "Lápis":</p>
+
+<pre class="file" data-file="acento.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'lapis';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'LÁPIS';
+SELECT nome FROM produtos WHERE nome LIKE '%lapis%';
+</pre>
+
+<p>O FTS5 achou com <code>lapis</code> e com <code>LÁPIS</code>. O <code>LIKE</code> não achou nada: para ele, <code>á</code> e <code>a</code> são letras diferentes.</p>
+
+<h3>A opção <code>remove_diacritics</code></h3>
+<p>Quem decide se os acentos (os <em>diacríticos</em>) saem é a opção <code>remove_diacritics</code> do tokenizador, escrita no <code>tokenize = '…'</code> do <code>CREATE</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Valor</th><th>O que faz</th></tr>
+<tr><td><code>0</code></td><td>Mantém os acentos: <code>lapis</code> e <code>lápis</code> viram palavras diferentes.</td></tr>
+<tr><td><code>1</code> (o padrão)</td><td>Tira os acentos das letras latinas, mas deixa passar letras com <strong>dois</strong> acentos, como o <code>ệ</code> do vietnamita.</td></tr>
+<tr><td><code>2</code></td><td>Tira os acentos de todas as letras latinas, inclusive as de dois acentos. É o mais completo.</td></tr>
+</table>
+</div>
+
+<p>Veja os três lado a lado. Cada tabela recebe os 45 nomes de produtos e mais um, "Phở Việt" (um prato vietnamita), para mostrar a diferença entre o 1 e o 2:</p>
+
+<pre class="file" data-file="diacritics.sql" data-resultado>CREATE VIRTUAL TABLE b0 USING fts5(nome, tokenize = 'unicode61 remove_diacritics 0');
+CREATE VIRTUAL TABLE b1 USING fts5(nome);
+CREATE VIRTUAL TABLE b2 USING fts5(nome, tokenize = 'unicode61 remove_diacritics 2');
+INSERT INTO b0 SELECT nome FROM produtos UNION ALL SELECT 'Phở Việt';
+INSERT INTO b1 SELECT nome FROM produtos UNION ALL SELECT 'Phở Việt';
+INSERT INTO b2 SELECT nome FROM produtos UNION ALL SELECT 'Phở Việt';
+
+SELECT 'com 0' AS tabela, nome FROM b0 WHERE b0 MATCH 'lapis'
+UNION ALL SELECT 'com 1', nome FROM b1 WHERE b1 MATCH 'lapis'
+UNION ALL SELECT 'com 2', nome FROM b2 WHERE b2 MATCH 'lapis'
+UNION ALL SELECT 'com 1', nome FROM b1 WHERE b1 MATCH 'viet'
+UNION ALL SELECT 'com 2', nome FROM b2 WHERE b2 MATCH 'viet';
+</pre>
+
+<ol class="passo">
+  <li>Com <code>0</code>, "lapis" não acha "Lápis": o acento ficou no índice.</li>
+  <li>Com <code>1</code> e com <code>2</code>, acha.</li>
+  <li>Só com <code>2</code>, "viet" acha "Việt": o <code>ệ</code> tem dois sinais (o circunflexo e o ponto embaixo), e o <code>1</code> não dá conta dele.</li>
+</ol>
+
+<p>Para o português, que nunca tem dois acentos na mesma letra, o padrão já resolve. Mesmo assim, a recomendação é escrever <code>tokenize = 'unicode61 remove_diacritics 2'</code> ao criar uma busca nova: fica claro para quem lê o <code>CREATE</code> que os acentos saem, e nomes estrangeiros (fornecedores, autores de livros) também ficam cobertos.</p>
+
+<div class="tip">
+<strong>Só a busca ignora os acentos</strong>
+<p>O que fica sem acento é o <strong>índice</strong>. O texto guardado na tabela continua igual, com acento. Por isso o <code>SELECT nome</code> mostra "Lápis Grafite HB" e o <code>highlight()</code> destaca a palavra como ela foi escrita.</p>
+</div>
+
+<h3>Pedaços de palavra: o tokenizador <code>trigram</code></h3>
+<p>E se o cliente digitar um pedaço do meio da palavra, como "rinh"? O <code>unicode61</code> só conhece palavras inteiras (ou começos, com <code>*</code>). O tokenizador <code>trigram</code> guarda cada grupo de 3 letras seguidas e acha pedaços em qualquer lugar da palavra:</p>
+
+<pre class="file" data-file="trigram.sql" data-resultado>CREATE VIRTUAL TABLE tri USING fts5(nome, tokenize = 'trigram');
+INSERT INTO tri (rowid, nome) SELECT id, nome FROM produtos;
+
+SELECT rowid, nome FROM tri WHERE tri MATCH 'rinh';
+</pre>
+
+<p>O preço: o índice fica bem maior, a busca precisa de pelo menos 3 letras, e não há a ideia de "palavra" (nem relevância por palavra). Para a caixa de busca de uma loja, o <code>unicode61</code> com <code>*</code> costuma bastar.</p>
+
+<hr>
+
+<h2>7. A tabela de busca é uma cópia</h2>
+<p>A tabela <code>busca</code> recebeu uma <strong>cópia</strong> dos nomes. Se o produto mudar depois, a cópia não fica sabendo. A caneta azul virou preta:</p>
+
+<pre class="file" data-file="copia.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+UPDATE produtos SET nome = 'Caneta Esferográfica Preta' WHERE id = 2;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'azul';
+SELECT rowid, nome FROM busca WHERE busca MATCH 'preta';
+</pre>
+
+<p>A busca por "azul" ainda acha a caneta, e "preta" não acha nada. Quem muda o produto precisa mudar a cópia também. O jeito mais simples é refazê-la de tempos em tempos (apagar tudo e copiar de novo); o jeito profissional é um gatilho (<em>trigger</em>), um comando que o banco roda sozinho a cada <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> em <code>produtos</code>. Refazendo:</p>
+
+<pre class="file" data-file="refazer.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+UPDATE produtos SET nome = 'Caneta Esferográfica Preta' WHERE id = 2;
+
+DELETE FROM busca;
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'preta';
+</pre>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Três jeitos de achar a Garrafa Squeeze, que tem "squeeze" no nome:</p>
+
+<pre class="file" data-file="tres-jeitos.sql" data-resultado>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'squeeze';
+SELECT rowid, nome FROM busca WHERE busca = 'squeeze';
+SELECT rowid, nome FROM busca('squeeze');
+</pre>
+
+<p>As três são a mesma busca: o <code>=</code> com o nome da tabela e a tabela chamada como função, <code>busca('…')</code>, são atalhos do FTS5 para o <code>MATCH</code>. Prefira o <code>MATCH</code>, que é o que todo mundo reconhece.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Uma caixa de busca de produtos, artigos, mensagens</td><td>FTS5 com <code>unicode61 remove_diacritics 2</code></td><td>Ignora acento e maiúscula, ordena por relevância, é rápido</td></tr>
+<tr><td>Achar enquanto o cliente digita</td><td>FTS5 com prefixo: <code>'cad*'</code></td><td>Acha pelo começo da palavra</td></tr>
+<tr><td>Achar um pedaço do meio da palavra</td><td>FTS5 com <code>trigram</code></td><td>Acha qualquer pedaço de 3 letras ou mais</td></tr>
+<tr><td>Um filtro simples numa tabela pequena (<code>nome LIKE 'Ana %'</code>)</td><td><code>LIKE</code></td><td>Não precisa de tabela extra nem de cópia</td></tr>
+<tr><td>Um código exato (<code>'USB-C'</code>, um CPF)</td><td><code>=</code> ou <code>LIKE</code> na tabela comum</td><td>O tokenizador quebraria o código em pedaços</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Hífen na busca</strong>
+<p>O cliente digitou o nome do produto do jeito que está escrito, "marca-texto":</p>
+<pre class="file" data-file="hifen.sql" data-resultado data-erro>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'marca-texto';
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: texto</code>, "não existe a coluna texto". Na linguagem de busca do FTS5, o hífen não faz parte da palavra; o FTS5 tentou ler o <code>-texto</code> como um filtro de coluna, e a tabela não tem coluna <code>texto</code>. O mesmo acontece com <code>'usb-c'</code> (<code>no such column: c</code>).</p>
+<p><strong>Como consertar:</strong> ponha o termo entre aspas duplas, como frase: <code>MATCH '"marca-texto"'</code>. Dentro das aspas, o tokenizador quebra no hífen e procura "marca" seguida de "texto". Num site, o programa deve sempre pôr o que o cliente digitou entre aspas duplas (dobrando alguma aspa dupla que venha dentro) antes de mandar para o <code>MATCH</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>MATCH</code> numa tabela comum</strong>
+<pre class="file" data-file="match-comum.sql" data-resultado data-erro>SELECT nome FROM produtos WHERE nome MATCH 'azul';
+</pre>
+<p><strong>A mensagem:</strong> <code>unable to use function MATCH in the requested context</code>, "não foi possível usar a função MATCH neste contexto". O <code>MATCH</code> só funciona numa tabela FTS5. A tabela <code>produtos</code> é comum.</p>
+<p><strong>Como consertar:</strong> faça a busca na tabela de busca (<code>busca MATCH 'azul'</code>) e volte aos produtos com um <code>JOIN</code> pelo <code>rowid</code>, como na seção 1.</p>
+</div>
+
+<div class="cenario">
+<strong>Busca que termina num operador</strong>
+<pre class="file" data-file="sintaxe.sql" data-resultado data-erro>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH 'azul AND';
+</pre>
+<p><strong>A mensagem:</strong> <code>fts5: syntax error near ""</code>, "erro de sintaxe do FTS5 perto de (nada)". Depois do <code>AND</code> deveria vir outra palavra, e veio o fim do texto: por isso o "perto de" está vazio.</p>
+<p><strong>Como consertar:</strong> complete a busca (<code>'azul AND escolar'</code>) ou tire o operador.</p>
+</div>
+
+<div class="cenario">
+<strong>Asterisco no começo</strong>
+<pre class="file" data-file="sufixo.sql" data-resultado data-erro>CREATE VIRTUAL TABLE busca USING fts5(nome, categoria);
+INSERT INTO busca (rowid, nome, categoria)
+SELECT p.id, p.nome, c.nome || ': ' || c.descricao FROM produtos p JOIN categorias c ON c.id = p.categoria_id;
+
+SELECT rowid, nome FROM busca WHERE busca MATCH '*eira';
+</pre>
+<p><strong>A mensagem:</strong> <code>unknown special query: eira</code>, "consulta especial desconhecida". Um <code>*</code> no começo da busca é outra coisa no FTS5 (um comando especial), e "eira" não é um comando. O índice é organizado pelo começo das palavras; "palavras que terminam com" ele não sabe procurar.</p>
+<p><strong>Como consertar:</strong> use o tokenizador <code>trigram</code> (seção 6), que acha pedaços em qualquer posição.</p>
+</div>
+
+<div class="cenario">
+<strong>Tipo na coluna, ou FTS4</strong>
+<pre class="file" data-file="tipo.sql" data-resultado data-erro>CREATE VIRTUAL TABLE busca USING fts5(nome TEXT, categoria TEXT);
+</pre>
+<p><strong>A mensagem:</strong> <code>unrecognized column option: TEXT</code>, "opção de coluna desconhecida". No FTS5, a coluna é só o nome. Tire o <code>TEXT</code>.</p>
+<p>Em tutoriais antigos você vai achar <code>USING fts4</code> (ou <code>fts3</code>), as versões anteriores. No SQLite deste guia, elas não vêm: <code>CREATE VIRTUAL TABLE x USING fts4(a);</code> dá <code>no such module: fts4</code>, "não existe o módulo fts4". Use o <code>fts5</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Ordenou com <code>DESC</code></strong>
+<p>Quem vem de outros buscadores acha que nota maior é melhor e escreve <code>ORDER BY rank DESC</code>. Não dá erro, mas a lista sai <strong>de trás para frente</strong>: os piores primeiro. No FTS5 a nota é negativa e a menor é a melhor. Use <code>ORDER BY rank</code>, sem <code>DESC</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Cada banco tem a sua busca de texto, com outra escrita. Os trechos abaixo são <strong>ilustrativos</strong>: não rodam no SQLite.</p>
+<ul>
+  <li><strong>MySQL:</strong> um índice <code>FULLTEXT</code> na tabela comum (só nas tabelas InnoDB ou MyISAM) e a busca com <code>MATCH (colunas) AGAINST ('texto')</code>.</li>
+  <li><strong>PostgreSQL:</strong> o texto vira um <code>tsvector</code> com <code>to_tsvector()</code>, a busca vira um <code>tsquery</code> com <code>to_tsquery()</code>, e o operador <code>@@</code> compara os dois. A nota vem de <code>ts_rank()</code> e o destaque, de <code>ts_headline()</code>. Ali, nota <strong>maior</strong> é melhor.</li>
+  <li><strong>SQL Server:</strong> um índice de texto completo (<em>full-text index</em>) e as condições <code>CONTAINS()</code> e <code>FREETEXT()</code>; a nota vem da coluna <code>RANK</code> de <code>CONTAINSTABLE()</code>, e lá também maior é melhor.</li>
+</ul>
+<pre class="file" data-file="ilustrativo.sql">-- MySQL (ilustrativo)
+SELECT nome FROM produtos WHERE MATCH (nome) AGAINST ('azul');
+
+-- PostgreSQL (ilustrativo)
+SELECT nome FROM produtos
+WHERE to_tsvector('portuguese', nome) @@ to_tsquery('portuguese', 'azul');
+
+-- SQL Server (ilustrativo)
+SELECT nome FROM produtos WHERE CONTAINS (nome, 'azul');
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>CREATE VIRTUAL TABLE t USING fts5(a, b)</code></td><td>Cria a tabela de busca com as colunas <code>a</code> e <code>b</code> (sem tipos)</td></tr>
+<tr><td><code>… fts5(a, tokenize = 'unicode61 remove_diacritics 2')</code></td><td>Tira todos os acentos do índice</td></tr>
+<tr><td><code>… fts5(a, tokenize = 'trigram')</code></td><td>Índice por grupos de 3 letras: acha pedaços</td></tr>
+<tr><td><code>WHERE t MATCH 'azul'</code></td><td>Linhas com a palavra, em qualquer coluna</td></tr>
+<tr><td><code>WHERE a MATCH 'azul'</code> / <code>MATCH 'a: azul'</code></td><td>Só na coluna <code>a</code></td></tr>
+<tr><td><code>'x y'</code> ou <code>'x AND y'</code></td><td>As duas palavras</td></tr>
+<tr><td><code>'x OR y'</code> / <code>'x NOT y'</code></td><td>Uma das duas / a primeira sem a segunda (operadores em MAIÚSCULAS)</td></tr>
+<tr><td><code>'"de cozinha"'</code></td><td>Frase exata, nessa ordem</td></tr>
+<tr><td><code>'cad*'</code></td><td>Palavras que começam com "cad"</td></tr>
+<tr><td><code>'NEAR(x y, 3)'</code></td><td>As duas com até 3 palavras entre elas (padrão: 10)</td></tr>
+<tr><td><code>ORDER BY rank</code></td><td>Mais relevantes primeiro (nota menor = melhor)</td></tr>
+<tr><td><code>bm25(t, 10.0, 1.0)</code></td><td>A nota com pesos por coluna</td></tr>
+<tr><td><code>highlight(t, col, 'antes', 'depois')</code></td><td>O texto da coluna com as palavras achadas marcadas</td></tr>
+<tr><td><code>snippet(t, col, 'antes', 'depois', '…', n)</code></td><td>Um trecho de até <code>n</code> palavras em volta do que achou</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>no such column: texto</code></td><td>Um hífen ou dois-pontos na busca virou filtro de coluna: ponha o termo entre aspas duplas</td></tr>
+<tr><td><code>unable to use function MATCH in the requested context</code></td><td><code>MATCH</code> numa tabela que não é FTS5</td></tr>
+<tr><td><code>fts5: syntax error near "…"</code></td><td>A busca está mal escrita (operador sem palavra, aspas sem fechar…)</td></tr>
+<tr><td><code>unknown special query: …</code></td><td>A busca começa com <code>*</code></td></tr>
+<tr><td><code>unrecognized column option: TEXT</code></td><td>Tipo na coluna do FTS5</td></tr>
+<tr><td><code>no such module: fts4</code></td><td>Este SQLite não tem o FTS4: use o FTS5</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Criar a busca</h3>
+<p>Complete para criar uma tabela de busca com a coluna <code>titulo</code>:</p>
+<div class="ex-code">CREATE VIRTUAL TABLE livros_busca USING <input data-answer="fts5" aria-label="módulo">(titulo);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Começo de palavra</h3>
+<p>Complete a busca para achar "Jardim" e "Jardinagem" pelo começo comum:</p>
+<div class="ex-code">SELECT nome FROM busca WHERE busca MATCH '<input data-answer="jardi*" aria-label="busca">';</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual ordem mostra os resultados mais relevantes primeiro no FTS5?</p>
+<label><input type="radio" name="q3"> <code>ORDER BY rank DESC</code></label>
+<label><input type="radio" name="q3"> <code>ORDER BY rowid</code></label>
+<label><input type="radio" name="q3"> <code>ORDER BY rank</code></label>
+<label><input type="radio" name="q3"> Não precisa: o FTS5 já devolve em ordem de relevância</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A busca <code>MATCH 'jogo or panelas'</code> volta vazia. Por quê?</p>
+<label><input type="radio" name="q4"> Porque <code>OR</code> não existe no FTS5</label>
+<label><input type="radio" name="q4"> Porque o <code>or</code> minúsculo virou uma palavra a procurar, e nenhum produto tem "or"</label>
+<label><input type="radio" name="q4"> Porque faltaram parênteses</label>
+<label><input type="radio" name="q4"> Porque "panelas" tem acento</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O cliente digitou <code>usb-c</code> e o SQLite respondeu <code>no such column: c</code>. Qual é o conserto?</p>
+<label><input type="radio" name="q5"> Criar uma coluna <code>c</code> na tabela de busca</label>
+<label><input type="radio" name="q5"> Trocar o <code>MATCH</code> por <code>=</code></label>
+<label><input type="radio" name="q5"> Usar <code>remove_diacritics 2</code></label>
+<label><input type="radio" name="q5"> Pôr o termo entre aspas duplas: <code>MATCH '"usb-c"'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Com o tokenizador padrão do FTS5, a busca <code>'ceramica'</code> acha "Vaso de Cerâmica Médio"?</p>
+<label><input type="radio" name="q6"> Sim: o padrão (<code>remove_diacritics 1</code>) já tira os acentos do português</label>
+<label><input type="radio" name="q6"> Não: só com <code>remove_diacritics 0</code></label>
+<label><input type="radio" name="q6"> Não: precisa escrever <code>'cerâmica'</code></label>
+<label><input type="radio" name="q6"> Só com o <code>LIKE</code></label>
+</div>
+
+<h3>Missão final: a busca que ignora acentos</h3>
+
+<div class="trysql" data-goal="linhas:1;;contem:Vaso de [Cerâmica] Médio">
+<p class="try-task"><strong>Missão:</strong> alguém criou a busca com <code>remove_diacritics 0</code>, e agora o cliente que digita "ceramica" não acha nada. Conserte o <code>CREATE</code> para tirar todos os acentos (use o valor recomendado) e troque a coluna <code>nome</code> do <code>SELECT</code> por um destaque da palavra encontrada entre <code>[</code> e <code>]</code>.</p>
+<pre class="script" data-file="ceramica.sql">CREATE VIRTUAL TABLE busca USING fts5(nome, tokenize = 'unicode61 remove_diacritics 0');
+INSERT INTO busca (rowid, nome) SELECT id, nome FROM produtos;
+
+SELECT rowid, nome
+FROM busca
+WHERE busca MATCH 'ceramica'
+ORDER BY rank;
+</pre>
+<pre class="solucao" data-file="ceramica.sql">CREATE VIRTUAL TABLE busca USING fts5(nome, tokenize = 'unicode61 remove_diacritics 2');
+INSERT INTO busca (rowid, nome) SELECT id, nome FROM produtos;
+
+SELECT rowid, highlight(busca, 0, '[', ']') AS produto
+FROM busca
+WHERE busca MATCH 'ceramica'
+ORDER BY rank;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>A busca de texto completo é um índice de <strong>palavras</strong>, como o índice remissivo de um livro. No SQLite, é o FTS5.</li>
+  <li>Crie com <code>CREATE VIRTUAL TABLE busca USING fts5(col1, col2)</code> (sem tipos) e copie os dados com <code>INSERT … SELECT</code>, guardando o id no <code>rowid</code>.</li>
+  <li>Busque com <code>WHERE busca MATCH '…'</code>: palavras (todas), <code>OR</code>, <code>NOT</code> (em MAIÚSCULAS), <code>"frase"</code>, <code>cad*</code>, <code>nome: …</code>.</li>
+  <li><code>ORDER BY rank</code> mostra os melhores primeiro (nota menor = melhor); <code>bm25(t, pesos…)</code> dá peso às colunas.</li>
+  <li><code>highlight()</code> marca as palavras achadas; <code>snippet()</code> mostra um trecho em volta.</li>
+  <li>O tokenizador <code>unicode61</code> ignora maiúsculas e acentos; prefira <code>tokenize = 'unicode61 remove_diacritics 2'</code>. Para pedaços do meio da palavra, <code>trigram</code>.</li>
+  <li>A tabela de busca é uma cópia: quando o produto muda, a cópia tem de mudar junto. Ponha entre aspas duplas o que o cliente digitar, para o hífen não virar erro.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
