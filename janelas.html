@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções de Janela — OVER, total acumulado e média móvel | Guia SQL</title>
+<meta name="description" content="Funções de janela (OVER) para quem está começando: agregação × janela (as linhas não somem), média e porcentagem ao lado de cada linha, total acumulado, média móvel com ROWS BETWEEN, o frame padrão RANGE e a surpresa dos empates, WINDOW com nome e os erros reais do SQLite, com missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções de Janela</span> (OVER)</h1>
+
+<p class="intro">Com <a href="funcoes-agregadas.html">as funções agregadas</a> e o <a href="group-by.html">GROUP BY</a>, a Ana aprendeu a resumir: "a média de preço é tal", "cada categoria vendeu tanto". Só que o resumo <strong>engole as linhas</strong>: 7 produtos viram uma linha com a média. E se ela quiser ver cada produto <strong>e</strong>, ao lado, a média do grupo? Ou cada mês de vendas e, ao lado, quanto já foi vendido no ano até ali? Para isso existem as <strong>funções de janela</strong>: a mesma <code>SUM</code>, <code>AVG</code> ou <code>COUNT</code> de sempre, seguida da palavra <code>OVER</code>. Elas fazem a conta olhando para outras linhas, mas devolvem uma resposta <strong>para cada linha</strong>, sem juntar nada.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre agregação (as linhas viram uma) e janela (as linhas ficam).</li>
+  <li><code>OVER ()</code>: a média, o total e a porcentagem ao lado de cada linha.</li>
+  <li><code>OVER (ORDER BY …)</code>: o <strong>total acumulado</strong>.</li>
+  <li>A moldura (<em>frame</em>) com <code>ROWS BETWEEN</code>: a <strong>média móvel</strong>.</li>
+  <li>A moldura padrão (<code>RANGE … CURRENT ROW</code>) e a surpresa quando há empates.</li>
+  <li>Janelas com nome (<code>WINDOW</code>) e onde uma janela pode e não pode aparecer.</li>
+  <li>Os erros mais comuns, com a mensagem real do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>. O SQLite tem funções de janela desde a versão 3.25 (2018); o editor e o lab usam a 3.50.</p>
+
+<hr>
+
+<h2>A ideia: o boletim com a média da turma</h2>
+<p>Pense no boletim da escola. A secretaria pode fazer duas coisas com as notas da turma:</p>
+<ul>
+  <li><strong>Um cartaz no mural</strong>: "média da turma: 7,2". Uma linha só. Os alunos sumiram; sobrou o resumo. Isso é a <strong>agregação</strong> (<code>AVG</code> com ou sem <code>GROUP BY</code>).</li>
+  <li><strong>O boletim de cada aluno</strong>, com a nota dele e, numa coluna ao lado, "média da turma: 7,2". Todo aluno continua lá, e cada um consegue se comparar com a turma. Isso é a <strong>janela</strong>.</li>
+</ul>
+<p>O nome "janela" vem daí: cada linha olha pela janela e enxerga um conjunto de outras linhas (a turma inteira, ou só as anteriores a ela). A função calcula sobre o que a linha enxerga, e o resultado fica <strong>na própria linha</strong>.</p>
+
+<hr>
+
+<h2>1. Agregação × janela: as linhas não somem</h2>
+<p>Primeiro a agregação que você já conhece: a média de preço dos eletrônicos (categoria 2).</p>
+
+<pre class="file" data-file="agregacao.sql" data-resultado>SELECT COUNT(*) AS produtos,
+       ROUND(AVG(preco), 2) AS media
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+
+<p>Uma linha: 7 produtos, média de R$ 82,71. Agora a mesma média como função de janela:</p>
+
+<pre class="file" data-file="janela.sql" data-resultado>SELECT nome,
+       preco,
+       ROUND(AVG(preco) OVER (), 2) AS media
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+
+<dl class="anatomy">
+  <dt>AVG(preco)</dt><dd>A mesma função de média de sempre (aula <a href="avg.html">AVG()</a>).</dd>
+  <dt>OVER</dt><dd>"Sobre". Transforma a agregação numa função de janela: "calcule a média <strong>sobre</strong> esta janela, mas sem juntar as linhas".</dd>
+  <dt>()</dt><dd>A definição da janela. Parênteses vazios querem dizer "a janela é <strong>todas</strong> as linhas do resultado". Os parênteses são obrigatórios, mesmo vazios.</dd>
+  <dt>WHERE categoria_id = 2</dt><dd>O <code>WHERE</code> roda <strong>antes</strong> da janela. Por isso a janela enxerga só os 7 eletrônicos, e a média é a deles, não a dos 45 produtos.</dd>
+</dl>
+
+<p>As 7 linhas continuaram lá, cada uma com o seu nome e preço, e a média (82.71) repetida ao lado de todas. Repare que não tem <code>GROUP BY</code>: com janela, você pode misturar a coluna <code>nome</code> com uma conta sobre o grupo, coisa que a agregação não deixa fazer direito.</p>
+
+<h3>Fazendo contas com a janela</h3>
+<p>Com a média ao lado de cada linha, dá para comparar. Quanto cada eletrônico está acima ou abaixo da média, e que fatia ele é da soma dos preços:</p>
+
+<pre class="file" data-file="comparar.sql" data-resultado>SELECT nome,
+       preco,
+       ROUND(preco - AVG(preco) OVER (), 2) AS diferenca,
+       ROUND(100.0 * preco / SUM(preco) OVER (), 1) AS porcentagem
+FROM produtos
+WHERE categoria_id = 2
+ORDER BY preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>preco - AVG(preco) OVER ()</dt><dd>O preço da linha menos a média de todas. Positivo: acima da média; negativo: abaixo.</dd>
+  <dt>SUM(preco) OVER ()</dt><dd>A soma dos 7 preços, repetida em cada linha.</dd>
+  <dt>100.0 * preco / SUM(…)</dt><dd>A porcentagem. O <code>100.0</code>, com ponto, garante conta com decimais.</dd>
+  <dt>ORDER BY preco DESC</dt><dd>A ordem do resultado final. Ela não muda a conta da janela, que continua sendo sobre as 7 linhas.</dd>
+</dl>
+
+<p>A Caixa de Som Portátil está R$ 107,28 acima da média e sozinha é 32,8% da soma dos preços.</p>
+
+<hr>
+
+<h2>2. OVER (ORDER BY): o total acumulado</h2>
+<p>Agora o relatório que a Ana mais queria: as vendas de cada mês de 2025 e, ao lado, <strong>quanto já foi vendido no ano até aquele mês</strong>. Primeiro uma CTE (aula <a href="with-cte.html">CTE (WITH)</a>) monta as vendas de cada mês; depois a janela acumula:</p>
+
+<pre class="file" data-file="acumulado.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       ROUND(SUM(vendas) OVER (ORDER BY mes), 2) AS acumulado
+FROM mensal
+ORDER BY mes;
+</pre>
+
+<dl class="anatomy">
+  <dt>mensal</dt><dd>A CTE: uma linha por mês de 2025, com o total vendido em produtos. <code>strftime('%Y-%m', data)</code> corta a data em "ano-mês" (aula <a href="funcoes-data.html">Funções de Data</a>).</dd>
+  <dt>SUM(vendas) OVER (ORDER BY mes)</dt><dd>Com um <code>ORDER BY</code> dentro do <code>OVER</code>, a janela de cada linha deixa de ser "todas as linhas" e passa a ser "<strong>da primeira até esta</strong>", na ordem dos meses. A soma dessa janela é o acumulado.</dd>
+  <dt>ROUND(…, 2)</dt><dd>Garante o resultado em centavos. Somar muitos decimais pode deixar caudas de ponto flutuante (aula <a href="funcoes-numericas.html">Funções Numéricas</a>), e o arredondamento evita surpresas.</dd>
+  <dt>ORDER BY mes (no fim)</dt><dd>A ordem de exibição. O <code>ORDER BY</code> de dentro do <code>OVER</code> diz como a janela anda; o de fora diz como o resultado aparece. São coisas diferentes: escreva os dois.</dd>
+</dl>
+
+<p>Leia a coluna <code>acumulado</code> de cima para baixo: em janeiro, 865.78 (só janeiro); em fevereiro, 865.78 + 401.7 = 1267.48; e assim por diante, até 5464.52 em dezembro, o total do ano. Cada linha enxerga só o passado e ela mesma.</p>
+
+<div class="trysql" data-goal="colunas:data,frete,frete_acumulado;;linhas:26;;contem:2026-10-14|15.5|374.15">
+<p class="try-task"><strong>Missão:</strong> a Ana quer acompanhar quanto já pagou de frete em 2026, pedido a pedido. Acrescente a coluna <code>frete_acumulado</code>: a soma do frete de todos os pedidos de 2026 até aquele, em ordem de data.</p>
+<pre class="script" data-file="consulta.sql">SELECT data, frete
+FROM pedidos
+WHERE data &gt;= '2026-01-01'
+ORDER BY data;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT data,
+       frete,
+       SUM(frete) OVER (ORDER BY data) AS frete_acumulado
+FROM pedidos
+WHERE data &gt;= '2026-01-01'
+ORDER BY data;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A moldura: ROWS BETWEEN e a média móvel</h2>
+<p>Abril de 2025 foi um mês fraco (só R$ 25,13). Olhando mês a mês, os números pulam muito, e fica difícil ver a tendência. Uma <strong>média móvel</strong> resolve: em cada mês, a média <strong>dele e dos dois anteriores</strong>. Para isso você diz à janela exatamente quais linhas ela enxerga, com uma <strong>moldura</strong> (em inglês, <em>frame</em>):</p>
+
+<pre class="file" data-file="media-movel.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       ROUND(AVG(vendas) OVER (
+         ORDER BY mes
+         ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+       ), 2) AS media_3_meses
+FROM mensal
+ORDER BY mes;
+</pre>
+
+<dl class="anatomy">
+  <dt>ORDER BY mes</dt><dd>Em que ordem as linhas ficam dentro da janela. Sem ordem, "as duas anteriores" não teria sentido.</dd>
+  <dt>ROWS</dt><dd>"Linhas". A moldura vai ser contada em <strong>linhas</strong>, uma a uma.</dd>
+  <dt>BETWEEN 2 PRECEDING</dt><dd>"Entre 2 anteriores": começa duas linhas antes da linha atual.</dd>
+  <dt>AND CURRENT ROW</dt><dd>"E a linha atual": termina nela. São três linhas: as duas de antes e a atual.</dd>
+</dl>
+
+<p>Repare nas primeiras linhas: em janeiro não há meses anteriores (dentro de 2025), então a média é só de janeiro (865.78); em fevereiro, de janeiro e fevereiro (633.74). Do março em diante, sempre três meses. E veja como a média móvel suaviza abril: 335.3, em vez de despencar para 25.13.</p>
+
+<h3>As peças da moldura</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Quer dizer</th></tr>
+<tr><td><code>UNBOUNDED PRECEDING</code></td><td>Desde a primeira linha ("anteriores, sem limite")</td></tr>
+<tr><td><code>2 PRECEDING</code></td><td>Duas linhas antes da atual</td></tr>
+<tr><td><code>CURRENT ROW</code></td><td>A linha atual</td></tr>
+<tr><td><code>1 FOLLOWING</code></td><td>Uma linha depois da atual</td></tr>
+<tr><td><code>UNBOUNDED FOLLOWING</code></td><td>Até a última linha ("seguintes, sem limite")</td></tr>
+</table>
+</div>
+
+<p>Combinações comuns: <code>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code> (acumulado), <code>ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING</code> (o mês, o anterior e o seguinte), <code>ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING</code> (o que falta até o fim do ano). Com uma ponta só, como <code>ROWS 2 PRECEDING</code>, a outra ponta é <code>CURRENT ROW</code>.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque a moldura e veja a coluna mudar. Tente <code>ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING</code> (média centrada) e <code>ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING</code> com <code>SUM</code> no lugar de <code>AVG</code> (quanto ainda faltava vender a partir daquele mês).</p>
+<pre class="script" data-file="consulta.sql">WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       ROUND(AVG(vendas) OVER (
+         ORDER BY mes
+         ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+       ), 2) AS janela
+FROM mensal
+ORDER BY mes;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A moldura padrão e a surpresa dos empates</h2>
+<p>No total acumulado da seção 2 você não escreveu moldura nenhuma, e funcionou. É que, quando o <code>OVER</code> tem <code>ORDER BY</code> e nenhuma moldura, vale uma moldura <strong>padrão</strong>:</p>
+
+<pre class="file" data-file="moldura padrão">RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+</pre>
+
+<p>Parece igual ao acumulado com <code>ROWS</code>, mas tem uma palavra diferente: <code>RANGE</code> ("faixa"). Com <code>RANGE</code>, a "linha atual" não é uma linha só: é a linha atual <strong>e todas as que empatam com ela</strong> no <code>ORDER BY</code>. As linhas empatadas se chamam <strong>pares</strong> (<em>peers</em>). Enquanto o <code>ORDER BY</code> não tem empate (cada mês aparece uma vez), <code>RANGE</code> e <code>ROWS</code> dão o mesmo resultado. Com empate, não.</p>
+
+<p>Veja os pedidos do primeiro trimestre de 2026, numerados com um contador acumulado <strong>por mês</strong>:</p>
+
+<pre class="file" data-file="empates.sql" data-resultado>SELECT id,
+       data,
+       strftime('%Y-%m', data) AS mes,
+       COUNT(*) OVER (ORDER BY strftime('%Y-%m', data)) AS acumulado
+FROM pedidos
+WHERE data BETWEEN '2026-01-01' AND '2026-03-31'
+ORDER BY data;
+</pre>
+
+<p>A Ana esperava 1, 2, 3, 4, 5, 6, 7. Veio <strong>2, 2, 5, 5, 5, 7, 7</strong>. Os dois pedidos de janeiro empatam no <code>ORDER BY</code> (o mês é o mesmo), então são pares: a moldura de cada um vai "do começo até o último par", e os dois enxergam os dois. Por isso ambos mostram 2. Os três de fevereiro mostram 5 (2 de janeiro + 3 de fevereiro).</p>
+
+<p>Isso não é um defeito: é a regra do padrão SQL, e às vezes é exatamente o que você quer ("quantos pedidos até o fim deste mês"). O problema é quando você não sabia. Há dois consertos:</p>
+
+<pre class="file" data-file="sem-surpresa.sql" data-resultado>SELECT id,
+       strftime('%Y-%m', data) AS mes,
+       COUNT(*) OVER (
+         ORDER BY strftime('%Y-%m', data)
+         ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+       ) AS por_linha,
+       COUNT(*) OVER (ORDER BY strftime('%Y-%m', data), id) AS com_desempate
+FROM pedidos
+WHERE data BETWEEN '2026-01-01' AND '2026-03-31'
+ORDER BY id;
+</pre>
+
+<dl class="anatomy">
+  <dt>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</dt><dd>Moldura em <strong>linhas</strong>: até a linha atual, e só ela, sem os pares. O problema: entre dois pedidos do mesmo mês, quem vem primeiro é o SQLite que decide. Funciona, mas a ordem dentro do empate não é garantida.</dd>
+  <dt>ORDER BY strftime(…), id</dt><dd>Um <strong>desempate</strong>: dentro do mesmo mês, ordena pelo <code>id</code>. Sem empates, não há pares, e a moldura padrão anda uma linha por vez. É o conserto mais seguro: o resultado é o mesmo toda vez.</dd>
+</dl>
+
+<div class="tip">
+<strong>Regra prática</strong>
+<p>Num total acumulado, faça o <code>ORDER BY</code> da janela ser <strong>único</strong> (acrescente o <code>id</code> no fim, se preciso) ou escreva a moldura com <code>ROWS</code>. Assim os empates nunca pegam você de surpresa.</p>
+</div>
+
+<hr>
+
+<h2>5. Uma janela com nome: WINDOW</h2>
+<p>Quando várias colunas usam a mesma janela, repetir <code>OVER (ORDER BY mes ROWS …)</code> em cada uma cansa. A cláusula <code>WINDOW</code> dá um nome à janela, e cada coluna só diz <code>OVER nome</code>:</p>
+
+<pre class="file" data-file="window.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       ROUND(SUM(vendas) OVER ate_aqui, 2) AS acumulado,
+       COUNT(*) OVER ate_aqui AS meses,
+       MAX(vendas) OVER ate_aqui AS melhor_ate_aqui
+FROM mensal
+WINDOW ate_aqui AS (ORDER BY mes ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+ORDER BY mes;
+</pre>
+
+<dl class="anatomy">
+  <dt>WINDOW ate_aqui AS ( … )</dt><dd>Define a janela uma vez, com nome. Vem depois do <code>FROM</code>/<code>WHERE</code>/<code>GROUP BY</code>/<code>HAVING</code> e antes do <code>ORDER BY</code> final.</dd>
+  <dt>OVER ate_aqui</dt><dd>Usa a janela pelo nome, <strong>sem</strong> parênteses.</dd>
+  <dt>MAX(vendas) OVER ate_aqui</dt><dd>Qualquer agregada vira janela: aqui, o melhor mês do ano até aquele ponto. Janeiro (865.78) segura o recorde o ano todo.</dd>
+</dl>
+
+<hr>
+
+<h2>6. Onde a janela pode aparecer</h2>
+<p>A ordem em que o SQLite trabalha explica tudo: primeiro <code>FROM</code> e <code>WHERE</code> escolhem as linhas, depois <code>GROUP BY</code>/<code>HAVING</code> agrupam, <strong>depois</strong> as janelas são calculadas, e só então vêm o <code>ORDER BY</code> e o <code>LIMIT</code> finais. Por isso uma função de janela só pode aparecer na lista do <code>SELECT</code> e no <code>ORDER BY</code>. No <code>WHERE</code> ela ainda não existe.</p>
+
+<p>Então como mostrar só os meses <strong>acima da média do ano</strong>? Calcule a janela numa CTE e filtre fora dela:</p>
+
+<pre class="file" data-file="filtrar.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+),
+com_media AS (
+  SELECT mes, vendas, ROUND(AVG(vendas) OVER (), 2) AS media
+  FROM mensal
+)
+SELECT mes, vendas, media
+FROM com_media
+WHERE vendas &gt; media;
+</pre>
+
+<p>Cinco meses de 2025 ficaram acima da média de R$ 455,38. A CTE <code>com_media</code> já tem a média pronta como coluna comum, e aí o <code>WHERE</code> funciona.</p>
+
+<div class="note">
+<strong>O que vem nas próximas aulas</strong>
+<p>Até aqui a janela foi sempre o resultado inteiro (ou o pedaço dele até a linha atual). Em <a href="partition-by.html">PARTITION BY</a> você vai dividir a janela em grupos, como "a média <strong>da categoria</strong> de cada produto". E existem funções que só funcionam como janela: <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a> numeram e fazem rankings; <a href="lag-lead.html">LAG e LEAD</a> espiam a linha anterior e a seguinte.</p>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer a mesma coisa</h2>
+<p>Antes das funções de janela, o total acumulado se fazia com uma <strong>subconsulta correlacionada</strong> (aula <a href="subconsultas.html">Subconsultas</a>): para cada mês, somar os meses até ele.</p>
+
+<pre class="file" data-file="correlacionada.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT m.mes,
+       m.vendas,
+       (SELECT ROUND(SUM(m2.vendas), 2)
+        FROM mensal AS m2
+        WHERE m2.mes &lt;= m.mes) AS acumulado
+FROM mensal AS m
+ORDER BY m.mes;
+</pre>
+
+<p>O resultado é igual ao da seção 2. Mas a subconsulta roda uma vez <strong>para cada linha</strong>, e relê as linhas anteriores toda vez: com 12 meses não se nota; com 100 mil pedidos, faz diferença. E a média móvel de 3 meses, com subconsulta, fica bem mais difícil de escrever.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Um resumo, uma linha por grupo</td><td>Agregação com <code>GROUP BY</code></td></tr>
+<tr><td>Cada linha <strong>e</strong> a média/total do conjunto ao lado</td><td><code>AVG(…) OVER ()</code>, <code>SUM(…) OVER ()</code></td></tr>
+<tr><td>Total acumulado</td><td><code>SUM(…) OVER (ORDER BY … )</code>, com <code>ORDER BY</code> único ou <code>ROWS</code></td></tr>
+<tr><td>Média móvel, soma das últimas N linhas</td><td><code>OVER (ORDER BY … ROWS BETWEEN N PRECEDING AND CURRENT ROW)</code></td></tr>
+<tr><td>Num SQLite antigo (antes da 3.25), sem janelas</td><td>Subconsulta correlacionada</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Janela no WHERE</strong>
+<pre class="file" data-file="erro-where.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; AVG(preco) OVER ();
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of window function AVG()</code>, "uso indevido da função de janela AVG()". O <code>WHERE</code> roda antes das janelas existirem.</p>
+<p><strong>Como consertar:</strong> calcule a janela numa CTE e filtre no comando de fora, como na seção 6.</p>
+</div>
+
+<div class="cenario">
+<strong>Filtrar pelo apelido da janela no HAVING</strong>
+<pre class="file" data-file="erro-having.sql" data-resultado data-erro>SELECT categoria_id, AVG(preco) OVER () AS media
+FROM produtos
+GROUP BY categoria_id
+HAVING media &gt; 50;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aliased window function media</code>, "uso indevido da função de janela com apelido media". O <code>HAVING</code> também roda antes das janelas; o apelido aponta para uma conta que ainda não foi feita.</p>
+<p><strong>Como consertar:</strong> o mesmo da anterior: CTE primeiro, filtro depois.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas errado: <code>OVER</code> sem parênteses</strong>
+<p>A Ana esqueceu os parênteses vazios:</p>
+<pre class="file" data-file="sem-parenteses.sql" data-resultado>SELECT nome, AVG(preco) OVER
+FROM produtos;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, mas veio <strong>uma linha só</strong>, e a coluna se chama <code>OVER</code>! Sem os parênteses, o SQLite entendeu <code>OVER</code> como um <strong>apelido</strong> (como em <code>AVG(preco) AS OVER</code>), e o <code>AVG</code> virou uma agregação comum, que junta tudo numa linha. O nome que apareceu ao lado é o de um produto qualquer.</p>
+<p><strong>Como consertar:</strong> <code>OVER ()</code>, com os parênteses, mesmo vazios. Se o cabeçalho de uma coluna aparecer como <code>OVER</code>, foi isso.</p>
+</div>
+
+<div class="cenario">
+<strong>Moldura de trás para frente</strong>
+<pre class="file" data-file="erro-moldura.sql" data-resultado data-erro>SELECT nome,
+       SUM(preco) OVER (ORDER BY preco
+                        ROWS BETWEEN CURRENT ROW AND 2 PRECEDING) AS soma
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>unsupported frame specification</code>, "especificação de moldura não suportada". O começo da moldura (<code>CURRENT ROW</code>) veio depois do fim (<code>2 PRECEDING</code>).</p>
+<p><strong>Como consertar:</strong> o que vem antes primeiro: <code>ROWS BETWEEN 2 PRECEDING AND CURRENT ROW</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>RANGE</code> com número e duas colunas no ORDER BY</strong>
+<pre class="file" data-file="erro-range.sql" data-resultado data-erro>SELECT nome,
+       SUM(preco) OVER (ORDER BY categoria_id, preco
+                        RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) AS soma
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>RANGE with offset PRECEDING/FOLLOWING requires one ORDER BY expression</code>, "RANGE com deslocamento PRECEDING/FOLLOWING exige uma expressão só no ORDER BY". <code>RANGE 2 PRECEDING</code> quer dizer "valores até 2 a menos que o atual", e isso só tem sentido com uma coluna para comparar.</p>
+<p><strong>Como consertar:</strong> se você queria "as 2 linhas anteriores", use <code>ROWS</code>. <code>RANGE</code> com número é para faixas de <strong>valor</strong>, com um <code>ORDER BY</code> de uma coluna só.</p>
+</div>
+
+<div class="cenario">
+<strong>Contador acumulado que "pula" números</strong>
+<p>É a surpresa da seção 4: um <code>COUNT(*) OVER (ORDER BY mes)</code> que dá 2, 2, 5, 5, 5. Não há mensagem de erro; a causa é o empate no <code>ORDER BY</code> com a moldura padrão <code>RANGE</code>.</p>
+<p><strong>Como consertar:</strong> desempate o <code>ORDER BY</code> (<code>ORDER BY mes, id</code>) ou use <code>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li>As funções de janela são do padrão SQL e existem com a mesma escrita no <strong>PostgreSQL</strong>, no <strong>SQL Server</strong> e no <strong>MySQL</strong> (a partir da 8.0). A moldura padrão com <code>ORDER BY</code> também é a mesma: <code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code>. A surpresa dos empates acontece em todos eles.</li>
+  <li>O PostgreSQL também só aceita janelas na lista do <code>SELECT</code> e no <code>ORDER BY</code>.</li>
+  <li><strong>SQL Server</strong>: <code>ROWS</code> e <code>RANGE</code> existem desde a versão 2012, e o <code>RANGE</code> <strong>não</strong> aceita números (<code>RANGE 2 PRECEDING</code> não vale lá; só <code>UNBOUNDED</code> e <code>CURRENT ROW</code>). Para "as N linhas anteriores", use <code>ROWS</code>, que funciona igual em todos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>AVG(x) OVER ()</code></td><td>A média de todas as linhas, ao lado de cada linha</td></tr>
+<tr><td><code>SUM(x) OVER (ORDER BY y)</code></td><td>Total acumulado na ordem de <code>y</code> (empates entram juntos)</td></tr>
+<tr><td><code>… OVER (ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)</code></td><td>Acumulado linha a linha, sem juntar empates</td></tr>
+<tr><td><code>AVG(x) OVER (ORDER BY y ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)</code></td><td>Média móvel de 3 linhas</td></tr>
+<tr><td><code>… ROWS BETWEEN 1 PRECEDING AND 1 FOLLOWING</code></td><td>A linha, a anterior e a seguinte</td></tr>
+<tr><td><code>… ROWS BETWEEN CURRENT ROW AND UNBOUNDED FOLLOWING</code></td><td>Da linha atual até o fim</td></tr>
+<tr><td><code>WINDOW w AS (…)</code> … <code>OVER w</code></td><td>Janela com nome, reaproveitada</td></tr>
+<tr><td>Moldura padrão com <code>ORDER BY</code></td><td><code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code></td></tr>
+<tr><td>Moldura padrão sem <code>ORDER BY</code></td><td>Todas as linhas (todas são pares)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of window function AVG()</code></td><td>Janela no <code>WHERE</code> (ou em outro lugar proibido)</td></tr>
+<tr><td><code>misuse of aliased window function media</code></td><td>O apelido de uma janela usado no <code>HAVING</code></td></tr>
+<tr><td><code>unsupported frame specification</code></td><td>Moldura com o começo depois do fim</td></tr>
+<tr><td><code>RANGE with offset PRECEDING/FOLLOWING requires one ORDER BY expression</code></td><td><code>RANGE</code> com número exige um <code>ORDER BY</code> de uma coluna</td></tr>
+<tr><td>(coluna chamada <code>OVER</code>, uma linha só)</td><td>Faltaram os parênteses: <code>OVER ()</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra da janela</h3>
+<p>Complete para mostrar o preço de cada produto e, ao lado, o preço máximo de todos:</p>
+<div class="ex-code">SELECT nome, preco, MAX(preco) <input data-answer="OVER ()|over ()|OVER()|over()" aria-label="janela"> AS maximo FROM produtos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A média móvel</h3>
+<p>Complete a moldura para a média da linha atual e das <strong>três</strong> anteriores:</p>
+<div class="ex-code">AVG(vendas) OVER (ORDER BY mes ROWS BETWEEN <input data-answer="3" aria-label="número"> PRECEDING AND <input data-answer="CURRENT ROW|current row" aria-label="fim da moldura">)</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é a diferença entre <code>SELECT AVG(preco) FROM produtos</code> e <code>SELECT nome, AVG(preco) OVER () FROM produtos</code>?</p>
+<label><input type="radio" name="q3"> Nenhuma: as duas devolvem uma linha</label>
+<label><input type="radio" name="q3"> A primeira devolve 1 linha; a segunda devolve as 45, cada uma com a média ao lado</label>
+<label><input type="radio" name="q3"> A segunda dá erro, porque falta o <code>GROUP BY</code></label>
+<label><input type="radio" name="q3"> A segunda calcula uma média diferente para cada produto</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Um <code>COUNT(*) OVER (ORDER BY mes)</code> deu 2, 2, 5, 5, 5. Por quê?</p>
+<label><input type="radio" name="q4"> É um defeito do SQLite</label>
+<label><input type="radio" name="q4"> Faltou o <code>GROUP BY mes</code></label>
+<label><input type="radio" name="q4"> A moldura padrão é <code>RANGE</code>, e os pedidos do mesmo mês são pares: cada um enxerga todos os do seu mês</label>
+<label><input type="radio" name="q4"> O <code>COUNT(*)</code> conta os meses, não os pedidos</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A Ana escreveu <code>WHERE vendas &gt; AVG(vendas) OVER ()</code> e recebeu <code>misuse of window function AVG()</code>. O que ela deve fazer?</p>
+<label><input type="radio" name="q5"> Calcular a média numa CTE (como coluna) e filtrar no comando de fora</label>
+<label><input type="radio" name="q5"> Trocar <code>OVER ()</code> por <code>OVER</code></label>
+<label><input type="radio" name="q5"> Trocar o <code>WHERE</code> por <code>ORDER BY</code></label>
+<label><input type="radio" name="q5"> Colocar a janela entre aspas</label>
+</div>
+
+<h3>Missão final: quanto falta para o mais caro</h3>
+
+<div class="trysql" data-goal="colunas:nome,preco,falta;;linhas:5;;contem:Carrinho de Fricção|18.6|61.39">
+<p class="try-task"><strong>Missão:</strong> para cada brinquedo (categoria 5), mostre <code>nome</code>, <code>preco</code> e a coluna <code>falta</code>: quanto falta para ele chegar ao preço do brinquedo <strong>mais caro</strong>, arredondado a 2 casas. Use <code>MAX(preco) OVER ()</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE categoria_id = 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome,
+       preco,
+       ROUND(MAX(preco) OVER () - preco, 2) AS falta
+FROM produtos
+WHERE categoria_id = 5
+ORDER BY falta;
+</pre>
+</div>
+
+<p>O Jogo de Tabuleiro Trilha Mística é o mais caro, então a <code>falta</code> dele é 0.0. Repare que o <code>WHERE</code> deixou só os brinquedos, e o <code>MAX</code> da janela foi o deles, não o da loja inteira.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>função de janela</strong> é uma conta sobre um conjunto de linhas que devolve a resposta <strong>em cada linha</strong>, sem juntar nada. Qualquer agregada vira janela com <code>OVER</code>.</li>
+  <li><code>OVER ()</code>: a janela é o resultado inteiro (depois do <code>WHERE</code>). Bom para média, total e porcentagem ao lado de cada linha.</li>
+  <li><code>OVER (ORDER BY …)</code>: a janela vai do começo até a linha atual, o <strong>total acumulado</strong>.</li>
+  <li><code>ROWS BETWEEN … AND …</code> escolhe a moldura linha a linha: <code>2 PRECEDING AND CURRENT ROW</code> é a média móvel de 3.</li>
+  <li>A moldura padrão é <code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code>: linhas empatadas no <code>ORDER BY</code> entram juntas. Desempate (<code>…, id</code>) ou use <code>ROWS</code>.</li>
+  <li>Janelas só na lista do <code>SELECT</code> e no <code>ORDER BY</code>. Para filtrar por elas, CTE primeiro. E não esqueça os parênteses: <code>OVER ()</code>.</li>
+  <li>Próxima aula: numerar e fazer rankings com <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
