@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL LIMIT e OFFSET — só as primeiras linhas e paginação | Guia SQL</title>
+<meta name="description" content="LIMIT e OFFSET para quem nunca mexeu num banco de dados: pegar só as primeiras linhas, os 3 mais caros, o mais recente, paginação de resultados, empates, por que usar sempre com ORDER BY e as formas TOP e FETCH FIRST dos outros bancos, com as mensagens de erro reais do SQLite e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">LIMIT e OFFSET</span></h1>
+
+<p class="intro">A Loja Aurora tem 45 produtos, 30 clientes e 90 pedidos. Uma loja de verdade tem milhares. Muitas vezes você não quer a lista inteira: quer só os <strong>3 produtos mais caros</strong>, o <strong>pedido mais recente</strong>, ou a <strong>página 2</strong> da vitrine do site, com 10 produtos por página. Para isso existem o <code>LIMIT</code> ("limite"), que diz quantas linhas você quer, e o <code>OFFSET</code> ("deslocamento"), que diz quantas linhas pular antes de começar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Pegar só as primeiras N linhas com <code>LIMIT</code>.</li>
+  <li>Por que o <code>LIMIT</code> quase sempre anda junto com o <code>ORDER BY</code>.</li>
+  <li>Pular linhas com <code>OFFSET</code> e montar a <strong>paginação</strong> de uma lista.</li>
+  <li>O que acontece com <strong>empates</strong> na última posição, e como desempatar.</li>
+  <li>A forma curta <code>LIMIT 10, 3</code> e por que ela confunde.</li>
+  <li>Como os outros bancos fazem a mesma coisa: <code>TOP</code> (SQL Server) e <code>FETCH FIRST</code> (o padrão SQL, PostgreSQL e Oracle).</li>
+</ul>
+</div>
+
+<p>Antes desta aula, veja <a href="order-by.html">ORDER BY</a>: as duas coisas trabalham juntas o tempo todo. Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: o pódio</h2>
+<p>Numa corrida, todo mundo cruza a linha de chegada, mas o pódio tem só 3 lugares. Para montar o pódio, você precisa de duas coisas, nesta ordem:</p>
+
+<ol class="passo">
+  <li><strong>Arrumar</strong> os corredores pelo tempo de chegada (é o <code>ORDER BY</code>).</li>
+  <li><strong>Cortar</strong> a lista depois do 3º (é o <code>LIMIT 3</code>).</li>
+</ol>
+
+<p>Cortar sem arrumar antes não faz sentido: você pegaria "três corredores quaisquer". É exatamente o que acontece com um <code>LIMIT</code> sem <code>ORDER BY</code>, como você vai ver na seção 2.</p>
+
+<hr>
+
+<h2>1. O primeiro LIMIT: os 3 mais caros</h2>
+
+<pre class="file" data-file="podio.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>ORDER BY preco DESC</dt><dd>Arruma os 45 produtos do mais caro para o mais barato.</dd>
+  <dt>LIMIT</dt><dd>"Limite": quantas linhas, no máximo, o resultado pode ter. Vem <strong>depois</strong> do <code>ORDER BY</code>, no fim de tudo.</dd>
+  <dt>3</dt><dd>O número de linhas. O SQLite entrega as 3 primeiras da lista já arrumada e para.</dd>
+</dl>
+
+<p>O pódio da Loja Aurora: o Jogo de Panelas (249.9), a Caixa de Som (189.99) e o Fone de Ouvido (129.9).</p>
+
+<p>Trocando o sentido da ordem, o mesmo <code>LIMIT</code> dá o contrário. E com <code>LIMIT 1</code> você pega "o mais" alguma coisa: o pedido mais recente da loja é o primeiro da lista arrumada pela data, de trás para a frente:</p>
+
+<pre class="file" data-file="mais-recente.sql" data-resultado>SELECT id, cliente_id, data, frete
+FROM pedidos
+ORDER BY data DESC
+LIMIT 1;
+</pre>
+
+<p>O pedido 90, de 14 de outubro de 2026.</p>
+
+<div class="trysql" data-goal="linhas:5;;out:^Lápis Grafite HB">
+<p class="try-task"><strong>Experimente:</strong> a consulta abaixo lista todos os produtos do mais barato para o mais caro. Acrescente um <code>LIMIT</code> para mostrar só os <strong>5 mais baratos</strong>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+ORDER BY preco;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+ORDER BY preco
+LIMIT 5;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. LIMIT sem ORDER BY: "quaisquer três"</h2>
+<p>O <code>LIMIT</code> funciona sozinho, sem erro nenhum:</p>
+
+<pre class="file" data-file="sem-ordem.sql" data-resultado>SELECT nome, preco
+FROM produtos
+LIMIT 3;
+</pre>
+
+<p>Vieram o Caderno, a Caneta e o Lápis: os 3 primeiros na ordem em que estão guardados. Isso serve para <strong>espiar</strong> uma tabela ("me mostre umas linhas para eu ver como ela é"). Mas não responda nenhuma pergunta com isso: sem <code>ORDER BY</code>, o banco não promete ordem nenhuma, e "os 3 primeiros" pode mudar de um dia para o outro. A documentação do PostgreSQL avisa que, sem <code>ORDER BY</code>, a mesma consulta com <code>LIMIT</code> pode até devolver linhas diferentes cada vez que roda.</p>
+
+<div class="tip">
+<strong>Regra prática</strong>
+<p>Viu um <code>LIMIT</code>, procure o <code>ORDER BY</code>. Se ele não estiver lá, a consulta responde "quaisquer N linhas", e quase nunca é isso que se quer.</p>
+</div>
+
+<hr>
+
+<h2>3. OFFSET: pular linhas</h2>
+<p>O <code>OFFSET</code> manda o SQLite <strong>pular</strong> algumas linhas antes de começar a entregar. Quem é o funcionário com o <strong>segundo</strong> maior salário?</p>
+
+<pre class="file" data-file="segundo.sql" data-resultado>SELECT nome, salario
+FROM funcionarios
+ORDER BY salario DESC
+LIMIT 1 OFFSET 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>ORDER BY salario DESC</dt><dd>Arruma do maior salário para o menor: Marta, Luana, Renata…</dd>
+  <dt>OFFSET 1</dt><dd>Pula 1 linha (a Marta, que tem o maior).</dd>
+  <dt>LIMIT 1</dt><dd>Depois de pular, entrega 1 linha: a Luana Castelo, com 5400.25.</dd>
+</dl>
+
+<p>Repare: o SQLite <strong>primeiro pula</strong>, depois conta. <code>OFFSET 1</code> quer dizer "comece pela 2ª linha"; <code>OFFSET 0</code> é o mesmo que não ter <code>OFFSET</code>.</p>
+
+<hr>
+
+<h2>4. Paginação: a vitrine em páginas</h2>
+<p>O site da loja mostra os produtos em páginas de 10. Com os 45 produtos ordenados por <code>id</code>, a página 1 são os 10 primeiros:</p>
+
+<pre class="file" data-file="pagina1.sql" data-resultado>SELECT id, nome
+FROM produtos
+ORDER BY id
+LIMIT 10;
+</pre>
+
+<p>A página 2 pula os 10 da página 1 e pega os 10 seguintes:</p>
+
+<pre class="file" data-file="pagina2.sql" data-resultado>SELECT id, nome
+FROM produtos
+ORDER BY id
+LIMIT 10 OFFSET 10;
+</pre>
+
+<p>A conta de cada página é sempre a mesma:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Página</th><th>OFFSET = (página − 1) × 10</th><th>SQL</th><th>Produtos</th></tr>
+<tr><td>1</td><td>0</td><td><code>LIMIT 10 OFFSET 0</code></td><td>ids 1 a 10</td></tr>
+<tr><td>2</td><td>10</td><td><code>LIMIT 10 OFFSET 10</code></td><td>ids 11 a 20</td></tr>
+<tr><td>3</td><td>20</td><td><code>LIMIT 10 OFFSET 20</code></td><td>ids 21 a 30</td></tr>
+<tr><td>4</td><td>30</td><td><code>LIMIT 10 OFFSET 30</code></td><td>ids 31 a 40</td></tr>
+<tr><td>5</td><td>40</td><td><code>LIMIT 10 OFFSET 40</code></td><td>ids 41 a 45 (só 5)</td></tr>
+<tr><td>6</td><td>50</td><td><code>LIMIT 10 OFFSET 50</code></td><td>nenhum (0 linhas)</td></tr>
+</table>
+</div>
+
+<p>A última página tem só 5 produtos, e isso não é erro: o <code>LIMIT</code> é um <strong>máximo</strong>. Se sobrarem menos linhas, vêm as que sobraram. Veja a página 5:</p>
+
+<pre class="file" data-file="pagina5.sql" data-resultado>SELECT id, nome
+FROM produtos
+ORDER BY id
+LIMIT 10 OFFSET 40;
+</pre>
+
+<p>E se o <code>OFFSET</code> pular tudo (página 6, <code>OFFSET 50</code>), o resultado vem vazio, também sem erro. É assim que um site sabe que "não há mais páginas".</p>
+
+<div class="trysql" data-goal="linhas:5;;out:^Gustavo Henrique Prado">
+<p class="try-task"><strong>Missão:</strong> a lista de clientes em ordem alfabética tem páginas de <strong>5</strong> clientes. A consulta abaixo mostra a página 1. Mude-a para mostrar a <strong>página 3</strong>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+ORDER BY nome
+LIMIT 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+ORDER BY nome
+LIMIT 5 OFFSET 10;
+</pre>
+</div>
+
+<div class="warning">
+<strong>Ordene por algo que não se repete</strong>
+<p>Na paginação, ordene por uma coluna (ou combinação de colunas) que <strong>não tem valores repetidos</strong>, como o <code>id</code>. Se várias linhas empatam no <code>ORDER BY</code>, a ordem entre elas não é garantida, e uma linha pode aparecer em duas páginas, ou em nenhuma. A documentação do SQL Server faz o mesmo alerta para a paginação dele. Veja os empates na próxima seção.</p>
+</div>
+
+<hr>
+
+<h2>5. Empates no último lugar</h2>
+<p>A Ana quer os 7 produtos com mais unidades no estoque:</p>
+
+<pre class="file" data-file="top7.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+ORDER BY estoque DESC
+LIMIT 7;
+</pre>
+
+<p>O 7º lugar é o Cabo HDMI, com 95. Mas a Garrafa Squeeze <strong>também</strong> tem 95 unidades, e ficou de fora. O <code>LIMIT</code> não sabe de empates: ele corta na 7ª linha e pronto. E qual dos dois empatados fica com o 7º lugar? Sem um desempate, quem decide é o banco.</p>
+
+<p>Duas saídas:</p>
+<ul>
+  <li><strong>Desempatar</strong> com uma segunda coluna no <code>ORDER BY</code>, para que o resultado seja sempre o mesmo: <code>ORDER BY estoque DESC, nome</code> (empatou no estoque, vai o nome em ordem alfabética).</li>
+  <li><strong>Incluir os empatados</strong>: veja quantos são e aumente o limite. Com <code>LIMIT 8</code>, os dois de 95 entram:</li>
+</ul>
+
+<pre class="file" data-file="top8.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+ORDER BY estoque DESC, nome
+LIMIT 8;
+</pre>
+
+<p>Alguns bancos têm um recurso pronto para "trazer também os empatados" (<code>WITH TIES</code>, em <a href="#outros">Nos outros bancos</a>). O SQLite não tem.</p>
+
+<hr>
+
+<h2>6. LIMIT e os valores vazios</h2>
+<p>Quem é o cliente mais velho? A primeira ideia é ordenar pelo nascimento e pegar 1:</p>
+
+<pre class="file" data-file="mais-velho.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento
+LIMIT 1;
+</pre>
+
+<p>Veio o Antônio Carlos Neves, que <strong>não tem</strong> data de nascimento. Lembra da aula de <a href="order-by.html">ORDER BY</a>? No SQLite, o <code>NULL</code> vem primeiro na ordem crescente. O <code>LIMIT 1</code> pegou exatamente esse vazio. Mande os vazios para o fim e pergunte de novo:</p>
+
+<pre class="file" data-file="mais-velho-certo.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento NULLS LAST
+LIMIT 1;
+</pre>
+
+<p>Agora sim: a Conceição Prado, de 1965.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de escrever</h2>
+<p>O SQLite aceita uma forma curta, com vírgula: <code>LIMIT pular, quantos</code>. Ela também existe no MySQL. Mas cuidado com a ordem dos números:</p>
+
+<pre class="file" data-file="virgula.sql" data-resultado>SELECT id, nome
+FROM produtos
+ORDER BY id
+LIMIT 10, 3;
+</pre>
+
+<p>Vieram 3 produtos (ids 11, 12 e 13), depois de pular 10. Na forma com vírgula, o <strong>primeiro</strong> número é o que se pula e o <strong>segundo</strong> é quantos vêm, o contrário da ordem em que você lê <code>LIMIT 3 OFFSET 10</code>. É fácil trocar os dois sem perceber.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Pula</th><th>Entrega</th><th>Observação</th></tr>
+<tr><td><code>LIMIT 3 OFFSET 10</code></td><td>10</td><td>3</td><td>A mais clara: cada número tem nome</td></tr>
+<tr><td><code>LIMIT 10, 3</code></td><td>10</td><td>3</td><td>Curta, mas os números ficam "ao contrário"</td></tr>
+<tr><td><code>LIMIT 3</code></td><td>0</td><td>3</td><td>Sem <code>OFFSET</code>: começa da primeira</td></tr>
+<tr><td><code>LIMIT 0</code></td><td>—</td><td>0</td><td>Nenhuma linha (só os nomes das colunas)</td></tr>
+<tr><td><code>LIMIT -1</code></td><td>—</td><td>todas</td><td>No SQLite, um número negativo quer dizer "sem limite"</td></tr>
+<tr><td><code>LIMIT 2 * 3</code></td><td>0</td><td>6</td><td>Aceita uma conta, desde que dê um número inteiro</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>"Os N maiores / menores / mais recentes"</td><td><code>ORDER BY … LIMIT N</code></td></tr>
+<tr><td>"O 2º, o 3º…"</td><td><code>ORDER BY … LIMIT 1 OFFSET N</code></td></tr>
+<tr><td>Paginação</td><td><code>ORDER BY id LIMIT tamanho OFFSET (página − 1) × tamanho</code></td></tr>
+<tr><td>Só espiar a tabela</td><td><code>LIMIT 5</code> sem <code>ORDER BY</code> serve</td></tr>
+<tr><td>SQL que precisa rodar em outros bancos</td><td><code>LIMIT … OFFSET …</code> (SQLite, MySQL, PostgreSQL) ou <code>OFFSET … FETCH</code> (padrão; veja abaixo)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>LIMIT antes do ORDER BY</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos LIMIT 3 ORDER BY preco;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ORDER": syntax error</code>. A ordem das partes é fixa, e o <code>LIMIT</code> é a <strong>última</strong>: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code> → <code>LIMIT</code>. Faz sentido: primeiro arruma, depois corta.</p>
+<p><strong>Como consertar:</strong> <code>… ORDER BY preco LIMIT 3;</code></p>
+</div>
+
+<div class="cenario">
+<strong>OFFSET sem LIMIT</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos OFFSET 5;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "5": syntax error</code>. No SQLite, o <code>OFFSET</code> só existe <strong>dentro</strong> de um <code>LIMIT</code>. Sem o <code>LIMIT</code>, a palavra <code>OFFSET</code> é lida como um apelido para a tabela, e o SQLite tropeça no 5.</p>
+<p><strong>Como consertar:</strong> para "pular 5 e trazer o resto", use <code>LIMIT -1 OFFSET 5</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um número que não é inteiro</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER BY preco LIMIT 2.5;
+</pre>
+<p><strong>A mensagem:</strong> <code>datatype mismatch</code>, "tipo de dado não confere". O <code>LIMIT</code> conta linhas, e não existe meia linha. O mesmo erro aparece com um texto, como <code>LIMIT 'tres'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou o TOP do SQL Server</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT TOP 3 nome, preco FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "3": syntax error</code>. O SQLite não conhece o <code>TOP</code>; ele acha que <code>TOP</code> é o nome de uma coluna e não entende o 3 logo depois. Quem aprendeu SQL no SQL Server tropeça muito nisso.</p>
+<p><strong>Como consertar:</strong> no SQLite, <code>SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 3;</code></p>
+</div>
+
+<div class="cenario">
+<strong>O FETCH FIRST do padrão</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome, preco FROM produtos ORDER BY preco FETCH FIRST 3 ROWS ONLY;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "FETCH": syntax error</code>. O <code>FETCH FIRST</code> é a forma do padrão SQL, mas o SQLite não a implementa. Aqui, só <code>LIMIT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas a resposta errada</strong>
+<p>Dois casos desta aula não dão mensagem nenhuma e mesmo assim trazem a resposta errada:</p>
+<ul>
+  <li><code>LIMIT</code> <strong>sem</strong> <code>ORDER BY</code> (seção 2): você recebe linhas quaisquer.</li>
+  <li><code>ORDER BY nascimento LIMIT 1</code> com uma coluna que tem <code>NULL</code> (seção 6): você recebe o vazio no lugar do "mais velho".</li>
+</ul>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<p>O <code>LIMIT</code> <strong>não</strong> faz parte do padrão SQL: a documentação do PostgreSQL o chama de sintaxe própria dele, "também usada pelo MySQL". O padrão (desde o SQL:2008) é o <code>OFFSET … FETCH</code>. Cada banco escolheu o seu:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Os 3 mais caros</th><th>Página 2 (10 por página)</th></tr>
+<tr><td>SQLite, MySQL, MariaDB</td><td><code>ORDER BY preco DESC LIMIT 3</code></td><td><code>ORDER BY id LIMIT 10 OFFSET 10</code></td></tr>
+<tr><td>PostgreSQL</td><td><code>LIMIT 3</code> ou <code>FETCH FIRST 3 ROWS ONLY</code></td><td><code>LIMIT 10 OFFSET 10</code> ou <code>OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY</code></td></tr>
+<tr><td>Oracle (12c em diante)</td><td><code>FETCH FIRST 3 ROWS ONLY</code></td><td><code>OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY</code></td></tr>
+<tr><td>SQL Server</td><td><code>SELECT TOP (3) …</code></td><td><code>OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY</code> (exige <code>ORDER BY</code>)</td></tr>
+</table>
+</div>
+<p>Ilustrativo (não roda no SQLite):</p>
+<pre class="file" data-file="sqlserver.sql">-- SQL Server: o TOP vem logo depois do SELECT
+SELECT TOP (3) nome, preco
+FROM produtos
+ORDER BY preco DESC;
+
+-- SQL Server: página 2, com OFFSET e FETCH no fim do ORDER BY
+SELECT id, nome
+FROM produtos
+ORDER BY id
+OFFSET 10 ROWS FETCH NEXT 10 ROWS ONLY;
+</pre>
+<pre class="file" data-file="padrao.sql">-- Padrão SQL (PostgreSQL, Oracle 12c+)
+SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+FETCH FIRST 3 ROWS ONLY;
+
+-- Com WITH TIES, os empatados no último lugar também vêm
+SELECT nome, estoque
+FROM produtos
+ORDER BY estoque DESC
+FETCH FIRST 7 ROWS WITH TIES;
+</pre>
+<p>As palavras <code>FIRST</code>/<code>NEXT</code> e <code>ROW</code>/<code>ROWS</code> são sinônimas, só para a frase ficar natural em inglês ("pegue as próximas 10 linhas apenas"). O <code>WITH TIES</code> existe no PostgreSQL, no Oracle e no SQL Server (<code>TOP (7) WITH TIES</code>), e sempre exige <code>ORDER BY</code>. Nos bancos Oracle antigos, antes do 12c, usava-se a pseudo-coluna <code>ROWNUM</code>; você vai vê-la em código legado.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>LIMIT n</code></td><td>No máximo <code>n</code> linhas</td></tr>
+<tr><td><code>LIMIT n OFFSET p</code></td><td>Pula <code>p</code> linhas e entrega no máximo <code>n</code></td></tr>
+<tr><td><code>LIMIT p, n</code></td><td>O mesmo, na forma curta (atenção à ordem)</td></tr>
+<tr><td><code>LIMIT -1 OFFSET p</code></td><td>Pula <code>p</code> e entrega todo o resto</td></tr>
+<tr><td><code>ORDER BY … LIMIT 1</code></td><td>"O mais…" (caro, recente, velho)</td></tr>
+<tr><td>Página <em>k</em> com <em>t</em> por página</td><td><code>LIMIT t OFFSET (k − 1) × t</code></td></tr>
+<tr><td>Ordem das partes</td><td><code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code> → <code>LIMIT</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "ORDER": syntax error</code></td><td><code>LIMIT</code> antes do <code>ORDER BY</code></td></tr>
+<tr><td><code>near "5": syntax error</code> (em <code>OFFSET 5</code>)</td><td><code>OFFSET</code> sem <code>LIMIT</code></td></tr>
+<tr><td><code>datatype mismatch</code></td><td><code>LIMIT</code> com um número quebrado ou com texto</td></tr>
+<tr><td><code>near "3": syntax error</code> (em <code>TOP 3</code>)</td><td>O <code>TOP</code> do SQL Server não existe no SQLite</td></tr>
+<tr><td><code>near "FETCH": syntax error</code></td><td>O <code>FETCH FIRST</code> do padrão não existe no SQLite</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os 10 primeiros</h3>
+<p>Complete para trazer só 10 produtos:</p>
+<div class="ex-code">SELECT nome FROM produtos ORDER BY nome <input data-answer="LIMIT" aria-label="palavra"> 10;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A conta da paginação</h3>
+<p>Com 20 produtos por página, qual é o <code>OFFSET</code> da página 4?</p>
+<div class="ex-code">LIMIT 20 OFFSET <input data-answer="60" aria-label="offset"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Quantas linhas <code>LIMIT 10 OFFSET 40</code> devolve numa tabela com 45 linhas?</p>
+<label><input type="radio" name="q3"> 10</label>
+<label><input type="radio" name="q3"> 0, porque não há 10 linhas sobrando</label>
+<label><input type="radio" name="q3"> 5</label>
+<label><input type="radio" name="q3"> Dá erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que <code>LIMIT 10, 3</code> faz no SQLite?</p>
+<label><input type="radio" name="q4"> Pula 3 linhas e entrega 10</label>
+<label><input type="radio" name="q4"> Pula 10 linhas e entrega 3</label>
+<label><input type="radio" name="q4"> Entrega as linhas de 3 a 10</label>
+<label><input type="radio" name="q4"> Dá erro de sintaxe</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana escreveu <code>SELECT nome FROM produtos LIMIT 3;</code> para descobrir os 3 produtos mais vendidos. O que está errado?</p>
+<label><input type="radio" name="q5"> Nada, o <code>LIMIT 3</code> já traz os 3 mais vendidos</label>
+<label><input type="radio" name="q5"> Faltou o <code>OFFSET 0</code></label>
+<label><input type="radio" name="q5"> O <code>LIMIT</code> deveria vir antes do <code>FROM</code></label>
+<label><input type="radio" name="q5"> Sem <code>ORDER BY</code>, vêm 3 produtos quaisquer</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. No SQL Server, qual é o equivalente de <code>ORDER BY preco DESC LIMIT 3</code>?</p>
+<label><input type="radio" name="q6"> <code>SELECT TOP (3) … ORDER BY preco DESC</code></label>
+<label><input type="radio" name="q6"> <code>… ORDER BY preco DESC LIMIT 3</code>, igual</label>
+<label><input type="radio" name="q6"> <code>… ORDER BY preco DESC ROWNUM 3</code></label>
+<label><input type="radio" name="q6"> <code>… WHERE TOP = 3</code></label>
+</div>
+
+<h3>Missão final: a página 2 da vitrine</h3>
+
+<div class="trysql" data-goal="linhas:4;;out:^Teclado Compacto">
+<p class="try-task"><strong>Missão:</strong> a vitrine do site mostra os produtos do <strong>mais caro</strong> para o mais barato, <strong>4 por página</strong>. Escreva a consulta da <strong>página 2</strong> (o primeiro produto dela é o Teclado Compacto).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 4 OFFSET 4;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>LIMIT n</code> entrega no máximo <code>n</code> linhas; <code>OFFSET p</code> pula <code>p</code> linhas antes. No SQLite, o <code>OFFSET</code> só existe junto do <code>LIMIT</code>.</li>
+  <li>O <code>LIMIT</code> é a última parte: <code>SELECT</code> → <code>FROM</code> → <code>WHERE</code> → <code>ORDER BY</code> → <code>LIMIT</code>.</li>
+  <li>Use <code>LIMIT</code> com <code>ORDER BY</code>: sem ordem, "os primeiros" são linhas quaisquer.</li>
+  <li>Paginação: <code>LIMIT tamanho OFFSET (página − 1) × tamanho</code>, ordenando por algo que não se repete (como o <code>id</code>). Faltando linhas, vem menos; passou do fim, vem vazio, sem erro.</li>
+  <li>O <code>LIMIT</code> corta empates sem avisar; desempate com uma segunda coluna no <code>ORDER BY</code>.</li>
+  <li>Cuidado com <code>NULL</code>: em <code>ORDER BY coluna LIMIT 1</code>, o vazio pode ganhar o primeiro lugar. Use <code>NULLS LAST</code>.</li>
+  <li>Nos outros bancos: <code>TOP</code> no SQL Server, <code>FETCH FIRST … ROWS ONLY</code> no padrão SQL, no PostgreSQL e no Oracle.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
