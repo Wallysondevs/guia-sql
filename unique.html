@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL UNIQUE — proibir valores repetidos | Guia SQL</title>
+<meta name="description" content="A restrição UNIQUE para quem nunca mexeu num banco de dados: impedir códigos e emails repetidos, o erro real UNIQUE constraint failed do SQLite, UNIQUE em várias colunas juntas, NULL repetido, maiúsculas com COLLATE NOCASE, CREATE UNIQUE INDEX e INSERT OR IGNORE, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">UNIQUE</span></h1>
+
+<p class="intro">A Loja Aurora vai lançar cupons de desconto: <code>AURORA10</code> dá 10%, <code>VOLTA15</code> dá 15%. O que acontece se alguém, sem querer, cadastra um segundo <code>AURORA10</code> com 20%? Na hora de usar o cupom, qual dos dois vale? Para que isso nunca aconteça, existe a restrição <code>UNIQUE</code> ("único"): numa coluna <code>UNIQUE</code>, cada valor só pode aparecer <strong>uma vez</strong>. Nesta aula você vai usá-la, vai ver o erro real do SQLite com valores repetidos e vai conhecer os casos que confundem: o <code>NULL</code> que se repete à vontade, as maiúsculas, e a regra que vale para duas colunas juntas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como escrever <code>UNIQUE</code> numa coluna, e o erro <code>UNIQUE constraint failed: tabela.coluna</code>.</li>
+  <li>O <code>UNIQUE</code> no <code>INSERT</code>, no <code>UPDATE</code> e num lote de várias linhas.</li>
+  <li><code>UNIQUE (coluna1, coluna2)</code>: quando o que não pode repetir é a <strong>combinação</strong>.</li>
+  <li>Por que vários <code>NULL</code> passam, e por que <code>'AURORA10'</code> e <code>'aurora10'</code> são diferentes (e como mudar isso com <code>COLLATE NOCASE</code>).</li>
+  <li>Como pôr a regra numa tabela que já existe (<code>CREATE UNIQUE INDEX</code>) e como lidar com a repetição sem erro (<code>INSERT OR IGNORE</code>, <code>ON CONFLICT</code>).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o número da camisa</h2>
+<p>Num time de futebol, dois jogadores podem ter o mesmo nome, a mesma idade, a mesma cidade. Mas <strong>não</strong> podem ter o mesmo número de camisa: o juiz precisa saber quem é o 10. Se o técnico tenta inscrever um segundo 10, a federação recusa a inscrição.</p>
+
+<p>Numa tabela, o <code>UNIQUE</code> é essa regra do número da camisa. Ele vale para colunas que <strong>identificam</strong> alguma coisa: o código de um cupom, o email de login de um cliente, o CPF, a placa de um carro. Nomes e cidades, ao contrário, se repetem normalmente: a Loja Aurora tem 10 clientes em Teresina.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>Pode repetir?</th><th><code>UNIQUE</code>?</th></tr>
+<tr><td>Código do cupom</td><td>Não: cada código é um cupom</td><td>Sim</td></tr>
+<tr><td>Email de login</td><td>Não: cada email é uma conta</td><td>Sim</td></tr>
+<tr><td>Nome do cliente</td><td>Sim: existem dois "José Silva"</td><td>Não</td></tr>
+<tr><td>Cidade</td><td>Sim: muitos clientes por cidade</td><td>Não</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A primeira coluna <code>UNIQUE</code></h2>
+
+<pre class="file" data-file="cupons.sql" data-resultado data-erro>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT INTO cupons VALUES ('AURORA10', 15);
+</pre>
+
+<p>O primeiro <code>INSERT</code> entrou ("1 linha afetada"). O segundo foi recusado:</p>
+
+<dl class="anatomy">
+  <dt>codigo TEXT NOT NULL UNIQUE</dt><dd>A coluna é texto, obrigatória (<a href="not-null.html">NOT NULL</a>) e única. As restrições vêm depois do tipo, em qualquer ordem.</dd>
+  <dt>UNIQUE constraint failed</dt><dd>"A restrição UNIQUE falhou": o valor já existe na coluna.</dd>
+  <dt>cupons.codigo</dt><dd>Onde: tabela <code>cupons</code>, coluna <code>codigo</code>.</dd>
+</dl>
+
+<p>Repare que a mensagem não diz <strong>qual</strong> valor repetiu. Num lote grande, você vai ter de procurar; a consulta da seção 6 ajuda. No terminal, a mesma mensagem, com <code>Runtime error:</code> e o código <code>(19)</code>, o de "restrição violada":</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE cupons (codigo TEXT NOT NULL UNIQUE, desconto REAL NOT NULL);
+sqlite&gt; INSERT INTO cupons VALUES ('AURORA10', 10);
+sqlite&gt; INSERT INTO cupons VALUES ('AURORA10', 15);
+Runtime error: UNIQUE constraint failed: cupons.codigo (19)
+sqlite&gt; .quit</pre>
+
+<div class="trysql" data-goal="erro:UNIQUE constraint failed: cupons\.codigo">
+<p class="try-task"><strong>Experimente:</strong> esta tabela aceitou dois cupons <code>VOLTA15</code> (rode e veja). Mude o <code>CREATE TABLE</code> para que o banco recuse o segundo. O erro em vermelho é a resposta certa.</p>
+<pre class="script" data-file="cupons.sql">CREATE TABLE cupons (
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('VOLTA15', 15);
+INSERT INTO cupons VALUES ('VOLTA15', 25);
+
+SELECT * FROM cupons;
+</pre>
+<pre class="solucao" data-file="cupons.sql">CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('VOLTA15', 15);
+INSERT INTO cupons VALUES ('VOLTA15', 25);
+
+SELECT * FROM cupons;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. No <code>UPDATE</code> e nos lotes</h2>
+<p>A regra vale para qualquer mudança. Um <code>UPDATE</code> que transforma o <code>VOLTA15</code> em <code>AURORA10</code> criaria uma repetição, e é recusado:</p>
+
+<pre class="file" data-file="update.sql" data-resultado data-erro>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10), ('VOLTA15', 15);
+
+UPDATE cupons SET codigo = 'AURORA10' WHERE codigo = 'VOLTA15';
+</pre>
+
+<p>E num <code>INSERT</code> de várias linhas, a repetição pode estar <strong>dentro do próprio lote</strong>. Como com o <code>NOT NULL</code>, uma linha ruim derruba o comando inteiro: nenhuma das três entra.</p>
+
+<pre class="file" data-file="lote.sql" data-resultado data-erro>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10), ('VOLTA15', 15), ('AURORA10', 20);
+</pre>
+
+<hr>
+
+<h2>3. O que conta como "igual"</h2>
+<p>Para o <code>UNIQUE</code>, dois valores são repetidos se forem <strong>iguais</strong> para o banco. E isso tem surpresas.</p>
+
+<h3>Maiúsculas, minúsculas e espaços contam</h3>
+
+<pre class="file" data-file="parecidos.sql" data-resultado>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10), ('aurora10', 15), ('AURORA10 ', 5);
+
+SELECT codigo, length(codigo) AS letras FROM cupons;
+</pre>
+
+<p>Três cupons, todos aceitos. Para os olhos é o mesmo código; para o SQLite são três textos diferentes: um em maiúsculas, um em minúsculas e um com um espaço no fim (repare nas 9 letras). Se um cliente digitar <code>aurora10</code>, qual desconto ele ganha? Para comparar textos <strong>sem ligar para maiúsculas</strong>, a coluna pode ter <code>COLLATE NOCASE</code> ("compare sem diferenciar maiúsculas"):</p>
+
+<pre class="file" data-file="nocase.sql" data-resultado data-erro>CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT INTO cupons VALUES ('aurora10', 15);
+</pre>
+
+<p>Agora <code>'aurora10'</code> conta como repetido. O <code>NOCASE</code> do SQLite só sabe igualar as letras sem acento (de A a Z): <code>'É'</code> e <code>'é'</code> continuam diferentes para ele. Para códigos como <code>AURORA10</code>, isso basta. Os espaços sobrando não são resolvidos pelo <code>NOCASE</code>: tire-os antes de gravar, com <code>trim()</code> (aula <a href="funcoes-texto.html">Funções de Texto</a>).</p>
+
+<h3>Números: <code>1</code>, <code>'1'</code> e <code>1.0</code></h3>
+<p>Numa coluna <code>INTEGER UNIQUE</code>, o texto <code>'1'</code> vira o número 1 ao entrar (é a afinidade, da aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>), e <code>1.0</code> também é igual a 1. Os três contam como repetidos:</p>
+
+<pre class="file" data-file="numeros.sql" data-resultado data-erro>CREATE TABLE senhas_fila (numero INTEGER UNIQUE);
+
+INSERT INTO senhas_fila VALUES (1), ('1');
+</pre>
+
+<h3><code>NULL</code> não é igual a nada</h3>
+<p>Lembra da aula <a href="null.html">O Valor NULL</a>? <code>NULL</code> quer dizer "não sei", e um "não sei" nunca é igual a outro "não sei". Por isso, numa coluna <code>UNIQUE</code> sem <code>NOT NULL</code>, vários <code>NULL</code> entram sem problema:</p>
+
+<pre class="file" data-file="nulos.sql" data-resultado>CREATE TABLE cupons (
+    codigo   TEXT UNIQUE,
+    desconto REAL
+);
+
+INSERT INTO cupons VALUES (NULL, 10), (NULL, 15);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Às vezes é isso que você quer: pense numa coluna <code>cpf UNIQUE</code> numa loja em que o CPF é opcional. Quem informou, informou um CPF só seu; quem não informou fica com <code>NULL</code>, e podem ser muitos. Se o valor é obrigatório, junte o <code>NOT NULL</code>, como no código do cupom.</p>
+
+<hr>
+
+<h2>4. <code>UNIQUE</code> em duas colunas juntas</h2>
+<p>A Ana quer uma regra para as avaliações: <strong>cada cliente avalia cada produto uma vez só</strong>. A cliente 5 pode avaliar vários produtos; o produto 3 pode ser avaliado por vários clientes; o que não pode é a cliente 5 avaliar o produto 3 duas vezes. Nem <code>cliente_id</code> nem <code>produto_id</code> são únicos sozinhos: o que é único é o <strong>par</strong>.</p>
+
+<p>Para isso, o <code>UNIQUE</code> vai numa linha própria, no fim da lista de colunas, com as colunas entre parênteses. É uma <strong>restrição de tabela</strong> (vale para a tabela, não para uma coluna só):</p>
+
+<pre class="file" data-file="par.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    cliente_id INTEGER NOT NULL,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    UNIQUE (cliente_id, produto_id)
+);
+
+INSERT INTO avaliacoes VALUES (1, 5, 3, 5),   -- cliente 5, produto 3
+                              (2, 5, 1, 4),   -- cliente 5, produto 1: outro produto, ok
+                              (3, 8, 3, 2);   -- cliente 8, produto 3: outro cliente, ok
+
+INSERT INTO avaliacoes VALUES (4, 5, 3, 1);   -- cliente 5, produto 3 de novo!
+</pre>
+
+<dl class="anatomy">
+  <dt>UNIQUE (cliente_id, produto_id)</dt><dd>A combinação das duas colunas não pode repetir. Vem depois da última coluna, separada por vírgula, como se fosse mais uma linha da lista.</dd>
+  <dt>3 linhas afetadas</dt><dd>O primeiro lote entrou inteiro: nenhum par se repete (5-3, 5-1, 8-3).</dd>
+  <dt>avaliacoes.cliente_id, avaliacoes.produto_id</dt><dd>A mensagem lista as <strong>duas</strong> colunas da regra: o par 5-3 já existe.</dd>
+</dl>
+
+<div class="tip">
+<strong>A Loja Aurora já tem uma regra de par</strong>
+<p>Na tabela <code>itens_pedido</code>, a mesma ideia aparece como <code>PRIMARY KEY (pedido_id, produto_id)</code>: um produto aparece uma vez só em cada pedido (se o cliente leva dois, a <code>quantidade</code> é 2). A chave primária é parente próxima do <code>UNIQUE</code>, e é o assunto da próxima aula, <a href="primary-key.html">PRIMARY KEY</a>.</p>
+</div>
+
+<div class="trysql" data-goal="mudou:avaliacoes=3;;contem:|1|u|">
+<p class="try-task"><strong>Experimente:</strong> a Ana errou a regra: pôs <code>UNIQUE</code> só no <code>cliente_id</code>, e agora a cliente 5 não consegue avaliar um segundo produto (rode e veja o erro). Troque pela regra certa, a do <strong>par</strong> cliente-produto, para que as três avaliações entrem. O <code>PRAGMA index_list</code> no fim mostra o índice que a regra cria (o <code>1</code> e o <code>u</code> dizem "único" e "veio de um <code>UNIQUE</code>").</p>
+<pre class="script" data-file="par.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    cliente_id INTEGER NOT NULL UNIQUE,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes VALUES (1, 5, 3, 5), (2, 5, 1, 4), (3, 8, 3, 2);
+
+PRAGMA index_list(avaliacoes);
+</pre>
+<pre class="solucao" data-file="par.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    cliente_id INTEGER NOT NULL,
+    produto_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    UNIQUE (cliente_id, produto_id)
+);
+
+INSERT INTO avaliacoes VALUES (1, 5, 3, 5), (2, 5, 1, 4), (3, 8, 3, 2);
+
+PRAGMA index_list(avaliacoes);
+</pre>
+</div>
+
+<p>Cuidado com a diferença: <code>cliente_id INTEGER UNIQUE, produto_id INTEGER UNIQUE</code> (um <code>UNIQUE</code> em cada coluna) são <strong>duas</strong> regras separadas, e muito mais rígidas: cada cliente avaliaria um único produto na vida, e cada produto teria uma única avaliação. <code>UNIQUE (cliente_id, produto_id)</code> é <strong>uma</strong> regra sobre o par.</p>
+
+<hr>
+
+<h2>5. Por dentro: o índice</h2>
+<p>Como o banco descobre, num piscar de olhos, se um código já existe entre milhares? Para cada <code>UNIQUE</code>, o SQLite cria sozinho um <strong>índice</strong>: uma lista ordenada dos valores da coluna, como o índice remissivo no fim de um livro (aula <a href="indices.html">Índices</a>). Ele aparece na <code>sqlite_schema</code> com um nome automático:</p>
+
+<pre class="file" data-file="indice.sql" data-resultado>CREATE TABLE cupons (codigo TEXT NOT NULL UNIQUE, desconto REAL NOT NULL);
+
+SELECT type, name, tbl_name FROM sqlite_schema WHERE tbl_name = 'cupons';
+</pre>
+
+<p>O <code>sqlite_autoindex_cupons_1</code> é o índice do <code>UNIQUE</code>: <em>autoindex</em> quer dizer "índice automático", e o <code>1</code> é por ser o primeiro da tabela <code>cupons</code>. No terminal, o comando de ponto <code>.indexes cupons</code> lista o mesmo nome.</p>
+
+<h3>Pôr a regra numa tabela que já existe</h3>
+<p>A tabela <code>clientes</code> da Loja Aurora não tem <code>UNIQUE</code> no <code>email</code>. Dá para acrescentar uma coluna <code>UNIQUE</code> com <code>ALTER TABLE</code>? Não no SQLite:</p>
+
+<pre class="file" data-file="alter.sql" data-resultado data-erro>ALTER TABLE clientes ADD COLUMN cpf TEXT UNIQUE;
+</pre>
+
+<p>"Não é possível acrescentar uma coluna UNIQUE." O caminho é criar o índice único você mesmo, com <code>CREATE UNIQUE INDEX</code>, numa coluna que já existe. Antes, confira se há repetidos, porque o índice não nasce se houver:</p>
+
+<pre class="file" data-file="repetidos.sql" data-resultado>SELECT email, count(*) AS vezes
+FROM clientes
+GROUP BY email
+HAVING count(*) &gt; 1;
+</pre>
+
+<p>A única "repetição" é o <code>NULL</code>, dos três clientes sem email, e <code>NULL</code> não conta para o <code>UNIQUE</code>. Pode criar:</p>
+
+<pre class="file" data-file="unique-index.sql" data-resultado data-erro>CREATE UNIQUE INDEX clientes_email_unico ON clientes (email);
+
+INSERT INTO clientes (nome, email)
+VALUES ('José R. Silva', 'jose.ribamar@exemplo.com.br');
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE UNIQUE INDEX</dt><dd>"Crie um índice único."</dd>
+  <dt>clientes_email_unico</dt><dd>O nome do índice, escolhido por você. Um nome que diga a tabela, a coluna e a regra facilita a vida depois.</dd>
+  <dt>ON clientes (email)</dt><dd>Em qual tabela e coluna.</dd>
+  <dt>UNIQUE constraint failed: clientes.email</dt><dd>O índice já trabalha: o email do cliente 1 não pode ser usado de novo.</dd>
+</dl>
+
+<p>E se a coluna já tem repetidos? Em <code>cidade</code>, que tem Teresina 10 vezes:</p>
+
+<pre class="file" data-file="cidade.sql" data-resultado data-erro>CREATE UNIQUE INDEX clientes_cidade_unica ON clientes (cidade);
+</pre>
+
+<p>O índice não é criado, e a mensagem é a mesma de um <code>INSERT</code> repetido. Limpe os repetidos antes (ou, como aqui, perceba que a coluna não devia ser única).</p>
+
+<hr>
+
+<h2>6. Repetiu: e agora? <code>OR IGNORE</code> e <code>ON CONFLICT</code></h2>
+<p>Às vezes a repetição é esperada: um roteiro que cadastra os cupons do mês e pode rodar duas vezes, ou um programa que recebe a mesma avaliação duas vezes por causa de um clique duplo. Em vez de parar tudo com um erro, você pode dizer ao SQLite o que fazer:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Quando o valor já existe</th></tr>
+<tr><td><code>INSERT INTO …</code></td><td>Erro, e o comando para (o normal)</td></tr>
+<tr><td><code>INSERT OR IGNORE INTO …</code></td><td>Ignora a linha repetida, sem erro ("0 linhas afetadas")</td></tr>
+<tr><td><code>INSERT … ON CONFLICT DO NOTHING</code></td><td>O mesmo, na forma que o PostgreSQL também usa</td></tr>
+<tr><td><code>INSERT … ON CONFLICT (coluna) DO UPDATE SET …</code></td><td>Atualiza a linha que já existe (o famoso <em>upsert</em>: <em>update</em> + <em>insert</em>)</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="ignore.sql" data-resultado>CREATE TABLE cupons (codigo TEXT NOT NULL UNIQUE, desconto REAL NOT NULL);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT OR IGNORE INTO cupons VALUES ('AURORA10', 15);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>O segundo <code>INSERT</code> deu "0 linhas afetadas" e o cupom ficou com os 10% originais. Já com o <em>upsert</em>, a repetição <strong>atualiza</strong> o desconto:</p>
+
+<pre class="file" data-file="upsert.sql" data-resultado>CREATE TABLE cupons (codigo TEXT NOT NULL UNIQUE, desconto REAL NOT NULL);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+
+INSERT INTO cupons VALUES ('AURORA10', 15)
+ON CONFLICT (codigo) DO UPDATE SET desconto = excluded.desconto;
+
+SELECT * FROM cupons;
+</pre>
+
+<dl class="anatomy">
+  <dt>ON CONFLICT (codigo)</dt><dd>"Se der conflito na coluna <code>codigo</code>…". A coluna tem de ter um <code>UNIQUE</code> (ou ser a chave primária).</dd>
+  <dt>DO UPDATE SET</dt><dd>"…faça um <code>UPDATE</code> na linha que já existe".</dd>
+  <dt>excluded.desconto</dt><dd><code>excluded</code> ("a excluída") é a linha que o <code>INSERT</code> tentou pôr e não conseguiu: o 15.</dd>
+</dl>
+
+<p>Use com cuidado: um erro de repetição muitas vezes avisa um problema de verdade (o cupom que alguém digitou duas vezes com descontos diferentes). Ignorar o erro esconde o aviso.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Na coluna</td><td><code>codigo TEXT NOT NULL UNIQUE</code></td><td>Uma coluna só: a forma mais comum</td></tr>
+<tr><td>Restrição de tabela</td><td><code>UNIQUE (cliente_id, produto_id)</code></td><td>Quando a regra vale para uma combinação de colunas (e também serve para uma coluna só)</td></tr>
+<tr><td>Restrição com nome</td><td><code>CONSTRAINT cupom_unico UNIQUE (codigo)</code></td><td>Para documentar; no SQLite a mensagem de erro continua mostrando as colunas, não o nome</td></tr>
+<tr><td>Índice único</td><td><code>CREATE UNIQUE INDEX clientes_email_unico ON clientes (email);</code></td><td>Tabela que já existe</td></tr>
+<tr><td>Sem diferenciar maiúsculas</td><td><code>codigo TEXT UNIQUE COLLATE NOCASE</code></td><td>Códigos e emails, em que <code>A</code> e <code>a</code> são a mesma coisa</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Cadastrou o mesmo valor duas vezes</strong>
+<p><code>UNIQUE constraint failed: cupons.codigo</code>. <strong>Como consertar:</strong> confira se o valor já existe (<code>SELECT * FROM cupons WHERE codigo = 'AURORA10';</code>). Se o cadastro novo está certo e o velho errado, atualize o velho com <code>UPDATE</code> em vez de inserir de novo. Se a repetição é esperada, use <code>INSERT OR IGNORE</code> ou <code>ON CONFLICT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A regra no par virou duas regras</strong>
+<pre class="file" data-file="duas-regras.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    cliente_id INTEGER UNIQUE,
+    produto_id INTEGER UNIQUE,
+    nota       INTEGER
+);
+
+INSERT INTO avaliacoes VALUES (1, 5, 3, 5), (2, 5, 1, 4);
+</pre>
+<p><strong>O que diz:</strong> <code>UNIQUE constraint failed: avaliacoes.cliente_id</code>: a cliente 5 não pode ter uma segunda avaliação. <strong>Como consertar:</strong> uma regra só, para o par: <code>UNIQUE (cliente_id, produto_id)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O repetido "passou": maiúsculas ou espaços</strong>
+<p><code>'AURORA10'</code>, <code>'aurora10'</code> e <code>'AURORA10 '</code> entraram os três. <strong>Como consertar:</strong> <code>COLLATE NOCASE</code> na coluna resolve as maiúsculas; os espaços se tiram com <code>trim()</code> antes de gravar (ou com uma regra <code>CHECK (codigo = trim(codigo))</code>, aula <a href="check.html">CHECK</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>O repetido "passou": era <code>NULL</code></strong>
+<p>Vários <code>NULL</code> numa coluna <code>UNIQUE</code> são permitidos. <strong>Como consertar:</strong> se a coluna é obrigatória, ela precisa também de <code>NOT NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ON CONFLICT</code> numa coluna sem <code>UNIQUE</code></strong>
+<pre class="file" data-file="on-conflict-errado.sql" data-resultado data-erro>CREATE TABLE cupons (codigo TEXT NOT NULL UNIQUE, desconto REAL NOT NULL);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT INTO cupons VALUES ('AURORA10', 15) ON CONFLICT (desconto) DO NOTHING;
+</pre>
+<p><strong>O que diz:</strong> <code>ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint</code>, "a cláusula ON CONFLICT não corresponde a nenhuma restrição PRIMARY KEY ou UNIQUE". O <code>desconto</code> não é único, então nunca dá conflito nele. <strong>Como consertar:</strong> <code>ON CONFLICT (codigo)</code>, a coluna que tem a regra.</p>
+</div>
+
+<div class="cenario">
+<strong><code>UNIQUE</code> no <code>ALTER TABLE</code></strong>
+<p><code>ALTER TABLE clientes ADD COLUMN cpf TEXT UNIQUE;</code> dá <code>Cannot add a UNIQUE column</code>. <strong>Como consertar:</strong> acrescente a coluna sem <code>UNIQUE</code> e crie depois um <code>CREATE UNIQUE INDEX</code> nela.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>UNIQUE</code> é do SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server, na coluna ou como <code>UNIQUE (a, b)</code>. A diferença que mais pega é o <code>NULL</code>, que o próprio padrão deixa para cada banco decidir (a documentação do PostgreSQL avisa disso):</p>
+<ul>
+  <li><strong>MySQL</strong> e <strong>PostgreSQL</strong> fazem como o SQLite: vários <code>NULL</code> passam. No PostgreSQL, dá para mudar isso com <code>UNIQUE NULLS NOT DISTINCT</code>.</li>
+  <li><strong>SQL Server</strong> é diferente: numa restrição <code>UNIQUE</code>, a documentação da Microsoft diz que só <strong>um</strong> <code>NULL</code> é permitido por coluna.</li>
+</ul>
+<p>Os três também acrescentam <code>UNIQUE</code> numa tabela existente com <code>ALTER TABLE … ADD CONSTRAINT nome UNIQUE (coluna)</code>, coisa que o SQLite não faz (lá, o caminho é o <code>CREATE UNIQUE INDEX</code>).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna TIPO UNIQUE</code></td><td>Cada valor da coluna aparece no máximo uma vez (<code>NULL</code> não conta)</td></tr>
+<tr><td><code>UNIQUE (a, b)</code></td><td>A combinação de <code>a</code> e <code>b</code> não se repete</td></tr>
+<tr><td><code>coluna TEXT UNIQUE COLLATE NOCASE</code></td><td>Único sem diferenciar maiúsculas (só de A a Z)</td></tr>
+<tr><td><code>CREATE UNIQUE INDEX nome ON tabela (coluna);</code></td><td>Põe a regra numa tabela que já existe</td></tr>
+<tr><td><code>INSERT OR IGNORE INTO …</code></td><td>Pula a linha repetida, sem erro</td></tr>
+<tr><td><code>INSERT … ON CONFLICT (col) DO UPDATE SET c = excluded.c</code></td><td>Atualiza a linha existente (<em>upsert</em>)</td></tr>
+<tr><td><code>PRAGMA index_list(tabela);</code></td><td>Lista os índices, inclusive os do <code>UNIQUE</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>UNIQUE constraint failed: cupons.codigo</code></td><td>O valor já existe na coluna</td></tr>
+<tr><td><code>UNIQUE constraint failed: avaliacoes.cliente_id, avaliacoes.produto_id</code></td><td>O par já existe</td></tr>
+<tr><td><code>Cannot add a UNIQUE column</code></td><td><code>ALTER TABLE … ADD COLUMN … UNIQUE</code>, que o SQLite não aceita</td></tr>
+<tr><td><code>ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint</code></td><td>O <code>ON CONFLICT</code> apontou uma coluna sem regra de único</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Email único</h3>
+<p>Complete para que dois usuários nunca tenham o mesmo email:</p>
+<div class="ex-code">email TEXT NOT NULL <input data-answer="UNIQUE|unique" aria-label="restrição"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O par</h3>
+<p>Complete a restrição de tabela que impede o mesmo produto duas vezes no mesmo pedido:</p>
+<div class="ex-code"><input data-answer="UNIQUE|unique" aria-label="restrição"> (pedido_id, produto_id)</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Numa coluna <code>codigo TEXT UNIQUE</code> (sem <code>NOT NULL</code>), o que acontece com dois <code>INSERT</code> com <code>codigo</code> <code>NULL</code>?</p>
+<label><input type="radio" name="q3"> O segundo dá <code>UNIQUE constraint failed</code></label>
+<label><input type="radio" name="q3"> Os dois entram: <code>NULL</code> não é igual a <code>NULL</code></label>
+<label><input type="radio" name="q3"> O primeiro dá erro</label>
+<label><input type="radio" name="q3"> O SQLite troca o segundo <code>NULL</code> por 0</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A coluna é <code>codigo TEXT UNIQUE</code>, e já existe <code>'AURORA10'</code>. Qual destes <code>INSERT</code> dá erro?</p>
+<label><input type="radio" name="q4"> <code>'aurora10'</code></label>
+<label><input type="radio" name="q4"> <code>'AURORA10 '</code> (com espaço no fim)</label>
+<label><input type="radio" name="q4"> <code>'AURORA 10'</code></label>
+<label><input type="radio" name="q4"> <code>'AURORA10'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Com <code>UNIQUE (cliente_id, produto_id)</code>, qual par pode entrar numa tabela que já tem (5, 3)?</p>
+<label><input type="radio" name="q5"> (5, 1)</label>
+<label><input type="radio" name="q5"> (5, 3)</label>
+<label><input type="radio" name="q5"> Nenhum par com o cliente 5</label>
+<label><input type="radio" name="q5"> Nenhum par com o produto 3</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Como pôr <code>UNIQUE</code> na coluna <code>email</code> da tabela <code>clientes</code>, que já existe, no SQLite?</p>
+<label><input type="radio" name="q6"> <code>ALTER TABLE clientes ADD UNIQUE (email);</code></label>
+<label><input type="radio" name="q6"> <code>UPDATE clientes SET email = UNIQUE;</code></label>
+<label><input type="radio" name="q6"> <code>CREATE UNIQUE INDEX clientes_email_unico ON clientes (email);</code></label>
+<label><input type="radio" name="q6"> Não tem jeito: só apagando a tabela</label>
+</div>
+
+<h3>Missão final: o roteiro dos cupons</h3>
+
+<div class="trysql" data-goal="mudou:cupons=2;;contem:sqlite_autoindex_cupons_1|1|u">
+<p class="try-task"><strong>Missão:</strong> o roteiro cadastrou o <code>AURORA10</code> duas vezes (rode e veja os três cupons). Faça duas mudanças: (1) torne o <code>codigo</code> único; (2) troque o terceiro <code>INSERT</code> para que a repetição seja <strong>ignorada sem erro</strong>, e o roteiro chegue até o fim com dois cupons. O <code>PRAGMA</code> confere se a regra existe.</p>
+<pre class="script" data-file="roteiro.sql">CREATE TABLE cupons (
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT INTO cupons VALUES ('VOLTA15', 15);
+INSERT INTO cupons VALUES ('AURORA10', 20);
+
+SELECT * FROM cupons;
+PRAGMA index_list(cupons);
+</pre>
+<pre class="solucao" data-file="roteiro.sql">CREATE TABLE cupons (
+    codigo   TEXT NOT NULL UNIQUE,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons VALUES ('AURORA10', 10);
+INSERT INTO cupons VALUES ('VOLTA15', 15);
+INSERT OR IGNORE INTO cupons VALUES ('AURORA10', 20);
+
+SELECT * FROM cupons;
+PRAGMA index_list(cupons);
+</pre>
+</div>
+
+<p>Qual desconto ficou no <code>AURORA10</code>: 10 ou 20? Agora troque o <code>OR IGNORE</code> por um <code>ON CONFLICT (codigo) DO UPDATE SET desconto = excluded.desconto</code> no fim do terceiro <code>INSERT</code> e compare.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>UNIQUE</code> proíbe valores repetidos numa coluna: <code>codigo TEXT NOT NULL UNIQUE</code>. O erro real é <code>UNIQUE constraint failed: tabela.coluna</code>.</li>
+  <li>A regra vale no <code>INSERT</code>, no <code>UPDATE</code> e dentro de um lote (uma linha repetida derruba o lote inteiro).</li>
+  <li>"Repetido" é "igual para o banco": <code>'AURORA10'</code> e <code>'aurora10'</code> são diferentes (a não ser com <code>COLLATE NOCASE</code>), e vários <code>NULL</code> são permitidos.</li>
+  <li><code>UNIQUE (a, b)</code> torna única a <strong>combinação</strong>; é diferente de um <code>UNIQUE</code> em cada coluna.</li>
+  <li>Cada <code>UNIQUE</code> cria um índice (<code>sqlite_autoindex_…</code>). Numa tabela existente, use <code>CREATE UNIQUE INDEX</code>.</li>
+  <li>Para tratar a repetição sem erro: <code>INSERT OR IGNORE</code> ou <code>ON CONFLICT … DO NOTHING / DO UPDATE</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
