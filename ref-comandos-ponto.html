@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Comandos de Ponto do sqlite3 — referência completa | Guia SQL</title>
+<meta name="description" content="Referência dos comandos de ponto do programa sqlite3 3.50.4: .tables, .schema, .mode (box, table, csv, json, markdown…), .headers, .nullvalue, .once, .output, .import, .dump, .backup, .open, .read, .timer e todos os outros da lista do .help, com a descrição original traduzida e as saídas reais do terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Comandos de Ponto do sqlite3</span></h1>
+
+<p class="intro">Os <strong>comandos de ponto</strong> são os comandos que começam com <code>.</code> no programa <code>sqlite3</code>, o terminal do SQLite: <code>.tables</code>, <code>.schema</code>, <code>.mode</code>… Eles <strong>não são SQL</strong>: são ordens para o próprio programa, para mostrar o banco, mudar o jeito de exibir os resultados, ler e gravar arquivos. Esta página lista todos os do <code>sqlite3</code> 3.50.4, com a descrição original do <code>.help</code> traduzida e as saídas reais do terminal da Ana. A aula que ensina os principais é <a href="comandos-ponto.html">Comandos de Ponto</a>.</p>
+
+<div class="note">
+<strong>As regras dos comandos de ponto</strong>
+<ul>
+  <li>Começam com <code>.</code> no <strong>começo da linha</strong>, e vão um por linha.</li>
+  <li><strong>Não levam <code>;</code></strong> no fim (o <code>;</code> é do SQL).</li>
+  <li>Só existem no programa <code>sqlite3</code>. No <a href="simulador.html">editor do guia</a>, no PHP, no Python e em qualquer outro programa, eles não funcionam: o editor responde <code>near ".": syntax error</code>.</li>
+  <li>Digitou um que não existe? O <code>sqlite3</code> responde <code>Error: unknown command or invalid arguments:  "tabels". Enter ".help" for help</code> (veja <a href="ref-erros.html#terminal">Erros Comuns</a>).</li>
+  <li>Quase todos podem ser abreviados, desde que não fiquem ambíguos: <code>.tab</code> funciona como <code>.tables</code>. Nesta página, use sempre o nome completo.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="ver">Ver o banco</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>.tables</code></td><td>Lista as tabelas (e views). Com um padrão do <code>LIKE</code>, só as que casam.</td><td><code>.tables c%</code></td><td><a href="comandos-ponto.html">Comandos de Ponto</a></td></tr>
+<tr><td><code>.schema</code></td><td>Mostra os <code>CREATE</code> de tudo, ou só do que casar com o padrão. <code>--indent</code> organiza o texto.</td><td><code>.schema categorias</code></td><td><a href="create-table.html">CREATE TABLE</a></td></tr>
+<tr><td><code>.indexes</code></td><td>Lista os índices (de uma tabela, ou de todas).</td><td><code>.indexes produtos</code></td><td><a href="indices.html">Índices</a></td></tr>
+<tr><td><code>.databases</code></td><td>Os bancos abertos e o arquivo de cada um.</td><td><code>.databases</code></td><td></td></tr>
+<tr><td><code>.fullschema</code></td><td>Como o <code>.schema</code>, mais as tabelas de estatística do <code>ANALYZE</code>.</td><td><code>.fullschema</code></td><td><a href="vacuum.html">VACUUM e ANALYZE</a></td></tr>
+<tr><td><code>.dbinfo</code></td><td>Informações do arquivo: tamanho da página, número de páginas, codificação…</td><td><code>.dbinfo</code></td><td><a href="pragma.html">PRAGMAs Úteis</a></td></tr>
+<tr><td><code>.show</code></td><td>Mostra as configurações atuais do terminal (modo, cabeçalhos, separadores…).</td><td><code>.show</code></td><td></td></tr>
+</table>
+</div>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  produtos
+clientes      funcionarios  pedidos
+sqlite&gt; .tables c%
+categorias  clientes
+sqlite&gt; .schema categorias
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+sqlite&gt; .indexes
+sqlite_autoindex_itens_pedido_1
+sqlite&gt; .databases
+main: /home/ana/loja.db r/w</pre>
+
+<p>O único índice do banco, <code>sqlite_autoindex_itens_pedido_1</code>, foi criado sozinho pelo SQLite para a chave primária composta de <code>itens_pedido</code>. O <code>r/w</code> do <code>.databases</code> quer dizer <em>read/write</em>, "leitura e escrita".</p>
+
+<pre class="term">sqlite&gt; .show
+        echo: off
+         eqp: off
+     explain: auto
+     headers: off
+        mode: list
+   nullvalue: ""
+      output: stdout
+colseparator: "|"
+rowseparator: "\n"
+       stats: off
+       width:
+    filename: loja.db</pre>
+
+<hr>
+
+<h2 id="exibir">Mudar a exibição</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>.mode MODO</code></td><td>Escolhe o formato da saída (tabela <a href="#modos">Os modos</a>). Sem o modo, mostra o atual.</td><td><code>.mode box</code></td></tr>
+<tr><td><code>.headers on|off</code></td><td>Liga ou desliga a linha com os nomes das colunas (nos modos <code>list</code>, <code>csv</code>, <code>tabs</code>…).</td><td><code>.headers on</code></td></tr>
+<tr><td><code>.width N1 N2 …</code></td><td>Largura mínima de cada coluna nos modos em colunas. Sem números, volta ao automático.</td><td><code>.width 5 12</code></td></tr>
+<tr><td><code>.nullvalue TEXTO</code></td><td>O que mostrar no lugar de <em>NULL</em> (o padrão é nada).</td><td><code>.nullvalue (vazio)</code></td></tr>
+<tr><td><code>.separator COL ?LINHA?</code></td><td>O separador de colunas (e de linhas) dos modos <code>list</code> e <code>csv</code>.</td><td><code>.separator " ; "</code></td></tr>
+<tr><td><code>.print TEXTO</code></td><td>Escreve o texto, do jeito que está.</td><td><code>.print Olá, Ana!</code></td></tr>
+<tr><td><code>.echo on|off</code></td><td>Repete cada comando antes do resultado (bom em scripts).</td><td><code>.echo on</code></td></tr>
+<tr><td><code>.timer on|off</code></td><td>Mostra quanto tempo cada comando levou.</td><td><code>.timer on</code></td></tr>
+<tr><td><code>.changes on|off</code></td><td>Mostra quantas linhas cada comando mudou.</td><td><code>.changes on</code></td></tr>
+<tr><td><code>.eqp on|off|full</code></td><td>Mostra o plano de execução (<code>EXPLAIN QUERY PLAN</code>) antes de cada consulta.</td><td><code>.eqp on</code></td></tr>
+<tr><td><code>.prompt PRINCIPAL CONTINUAÇÃO</code></td><td>Troca os prompts <code>sqlite&gt;</code> e <code>...&gt;</code>.</td><td><code>.prompt "loja&gt; " "   &gt; "</code></td></tr>
+</table>
+</div>
+
+<pre class="term">sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+1|Papelaria
+2|Eletrônicos
+3|Casa e Cozinha
+sqlite&gt; .headers on
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+id|nome
+1|Papelaria
+2|Eletrônicos
+3|Casa e Cozinha
+sqlite&gt; .mode box
+sqlite&gt; .nullvalue (vazio)
+sqlite&gt; SELECT id, nome, email FROM clientes WHERE id IN (6, 7);
+┌────┬───────────────────┬────────────────────────────────┐
+│ id │       nome        │             email              │
+├────┼───────────────────┼────────────────────────────────┤
+│ 6  │ Rafael Monteiro   │ rafael.monteiro@exemplo.com.br │
+│ 7  │ Luís Otávio Brito │ (vazio)                        │
+└────┴───────────────────┴────────────────────────────────┘
+sqlite&gt; .print Olá, Ana!
+Olá, Ana!
+sqlite&gt; .timer on
+sqlite&gt; SELECT count(*) FROM itens_pedido;
+┌──────────┐
+│ count(*) │
+├──────────┤
+│ 220      │
+└──────────┘
+Run Time: real 0.000 user 0.000031 sys 0.000000
+sqlite&gt; .timer off
+sqlite&gt; .changes on
+sqlite&gt; UPDATE produtos SET estoque = estoque WHERE categoria_id = 1;
+changes: 6   total_changes: 6</pre>
+
+<p>Mais dois, num modo em colunas: o <code>.width</code> alarga as colunas, e o <code>.eqp on</code> mostra, antes do resultado, como o SQLite vai buscar os dados (aqui, direto pela chave primária; mais em <a href="explain.html">EXPLAIN QUERY PLAN</a>):</p>
+
+<pre class="term">sqlite&gt; .width 5 12
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+┌───────┬──────────────┐
+│  id   │     nome     │
+├───────┼──────────────┤
+│ 1     │ Papelaria    │
+│ 2     │ Eletrônicos  │
+└───────┴──────────────┘
+sqlite&gt; .width
+sqlite&gt; .eqp on
+sqlite&gt; SELECT nome FROM clientes WHERE id = 3;
+QUERY PLAN
+`--SEARCH clientes USING INTEGER PRIMARY KEY (rowid=?)
+┌───────────────────┐
+│       nome        │
+├───────────────────┤
+│ Ana Beatriz Sousa │
+└───────────────────┘</pre>
+
+<hr>
+
+<h2 id="modos">Os modos do <code>.mode</code></h2>
+<p>Todos com a mesma consulta, <code>SELECT id, nome FROM categorias LIMIT 3;</code> (ou <code>LIMIT 2</code>), e <code>.headers on</code>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modo</th><th>Descrição do <code>.help mode</code></th><th>Em português / para quê</th></tr>
+<tr><td><code>list</code></td><td>Values delimited by "|"</td><td>Valores separados por <code>|</code>. O padrão. É também o formato da "saída canônica" das missões do guia.</td></tr>
+<tr><td><code>box</code></td><td>Tables using unicode box-drawing characters</td><td>Tabela com bordas de linha contínua. O mais bonito para ler.</td></tr>
+<tr><td><code>table</code></td><td>ASCII-art table</td><td>Tabela com bordas de <code>+</code>, <code>-</code> e <code>|</code> (funciona em qualquer terminal).</td></tr>
+<tr><td><code>column</code></td><td>Output in columns. (See .width)</td><td>Colunas alinhadas, sem bordas.</td></tr>
+<tr><td><code>markdown</code></td><td>Markdown table format</td><td>Tabela pronta para colar num arquivo Markdown (GitHub, por exemplo).</td></tr>
+<tr><td><code>csv</code></td><td>Comma-separated values</td><td>Valores separados por vírgula, para planilhas (veja <a href="import-export.html">Importar e Exportar CSV</a>).</td></tr>
+<tr><td><code>tabs</code></td><td>Tab-separated values</td><td>Separados por tabulação.</td></tr>
+<tr><td><code>line</code></td><td>One value per line</td><td>Um valor por linha, <code>coluna = valor</code>. Bom para linhas com muitas colunas.</td></tr>
+<tr><td><code>json</code></td><td>Results in a JSON array</td><td>Uma lista JSON de objetos.</td></tr>
+<tr><td><code>insert TABELA</code></td><td>SQL insert statements for TABLE</td><td>Cada linha vira um <code>INSERT</code>, para copiar dados para outro banco.</td></tr>
+<tr><td><code>quote</code></td><td>Escape answers as for SQL</td><td>Cada valor escrito como no SQL (texto entre aspas simples).</td></tr>
+<tr><td><code>html</code></td><td>HTML &lt;table&gt; code</td><td>Linhas de uma tabela HTML.</td></tr>
+<tr><td><code>qbox</code></td><td>Shorthand for "box --wrap 60 --quote"</td><td>Como o <code>box</code>, quebrando textos longos em 60 caracteres e com os valores entre aspas.</td></tr>
+<tr><td><code>ascii</code></td><td>Columns/rows delimited by 0x1F and 0x1E</td><td>Separadores invisíveis (caracteres de controle), para trocar dados com programas.</td></tr>
+<tr><td><code>tcl</code></td><td>TCL list elements</td><td>Listas da linguagem Tcl.</td></tr>
+</table>
+</div>
+
+<pre class="term">sqlite&gt; .mode column
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+id  nome
+--  --------------
+1   Papelaria
+2   Eletrônicos
+3   Casa e Cozinha
+sqlite&gt; .mode box
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+┌────┬────────────────┐
+│ id │      nome      │
+├────┼────────────────┤
+│ 1  │ Papelaria      │
+│ 2  │ Eletrônicos    │
+│ 3  │ Casa e Cozinha │
+└────┴────────────────┘
+sqlite&gt; .mode table
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
++----+----------------+
+| id |      nome      |
++----+----------------+
+| 1  | Papelaria      |
+| 2  | Eletrônicos    |
+| 3  | Casa e Cozinha |
++----+----------------+
+sqlite&gt; .mode markdown
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+| id |      nome      |
+|----|----------------|
+| 1  | Papelaria      |
+| 2  | Eletrônicos    |
+| 3  | Casa e Cozinha |
+sqlite&gt; .mode csv
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 3;
+id,nome
+1,Papelaria
+2,"Eletrônicos"
+3,"Casa e Cozinha"</pre>
+
+<p>Repare no <code>csv</code>: o <code>sqlite3</code> pôs aspas em <code>"Eletrônicos"</code> e <code>"Casa e Cozinha"</code>. Ele põe aspas nos textos com espaço, com acento ou com caracteres especiais, por segurança; qualquer planilha lê os dois jeitos. Os outros modos:</p>
+
+<pre class="term">sqlite&gt; .mode line
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+   id = 1
+ nome = Papelaria
+
+   id = 2
+ nome = Eletrônicos
+sqlite&gt; .mode json
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+[{"id":1,"nome":"Papelaria"},
+{"id":2,"nome":"Eletrônicos"}]
+sqlite&gt; .mode insert categorias
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+INSERT INTO categorias(id,nome) VALUES(1,'Papelaria');
+INSERT INTO categorias(id,nome) VALUES(2,'Eletrônicos');
+sqlite&gt; .mode quote
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+'id','nome'
+1,'Papelaria'
+2,'Eletrônicos'
+sqlite&gt; .mode html
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 1;
+&lt;TR&gt;&lt;TH&gt;id&lt;/TH&gt;
+&lt;TH&gt;nome&lt;/TH&gt;
+&lt;/TR&gt;
+&lt;TR&gt;&lt;TD&gt;1&lt;/TD&gt;
+&lt;TD&gt;Papelaria&lt;/TD&gt;
+&lt;/TR&gt;
+sqlite&gt; .mode list
+sqlite&gt; .separator " ; "
+sqlite&gt; SELECT id, nome FROM categorias LIMIT 2;
+id ; nome
+1 ; Papelaria
+2 ; Eletrônicos
+sqlite&gt; .separator "|"
+sqlite&gt; .mode
+current output mode: list --escape ascii</pre>
+
+<hr>
+
+<h2 id="arquivos">Arquivos: ler, gravar, copiar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>.once ARQUIVO</code></td><td>Manda a saída do <strong>próximo</strong> comando para um arquivo.</td><td><code>.once categorias.csv</code></td><td><a href="import-export.html">Importar e Exportar CSV</a></td></tr>
+<tr><td><code>.output ARQUIVO</code></td><td>Manda <strong>toda</strong> a saída para o arquivo, até um <code>.output</code> sem nada (que volta para a tela).</td><td><code>.output fornecedores.txt</code></td><td><a href="import-export.html">Importar e Exportar CSV</a></td></tr>
+<tr><td><code>.import ARQUIVO TABELA</code></td><td>Lê um arquivo (CSV, com <code>--csv</code>) para dentro de uma tabela. Se a tabela não existe, é criada, e a 1ª linha dá os nomes das colunas. <code>--skip 1</code> pula o cabeçalho.</td><td><code>.import --csv categorias.csv categorias_copia</code></td><td><a href="import-export.html">Importar e Exportar CSV</a></td></tr>
+<tr><td><code>.read ARQUIVO</code></td><td>Roda os comandos de um arquivo <code>.sql</code>, como se você os digitasse.</td><td><code>.read consulta.sql</code></td><td><a href="shell-sqlite.html">O Terminal do SQLite</a></td></tr>
+<tr><td><code>.dump ?TABELAS?</code></td><td>Escreve o banco (ou só as tabelas pedidas) como comandos SQL: <code>CREATE TABLE</code> + <code>INSERT</code>s. Serve de cópia de segurança em texto.</td><td><code>.dump categorias</code></td><td><a href="dump-backup.html">Backup</a></td></tr>
+<tr><td><code>.backup ARQUIVO</code></td><td>Copia o banco aberto para outro arquivo, com segurança (mesmo com o banco em uso).</td><td><code>.backup copia.db</code></td><td><a href="dump-backup.html">Backup</a></td></tr>
+<tr><td><code>.save ARQUIVO</code></td><td>Outro nome do <code>.backup</code>.</td><td><code>.save copia.db</code></td><td></td></tr>
+<tr><td><code>.restore ARQUIVO</code></td><td>O contrário: substitui o banco aberto pelo conteúdo do arquivo.</td><td><code>.restore copia.db</code></td><td><a href="dump-backup.html">Backup</a></td></tr>
+<tr><td><code>.open ARQUIVO</code></td><td>Fecha o banco atual e abre outro (cria, se não existir).</td><td><code>.open copia.db</code></td><td><a href="shell-sqlite.html">O Terminal do SQLite</a></td></tr>
+<tr><td><code>.clone NOVO</code></td><td>Copia as tabelas e os dados para um banco novo.</td><td><code>.clone novo.db</code></td><td></td></tr>
+<tr><td><code>.excel</code></td><td>Abre o resultado do próximo comando na planilha do computador.</td><td><code>.excel</code></td><td></td></tr>
+<tr><td><code>.www</code></td><td>Abre o resultado do próximo comando no navegador.</td><td><code>.www</code></td><td></td></tr>
+<tr><td><code>.recover</code></td><td>Tenta salvar o máximo de dados de um banco corrompido (o resultado sai como SQL).</td><td><code>.recover</code></td><td></td></tr>
+</table>
+</div>
+
+<p>A Ana exportou as categorias para CSV com <code>.once</code> e conferiu o arquivo com <code>.shell</code> (que roda um comando do sistema sem sair do <code>sqlite3</code>):</p>
+
+<pre class="term">sqlite&gt; .headers on
+sqlite&gt; .mode csv
+sqlite&gt; .once categorias.csv
+sqlite&gt; SELECT * FROM categorias;
+sqlite&gt; .shell cat categorias.csv
+id,nome,descricao
+1,Papelaria,"Material escolar e de escritório"
+2,"Eletrônicos","Acessórios e dispositivos eletrônicos"
+3,"Casa e Cozinha","Utensílios para o lar"
+4,Livros,"Livros, dicionários e guias"
+5,Brinquedos,"Brinquedos e jogos para todas as idades"
+6,"Esporte e Lazer","Artigos esportivos e de lazer"
+7,Alimentos,"Alimentos não perecíveis e regionais"
+8,Jardim,"Ferramentas e artigos de jardinagem"
+sqlite&gt; .output fornecedores.txt
+sqlite&gt; SELECT nome FROM fornecedores;
+sqlite&gt; .output
+sqlite&gt; .shell head -3 fornecedores.txt
+Distribuidora Piauí Center
+Loja D'Água
+Atlântico Importados</pre>
+
+<p>Repare que, depois do <code>.once</code> e do <code>.output</code>, o <code>SELECT</code> não mostrou nada na tela: a saída foi para o arquivo. Agora, o caminho de volta: importar o CSV numa tabela nova. O <code>.import</code> criou a tabela com as colunas do cabeçalho, todas do tipo <code>TEXT</code>:</p>
+
+<pre class="term">sqlite&gt; .import --csv categorias.csv categorias_copia
+sqlite&gt; .mode box
+sqlite&gt; SELECT * FROM categorias_copia LIMIT 2;
+┌────┬─────────────┬───────────────────────────────────────┐
+│ id │    nome     │               descricao               │
+├────┼─────────────┼───────────────────────────────────────┤
+│ 1  │ Papelaria   │ Material escolar e de escritório      │
+│ 2  │ Eletrônicos │ Acessórios e dispositivos eletrônicos │
+└────┴─────────────┴───────────────────────────────────────┘
+sqlite&gt; .schema categorias_copia
+CREATE TABLE IF NOT EXISTS "categorias_copia"(
+"id" TEXT, "nome" TEXT, "descricao" TEXT);</pre>
+
+<p>Importar para uma tabela que <strong>já existe</strong> acrescenta as linhas. Se as linhas repetem a chave primária, cada uma falha, e o <code>.import</code> avisa linha por linha (aqui, com <code>--skip 1</code> para pular o cabeçalho):</p>
+
+<pre class="term">sqlite&gt; .import --csv --skip 1 categorias.csv categorias
+categorias.csv:2: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:3: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:4: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:5: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:6: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:7: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:8: INSERT failed: UNIQUE constraint failed: categorias.id
+categorias.csv:9: INSERT failed: UNIQUE constraint failed: categorias.id</pre>
+
+<p>O <code>.dump</code> de uma tabela, e o <code>.backup</code> seguido de <code>.open</code> na cópia:</p>
+
+<pre class="term">sqlite&gt; .dump categorias
+PRAGMA foreign_keys=OFF;
+BEGIN TRANSACTION;
+CREATE TABLE categorias (
+    id        INTEGER PRIMARY KEY,
+    nome      TEXT NOT NULL,
+    descricao TEXT
+);
+INSERT INTO categorias VALUES(1,'Papelaria','Material escolar e de escritório');
+INSERT INTO categorias VALUES(2,'Eletrônicos','Acessórios e dispositivos eletrônicos');
+INSERT INTO categorias VALUES(3,'Casa e Cozinha','Utensílios para o lar');
+INSERT INTO categorias VALUES(4,'Livros','Livros, dicionários e guias');
+INSERT INTO categorias VALUES(5,'Brinquedos','Brinquedos e jogos para todas as idades');
+INSERT INTO categorias VALUES(6,'Esporte e Lazer','Artigos esportivos e de lazer');
+INSERT INTO categorias VALUES(7,'Alimentos','Alimentos não perecíveis e regionais');
+INSERT INTO categorias VALUES(8,'Jardim','Ferramentas e artigos de jardinagem');
+COMMIT;
+sqlite&gt; .backup copia.db
+sqlite&gt; .open copia.db
+sqlite&gt; .databases
+main: /home/ana/copia.db r/w
+sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  produtos
+clientes      funcionarios  pedidos</pre>
+
+<p>E o <code>.read</code>, rodando o arquivo <code>consulta.sql</code> (que tem a linha <code>SELECT count(*) AS produtos FROM produtos;</code>):</p>
+
+<pre class="term">sqlite&gt; .open loja.db
+sqlite&gt; .read consulta.sql
+┌──────────┐
+│ produtos │
+├──────────┤
+│ 45       │
+└──────────┘</pre>
+
+<hr>
+
+<h2 id="sessao">A sessão</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Exemplo</th></tr>
+<tr><td><code>.quit</code></td><td>Sai do <code>sqlite3</code> (também <kbd>Ctrl</kbd>+<kbd>D</kbd>).</td><td><code>.quit</code></td></tr>
+<tr><td><code>.exit ?CÓDIGO?</code></td><td>Sai, com um código de saída opcional (útil em scripts).</td><td><code>.exit 1</code></td></tr>
+<tr><td><code>.help ?-all? ?PADRÃO?</code></td><td>A ajuda: a lista toda, ou os detalhes de um comando.</td><td><code>.help mode</code></td></tr>
+<tr><td><code>.version</code></td><td>A versão do SQLite e do compilador.</td><td><code>.version</code></td></tr>
+<tr><td><code>.shell CMD</code>, <code>.system CMD</code></td><td>Roda um comando do sistema (como <code>ls</code> ou <code>cat</code>) sem sair do <code>sqlite3</code>.</td><td><code>.shell ls</code></td></tr>
+<tr><td><code>.cd PASTA</code></td><td>Muda a pasta de trabalho (onde <code>.once</code>, <code>.import</code>… procuram os arquivos).</td><td><code>.cd Documentos</code></td></tr>
+<tr><td><code>.timeout MS</code></td><td>Espera até MS milissegundos por um banco trancado, em vez de dar <code>database is locked</code> na hora.</td><td><code>.timeout 2000</code></td></tr>
+<tr><td><code>.bail on|off</code></td><td>Para no primeiro erro (útil ao rodar um script com <code>.read</code>).</td><td><code>.bail on</code></td></tr>
+<tr><td><code>.parameter</code></td><td>Define valores para parâmetros (<code>?1</code>, <code>:nome</code>) das consultas.</td><td><code>.parameter set :id 3</code></td></tr>
+</table>
+</div>
+
+<pre class="term">sqlite&gt; .version
+SQLite 3.50.4 2025-07-30 19:33:53 4d8adfb30e03f9cf27f800a2c1ba3c48fb4ca1b08b0f5ed59a4d5ecbf45e20a3
+zlib version 1.3.1
+gcc-14.2.0 (64-bit)
+sqlite&gt; .quit
+$</pre>
+
+<hr>
+
+<h2 id="todos">Todos os comandos (o <code>.help</code> do 3.50.4)</h2>
+<p>A lista completa, na ordem do <code>.help</code>. A coluna do meio é o texto original, exatamente como o <code>sqlite3</code> 3.50.4 mostra; <code>?…?</code> quer dizer "opcional" e <code>a|b</code>, "a ou b". Os comandos marcados com * são para usos avançados (testes, depuração, extensões).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>No <code>.help</code></th><th>Em português</th></tr>
+<tr><td><code>.archive ...</code> *</td><td>Manage SQL archives</td><td>Gerencia arquivos compactados no formato SQLAR</td></tr>
+<tr><td><code>.auth ON|OFF</code> *</td><td>Show authorizer callbacks</td><td>Mostra as chamadas do "autorizador"</td></tr>
+<tr><td><code>.backup ?DB? FILE</code></td><td>Backup DB (default "main") to FILE</td><td>Copia o banco (o padrão é o "main") para o arquivo</td></tr>
+<tr><td><code>.bail on|off</code></td><td>Stop after hitting an error.  Default OFF</td><td>Para no primeiro erro. Padrão: desligado</td></tr>
+<tr><td><code>.cd DIRECTORY</code></td><td>Change the working directory to DIRECTORY</td><td>Muda a pasta de trabalho</td></tr>
+<tr><td><code>.changes on|off</code></td><td>Show number of rows changed by SQL</td><td>Mostra quantas linhas cada comando mudou</td></tr>
+<tr><td><code>.check GLOB</code> *</td><td>Fail if output since .testcase does not match</td><td>Falha se a saída não casar com o padrão (para testes)</td></tr>
+<tr><td><code>.clone NEWDB</code></td><td>Clone data into NEWDB from the existing database</td><td>Copia os dados para um banco novo</td></tr>
+<tr><td><code>.connection [close] [#]</code> *</td><td>Open or close an auxiliary database connection</td><td>Abre ou fecha uma conexão extra</td></tr>
+<tr><td><code>.crlf ?on|off?</code></td><td>Whether or not to use \r\n line endings</td><td>Usar ou não o fim de linha do Windows (\r\n)</td></tr>
+<tr><td><code>.databases</code></td><td>List names and files of attached databases</td><td>Lista os bancos abertos e seus arquivos</td></tr>
+<tr><td><code>.dbconfig ?op? ?val?</code> *</td><td>List or change sqlite3_db_config() options</td><td>Lista ou muda opções internas da conexão</td></tr>
+<tr><td><code>.dbinfo ?DB?</code></td><td>Show status information about the database</td><td>Informações sobre o arquivo do banco</td></tr>
+<tr><td><code>.dbtotxt</code> *</td><td>Hex dump of the database file</td><td>Os bytes do arquivo em hexadecimal</td></tr>
+<tr><td><code>.dump ?OBJECTS?</code></td><td>Render database content as SQL</td><td>Escreve o conteúdo do banco como SQL</td></tr>
+<tr><td><code>.echo on|off</code></td><td>Turn command echo on or off</td><td>Repetir ou não cada comando</td></tr>
+<tr><td><code>.eqp on|off|full|...</code></td><td>Enable or disable automatic EXPLAIN QUERY PLAN</td><td>Liga ou desliga o <code>EXPLAIN QUERY PLAN</code> automático</td></tr>
+<tr><td><code>.excel</code></td><td>Display the output of next command in spreadsheet</td><td>Mostra a saída do próximo comando numa planilha</td></tr>
+<tr><td><code>.exit ?CODE?</code></td><td>Exit this program with return-code CODE</td><td>Sai do programa com o código de saída CODE</td></tr>
+<tr><td><code>.expert</code> *</td><td>EXPERIMENTAL. Suggest indexes for queries</td><td>EXPERIMENTAL. Sugere índices para as consultas</td></tr>
+<tr><td><code>.explain ?on|off|auto?</code></td><td>Change the EXPLAIN formatting mode.  Default: auto</td><td>Muda o formato da saída do <code>EXPLAIN</code>. Padrão: auto</td></tr>
+<tr><td><code>.filectrl CMD ...</code> *</td><td>Run various sqlite3_file_control() operations</td><td>Operações internas no arquivo</td></tr>
+<tr><td><code>.fullschema ?--indent?</code></td><td>Show schema and the content of sqlite_stat tables</td><td>O esquema e as tabelas de estatística</td></tr>
+<tr><td><code>.headers on|off</code></td><td>Turn display of headers on or off</td><td>Liga ou desliga os nomes das colunas</td></tr>
+<tr><td><code>.help ?-all? ?PATTERN?</code></td><td>Show help text for PATTERN</td><td>Mostra a ajuda</td></tr>
+<tr><td><code>.import FILE TABLE</code></td><td>Import data from FILE into TABLE</td><td>Importa os dados do arquivo para a tabela</td></tr>
+<tr><td><code>.indexes ?TABLE?</code></td><td>Show names of indexes</td><td>Mostra os nomes dos índices</td></tr>
+<tr><td><code>.intck ?STEPS_PER_UNLOCK?</code> *</td><td>Run an incremental integrity check on the db</td><td>Verifica a integridade do banco aos poucos</td></tr>
+<tr><td><code>.limit ?LIMIT? ?VAL?</code> *</td><td>Display or change the value of an SQLITE_LIMIT</td><td>Mostra ou muda um limite interno</td></tr>
+<tr><td><code>.lint OPTIONS</code> *</td><td>Report potential schema issues.</td><td>Aponta possíveis problemas no esquema</td></tr>
+<tr><td><code>.load FILE ?ENTRY?</code> *</td><td>Load an extension library</td><td>Carrega uma extensão</td></tr>
+<tr><td><code>.log FILE|on|off</code> *</td><td>Turn logging on or off.  FILE can be stderr/stdout</td><td>Liga ou desliga o registro (log)</td></tr>
+<tr><td><code>.mode ?MODE? ?OPTIONS?</code></td><td>Set output mode</td><td>Escolhe o modo de saída</td></tr>
+<tr><td><code>.nonce STRING</code> *</td><td>Suspend safe mode for one command if nonce matches</td><td>Suspende o modo seguro por um comando</td></tr>
+<tr><td><code>.nullvalue STRING</code></td><td>Use STRING in place of NULL values</td><td>Mostra STRING no lugar de NULL</td></tr>
+<tr><td><code>.once ?OPTIONS? ?FILE?</code></td><td>Output for the next SQL command only to FILE</td><td>A saída só do próximo comando vai para o arquivo</td></tr>
+<tr><td><code>.open ?OPTIONS? ?FILE?</code></td><td>Close existing database and reopen FILE</td><td>Fecha o banco atual e abre o arquivo</td></tr>
+<tr><td><code>.output ?FILE?</code></td><td>Send output to FILE or stdout if FILE is omitted</td><td>Manda a saída para o arquivo (ou de volta para a tela)</td></tr>
+<tr><td><code>.parameter CMD ...</code></td><td>Manage SQL parameter bindings</td><td>Gerencia os valores dos parâmetros</td></tr>
+<tr><td><code>.print STRING...</code></td><td>Print literal STRING</td><td>Escreve o texto</td></tr>
+<tr><td><code>.progress N</code> *</td><td>Invoke progress handler after every N opcodes</td><td>Chama o "medidor de progresso" a cada N operações</td></tr>
+<tr><td><code>.prompt MAIN CONTINUE</code></td><td>Replace the standard prompts</td><td>Troca os prompts</td></tr>
+<tr><td><code>.quit</code></td><td>Stop interpreting input stream, exit if primary.</td><td>Sai do programa</td></tr>
+<tr><td><code>.read FILE</code></td><td>Read input from FILE or command output</td><td>Lê e roda os comandos do arquivo</td></tr>
+<tr><td><code>.recover</code></td><td>Recover as much data as possible from corrupt db.</td><td>Recupera o máximo de dados de um banco corrompido</td></tr>
+<tr><td><code>.restore ?DB? FILE</code></td><td>Restore content of DB (default "main") from FILE</td><td>Restaura o banco a partir do arquivo</td></tr>
+<tr><td><code>.save ?OPTIONS? FILE</code></td><td>Write database to FILE (an alias for .backup ...)</td><td>Grava o banco no arquivo (outro nome do <code>.backup</code>)</td></tr>
+<tr><td><code>.scanstats on|off|est</code> *</td><td>Turn sqlite3_stmt_scanstatus() metrics on or off</td><td>Liga ou desliga medidas internas das consultas</td></tr>
+<tr><td><code>.schema ?PATTERN?</code></td><td>Show the CREATE statements matching PATTERN</td><td>Mostra os <code>CREATE</code> que casam com o padrão</td></tr>
+<tr><td><code>.separator COL ?ROW?</code></td><td>Change the column and row separators</td><td>Muda os separadores de coluna e de linha</td></tr>
+<tr><td><code>.session ?NAME? CMD ...</code> *</td><td>Create or control sessions</td><td>Cria ou controla "sessões" (registro de mudanças)</td></tr>
+<tr><td><code>.sha3sum ...</code> *</td><td>Compute a SHA3 hash of database content</td><td>Calcula um resumo SHA3 do conteúdo</td></tr>
+<tr><td><code>.shell CMD ARGS...</code></td><td>Run CMD ARGS... in a system shell</td><td>Roda um comando do sistema</td></tr>
+<tr><td><code>.show</code></td><td>Show the current values for various settings</td><td>Mostra as configurações atuais</td></tr>
+<tr><td><code>.stats ?ARG?</code> *</td><td>Show stats or turn stats on or off</td><td>Mostra estatísticas, ou liga/desliga</td></tr>
+<tr><td><code>.system CMD ARGS...</code></td><td>Run CMD ARGS... in a system shell</td><td>O mesmo que <code>.shell</code></td></tr>
+<tr><td><code>.tables ?TABLE?</code></td><td>List names of tables matching LIKE pattern TABLE</td><td>Lista as tabelas que casam com o padrão do <code>LIKE</code></td></tr>
+<tr><td><code>.timeout MS</code></td><td>Try opening locked tables for MS milliseconds</td><td>Espera até MS milissegundos por tabelas trancadas</td></tr>
+<tr><td><code>.timer on|off</code></td><td>Turn SQL timer on or off</td><td>Liga ou desliga o cronômetro</td></tr>
+<tr><td><code>.trace ?OPTIONS?</code> *</td><td>Output each SQL statement as it is run</td><td>Escreve cada comando SQL enquanto ele roda</td></tr>
+<tr><td><code>.version</code></td><td>Show source, library and compiler versions</td><td>Mostra as versões</td></tr>
+<tr><td><code>.vfsinfo ?AUX?</code> *</td><td>Information about the top-level VFS</td><td>Informações da camada de arquivos (VFS)</td></tr>
+<tr><td><code>.vfslist</code> *</td><td>List all available VFSes</td><td>Lista as camadas de arquivos disponíveis</td></tr>
+<tr><td><code>.vfsname ?AUX?</code> *</td><td>Print the name of the VFS stack</td><td>Nome da camada de arquivos em uso</td></tr>
+<tr><td><code>.width NUM1 NUM2 ...</code></td><td>Set minimum column widths for columnar output</td><td>Larguras mínimas das colunas</td></tr>
+<tr><td><code>.www</code></td><td>Display output of the next command in web browser</td><td>Mostra a saída do próximo comando no navegador</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="editor">E no editor do guia?</h2>
+<p>Nenhum comando de ponto funciona no editor, porque ele roda só SQL. Para quase todos os de "ver o banco", existe um jeito em SQL, que funciona em qualquer programa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No terminal</th><th>Em SQL (funciona no editor)</th></tr>
+<tr><td><code>.tables</code></td><td><code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td></tr>
+<tr><td><code>.schema categorias</code></td><td><code>SELECT sql FROM sqlite_schema WHERE name = 'categorias';</code></td></tr>
+<tr><td><code>.indexes</code></td><td><code>SELECT name FROM sqlite_schema WHERE type = 'index';</code></td></tr>
+<tr><td>as colunas de uma tabela</td><td><code>SELECT name, type FROM pragma_table_info('clientes');</code> (veja <a href="ref-pragmas.html">PRAGMAs</a>)</td></tr>
+<tr><td><code>.version</code></td><td><code>SELECT sqlite_version();</code></td></tr>
+</table>
+</div>
+
+<div class="trysql" data-erro data-goal="colunas:name;;linhas:7;;contem:itens_pedido">
+<p class="try-task"><strong>Missão:</strong> o <code>.tables</code> não funciona aqui (rode e veja o erro). Troque-o pela consulta SQL que lista as tabelas do banco, a partir da tabela especial <code>sqlite_schema</code>.</p>
+<pre class="script" data-file="tabelas.sql">.tables
+</pre>
+<pre class="solucao" data-file="tabelas.sql">SELECT name FROM sqlite_schema WHERE type = 'table';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Comandos de ponto são do programa <code>sqlite3</code>, não do SQL: começam com <code>.</code>, um por linha, sem <code>;</code>.</li>
+  <li>Ver o banco: <code>.tables</code>, <code>.schema</code>, <code>.indexes</code>, <code>.databases</code>, <code>.show</code>.</li>
+  <li>Exibição: <code>.mode box</code> (ou <code>table</code>, <code>column</code>, <code>csv</code>, <code>json</code>…), <code>.headers on</code>, <code>.nullvalue</code>, <code>.width</code>, <code>.timer on</code>.</li>
+  <li>Arquivos: <code>.once</code>/<code>.output</code> para gravar, <code>.import</code> para ler CSV, <code>.read</code> para rodar um <code>.sql</code>, <code>.dump</code> e <code>.backup</code> para cópias.</li>
+  <li><code>.help</code> lista todos; <code>.help mode</code> detalha um; <code>.quit</code> sai.</li>
+  <li>No editor do guia, use o SQL equivalente (<code>sqlite_schema</code>, <code>pragma_table_info</code>).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
