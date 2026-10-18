@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instalar o SQLite — Linux, Windows e macOS | Guia SQL</title>
+<meta name="description" content="Como instalar o programa sqlite3 no Linux (apt no Debian e Ubuntu), no Windows (zip oficial do sqlite.org ou winget) e no macOS (já vem instalado, ou Homebrew), conferir a versão com sqlite3 --version, baixar o banco da Loja Aurora e resolver os erros mais comuns da instalação.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Instalar o <span class="hl">SQLite</span></h1>
+
+<p class="intro">O editor deste guia já roda um SQLite dentro do navegador, então você pode fazer as aulas sem instalar nada. Mas um dia você vai querer abrir um banco <strong>de verdade</strong>, que fica gravado no seu computador: o da sua lojinha, o das suas finanças, o de um projeto. Para isso existe o programa <code>sqlite3</code>, o "terminal do SQLite". Ele é pequeno, gratuito e se instala em um minuto. Nesta aula você vai instalá-lo no seu sistema, conferir a versão e abrir pela primeira vez o banco da Loja Aurora no seu computador.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que exatamente se instala: o programa de linha de comando <code>sqlite3</code>.</li>
+  <li>Como instalar no <strong>Linux</strong> (Debian, Ubuntu), no <strong>Windows</strong> e no <strong>macOS</strong>.</li>
+  <li>Por que a versão da sua distribuição Linux pode ser mais antiga que a do guia, e se isso importa.</li>
+  <li>Como conferir a instalação com <code>sqlite3 --version</code> e entender o número que aparece.</li>
+  <li>Como baixar o banco da Loja Aurora e criar o seu <code>loja.db</code>.</li>
+  <li>Os erros comuns: "comando não encontrado", arquivo inexistente, SQL digitado no lugar errado e o banco vazio criado sem querer.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o SQLite é um arquivo, o <code>sqlite3</code> é a chave</h2>
+<p>Lembre da aula <a href="bancos-famosos.html">Os Bancos Famosos</a>: o SQLite não tem servidor. O banco é um <strong>arquivo</strong>, como uma foto ou uma planilha. Para abrir uma planilha você precisa de um programa de planilhas; para abrir um banco SQLite, você precisa de um programa que fale SQLite. O mais simples deles, feito pelos próprios autores do SQLite, é o <code>sqlite3</code>: um programa de <strong>terminal</strong> (aquela janela de texto onde se digitam comandos).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coisa</th><th>O que é</th><th>Comparação</th></tr>
+<tr><td>SQLite</td><td>O motor de banco de dados</td><td>O "jeito" de guardar fichas</td></tr>
+<tr><td><code>loja.db</code></td><td>Um banco: um arquivo com as tabelas dentro</td><td>O fichário da loja</td></tr>
+<tr><td><code>sqlite3</code></td><td>O programa que abre o arquivo e recebe o seu SQL</td><td>A chave do fichário, e o balcão onde você faz os pedidos</td></tr>
+</table>
+</div>
+
+<p>Quem já usou o Linux talvez nem precise instalar: muitas distribuições já trazem o <code>sqlite3</code>. No macOS ele também já vem. Por isso, o primeiro passo em qualquer sistema é <strong>conferir</strong>.</p>
+
+<hr>
+
+<h2>1. Já tenho? Conferindo a versão</h2>
+<p>Abra o terminal (no Linux, procure "Terminal" no menu; no macOS, Aplicativos → Utilitários → Terminal; no Windows, o "Terminal" ou o "PowerShell") e digite:</p>
+
+<pre class="term">$ sqlite3 --version
+3.50.4 2025-07-30 19:33:53 4d8adfb30e03f9cf27f800a2c1ba3c48fb4ca1b08b0f5ed59a4d5ecbf45e20a3 (64-bit)</pre>
+
+<p>Essa é a resposta real do computador da Ana, que tem o mesmo SQLite usado em todas as aulas. Parte por parte:</p>
+
+<dl class="anatomy">
+  <dt>sqlite3</dt><dd>O nome do programa. O <strong>3</strong> faz parte do nome: é a terceira geração do SQLite, a única usada hoje. <code>sqlite</code>, sem o 3, não existe (veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>--version</dt><dd>Uma <strong>opção</strong>: em vez de abrir um banco, o programa só diz a versão e termina. <code>-version</code>, com um tracinho só, faz o mesmo.</dd>
+  <dt>3.50.4</dt><dd>A <strong>versão</strong>: geração 3, versão 50, quarta correção. É a que este guia usa.</dd>
+  <dt>2025-07-30 19:33:53</dt><dd>A data e a hora em que essa versão foi publicada (no padrão ano-mês-dia, o mesmo que você vai usar nas datas em SQL).</dd>
+  <dt>4d8adfb3…</dt><dd>Uma "impressão digital" do código-fonte daquela versão exata. Serve para os desenvolvedores; você pode ignorar.</dd>
+  <dt>(64-bit)</dt><dd>O programa foi feito para processadores de 64 bits, os de praticamente todo computador atual.</dd>
+</dl>
+
+<p>Apareceu um número começando com <code>3.</code>? Então você já tem o SQLite e pode pular para a <a href="#banco">seção 5</a>. Apareceu "comando não encontrado"? Siga a seção do seu sistema.</p>
+
+<div class="trysql" data-goal="contem:3.50.4">
+<p class="try-task"><strong>Experimente:</strong> o editor do guia também é um SQLite, e você pode perguntar a versão dele em SQL, com a função <code>sqlite_version()</code>. Mas o código abaixo esqueceu os parênteses. Rode, veja o erro e conserte: tem de aparecer a mesma versão do terminal da Ana.</p>
+<pre class="script" data-file="consulta.sql">SELECT sqlite_version;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT sqlite_version();
+</pre>
+</div>
+
+<p>Sem os parênteses, o SQLite procura uma <strong>coluna</strong> chamada <code>sqlite_version</code> e responde <code>no such column: sqlite_version</code>. Com eles, ele entende que é uma <strong>função</strong> e a executa.</p>
+
+<hr>
+
+<h2>2. No Linux: Debian, Ubuntu e derivados</h2>
+<p>No Debian, no Ubuntu, no Linux Mint e nos outros "parentes", programas se instalam pelo <strong>apt</strong>, o gerenciador de pacotes: uma "loja de aplicativos" de linha de comando. O pacote se chama <code>sqlite3</code>, igual ao programa:</p>
+
+<pre class="file" data-file="no terminal do Debian ou Ubuntu (ilustrativo)">sudo apt update
+sudo apt install sqlite3
+</pre>
+
+<dl class="anatomy">
+  <dt>sudo</dt><dd>"Faça como administrador". Instalar programas mexe no sistema, então o Linux pede a <strong>sua senha</strong> (ao digitar, nada aparece na tela; é normal).</dd>
+  <dt>apt update</dt><dd>Atualiza a lista de programas disponíveis, como abrir a loja de aplicativos e deixar ela carregar as novidades.</dd>
+  <dt>apt install sqlite3</dt><dd>Baixa e instala o pacote <code>sqlite3</code>. O apt mostra o que vai instalar e pergunta se pode continuar; responda <kbd>S</kbd> (ou <kbd>Y</kbd>, se o sistema estiver em inglês).</dd>
+</dl>
+
+<p>Os dois comandos estão marcados como <strong>ilustrativos</strong>: o computador da Ana, onde as saídas do guia são colhidas, não instala programas. Depois de instalar, confira com <code>sqlite3 --version</code>, como na seção 1.</p>
+
+<p>No Fedora, o comando equivalente é <code>sudo dnf install sqlite</code>; no Arch Linux, <code>sudo pacman -S sqlite</code>. Em todos eles, o programa instalado se chama <code>sqlite3</code>.</p>
+
+<h3>A versão da distribuição é mais antiga. Tem problema?</h3>
+<p>As distribuições Linux "congelam" as versões dos programas quando lançam uma edição, para tudo ficar estável durante anos. Por isso o <code>sqlite3</code> do apt costuma ser mais velho que o do site oficial. Em outubro de 2026, segundo os sites de pacotes do <a href="https://packages.debian.org/search?keywords=sqlite3&amp;searchon=names&amp;exact=1&amp;suite=all&amp;section=all">Debian</a> e do <a href="https://packages.ubuntu.com/search?keywords=sqlite3&amp;searchon=names&amp;exact=1&amp;suite=all&amp;section=all">Ubuntu</a>:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th>Versão do <code>sqlite3</code> no apt</th></tr>
+<tr><td>Debian 12 (bookworm)</td><td>3.40.1</td></tr>
+<tr><td>Debian 13 (trixie), o estável atual</td><td>3.46.1</td></tr>
+<tr><td>Ubuntu 24.04 LTS (noble)</td><td>3.45.1</td></tr>
+<tr><td>Ubuntu 26.04 LTS (resolute)</td><td>3.46.1</td></tr>
+<tr><td><strong>Este guia</strong></td><td><strong>3.50.4</strong></td></tr>
+<tr><td>Site oficial, sqlite.org (a mais nova)</td><td>3.54.1</td></tr>
+</table>
+</div>
+
+<p>Para aprender, uma 3.45 ou 3.46 serve para <strong>quase tudo</strong> do guia: o SQL básico é o mesmo há muitos anos. A diferença aparece nos detalhes: um recurso mais recente que falta, ou uma mensagem de erro que sai com outra cara. Se você quiser exatamente o que aparece nas aulas, use uma versão 3.50 ou mais nova, baixada do site oficial: na página de downloads do <a href="https://www.sqlite.org/download.html">sqlite.org</a>, a parte "Precompiled Binaries for Linux" tem o arquivo <code>sqlite-tools-linux-x64-</code>…<code>.zip</code>, com o <code>sqlite3</code> pronto para usar dentro.</p>
+
+<div class="tip">
+<strong>Lendo o número no nome do arquivo</strong>
+<p>Os arquivos do sqlite.org trazem a versão escrita em 7 algarismos: <code>3540100</code> é a 3.54.1 (3 · 54 · 01 · 00), e a do guia seria <code>3500400</code> (3 · 50 · 04 · 00). Assim, numa lista de arquivos, a versão mais nova sempre fica por último.</p>
+</div>
+
+<hr>
+
+<h2>3. No Windows</h2>
+<p>O Windows não traz o programa <code>sqlite3</code> pronto para usar no terminal (o SQLite até está lá dentro, escondido, a serviço de outros programas). Há dois caminhos, e os dois são <strong>ilustrativos</strong> aqui, porque o computador da Ana usa Linux.</p>
+
+<h3>Caminho A: o zip oficial</h3>
+<ol class="passo">
+  <li>Abra <a href="https://www.sqlite.org/download.html">sqlite.org/download.html</a> e procure a parte "Precompiled Binaries for Windows".</li>
+  <li>Baixe o arquivo <code>sqlite-tools-win-x64-</code>…<code>.zip</code> (em outubro de 2026, <code>sqlite-tools-win-x64-3540100.zip</code>). Ele é descrito como "Command-line tools for Windows x64", as ferramentas de linha de comando, e traz o <code>sqlite3.exe</code>. Se o seu computador tem processador ARM, pegue o <code>sqlite-tools-win-arm64-</code>…<code>.zip</code>. Os arquivos <code>sqlite-dll-</code>… <strong>não</strong> servem: são peças para programadores, sem o terminal.</li>
+  <li>Crie uma pasta, por exemplo <code>C:\sqlite</code>, e extraia o zip dentro dela.</li>
+  <li>Abra o PowerShell (ou o Terminal), entre na pasta e confira:</li>
+</ol>
+
+<pre class="file" data-file="no PowerShell do Windows (ilustrativo)">cd C:\sqlite
+.\sqlite3.exe --version
+</pre>
+
+<p>O <code>.\</code> na frente diz "o programa que está nesta pasta". Para poder digitar só <code>sqlite3</code> de qualquer pasta, como nas aulas, acrescente <code>C:\sqlite</code> à variável <strong>Path</strong> do Windows: menu Iniciar → "Editar as variáveis de ambiente do sistema" → Variáveis de Ambiente → Path → Editar → Novo. Feche e abra o terminal de novo depois.</p>
+
+<h3>Caminho B: o winget</h3>
+<p>O Windows 10 e o 11 têm um gerenciador de pacotes, o <strong>winget</strong>, parecido com o apt do Linux. O pacote do SQLite se chama <code>SQLite.SQLite</code>:</p>
+
+<pre class="file" data-file="no PowerShell do Windows (ilustrativo)">winget install SQLite.SQLite
+</pre>
+
+<p>Ele baixa e instala tudo sozinho. Feche e abra o terminal, e confira com <code>sqlite3 --version</code>. O winget pode demorar um pouco para receber a versão mais nova do site oficial, mas sempre traz uma bem recente.</p>
+
+<hr>
+
+<h2>4. No macOS</h2>
+<p>O macOS <strong>já vem</strong> com o <code>sqlite3</code>, na pasta <code>/usr/bin</code>. Abra o Terminal e confira com <code>sqlite3 --version</code>. A versão depende da versão do macOS, e às vezes é mais antiga que a do guia. Para ter uma mais nova, o caminho mais usado é o <strong>Homebrew</strong>, o gerenciador de pacotes mais popular do Mac (se ainda não tem, as instruções estão em brew.sh):</p>
+
+<pre class="file" data-file="no Terminal do macOS (ilustrativo)">brew install sqlite
+</pre>
+
+<p>Repare: a fórmula se chama <code>sqlite</code>, sem o 3. E tem um detalhe: o Homebrew a instala como <em>keg-only</em> ("guardada no barril"), "porque o macOS já fornece este programa", nas palavras da página da fórmula. Na prática, digitar <code>sqlite3</code> continua abrindo o da Apple. Para usar o do Homebrew, chame-o pelo caminho completo:</p>
+
+<pre class="file" data-file="no Terminal do macOS (ilustrativo)">$(brew --prefix sqlite)/bin/sqlite3 --version
+</pre>
+
+<p>O <code>brew --prefix sqlite</code> responde onde o Homebrew guardou o SQLite, e o resto do caminho aponta para o programa lá dentro. O site oficial também tem um zip para Mac (<code>sqlite-tools-osx-</code>…<code>.zip</code>), mas os programas dele não são assinados, e o macOS bloqueia a primeira execução; o Homebrew é mais simples.</p>
+
+<h3>Qual caminho escolher</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th>Caminho</th><th>Versão</th><th>Quando usar</th></tr>
+<tr><td>Linux (Debian, Ubuntu…)</td><td><code>sudo apt install sqlite3</code></td><td>A da distribuição (mais antiga)</td><td>O mais fácil; serve para quase todo o guia</td></tr>
+<tr><td>Linux</td><td>Zip do sqlite.org</td><td>A mais nova</td><td>Para ter o mesmo das aulas, ou um recurso novo</td></tr>
+<tr><td>Windows</td><td><code>winget install SQLite.SQLite</code></td><td>Recente</td><td>O mais fácil, se você tem o winget</td></tr>
+<tr><td>Windows</td><td>Zip do sqlite.org</td><td>A mais nova</td><td>Sem winget, ou para escolher a pasta</td></tr>
+<tr><td>macOS</td><td>O que já vem</td><td>A do macOS</td><td>Para começar já</td></tr>
+<tr><td>macOS</td><td><code>brew install sqlite</code></td><td>A mais nova</td><td>Para ter uma versão atual</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="banco">5. Baixando o banco da Loja Aurora</h2>
+<p>Com o <code>sqlite3</code> instalado, falta o banco das aulas. Ele está neste site como um arquivo de texto com todo o SQL que cria as 7 tabelas e põe os dados nelas: <a href="assets/sql/aurora.sql"><code>aurora.sql</code></a>. Baixe e salve na pasta <strong>Downloads</strong>. Depois, no terminal, entre nessa pasta e mande o <code>sqlite3</code> criar o banco a partir dele:</p>
+
+<pre class="term">$ cd Downloads
+$ ls -l
+total 24
+-rw-r--r-- 1 ana ana 20507 out 18 10:34 aurora.sql
+$ sqlite3 loja.db &lt; aurora.sql
+$ ls -l
+total 96
+-rw-r--r-- 1 ana ana 20507 out 18 10:34 aurora.sql
+-rw-r--r-- 1 ana ana 73728 out 18 10:34 loja.db
+$ sqlite3 loja.db "SELECT COUNT(*) FROM produtos;"
+45</pre>
+
+<dl class="anatomy">
+  <dt>cd Downloads</dt><dd>Entra na pasta onde está o <code>aurora.sql</code>.</dd>
+  <dt>sqlite3 loja.db</dt><dd>Abre o banco <code>loja.db</code>. Se o arquivo não existe, o <code>sqlite3</code> o cria.</dd>
+  <dt>&lt; aurora.sql</dt><dd>O sinal <code>&lt;</code> é do terminal, não do SQLite: "em vez do teclado, leia os comandos deste arquivo". O <code>sqlite3</code> executa, um por um, todos os comandos SQL do <code>aurora.sql</code> e termina. Não mostrar nada é bom sinal: deu certo.</dd>
+  <dt>loja.db, 73728</dt><dd>O banco novo, com 73.728 bytes (uns 72 KB): as 7 tabelas da loja cabem num arquivo menor que uma foto de celular.</dd>
+  <dt>sqlite3 loja.db "SELECT …;"</dt><dd>Outro jeito de usar o <code>sqlite3</code>: com o SQL entre aspas depois do nome do banco, ele roda aquele comando, mostra a resposta e termina. Os 45 produtos estão lá.</dd>
+</dl>
+
+<p>No Windows, os comandos são os mesmos no Prompt de Comando (<code>cmd</code>). No PowerShell, o <code>&lt;</code> não funciona; use <code>sqlite3 loja.db ".read aurora.sql"</code>, que pede ao próprio <code>sqlite3</code> para ler o arquivo. O <code>.read</code> é um "comando de ponto", assunto de <a href="comandos-ponto.html">Comandos de Ponto</a>.</p>
+
+<p>Pronto: o <code>loja.db</code> é o mesmo banco que o editor do guia usa. Tudo o que você rodar nele dá o mesmo resultado das aulas, com uma diferença importante: no seu computador, as mudanças <strong>ficam gravadas</strong>. Se um dia você estragar o banco de propósito (ou sem querer), apague o <code>loja.db</code> e rode o <code>sqlite3 loja.db &lt; aurora.sql</code> de novo. O banco volta novinho.</p>
+
+<div class="trysql" data-goal="out:^90$">
+<p class="try-task"><strong>Experimente:</strong> no seu terminal, a Ana conferiu os 45 produtos. Aqui no editor, faça a mesma conferência para outra tabela: mude o comando para contar as linhas da tabela <code>pedidos</code>. Se você criou o seu <code>loja.db</code>, rode o mesmo SQL lá e compare.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*) FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As saídas abaixo são reais, do terminal da Ana. As mensagens do terminal (o <code>bash</code>) saem em português, porque o sistema dela está em português; as do <code>sqlite3</code> saem em inglês.</p>
+
+<div class="cenario">
+<strong>"comando não encontrado"</strong>
+<pre class="term">$ sqlite --version
+bash: sqlite: comando não encontrado</pre>
+<p><strong>O que aconteceu:</strong> o terminal não achou nenhum programa chamado <code>sqlite</code>. Aqui o motivo é o nome: faltou o <strong>3</strong>. A mesma mensagem aparece quando o <code>sqlite3</code> realmente não está instalado (ou, no Windows, quando a pasta dele não está no Path).</p>
+<p><strong>Como consertar:</strong> digite <code>sqlite3</code>, com o 3. Se mesmo assim aparecer "comando não encontrado", instale pelo caminho do seu sistema (seções 2 a 4). No Windows, se acabou de instalar, feche e abra o terminal de novo.</p>
+</div>
+
+<div class="cenario">
+<strong>Arquivo inexistente: a pasta errada</strong>
+<pre class="term">$ sqlite3 loja.db &lt; aurora.sql
+bash: aurora.sql: Arquivo ou diretório inexistente</pre>
+<p><strong>O que aconteceu:</strong> a Ana rodou o comando na pasta pessoal (<code>~</code>), mas o <code>aurora.sql</code> está em <code>Downloads</code>. Quem reclama é o terminal (<code>bash:</code> no começo), antes mesmo de o <code>sqlite3</code> rodar.</p>
+<p><strong>Como consertar:</strong> entre na pasta certa primeiro (<code>cd Downloads</code>), ou diga onde está o arquivo: <code>sqlite3 loja.db &lt; Downloads/aurora.sql</code>. Na dúvida, <code>ls</code> mostra o que tem na pasta em que você está.</p>
+</div>
+
+<div class="cenario">
+<strong>SQL digitado no terminal, e não no <code>sqlite3</code></strong>
+<pre class="term">$ SELECT COUNT(*) FROM produtos;
+bash: erro de sintaxe próximo ao token inesperado `('</pre>
+<p><strong>O que aconteceu:</strong> o prompt <code>$</code> é do terminal, que não fala SQL. Ele tentou entender aquilo como um comando dele e tropeçou no parêntese.</p>
+<p><strong>Como consertar:</strong> SQL vai para o <code>sqlite3</code>: entre primeiro com <code>sqlite3 loja.db</code> (o prompt muda para <code>sqlite&gt;</code>) ou ponha o SQL entre aspas: <code>sqlite3 loja.db "SELECT COUNT(*) FROM produtos;"</code>. Os dois jeitos estão na próxima aula, <a href="shell-sqlite.html">O Terminal do SQLite</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>"no such table" num banco que você acabou de criar sem querer</strong>
+<pre class="term">$ sqlite3 lojaa.db "SELECT COUNT(*) FROM produtos;"
+Error: in prepare, no such table: produtos
+$ ls -l lojaa.db
+-rw-r--r-- 1 ana ana 0 out 18 10:35 lojaa.db</pre>
+<p><strong>O que aconteceu:</strong> um <code>a</code> a mais no nome do arquivo. O <code>sqlite3</code> não diz "arquivo não encontrado": quando o banco não existe, ele <strong>cria um novo, vazio</strong>, e a consulta falha porque, nesse banco novo, não existe tabela nenhuma. O <code>ls</code> mostra o arquivo novo, com 0 bytes. O <code>Error: in prepare</code> quer dizer que o erro aconteceu na hora de "preparar" o comando, antes de rodar. Com <code>Loja.db</code> (L maiúsculo) acontece o mesmo no Linux e no macOS, onde maiúsculas e minúsculas fazem diferença no nome dos arquivos.</p>
+<p><strong>Como consertar:</strong> apague o arquivo vazio (<code>rm lojaa.db</code>) e use o nome certo. Quando aparecer <code>no such table</code> numa tabela que você tem certeza de que existe, desconfie do nome do arquivo ou da pasta.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sistema</th><th>Instalar (ilustrativo)</th><th>Conferir</th></tr>
+<tr><td>Debian, Ubuntu, Mint</td><td><code>sudo apt install sqlite3</code></td><td rowspan="5"><code>sqlite3 --version</code></td></tr>
+<tr><td>Fedora</td><td><code>sudo dnf install sqlite</code></td></tr>
+<tr><td>Arch</td><td><code>sudo pacman -S sqlite</code></td></tr>
+<tr><td>Windows</td><td><code>winget install SQLite.SQLite</code> ou o zip <code>sqlite-tools-win-x64-…</code></td></tr>
+<tr><td>macOS</td><td>Já vem; ou <code>brew install sqlite</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>sqlite3 --version</code></td><td>Mostra a versão e termina</td></tr>
+<tr><td><code>sqlite3 loja.db &lt; aurora.sql</code></td><td>Cria (ou recria) o banco da loja a partir do arquivo SQL</td></tr>
+<tr><td><code>sqlite3 loja.db "SQL;"</code></td><td>Roda um comando SQL no banco e termina</td></tr>
+<tr><td><code>sqlite3 loja.db</code></td><td>Abre o banco para você digitar (próxima aula)</td></tr>
+<tr><td><code>SELECT sqlite_version();</code></td><td>Em SQL: a versão do SQLite (também no editor do guia)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O nome do programa</h3>
+<p>Complete o comando que mostra a versão do SQLite instalada:</p>
+<div class="ex-code"><input data-answer="sqlite3" aria-label="nome do programa"> --version</div>
+</div>
+
+<div class="exercise">
+<h3>2. O pacote do Debian</h3>
+<p>Complete o comando de instalação no Debian e no Ubuntu:</p>
+<div class="ex-code">sudo apt install <input data-answer="sqlite3" aria-label="nome do pacote"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana instalou o SQLite pelo apt no Debian 13 e recebeu a versão 3.46.1, mas o guia usa a 3.50. O que fazer?</p>
+<label><input type="radio" name="q3"> Nada funciona; é preciso trocar de sistema</label>
+<label><input type="radio" name="q3"> Desinstalar, porque versões antigas estragam o banco</label>
+<label><input type="radio" name="q3"> Pode seguir: quase tudo é igual; para ter o mesmo das aulas, dá para usar o zip do sqlite.org</label>
+<label><input type="radio" name="q3"> Esperar o Debian 14</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. No Windows, qual arquivo do sqlite.org traz o programa <code>sqlite3.exe</code>?</p>
+<label><input type="radio" name="q4"> <code>sqlite-tools-win-x64-….zip</code></label>
+<label><input type="radio" name="q4"> <code>sqlite-dll-win-x64-….zip</code></label>
+<label><input type="radio" name="q4"> <code>sqlite-tools-osx-x64-….zip</code></label>
+<label><input type="radio" name="q4"> <code>sqlite-tools-linux-x64-….zip</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. <code>sqlite3 lojaa.db "SELECT * FROM produtos;"</code> respondeu <code>no such table: produtos</code>. O que aconteceu?</p>
+<label><input type="radio" name="q5"> O SQLite não está instalado</label>
+<label><input type="radio" name="q5"> A tabela de produtos foi apagada do <code>loja.db</code></label>
+<label><input type="radio" name="q5"> Faltou o ponto e vírgula</label>
+<label><input type="radio" name="q5"> O nome do arquivo está errado, e o <code>sqlite3</code> criou um banco novo, vazio, chamado <code>lojaa.db</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. No macOS, depois de <code>brew install sqlite</code>, digitar <code>sqlite3</code> ainda abre a versão antiga. Por quê?</p>
+<label><input type="radio" name="q6"> A instalação falhou</label>
+<label><input type="radio" name="q6"> A fórmula é <em>keg-only</em>: o Homebrew não passa na frente do <code>sqlite3</code> que já vem no macOS</label>
+<label><input type="radio" name="q6"> O Mac não aceita versões novas</label>
+<label><input type="radio" name="q6"> Faltou reiniciar o computador</label>
+</div>
+
+<h3>Missão final: a ficha técnica do banco</h3>
+
+<div class="trysql" data-goal="contem:3.50.4;;out:45\n30">
+<p class="try-task"><strong>Missão:</strong> monte, numa caixa só, a "ficha técnica" que você conferiria depois de instalar: primeiro a versão do SQLite (com a função de versão), depois a quantidade de produtos (já está aí), e por último a quantidade de <strong>clientes</strong>. São três comandos, cada um com o seu ponto e vírgula, e três resultados.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT sqlite_version();
+SELECT COUNT(*) FROM produtos;
+SELECT COUNT(*) FROM clientes;
+</pre>
+</div>
+
+<p>Num computador com o <code>loja.db</code>, a mesma ficha técnica fica assim: <code>sqlite3 --version</code> e depois <code>sqlite3 loja.db "SELECT COUNT(*) FROM clientes;"</code>. Os números têm de bater com os do editor: 45 produtos e 30 clientes.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Instalar o SQLite é instalar o programa de terminal <code>sqlite3</code>, que abre arquivos de banco como o <code>loja.db</code>. O editor do guia não precisa de instalação nenhuma.</li>
+  <li>Confira primeiro: <code>sqlite3 --version</code>. O guia usa a <strong>3.50.4</strong>.</li>
+  <li><strong>Linux</strong>: <code>sudo apt install sqlite3</code>. A versão da distribuição pode ser mais antiga (Debian 13: 3.46.1); serve para quase tudo, e o zip do sqlite.org tem a mais nova.</li>
+  <li><strong>Windows</strong>: <code>winget install SQLite.SQLite</code>, ou o zip <code>sqlite-tools-win-x64-…</code> do sqlite.org (e a pasta no Path).</li>
+  <li><strong>macOS</strong>: já vem; para uma versão nova, <code>brew install sqlite</code> (keg-only: chame pelo caminho do Homebrew).</li>
+  <li>O banco da loja se cria com <code>sqlite3 loja.db &lt; aurora.sql</code>. Para recomeçar do zero, apague o <code>loja.db</code> e rode de novo.</li>
+  <li>Nome de banco errado não dá "arquivo não encontrado": o <code>sqlite3</code> cria um banco vazio, e aparece <code>no such table</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
