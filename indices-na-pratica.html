@@ -71,10 +71,10 @@ sqlite> INSERT INTO vendas
    ...>        date('2021-01-01', '+' || (i % 2000) || ' days'),
    ...>        i % 2, round((i * 37) % 50000 / 100.0, 2)
    ...> FROM n;
-Run Time: real 1.451 user 1.364664 sys 0.027988
+Run Time: real 1.479 user 1.383718 sys 0.035837
 sqlite> SELECT COUNT(*) FROM vendas;
 1000000
-Run Time: real 0.012 user 0.003676 sys 0.008094</pre>
+Run Time: real 0.012 user 0.004625 sys 0.007986</pre>
 
 <dl class="anatomy">
   <dt>(x1...&gt; e ...&gt;</dt><dd>O <code>sqlite3</code> mostra esses prompts de continuação enquanto o comando não terminou (falta o <code>;</code>). O <code>(x1</code> avisa que há um parêntese aberto.</dd>
@@ -83,7 +83,7 @@ Run Time: real 0.012 user 0.003676 sys 0.008094</pre>
   <dt>(i * 7919) % 50000 + 1</dt><dd>Um <code>cliente_id</code> entre 1 e 50.000, "embaralhado" por uma conta. Não é sorteio: rodando de novo, sai igual, e os números desta aula podem ser conferidos.</dd>
   <dt>date('2021-01-01', '+' || (i % 2000) || ' days')</dt><dd>Uma data entre 2021 e 2026 (aula <a href="funcoes-data.html">Funções de Data</a>).</dd>
   <dt>i % 2</dt><dd>A coluna <code>pago</code>: 0 ou 1, metade das vendas de cada.</dd>
-  <dt>Run Time: real 1.451</dt><dd>O tempo: <strong>real</strong> é o tempo de relógio, em segundos; <strong>user</strong> e <strong>sys</strong> são o tempo de processador gasto pelo programa e pelo sistema. Olhe o <code>real</code>.</dd>
+  <dt>Run Time: real 1.479</dt><dd>O tempo: <strong>real</strong> é o tempo de relógio, em segundos; <strong>user</strong> e <strong>sys</strong> são o tempo de processador gasto pelo programa e pelo sistema. Olhe o <code>real</code>.</dd>
 </dl>
 
 <p>Um milhão de linhas em um segundo e meio. Cada cliente tem 20 vendas: 1.000.000 dividido por 50.000 clientes.</p>
@@ -109,37 +109,37 @@ SELECT * FROM vendas LIMIT 3;
 
 <pre class="term">sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
 7128.6
-Run Time: real 0.044 user 0.028657 sys 0.015887
+Run Time: real 0.046 user 0.037990 sys 0.007902
 sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
 7128.6
-Run Time: real 0.046 user 0.033042 sys 0.012045</pre>
+Run Time: real 0.047 user 0.042404 sys 0.004080</pre>
 
-<p>Uns 45 milésimos de segundo. Parece pouco, mas é para <strong>uma</strong> busca; um site que faz essa consulta mil vezes por minuto gasta 45 segundos de processador por minuto só nela. Agora, com o índice:</p>
+<p>Uns 46 milésimos de segundo. Parece pouco, mas é para <strong>uma</strong> busca; um site que faz essa consulta mil vezes por minuto gasta uns 46 segundos de processador por minuto só nela. Agora, com o índice:</p>
 
 <pre class="term">$ sqlite3 vendas.db
 SQLite version 3.50.4 2025-07-30 19:33:53
 Enter ".help" for usage hints.
 sqlite> .timer on
 sqlite> CREATE INDEX idx_vendas_cliente ON vendas(cliente_id);
-Run Time: real 0.450 user 0.380075 sys 0.044106
+Run Time: real 0.400 user 0.365545 sys 0.008074
 sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
 7128.6
-Run Time: real 0.000 user 0.000137 sys 0.000016
+Run Time: real 0.000 user 0.000130 sys 0.000003
 sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
 7128.6
-Run Time: real 0.000 user 0.000046 sys 0.000000
+Run Time: real 0.000 user 0.000028 sys 0.000001
 sqlite> .timer off
 sqlite> EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
 QUERY PLAN
 `--SEARCH vendas USING INDEX idx_vendas_cliente (cliente_id=?)</pre>
 
-<p><code>real 0.000</code>: menos de um milésimo de segundo, abaixo do que o <code>.timer</code> consegue mostrar. Pelo tempo de processador (<code>user</code>: 0,029 s antes, 0,0001 s depois), a busca ficou <strong>centenas de vezes</strong> mais rápida. O plano mudou de <code>SCAN</code> para <code>SEARCH … USING INDEX</code>: em vez de ler um milhão de linhas, o SQLite achou no índice as 20 do cliente e leu só essas.</p>
+<p><code>real 0.000</code>: menos de um milésimo de segundo, abaixo do que o <code>.timer</code> consegue mostrar. Pelo tempo de processador (<code>user</code>: 0,038 s antes, 0,00013 s depois), a busca ficou <strong>centenas de vezes</strong> mais rápida. O plano mudou de <code>SCAN</code> para <code>SEARCH … USING INDEX</code>: em vez de ler um milhão de linhas, o SQLite achou no índice as 20 do cliente e leu só essas.</p>
 
 <div class="table-wrap">
 <table class="ref">
 <tr><th>Na máquina da Ana (1.000.000 de vendas)</th><th>Tempo (<code>real</code>)</th></tr>
-<tr><td>Total do cliente 4242, sem índice (<code>SCAN</code>)</td><td>0,044 s</td></tr>
-<tr><td>Criar o índice <code>idx_vendas_cliente</code></td><td>0,450 s (uma vez só)</td></tr>
+<tr><td>Total do cliente 4242, sem índice (<code>SCAN</code>)</td><td>0,046 s</td></tr>
+<tr><td>Criar o índice <code>idx_vendas_cliente</code></td><td>0,400 s (uma vez só)</td></tr>
 <tr><td>Total do cliente 4242, com índice (<code>SEARCH</code>)</td><td>menos de 0,001 s</td></tr>
 </table>
 </div>
@@ -154,20 +154,20 @@ QUERY PLAN
 <p>O índice é uma cópia ordenada da coluna, com o endereço de cada linha. Ele fica no mesmo arquivo do banco:</p>
 
 <pre class="term">$ ls -lh vendas.db
--rw-r--r-- 1 ana ana 33M out 18 10:54 vendas.db
+-rw-r--r-- 1 ana ana 33M out 18 11:17 vendas.db
 $ ls -lh vendas.db
--rw-r--r-- 1 ana ana 44M out 18 10:55 vendas.db</pre>
+-rw-r--r-- 1 ana ana 44M out 18 11:19 vendas.db</pre>
 
 <p>O primeiro <code>ls</code> foi feito antes de criar o <code>idx_vendas_cliente</code>; o segundo, logo depois. O arquivo cresceu de 33 para 44 megabytes. Quanto ocupa cada parte, a tabela virtual <code>dbstat</code> do SQLite conta (aqui já com mais dois índices, que você vai ver nas seções seguintes):</p>
 
 <pre class="term">sqlite> SELECT name, round(SUM(pgsize) / 1048576.0, 1) AS mb FROM dbstat GROUP BY name ORDER BY mb DESC;
-vendas|32.8
+vendas|32.9
 idx_vendas_data|18.2
 idx_vendas_cliente|10.8
 idx_vendas_pago|8.6
 sqlite_schema|0.0</pre>
 
-<p>Três índices juntos (37,6 MB) já ocupam mais que a própria tabela (32,8 MB). O <code>dbstat</code> também funciona no editor, com a tabela de dez mil linhas:</p>
+<p>Três índices juntos (37,6 MB) já ocupam mais que a própria tabela (32,9 MB). O <code>dbstat</code> também funciona no editor, com a tabela de dez mil linhas:</p>
 
 <pre class="file" data-file="dbstat.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
                      data TEXT, pago INTEGER, valor REAL);
@@ -195,11 +195,11 @@ sqlite> CREATE INDEX ci_data ON com_indices(data);
 sqlite> CREATE INDEX ci_pago ON com_indices(pago);
 sqlite> .timer on
 sqlite> INSERT INTO sem_indice SELECT * FROM vendas;
-Run Time: real 0.279 user 0.209171 sys 0.031550
+Run Time: real 0.309 user 0.219081 sys 0.041150
 sqlite> INSERT INTO com_indices SELECT * FROM vendas;
-Run Time: real 5.861 user 3.349615 sys 2.416946</pre>
+Run Time: real 7.627 user 4.260789 sys 3.274614</pre>
 
-<p>De 0,28 segundo para 5,86 segundos: <strong>vinte vezes</strong> mais lento, na máquina da Ana. (O <code>WHERE 0</code> é um truque: copia só a estrutura da tabela, sem nenhuma linha.) Por isso, quem vai carregar muitos dados de uma vez costuma apagar os índices, carregar e criar os índices de novo no fim: criar um índice numa tabela cheia (0,45 s, na seção 2) é bem mais rápido que mantê-lo linha por linha.</p>
+<p>De 0,31 segundo para 7,63 segundos: quase <strong>vinte e cinco vezes</strong> mais lento, na máquina da Ana. (O <code>WHERE 0</code> é um truque: copia só a estrutura da tabela, sem nenhuma linha.) Por isso, quem vai carregar muitos dados de uma vez costuma apagar os índices, carregar e criar os índices de novo no fim: criar um índice numa tabela cheia (0,40 s, na seção 2) é bem mais rápido que mantê-lo linha por linha.</p>
 
 <hr>
 
@@ -244,15 +244,15 @@ SELECT COUNT(*), SUM(valor) FROM vendas WHERE data &gt;= '2022-03-01' AND data &
 <p>No milhão de vendas, na máquina da Ana:</p>
 
 <pre class="term">sqlite> CREATE INDEX idx_vendas_data ON vendas(data);
-Run Time: real 0.367 user 0.300515 sys 0.028195
+Run Time: real 0.381 user 0.318901 sys 0.028327
 sqlite> SELECT COUNT(*), SUM(valor) FROM vendas WHERE substr(data, 1, 7) = '2022-03';
 15500|3847665.0
-Run Time: real 0.080 user 0.067806 sys 0.011966
+Run Time: real 0.081 user 0.068671 sys 0.012100
 sqlite> SELECT COUNT(*), SUM(valor) FROM vendas WHERE data &gt;= '2022-03-01' AND data &lt; '2022-04-01';
 15500|3847665.0
-Run Time: real 0.009 user 0.008774 sys 0.000125</pre>
+Run Time: real 0.026 user 0.018327 sys 0.007816</pre>
 
-<p>O mesmo resultado, nove vezes mais rápido. O mesmo vale para <code>lower(cidade) = 'teresina'</code>, <code>strftime('%Y', data) = '2025'</code> e qualquer outra função em volta da coluna.</p>
+<p>O mesmo resultado, três vezes mais rápido. O mesmo vale para <code>lower(cidade) = 'teresina'</code>, <code>strftime('%Y', data) = '2025'</code> e qualquer outra função em volta da coluna.</p>
 
 <div class="trysql" data-goal="out:SEARCH pedidos USING (COVERING )?INDEX idx_pedidos_data;;out:\n32$">
 <p class="try-task"><strong>Missão:</strong> o índice na data dos pedidos existe, mas a consulta dos pedidos de 2025 não o usa (veja o plano). Reescreva as <strong>duas</strong> consultas, o plano e a contagem, com uma faixa de datas no lugar do <code>substr()</code>. A contagem tem de continuar dando 32.</p>
@@ -346,15 +346,15 @@ EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE cidade = 'Fortaleza';
 <p>A coluna <code>pago</code> tem só dois valores, 0 e 1, cada um em metade das vendas. A Ana criou um índice nela e mediu o total das vendas pagas, com o índice e proibindo o índice (<code>NOT INDEXED</code>, "não indexado", obriga o SQLite a ler a tabela direto):</p>
 
 <pre class="term">sqlite> CREATE INDEX idx_vendas_pago ON vendas(pago);
-Run Time: real 0.265 user 0.201534 sys 0.039734
+Run Time: real 0.269 user 0.213390 sys 0.026817
 sqlite> SELECT SUM(valor) FROM vendas WHERE pago = 1;
 125000000.0
-Run Time: real 0.132 user 0.109303 sys 0.023443
+Run Time: real 0.140 user 0.119608 sys 0.019961
 sqlite> SELECT SUM(valor) FROM vendas NOT INDEXED WHERE pago = 1;
 125000000.0
-Run Time: real 0.055 user 0.042003 sys 0.012384</pre>
+Run Time: real 0.055 user 0.051250 sys 0.003889</pre>
 
-<p>Com o índice: 0,132 s. Sem: 0,055 s. O índice deixou a consulta <strong>duas vezes e meia mais lenta</strong>, na máquina da Ana. O motivo é o "sal" do livro de receitas: para 500 mil linhas, o SQLite vai ao índice, pega o endereço, pula para a linha na tabela, volta ao índice… quinhentas mil vezes. Ler a tabela de uma vez, em ordem, é mais rápido.</p>
+<p>Com o índice: 0,140 s. Sem: 0,055 s. O índice deixou a consulta <strong>duas vezes e meia mais lenta</strong>, na máquina da Ana. O motivo é o "sal" do livro de receitas: para 500 mil linhas, o SQLite vai ao índice, pega o endereço, pula para a linha na tabela, volta ao índice… quinhentas mil vezes. Ler a tabela de uma vez, em ordem, é mais rápido.</p>
 
 <p>E o SQLite escolheu o índice mesmo assim:</p>
 
@@ -536,7 +536,7 @@ CREATE INDEX idx_clientes_cidade_min ON clientes ((lower(cidade)));
 </div>
 
 <div class="mc" data-answer="1">
-<p class="mc-q">6. Na máquina da Ana, copiar um milhão de vendas para uma tabela com três índices levou 5,86 s, e para uma sem índices, 0,28 s. Por quê?</p>
+<p class="mc-q">6. Na máquina da Ana, copiar um milhão de vendas para uma tabela com três índices levou 7,63 s, e para uma sem índices, 0,31 s. Por quê?</p>
 <label><input type="radio" name="q6"> Porque cada linha nova também precisa entrar, no lugar certo, em cada um dos índices</label>
 <label><input type="radio" name="q6"> Porque o índice apaga as linhas repetidas</label>
 <label><input type="radio" name="q6"> Porque a tabela com índices é guardada em outro arquivo</label>
@@ -568,8 +568,8 @@ SELECT nome FROM clientes WHERE nome LIKE 'ana%';
 <h2>Resumo</h2>
 <ul>
   <li>Para medir, gere muitas linhas com uma CTE recursiva e use <code>.timer on</code>. Compare os tempos entre si; o número exato depende da máquina.</li>
-  <li>Na máquina da Ana, achar 20 vendas em um milhão caiu de 0,044 s (<code>SCAN</code>) para menos de 0,001 s (<code>SEARCH</code>) com o índice. Esse é o caso ideal: tabela grande, poucas linhas.</li>
-  <li>O índice custa espaço (33 MB → 44 MB) e deixa o <code>INSERT</code> mais lento (0,28 s → 5,86 s com três índices).</li>
+  <li>Na máquina da Ana, achar 20 vendas em um milhão caiu de 0,046 s (<code>SCAN</code>) para menos de 0,001 s (<code>SEARCH</code>) com o índice. Esse é o caso ideal: tabela grande, poucas linhas.</li>
+  <li>O índice custa espaço (33 MB → 44 MB) e deixa o <code>INSERT</code> mais lento (0,31 s → 7,63 s com três índices).</li>
   <li>O índice só é usado com a coluna <strong>pura</strong>: nada de função (<code>substr</code>, <code>lower</code>), conta ou <code>LIKE '%…'</code>. Troque por faixas (<code>data &gt;= … AND data &lt; …</code>).</li>
   <li><code>LIKE 'x%'</code> só usa índice criado com <code>COLLATE NOCASE</code>. O índice composto vale a partir da primeira coluna.</li>
   <li>Em coluna com poucos valores (como <code>pago</code>), o índice pode deixar a consulta mais lenta; <code>NOT INDEXED</code> e <code>+col</code> desligam o índice.</li>
