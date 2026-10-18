@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL NOT — invertendo uma condição | Guia SQL</title>
+<meta name="description" content="O operador NOT do SQL para quem nunca mexeu num banco de dados: como inverter uma condição do WHERE, NOT com colunas de sim/não, a ordem com AND e OR, os parênteses, a armadilha do NULL e as mensagens de erro reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">NOT</span></h1>
+
+<p class="intro">Às vezes é mais fácil dizer o que você <strong>não</strong> quer. A Ana vai mandar um cartão para todos os clientes da Loja Aurora que moram <strong>fora</strong> do Piauí. Em vez de listar os outros estados um por um, ela pode pedir "todos, menos os do Piauí". É para isso que serve o <code>NOT</code> ("não", em inglês): ele <strong>inverte</strong> uma condição do <code>WHERE</code>. O que era verdadeiro vira falso, e o que era falso vira verdadeiro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>NOT</code> inverte uma condição do <code>WHERE</code>.</li>
+  <li>O <code>NOT</code> em colunas de "sim ou não" (0 e 1), como <code>vip</code> e <code>descontinuado</code>.</li>
+  <li>A ordem em que o SQL lê <code>NOT</code>, <code>AND</code> e <code>OR</code>, e por que os <strong>parênteses</strong> mudam tudo.</li>
+  <li>A troca de <code>NOT (A OR B)</code> por <code>NOT A AND NOT B</code>.</li>
+  <li>A armadilha do <code>NULL</code>: por que "não é do Piauí" deixa de fora quem não tem estado nenhum.</li>
+  <li>Os parentes do <code>NOT</code>: <code>NOT LIKE</code>, <code>NOT IN</code>, <code>NOT BETWEEN</code>, <code>IS NOT NULL</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>. Cada quadro "Resultado" é desenhado pelo SQLite de verdade, rodando no seu navegador. Se ainda não viu o <code>WHERE</code>, comece por <a href="where.html">WHERE</a>; o <code>NOT</code> conversa muito com <a href="and.html">AND</a> e <a href="or.html">OR</a>, das aulas anteriores.</p>
+
+<hr>
+
+<h2>A ideia: tirar da pilha</h2>
+<p>Imagine as fichas dos 30 clientes da loja numa pilha em cima da mesa. A Ana pode fazer dois pedidos diferentes ao ajudante:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pedido</th><th>Em SQL</th><th>O que sobra na mão</th></tr>
+<tr><td>"Separe as fichas do Piauí."</td><td><code>WHERE estado = 'PI'</code></td><td>Só as fichas do Piauí</td></tr>
+<tr><td>"Separe as fichas que <strong>não</strong> são do Piauí."</td><td><code>WHERE NOT estado = 'PI'</code></td><td>Todas as outras</td></tr>
+</table>
+</div>
+
+<p>O ajudante faz a mesma pergunta para cada ficha ("é do Piauí?"), mas, com o <code>NOT</code>, fica com as fichas em que a resposta foi <strong>não</strong>. O <code>NOT</code> não muda a pergunta; ele <strong>troca a resposta</strong>.</p>
+
+<hr>
+
+<h2>1. O primeiro NOT</h2>
+<p>Os clientes que não moram no Piauí:</p>
+
+<pre class="file" data-file="fora-do-piaui.sql" data-resultado>SELECT nome, cidade, estado
+FROM clientes
+WHERE NOT estado = 'PI';
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>"Onde": o filtro. Só passam as linhas em que a condição dá <strong>verdadeiro</strong>.</dd>
+  <dt>NOT</dt><dd>"Não": inverte a condição que vem logo depois dele.</dd>
+  <dt>estado = 'PI'</dt><dd>A condição original: "o estado é PI?". Para José Ribamar (PI) a resposta é sim; para Ana Beatriz (SP), não.</dd>
+  <dt>NOT estado = 'PI'</dt><dd>A condição invertida: para José Ribamar, o "sim" virou "não", e ele fica de fora; para Ana Beatriz, o "não" virou "sim", e ela entra.</dd>
+</dl>
+
+<p>Resultado: 16 clientes, de São Paulo, Fortaleza e Recife. Os outros 14 moram no Piauí (Teresina, Parnaíba, Picos, Oeiras, Floriano). 16 + 14 = 30, a tabela inteira: o <code>NOT</code> pegou exatamente o "resto".</p>
+
+<div class="tip">
+<strong>O NOT vai antes da condição inteira</strong>
+<p>Repare na posição: <code>NOT estado = 'PI'</code>, com o <code>NOT</code> na frente. O SQL lê isso como <code>NOT (estado = 'PI')</code>: primeiro compara, depois inverte. Escrever o <code>NOT</code> no meio, como em português ("estado não igual a PI"), dá erro; você vai ver em <a href="#errado">Quando dá errado</a>.</p>
+</div>
+
+<hr>
+
+<h2>2. Verdadeiro e falso no SQLite: 1 e 0</h2>
+<p>Para entender o <code>NOT</code> de verdade, vale ver o que ele faz com um valor solto. No SQLite, "verdadeiro" é <strong>1</strong> e "falso" é <strong>0</strong>. Você pode perguntar direto, sem tabela nenhuma:</p>
+
+<pre class="file" data-file="not-solto.sql" data-resultado>SELECT NOT 1, NOT 0, NOT 5, NOT NULL;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>NOT 1</code></td><td>0</td><td>1 é verdadeiro; o contrário é falso (0).</td></tr>
+<tr><td><code>NOT 0</code></td><td>1</td><td>0 é falso; o contrário é verdadeiro (1).</td></tr>
+<tr><td><code>NOT 5</code></td><td>0</td><td>Qualquer número diferente de 0 conta como verdadeiro.</td></tr>
+<tr><td><code>NOT NULL</code></td><td><em>NULL</em></td><td><code>NULL</code> é "não sei". O contrário de "não sei" continua "não sei". Guarde isso: é a armadilha da seção 6.</td></tr>
+</table>
+</div>
+
+<h3>Colunas de sim ou não</h3>
+<p>A Loja Aurora guarda "sim ou não" como 1 ou 0. A coluna <code>vip</code> dos clientes é 1 para os 5 clientes VIP e 0 para os outros. A coluna <code>descontinuado</code> dos produtos é 1 para os produtos que a loja parou de vender. Para ver os produtos que <strong>não</strong> são "não descontinuados" (ou seja, os descontinuados):</p>
+
+<pre class="file" data-file="descontinuados.sql" data-resultado>SELECT nome, preco, estoque
+FROM produtos
+WHERE NOT descontinuado = 0;
+</pre>
+
+<p>Dois produtos, os dois com estoque 0. Esse exemplo é de propósito "torto", para você treinar a leitura: "não é igual a zero" é o mesmo que "é igual a 1". Na vida real, a Ana escreveria <code>WHERE descontinuado = 1</code>, que é mais fácil de ler.</p>
+
+<p>Como 0 já é falso e 1 já é verdadeiro, no SQLite dá até para usar a coluna sozinha. Os clientes que <strong>não</strong> são VIP:</p>
+
+<pre class="file" data-file="nao-vip.sql" data-resultado>SELECT nome, vip
+FROM clientes
+WHERE NOT vip;
+</pre>
+
+<p>25 clientes, todos com <code>vip</code> 0. Para o cliente 2 (Maria Clara), <code>vip</code> é 0, <code>NOT 0</code> é 1 (verdadeiro), e ela entra. Para o cliente 1 (José Ribamar), <code>vip</code> é 1, <code>NOT 1</code> é 0, e ele fica de fora. É o mesmo que <code>WHERE NOT vip = 1</code> ou <code>WHERE vip = 0</code>.</p>
+
+<div class="warning">
+<strong>Atalho que não funciona em todo banco</strong>
+<p><code>WHERE NOT vip</code> funciona no SQLite e no MySQL, mas não em todos os bancos (veja <a href="#outros">Nos outros bancos</a>). Se você quer um SQL que roda em qualquer lugar, escreva a comparação inteira: <code>WHERE vip = 0</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:39">
+<p class="try-task"><strong>Experimente:</strong> a categoria 1 da loja é a Papelaria. Mostre os produtos que <strong>não</strong> são da Papelaria, colocando um <code>NOT</code> no lugar certo. Devem aparecer 39 produtos.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, categoria_id
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, categoria_id
+FROM produtos
+WHERE NOT categoria_id = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. NOT junto com AND: a ordem importa</h2>
+<p>A Ana quer os clientes VIP que <strong>não</strong> são do Piauí. Ela escreve:</p>
+
+<pre class="file" data-file="vip-fora.sql" data-resultado>SELECT nome, cidade, estado, vip
+FROM clientes
+WHERE NOT estado = 'PI' AND vip = 1;
+</pre>
+
+<p>Três clientes: Ana Beatriz (SP), Fernanda e Mirela (CE). Deu certo porque o SQL lê as partes nesta ordem:</p>
+
+<ol class="passo">
+  <li>Primeiro as comparações: <code>estado = 'PI'</code> e <code>vip = 1</code>.</li>
+  <li>Depois o <code>NOT</code>, que inverte <strong>só</strong> a comparação que está colada nele: <code>estado = 'PI'</code>.</li>
+  <li>Depois o <code>AND</code>, que junta as duas partes.</li>
+  <li>Por último, o <code>OR</code> (se houver).</li>
+</ol>
+
+<p>Ou seja, o SQL entendeu <code>(NOT estado = 'PI') AND (vip = 1)</code>. Agora veja o que acontece com parênteses em volta das duas condições:</p>
+
+<pre class="file" data-file="com-parenteses.sql" data-resultado>SELECT nome, cidade, estado, vip
+FROM clientes
+WHERE NOT (estado = 'PI' AND vip = 1);
+</pre>
+
+<p>28 clientes! Agora o <code>NOT</code> inverte a pergunta <strong>inteira</strong> que está dentro dos parênteses: "é do Piauí <strong>e</strong> é VIP?". Só dois clientes respondem "sim" a ela (José Ribamar e Larissa, os VIPs do Piauí); com o <code>NOT</code>, saem esses dois e ficam os outros 28. Parece uma diferença pequena na escrita, mas a pergunta mudou completamente.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Pergunta em português</th><th>Linhas</th></tr>
+<tr><td><code>NOT estado = 'PI' AND vip = 1</code></td><td>Não é do Piauí, <strong>e</strong> é VIP</td><td>3</td></tr>
+<tr><td><code>NOT (estado = 'PI' AND vip = 1)</code></td><td>Não é verdade que é do Piauí e VIP ao mesmo tempo</td><td>28</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Na dúvida, parênteses</strong>
+<p>Parênteses nunca atrapalham. <code>(NOT estado = 'PI') AND vip = 1</code> dá o mesmo resultado da primeira consulta, e quem lê não precisa lembrar da ordem. Quando juntar <code>NOT</code>, <code>AND</code> e <code>OR</code>, use parênteses para deixar a sua intenção clara.</p>
+</div>
+
+<hr>
+
+<h2>4. NOT de um OR: a troca de De Morgan</h2>
+<p>A Ana quer os clientes que <strong>nem</strong> são do Piauí <strong>nem</strong> são VIP: os que vão receber um cupom de boas-vindas para conhecer a loja. Dá para escrever de dois jeitos:</p>
+
+<pre class="file" data-file="nem-nem.sql" data-resultado>SELECT nome, cidade, estado, vip
+FROM clientes
+WHERE NOT (estado = 'PI' OR vip = 1);
+</pre>
+
+<pre class="file" data-file="nem-nem-2.sql" data-resultado>SELECT nome, cidade, estado, vip
+FROM clientes
+WHERE NOT estado = 'PI' AND NOT vip = 1;
+</pre>
+
+<p>Os dois devolvem os mesmos 13 clientes. Essa troca tem nome: é a <strong>lei de De Morgan</strong>, de um matemático inglês do século XIX. Ela diz:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Isto…</th><th>…é o mesmo que isto</th><th>Em português</th></tr>
+<tr><td><code>NOT (A OR B)</code></td><td><code>NOT A AND NOT B</code></td><td>"Nem A nem B"</td></tr>
+<tr><td><code>NOT (A AND B)</code></td><td><code>NOT A OR NOT B</code></td><td>"Não as duas coisas ao mesmo tempo"</td></tr>
+</table>
+</div>
+
+<p>Quando o <code>NOT</code> "entra" nos parênteses, ele inverte cada pedaço <strong>e troca</strong> o <code>OR</code> por <code>AND</code> (ou o <code>AND</code> por <code>OR</code>). O erro clássico é inverter os pedaços e esquecer de trocar o conector.</p>
+
+<hr>
+
+<h2>5. NOT com mais de uma condição negada</h2>
+<p>A Ana quer os clientes das cidades "pequenas" da lista, as que não são as três maiores (Teresina, São Paulo e Fortaleza):</p>
+
+<pre class="file" data-file="cidades-menores.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE NOT cidade = 'Teresina'
+  AND NOT cidade = 'São Paulo'
+  AND NOT cidade = 'Fortaleza';
+</pre>
+
+<p>Seis clientes, de Parnaíba, Recife, Picos, Oeiras e Floriano. Funciona, mas repare como ficou comprido. Para "não é nenhum destes", o SQL tem um jeito mais curto, o <code>NOT IN</code>, que você vai ver na aula <a href="in.html">IN</a>:</p>
+
+<pre class="file" data-file="cidades-menores-in.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE cidade NOT IN ('Teresina', 'São Paulo', 'Fortaleza');
+</pre>
+
+<p>O <code>NOT</code> aparece "grudado" em vários outros operadores do SQL. Cada um tem a sua aula; aqui vai só o mapa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Quer dizer</th><th>Exemplo</th><th>Aula</th></tr>
+<tr><td><code>NOT LIKE</code></td><td>Não combina com o padrão de texto</td><td><code>nome NOT LIKE 'Ana %'</code></td><td><a href="like.html">LIKE</a></td></tr>
+<tr><td><code>NOT IN</code></td><td>Não é nenhum dos valores da lista</td><td><code>cidade NOT IN ('Teresina', 'Recife')</code></td><td><a href="in.html">IN</a></td></tr>
+<tr><td><code>NOT BETWEEN</code></td><td>Está fora da faixa</td><td><code>preco NOT BETWEEN 10 AND 200</code></td><td><a href="between.html">BETWEEN</a></td></tr>
+<tr><td><code>IS NOT NULL</code></td><td>Tem algum valor (não está vazio)</td><td><code>email IS NOT NULL</code></td><td><a href="is-null.html">IS NULL</a></td></tr>
+</table>
+</div>
+
+<p>Nos três primeiros, o <code>NOT</code> pode ir antes da coluna também: <code>NOT nome LIKE 'Ana %'</code> e <code>nome NOT LIKE 'Ana %'</code> dão o mesmo resultado (28 clientes, todos menos as duas Anas). A forma com o <code>NOT</code> no meio é a mais comum, porque se lê como português.</p>
+
+<hr>
+
+<h2>6. A armadilha do NULL</h2>
+<p>A Loja Aurora tem 6 fornecedores. Dois são do Piauí (a Distribuidora Piauí Center e a Norte Suprimentos). A Ana pede os que <strong>não</strong> são do Piauí, esperando ver os outros quatro:</p>
+
+<pre class="file" data-file="fornecedores-fora.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE NOT estado = 'PI';
+</pre>
+
+<p>Vieram só <strong>dois</strong>. Sumiram a Lusitana Comércio (de Portugal) e a Pampa Sur (da Argentina). Elas não são do Piauí, então por que não apareceram? Porque fornecedor estrangeiro não tem estado brasileiro: a coluna <code>estado</code> deles é <code>NULL</code> (vazia, "não sei"). Veja o que o SQLite calcula em cada linha:</p>
+
+<pre class="file" data-file="por-dentro.sql" data-resultado>SELECT nome, estado, estado = 'PI', NOT estado = 'PI'
+FROM fornecedores;
+</pre>
+
+<p>Nas duas últimas linhas da conta, a comparação <code>estado = 'PI'</code> deu <em>NULL</em>: o SQLite não sabe se um valor desconhecido é igual a 'PI'. E, como você viu na seção 2, <code>NOT NULL</code> continua <em>NULL</em>. O <code>WHERE</code> só deixa passar o que é <strong>verdadeiro</strong>; "não sei" não é verdadeiro, e a linha fica de fora.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>estado</th><th><code>estado = 'PI'</code></th><th><code>NOT estado = 'PI'</code></th><th>Passa no WHERE?</th></tr>
+<tr><td>PI</td><td>1 (verdadeiro)</td><td>0 (falso)</td><td>Não</td></tr>
+<tr><td>CE</td><td>0 (falso)</td><td>1 (verdadeiro)</td><td>Sim</td></tr>
+<tr><td><em>NULL</em></td><td><em>NULL</em> (não sei)</td><td><em>NULL</em> (não sei)</td><td><strong>Não</strong></td></tr>
+</table>
+</div>
+
+<p>O mesmo acontece com os 3 clientes sem email: <code>WHERE NOT email LIKE '%@exemplo.com.br'</code> devolve <strong>0 linhas</strong>, e não os 3 clientes que não têm esse email. Linhas com <code>NULL</code> na coluna testada nunca passam por um <code>NOT</code>, nem pela condição sem <code>NOT</code>.</p>
+
+<p>Para incluir os estrangeiros, diga com todas as letras que o <code>NULL</code> também serve:</p>
+
+<pre class="file" data-file="fornecedores-todos.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE NOT estado = 'PI' OR estado IS NULL;
+</pre>
+
+<p>Agora são os quatro. O <code>IS NULL</code> ("é vazio") é a única pergunta que responde "sim" para um <code>NULL</code>; ele tem aula própria, <a href="is-null.html">IS NULL e IS NOT NULL</a>, e o próprio <code>NULL</code> é explicado em <a href="null.html">O Valor NULL</a>.</p>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo deveria listar os fornecedores de fora do Piauí, mas esquece os dois estrangeiros. Conserte para que apareçam os <strong>4</strong> fornecedores.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, estado, pais
+FROM fornecedores
+WHERE NOT estado = 'PI';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, estado, pais
+FROM fornecedores
+WHERE NOT estado = 'PI' OR estado IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes de dizer "não"</h2>
+<p>Para "o estado não é PI", o SQL aceita várias escritas. Nos clientes, todas dão os mesmos 16:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Observação</th></tr>
+<tr><td><code>WHERE NOT estado = 'PI'</code></td><td>O <code>NOT</code> desta aula.</td></tr>
+<tr><td><code>WHERE NOT (estado = 'PI')</code></td><td>Igual, com parênteses deixando claro o que é invertido.</td></tr>
+<tr><td><code>WHERE estado &lt;&gt; 'PI'</code></td><td>"Diferente de", o operador padrão do SQL (aula <a href="operadores-comparacao.html">Comparações</a>).</td></tr>
+<tr><td><code>WHERE estado != 'PI'</code></td><td>Outra escrita de "diferente", aceita pelo SQLite e pelos bancos mais usados.</td></tr>
+</table>
+</div>
+
+<p>Todas as quatro têm a mesma armadilha do <code>NULL</code>: nenhuma delas deixa passar os fornecedores estrangeiros.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Uma comparação simples ("não é igual a")</td><td><code>&lt;&gt;</code>: mais curto e todo mundo entende.</td></tr>
+<tr><td>Inverter uma condição composta, com <code>AND</code>/<code>OR</code></td><td><code>NOT ( … )</code>, sempre com parênteses.</td></tr>
+<tr><td>"Não combina", "não está na lista", "fora da faixa", "não é vazio"</td><td><code>NOT LIKE</code>, <code>NOT IN</code>, <code>NOT BETWEEN</code>, <code>IS NOT NULL</code>.</td></tr>
+<tr><td>Coluna de sim/não (0 e 1)</td><td><code>vip = 0</code>, que roda em qualquer banco; <code>NOT vip</code> só onde o banco aceita.</td></tr>
+<tr><td>A coluna pode ter <code>NULL</code> e você quer essas linhas também</td><td>Acrescente <code>OR coluna IS NULL</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O NOT no meio, como em português</strong>
+<p>Em português se diz "estado não igual a PI", e a Ana escreveu assim:</p>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE estado NOT = 'PI';
+</pre>
+<p><strong>A mensagem:</strong> <code>near "=": syntax error</code>, "perto de <code>=</code>: erro de sintaxe". O SQL até aceita um <code>NOT</code> depois da coluna, mas só quando vem um <code>LIKE</code>, <code>IN</code>, <code>BETWEEN</code>… em seguida. Um <code>=</code> logo depois do <code>NOT</code> não faz sentido para ele. No terminal do <code>sqlite3</code>, a mesma mensagem vem com o prefixo <code>Parse error</code> e uma seta apontando o lugar:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT nome FROM clientes WHERE estado NOT = 'PI';
+Parse error: near "=": syntax error
+  SELECT nome FROM clientes WHERE estado NOT = 'PI';
+                               error here ---^
+sqlite> .quit</pre>
+<p><strong>Como consertar:</strong> o <code>NOT</code> vai antes da condição (<code>NOT estado = 'PI'</code>), ou use o "diferente": <code>estado &lt;&gt; 'PI'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou <code>!</code> no lugar de NOT</strong>
+<p>Quem vem de outras linguagens de programação (JavaScript, PHP, C) está acostumado com o <code>!</code> para "não":</p>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE ! vip;
+</pre>
+<p><strong>A mensagem:</strong> <code>unrecognized token: "!"</code>, "símbolo desconhecido: <code>!</code>". No SQLite, o <code>!</code> sozinho não existe; ele só aparece grudado no <code>=</code>, em <code>!=</code>.</p>
+<p><strong>Como consertar:</strong> escreva a palavra <code>NOT</code>: <code>WHERE NOT vip</code>, ou melhor ainda, <code>WHERE vip = 0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu as aspas do texto</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE NOT estado = PI;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: PI</code>, "não existe a coluna PI". Sem aspas, o SQL acha que <code>PI</code> é o nome de uma coluna. Isso não tem nada a ver com o <code>NOT</code>, mas acontece muito quando se reescreve a condição às pressas.</p>
+<p><strong>Como consertar:</strong> texto vai entre aspas simples: <code>'PI'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro nenhum, mas faltaram linhas (o NULL)</strong>
+<p>O caso mais perigoso não tem mensagem: é o da seção 6. <code>WHERE NOT estado = 'PI'</code> nos fornecedores roda sem reclamar e devolve 2 linhas, quando a Ana esperava 4. O SQLite fez exatamente o que foi pedido: as linhas com <code>estado</code> <code>NULL</code> deram "não sei", e "não sei" não passa no <code>WHERE</code>.</p>
+<p><strong>Como evitar:</strong> antes de usar <code>NOT</code> (ou <code>&lt;&gt;</code>) numa coluna, pergunte-se: "essa coluna pode estar vazia?". Se puder, acrescente <code>OR coluna IS NULL</code>. Uma conferência rápida: o "sim" mais o "não" tem de dar o total da tabela. Aqui, 2 do Piauí + 2 fora = 4, mas a tabela tem 6.</p>
+</div>
+
+<div class="cenario">
+<strong>O NOT inverteu mais (ou menos) do que você queria</strong>
+<p>Também sem mensagem de erro: <code>NOT estado = 'PI' AND vip = 1</code> (3 linhas) e <code>NOT (estado = 'PI' AND vip = 1)</code> (28 linhas) são perguntas diferentes, como você viu na seção 3. Se o número de linhas parecer estranho, confira onde estão os parênteses.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>MySQL e MariaDB</strong> aceitam o <code>!</code> como sinônimo de <code>NOT</code> (<code>WHERE ! vip</code>), mas a documentação do MySQL diz que ele é uma extensão fora do padrão, <strong>obsoleta</strong>, e que pode ser removida: use <code>NOT</code>.</li>
+  <li><strong>PostgreSQL</strong> tem um tipo <code>boolean</code> de verdade (<code>true</code>/<code>false</code>), e o <code>NOT</code> dele é feito para esse tipo. Numa coluna de números 0 e 1 como a <code>vip</code>, o atalho <code>NOT vip</code> não serve; escreva a comparação inteira: <code>vip = 0</code>. Ilustrativo (não roda no SQLite):</li>
+</ul>
+<pre class="file" data-file="postgresql.sql">-- PostgreSQL, com uma coluna do tipo boolean
+SELECT nome FROM clientes WHERE NOT vip;      -- vip é boolean: funciona
+SELECT nome FROM clientes WHERE vip = false;  -- o mesmo, por extenso
+</pre>
+<p>Com <code>NOT coluna = valor</code>, <code>NOT ( … )</code> e os parentes (<code>NOT LIKE</code>, <code>NOT IN</code>…), o SQL desta aula é o padrão e funciona igual nos bancos mais usados, inclusive a armadilha do <code>NULL</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WHERE NOT condição</code></td><td>Passam as linhas em que a condição é <strong>falsa</strong></td></tr>
+<tr><td><code>NOT (A AND B)</code></td><td>Inverte a condição composta inteira; o mesmo que <code>NOT A OR NOT B</code></td></tr>
+<tr><td><code>NOT (A OR B)</code></td><td>"Nem A nem B"; o mesmo que <code>NOT A AND NOT B</code></td></tr>
+<tr><td><code>NOT A AND B</code></td><td>O <code>NOT</code> pega só o <code>A</code>: <code>(NOT A) AND B</code></td></tr>
+<tr><td><code>NOT 1</code> / <code>NOT 0</code> / <code>NOT NULL</code></td><td>0 / 1 / <em>NULL</em></td></tr>
+<tr><td><code>NOT LIKE</code>, <code>NOT IN</code>, <code>NOT BETWEEN</code>, <code>IS NOT NULL</code></td><td>As formas "não" dos outros operadores</td></tr>
+<tr><td>Ordem de leitura</td><td>Comparações → <code>NOT</code> → <code>AND</code> → <code>OR</code> (parênteses primeiro)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "=": syntax error</code></td><td>Um <code>NOT</code> no meio, antes do <code>=</code> (<code>estado NOT = 'PI'</code>)</td></tr>
+<tr><td><code>unrecognized token: "!"</code></td><td>Usou <code>!</code> no lugar de <code>NOT</code></td></tr>
+<tr><td><code>no such column: PI</code></td><td>Texto sem aspas simples</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os produtos que ainda estão à venda</h3>
+<p>Complete para mostrar os produtos que <strong>não</strong> estão descontinuados:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE <input data-answer="NOT" aria-label="palavra que inverte"> descontinuado = 1;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O valor do NOT</h3>
+<p>Quanto o SQLite responde para <code>SELECT NOT 0;</code>?</p>
+<div class="ex-code"><input data-answer="1" aria-label="resultado"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destas escritas dá erro de sintaxe no SQLite?</p>
+<label><input type="radio" name="q3"> <code>WHERE NOT estado = 'PI'</code></label>
+<label><input type="radio" name="q3"> <code>WHERE estado &lt;&gt; 'PI'</code></label>
+<label><input type="radio" name="q3"> <code>WHERE estado NOT = 'PI'</code></label>
+<label><input type="radio" name="q3"> <code>WHERE NOT (estado = 'PI')</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual escrita é igual a <code>NOT (estado = 'PI' OR vip = 1)</code>?</p>
+<label><input type="radio" name="q4"> <code>NOT estado = 'PI' OR NOT vip = 1</code></label>
+<label><input type="radio" name="q4"> <code>NOT estado = 'PI' AND NOT vip = 1</code></label>
+<label><input type="radio" name="q4"> <code>NOT estado = 'PI' OR vip = 1</code></label>
+<label><input type="radio" name="q4"> <code>estado = 'PI' AND vip = 1</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A tabela <code>fornecedores</code> tem 6 linhas: 2 com estado PI, 2 com CE e SP, e 2 com estado <code>NULL</code>. Quantas linhas <code>WHERE NOT estado = 'PI'</code> devolve?</p>
+<label><input type="radio" name="q5"> 6</label>
+<label><input type="radio" name="q5"> 4</label>
+<label><input type="radio" name="q5"> 0</label>
+<label><input type="radio" name="q5"> 2</label>
+</div>
+
+<h3>Missão final: o cupom de boas-vindas</h3>
+
+<div class="trysql" data-goal="linhas:17">
+<p class="try-task"><strong>Missão:</strong> a Ana vai mandar um cupom para os clientes que <strong>não</strong> moram em Teresina <strong>e</strong> que <strong>não</strong> são VIP. A consulta abaixo traz os clientes de Teresina; mude o <code>WHERE</code> para trazer os clientes certos (são 17).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, vip
+FROM clientes
+WHERE cidade = 'Teresina';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, vip
+FROM clientes
+WHERE NOT cidade = 'Teresina' AND NOT vip = 1;
+</pre>
+</div>
+
+<p>Conseguiu? Tente também a forma com parênteses, <code>NOT (cidade = 'Teresina' OR vip = 1)</code>, e confira que dá os mesmos 17. Nenhum cliente tem cidade vazia, então aqui a armadilha do <code>NULL</code> não aparece.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>NOT</code> ("não") inverte uma condição: o <code>WHERE</code> passa a ficar com as linhas em que ela é <strong>falsa</strong>.</li>
+  <li>No SQLite, verdadeiro é 1 e falso é 0: <code>NOT 1</code> dá 0, <code>NOT 0</code> dá 1. Por isso <code>WHERE NOT vip</code> funciona, mas <code>vip = 0</code> roda em qualquer banco.</li>
+  <li>O <code>NOT</code> vem <strong>antes</strong> da condição: <code>NOT estado = 'PI'</code>. Escrito no meio (<code>estado NOT = 'PI'</code>), dá <code>near "=": syntax error</code>.</li>
+  <li>Ordem: comparações, depois <code>NOT</code>, depois <code>AND</code>, depois <code>OR</code>. <code>NOT A AND B</code> inverte só o <code>A</code>; para inverter tudo, use parênteses.</li>
+  <li>De Morgan: <code>NOT (A OR B)</code> = <code>NOT A AND NOT B</code>; <code>NOT (A AND B)</code> = <code>NOT A OR NOT B</code>.</li>
+  <li><code>NOT NULL</code> continua <em>NULL</em>: linhas com a coluna vazia ficam de fora tanto da condição quanto do <code>NOT</code>. Para incluí-las, acrescente <code>OR coluna IS NULL</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
