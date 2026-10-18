@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Comparações — os operadores =, &lt;&gt;, !=, &gt;, &lt;, &gt;= e &lt;= | Guia SQL</title>
+<meta name="description" content="Os operadores de comparação do SQL para quem está começando: igual, diferente (&lt;&gt; e !=), maior, menor, maior ou igual e menor ou igual, com números, textos e datas; por que comparar texto liga para maiúsculas, a vírgula decimal, o ponto de milhar e os erros reais do SQLite, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Comparações</span></h1>
+
+<p class="intro">Na aula <a href="where.html">WHERE</a>, a Ana procurou valores <strong>iguais</strong>: os clientes do Piauí, o produto número 7. Mas muitas perguntas da loja não são de igualdade. "Quais produtos custam <strong>mais de</strong> R$ 100?" "Quais estão com o estoque <strong>abaixo de</strong> 20?" "Quais fornecedores <strong>não</strong> são do Brasil?" Para elas existem os <strong>operadores de comparação</strong>: os sinais <code>=</code>, <code>&lt;&gt;</code>, <code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code> e <code>&lt;=</code>, que você já conhece da matemática da escola.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Os seis operadores de comparação e o que cada um pergunta.</li>
+  <li>Que toda comparação tem uma resposta: <strong>1</strong> (verdadeiro) ou <strong>0</strong> (falso).</li>
+  <li>A diferença entre <code>&gt;</code> e <code>&gt;=</code>, que decide se o valor "da borda" entra ou não.</li>
+  <li>Que <code>&lt;&gt;</code> e <code>!=</code> são a mesma coisa: "diferente".</li>
+  <li>Como comparar textos e datas, e por que <code>'Ana'</code> e <code>'ana'</code> são diferentes.</li>
+  <li>As armadilhas dos números brasileiros (vírgula decimal e ponto de milhar) e os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: uma pergunta de sim ou não</h2>
+<p>Uma comparação é uma pergunta que só tem duas respostas: <strong>sim</strong> ou <strong>não</strong>. "5 é maior que 3?" Sim. "5 é menor que 3?" Não. O banco responde com números: <strong>1</strong> quer dizer "sim, é verdade" e <strong>0</strong> quer dizer "não, é falso". Você pode ver isso com um <code>SELECT</code> sem tabela, como a calculadora da aula <a href="select.html">SELECT</a>:</p>
+
+<pre class="file" data-file="sim-ou-nao.sql" data-resultado>SELECT 5 &gt; 3, 5 &lt; 3;
+</pre>
+
+<p>O <code>WHERE</code> usa exatamente isso. Para cada linha da tabela, ele faz a pergunta e olha a resposta: se deu <strong>1</strong>, a linha entra no resultado; se deu <strong>0</strong>, fica de fora.</p>
+
+<h3>Os seis operadores</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Pergunta</th><th>Exemplo na Loja Aurora</th></tr>
+<tr><td><code>=</code></td><td>É igual a?</td><td><code>estado = 'PI'</code></td></tr>
+<tr><td><code>&lt;&gt;</code> ou <code>!=</code></td><td>É diferente de?</td><td><code>pais &lt;&gt; 'Brasil'</code></td></tr>
+<tr><td><code>&gt;</code></td><td>É maior que?</td><td><code>preco &gt; 100</code></td></tr>
+<tr><td><code>&lt;</code></td><td>É menor que?</td><td><code>estoque &lt; 20</code></td></tr>
+<tr><td><code>&gt;=</code></td><td>É maior ou igual a?</td><td><code>preco &gt;= 99</code></td></tr>
+<tr><td><code>&lt;=</code></td><td>É menor ou igual a?</td><td><code>estoque &lt;= 20</code></td></tr>
+</table>
+</div>
+
+<p>Dica para não confundir <code>&gt;</code> e <code>&lt;</code>: a "boca" aberta do sinal fica sempre virada para o lado <strong>maior</strong>. Em <code>preco &gt; 100</code>, a boca está virada para o <code>preco</code>: o preço é que tem de ser o maior.</p>
+
+<hr>
+
+<h2>1. Maior que e menor que</h2>
+<p>Quais produtos custam mais de R$ 100?</p>
+
+<pre class="file" data-file="caros.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; 100;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE</dt><dd>"Onde": só as linhas que cumprirem a condição.</dd>
+  <dt>preco</dt><dd>A coluna testada em cada linha.</dd>
+  <dt>&gt;</dt><dd>"É maior que". O sinal de maior.</dd>
+  <dt>100</dt><dd>O valor de comparação. É número: sem aspas.</dd>
+</dl>
+
+<p>Quatro produtos, todos com preço acima de 100. E os produtos com pouco estoque, abaixo de 20 unidades? O sinal agora é o de menor:</p>
+
+<pre class="file" data-file="estoque-baixo.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque &lt; 20;
+</pre>
+
+<p>Seis produtos, incluindo os dois que já acabaram (estoque 0): zero também é menor que 20.</p>
+
+<hr>
+
+<h2>2. "Ou igual": quem está na borda</h2>
+<p>O que acontece com um produto que tem <strong>exatamente</strong> 20 unidades? Com <code>&lt; 20</code>, ele fica de fora: 20 não é menor que 20. Para incluí-lo, use <code>&lt;=</code>, "menor <strong>ou igual</strong>":</p>
+
+<pre class="file" data-file="estoque-ate-20.sql" data-resultado>SELECT nome, estoque
+FROM produtos
+WHERE estoque &lt;= 20;
+</pre>
+
+<p>Agora são <strong>7</strong>: entrou o Vaso de Cerâmica Médio, que tem 20 unidades. A mesma coisa acontece com o preço. O Teclado Compacto custa exatamente 99.0:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Condição</th><th>O teclado (99.0) entra?</th><th>Linhas</th></tr>
+<tr><td><code>preco &gt; 99</code></td><td>Não: 99 não é maior que 99</td><td>4</td></tr>
+<tr><td><code>preco &gt;= 99</code></td><td>Sim: 99 é igual a 99</td><td>5</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="a-partir-de-99.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt;= 99;
+</pre>
+
+<p>Na hora de escrever, pense na frase em português. "Mais de 100" é <code>&gt; 100</code>. "A partir de 100", "100 ou mais", "no mínimo 100" é <code>&gt;= 100</code>. "Até 20" é <code>&lt;= 20</code>. "Menos de 20" é <code>&lt; 20</code>.</p>
+
+<div class="trysql" data-goal="linhas:12">
+<p class="try-task"><strong>Missão:</strong> a loja vai montar uma prateleira de "tudo abaixo de R$ 20". A consulta está com o sinal errado: mostra os produtos que custam <strong>mais</strong> de 20. Conserte para mostrar os que custam <strong>menos</strong> de 20.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &gt; 20;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 20;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Diferente: <code>&lt;&gt;</code> e <code>!=</code></h2>
+<p>Quais fornecedores são de fora do Brasil? Os que têm o país <strong>diferente</strong> de <code>'Brasil'</code>:</p>
+
+<pre class="file" data-file="estrangeiros.sql" data-resultado>SELECT nome, pais
+FROM fornecedores
+WHERE pais &lt;&gt; 'Brasil';
+</pre>
+
+<p>O sinal <code>&lt;&gt;</code> se lê "menor ou maior", ou seja, "diferente". É a forma do SQL padrão. O SQLite (e também o MySQL, o PostgreSQL e o SQL Server) aceita ainda o <code>!=</code>, que vem de outras linguagens de programação. Os dois fazem exatamente a mesma coisa:</p>
+
+<pre class="file" data-file="estrangeiros2.sql" data-resultado>SELECT nome, pais
+FROM fornecedores
+WHERE pais != 'Brasil';
+</pre>
+
+<p>Com números é igual. Todos os produtos que não são de papelaria (a categoria 1):</p>
+
+<pre class="file" data-file="sem-papelaria.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE categoria_id &lt;&gt; 1;
+</pre>
+
+<p>A loja tem 45 produtos e 6 são de papelaria, por isso vieram 39.</p>
+
+<div class="warning">
+<strong>O "diferente" e o <code>NULL</code></strong>
+<p>A Ana quis todos os clientes, menos o Tiago, e comparou o email:</p>
+<pre class="file" data-file="menos-tiago.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email &lt;&gt; 'tiago.fontes@exemplo.com.br';
+</pre>
+<p>São 30 clientes, e ela esperava 29. Vieram <strong>26</strong>. Os 3 clientes sem email (<code>NULL</code>) também sumiram. Um campo sem valor não é "igual" nem "diferente" de nada: a comparação com <code>NULL</code> não dá nem 1 nem 0, e o <code>WHERE</code> só deixa passar o 1. Esse comportamento tem aula própria: <a href="null.html">O Valor NULL</a>.</p>
+</div>
+
+<hr>
+
+<h2>4. Comparando textos</h2>
+
+<h3>Igual e diferente: letra por letra</h3>
+<p>Como você viu em <a href="where.html">WHERE</a>, dois textos só são iguais se forem idênticos, com as mesmas maiúsculas e os mesmos acentos:</p>
+
+<pre class="file" data-file="maiusculas.sql" data-resultado>SELECT 'Ana' = 'Ana', 'Ana' = 'ana';
+</pre>
+
+<p>O primeiro dá 1 (iguais); o segundo dá 0 (diferentes, por causa do A maiúsculo). É por isso que procurar <code>'mouse sem fio'</code> não acha o produto <code>Mouse Sem Fio</code>.</p>
+
+<h3>Maior e menor: a ordem das letras</h3>
+<p>Com textos, "menor" quer dizer "vem antes na ordem". <code>'Ana' &lt; 'Bruno'</code> é verdade, porque A vem antes de B. Quais clientes têm o nome antes da letra C?</p>
+
+<pre class="file" data-file="antes-do-c.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome &lt; 'C';
+</pre>
+
+<p>Vieram os nomes que começam com A e com B. Mas cuidado: a ordem que o SQLite usa <strong>não</strong> é a do dicionário. Ele compara o <strong>código</strong> de cada letra no computador, e nessa ordem todas as maiúsculas vêm antes de todas as minúsculas, e as letras acentuadas vêm depois de todas as outras:</p>
+
+<pre class="file" data-file="ordem-das-letras.sql" data-resultado>SELECT 'Ana' &lt; 'Bruno', 'Zé' &lt; 'ana', 'Ébano' &gt; 'Zé';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comparação</th><th>Resposta</th><th>Por quê</th></tr>
+<tr><td><code>'Ana' &lt; 'Bruno'</code></td><td>1</td><td>A vem antes de B, como no dicionário</td></tr>
+<tr><td><code>'Zé' &lt; 'ana'</code></td><td>1</td><td>Toda maiúscula (até o Z) vem antes de toda minúscula</td></tr>
+<tr><td><code>'Ébano' &gt; 'Zé'</code></td><td>1</td><td>A letra acentuada <code>É</code> vem depois do Z</td></tr>
+</table>
+</div>
+
+<p>Para comparar textos pelo começo, o mais comum é o <code>LIKE</code> (aula <a href="like.html">LIKE</a>); para pôr textos em ordem, o <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>).</p>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Se a comparação de textos liga ou não para maiúsculas depende da <strong>collation</strong> (as regras de comparação de textos) do banco:</p>
+<ul>
+  <li><strong>SQLite:</strong> por padrão, liga. <code>'Ana' = 'ana'</code> dá 0.</li>
+  <li><strong>MySQL:</strong> a collation padrão (<code>utf8mb4_0900_ai_ci</code>) <strong>não</strong> liga: lá, <code>'Ana' = 'ana'</code> é verdade. O <code>ci</code> do nome quer dizer <em>case-insensitive</em>, "não diferencia maiúsculas".</li>
+  <li><strong>SQL Server:</strong> depende da collation escolhida na instalação, que segue o idioma do sistema. Na de inglês dos Estados Unidos, <code>SQL_Latin1_General_CP1_CI_AS</code>, o <code>CI</code> também quer dizer "não diferencia maiúsculas".</li>
+</ul>
+<p>Ou seja: a mesma consulta pode achar o cliente num banco e não achar no outro. Escreva o valor exatamente como está gravado e você não depende disso.</p>
+</div>
+
+<hr>
+
+<h2>5. Comparando datas</h2>
+<p>As datas da Loja Aurora estão gravadas como texto no formato <strong>ano-mês-dia</strong> (<code>2000-10-05</code>). Esse formato tem uma vantagem: a ordem das letras é a mesma ordem do calendário. Então dá para comparar datas com <code>&gt;</code> e <code>&lt;</code>, desde que escritas no mesmo formato e entre aspas. Quais clientes nasceram a partir do ano 2000?</p>
+
+<pre class="file" data-file="nascidos-2000.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento &gt;= '2000-01-01';
+</pre>
+
+<p>E os pedidos feitos em outubro de 2026 em diante?</p>
+
+<pre class="file" data-file="pedidos-recentes.sql" data-resultado>SELECT id, data, frete
+FROM pedidos
+WHERE data &gt;= '2026-10-01';
+</pre>
+
+<p>Os clientes sem data de nascimento (<code>NULL</code>) não aparecem em nenhuma das duas listas, pelo mesmo motivo do "diferente": comparar com <code>NULL</code> não dá 1. Mais sobre datas em <a href="datas.html">Datas e Horas</a>.</p>
+
+<div class="trysql" data-goal="linhas:3;;colunas:nome,nascimento">
+<p class="try-task"><strong>Missão:</strong> a loja quer mandar um presente aos clientes mais antigos, os que nasceram <strong>antes de 1975</strong>. Mostre o nome e a data de nascimento deles.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes
+WHERE nascimento &lt; '1975-01-01';
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Número é número, texto é texto</h2>
+<p>Por que tanto cuidado em escrever números <strong>sem</strong> aspas? Porque, entre aspas, eles viram texto, e textos são comparados letra por letra:</p>
+
+<pre class="file" data-file="numero-texto.sql" data-resultado>SELECT 10 &gt; 9, '10' &gt; '9';
+</pre>
+
+<p>Como números, 10 é maior que 9 (deu 1). Como textos, <code>'10'</code> é <strong>menor</strong> que <code>'9'</code> (deu 0), porque o banco compara o primeiro caractere: <code>'1'</code> vem antes de <code>'9'</code>, como "Ana" vem antes de "Bruno". Numa coluna de números, o SQLite muitas vezes converte o texto e acaba dando certo, mas não conte com isso: <strong>números sem aspas, sempre</strong>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Muitas condições podem ser escritas de mais de um jeito. As consultas abaixo dão os mesmos 7 produtos com estoque de até 20 unidades:</p>
+
+<pre class="file" data-file="forma1.sql">SELECT nome FROM produtos WHERE estoque &lt;= 20;
+</pre>
+<pre class="file" data-file="forma2.sql">SELECT nome FROM produtos WHERE estoque &lt; 21;
+</pre>
+<pre class="file" data-file="forma3.sql">SELECT nome FROM produtos WHERE 20 &gt;= estoque;
+</pre>
+
+<p>A segunda só funciona porque o estoque é sempre um número inteiro: com preços, que têm centavos, <code>&lt; 21</code> deixaria passar um 20.50. A terceira inverte os lados, o que é correto, mas mais difícil de ler.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>estoque &lt;= 20</code></td><td>Sempre: diz exatamente o que a frase diz ("até 20")</td></tr>
+<tr><td><code>estoque &lt; 21</code></td><td>Evite: depende de o valor ser inteiro</td></tr>
+<tr><td><code>20 &gt;= estoque</code></td><td>Evite: coluna à esquerda é o costume</td></tr>
+<tr><td><code>pais &lt;&gt; 'Brasil'</code></td><td>O "diferente" do SQL padrão</td></tr>
+<tr><td><code>pais != 'Brasil'</code></td><td>Também funciona em todos os bancos grandes; escolha um e use sempre o mesmo</td></tr>
+</table>
+</div>
+
+<p>Mais um jeito de dizer "não": o <code>NOT</code>, que inverte uma condição inteira (<code>NOT preco &gt; 100</code>). É o assunto da aula <a href="not.html">NOT</a>. E para uma faixa, como "entre 20 e 50", existe o <code>BETWEEN</code> (aula <a href="between.html">BETWEEN</a>).</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Sinal escrito ao contrário: <code>=&gt;</code> ou <code>=&lt;</code></strong>
+<p>Na escola, muita gente fala "igual ou maior", e o dedo escreve na ordem da fala:</p>
+<pre class="file" data-file="erro-invertido.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+WHERE preco =&gt; 100;
+</pre>
+<p><code>near "&gt;": syntax error</code>. O SQL não conhece o sinal <code>=&gt;</code>: ele leu o <code>=</code> e depois encontrou um <code>&gt;</code> sem sentido. Com <code>=&lt;</code> é a mesma coisa (<code>near "&lt;": syntax error</code>). <strong>Como consertar:</strong> o <code>=</code> vem sempre <strong>depois</strong>: <code>&gt;=</code> e <code>&lt;=</code>, como se fala "maior ou igual".</p>
+</div>
+
+<div class="cenario">
+<strong>Espaço no meio do sinal</strong>
+<pre class="file" data-file="erro-espaco.sql" data-resultado data-erro>SELECT nome, pais
+FROM fornecedores
+WHERE pais ! = 'Brasil';
+</pre>
+<p><code>unrecognized token: "!"</code>, "símbolo não reconhecido". Sozinho, o <code>!</code> não quer dizer nada no SQL; só o par <code>!=</code>, colado, é o "diferente". O mesmo vale para <code>&gt; =</code>, <code>&lt; =</code> e <code>&lt; &gt;</code>: os dois caracteres têm de estar juntos. <strong>Como consertar:</strong> <code>pais != 'Brasil'</code> ou <code>pais &lt;&gt; 'Brasil'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula no lugar do ponto decimal</strong>
+<p>No Brasil, escrevemos R$ 99,90. No SQL, não:</p>
+<pre class="file" data-file="erro-virgula.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; 99,90;
+</pre>
+<p><code>near ",": syntax error</code>. Para o SQL, a vírgula separa coisas (as colunas do <code>SELECT</code>, por exemplo), e não as casas decimais. <strong>Como consertar:</strong> use ponto: <code>preco &gt; 99.90</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Ponto de milhar: o erro que não dá erro</strong>
+<p>Este é pior, porque não aparece mensagem nenhuma. A Ana quer os funcionários que ganham mais de três mil e duzentos reais, e escreveu como se escreve no Brasil:</p>
+<pre class="file" data-file="ponto-milhar.sql" data-resultado>SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; 3.200;
+</pre>
+<p>Vieram <strong>todos</strong> os 8 funcionários. Para o SQL, o ponto é a casa decimal: <code>3.200</code> é "três vírgula dois", e todo mundo ganha mais do que R$ 3,20. <strong>Como consertar:</strong> números sem separador de milhar: <code>salario &gt; 3200</code>. Aí vêm só os 4 que ganham mais de 3200.</p>
+</div>
+
+<div class="cenario">
+<strong>Data no formato brasileiro</strong>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento &lt; '01/01/1980';
+</pre>
+<p>Nenhuma linha, sem erro. A comparação é de <strong>texto</strong>, letra por letra: <code>'1985-03-12'</code> começa com <code>1</code>, e <code>'01/01/1980'</code> começa com <code>0</code>. Nenhuma data gravada é "menor" que um texto que começa com zero. <strong>Como consertar:</strong> escreva a data como ela está gravada, ano-mês-dia: <code>nascimento &lt; '1980-01-01'</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a gerente quer ver os funcionários que ganham <strong>mais de R$ 3.200</strong> por mês. A consulta não deu erro, mas trouxe todo mundo. Conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; 3.200;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; 3200;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Operador</th><th>Nome</th><th>Exemplo</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>=</code></td><td>igual</td><td><code>estado = 'PI'</code></td><td>14 clientes</td></tr>
+<tr><td><code>&lt;&gt;</code></td><td>diferente (padrão)</td><td><code>pais &lt;&gt; 'Brasil'</code></td><td>2 fornecedores</td></tr>
+<tr><td><code>!=</code></td><td>diferente</td><td><code>pais != 'Brasil'</code></td><td>2 fornecedores</td></tr>
+<tr><td><code>&gt;</code></td><td>maior que</td><td><code>preco &gt; 100</code></td><td>4 produtos</td></tr>
+<tr><td><code>&lt;</code></td><td>menor que</td><td><code>estoque &lt; 20</code></td><td>6 produtos</td></tr>
+<tr><td><code>&gt;=</code></td><td>maior ou igual</td><td><code>preco &gt;= 99</code></td><td>5 produtos</td></tr>
+<tr><td><code>&lt;=</code></td><td>menor ou igual</td><td><code>estoque &lt;= 20</code></td><td>7 produtos</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Causa provável</th></tr>
+<tr><td><code>near "&gt;": syntax error</code> ou <code>near "&lt;": syntax error</code></td><td>Sinal invertido: <code>=&gt;</code> ou <code>=&lt;</code></td></tr>
+<tr><td><code>unrecognized token: "!"</code></td><td>Espaço no meio do <code>!=</code></td></tr>
+<tr><td><code>near ",": syntax error</code></td><td>Vírgula decimal: use ponto</td></tr>
+<tr><td>Vieram linhas demais, sem erro</td><td>Ponto de milhar: <code>3.200</code> é 3,2</td></tr>
+<tr><td>Nenhuma linha, sem erro</td><td>Texto com maiúsculas diferentes, data no formato errado, ou <code>NULL</code></td></tr>
+<tr><td>Faltaram linhas num <code>&lt;&gt;</code></td><td>As linhas com <code>NULL</code> naquela coluna nunca entram</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Mais de 50 reais</h3>
+<p>Complete o operador para mostrar os produtos que custam <strong>mais de</strong> 50:</p>
+<div class="ex-code">SELECT nome, preco FROM produtos WHERE preco <input data-answer="&gt;" aria-label="operador"> 50;</div>
+</div>
+
+<div class="exercise">
+<h3>2. No mínimo 100 unidades</h3>
+<p>Complete o operador para mostrar os produtos com estoque de <strong>100 ou mais</strong>:</p>
+<div class="ex-code">SELECT nome, estoque FROM produtos WHERE estoque <input data-answer="&gt;=" aria-label="operador"> 100;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é a resposta de <code>SELECT 7 &lt; 3;</code>?</p>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> 4</label>
+<label><input type="radio" name="q3"> Dá erro, porque não tem <code>FROM</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual destas condições mostra os clientes que <strong>não</strong> são de São Paulo?</p>
+<label><input type="radio" name="q4"> <code>estado =! 'SP'</code></label>
+<label><input type="radio" name="q4"> <code>estado &gt;&lt; 'SP'</code></label>
+<label><input type="radio" name="q4"> <code>estado ! = 'SP'</code></label>
+<label><input type="radio" name="q4"> <code>estado &lt;&gt; 'SP'</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. O Teclado Compacto custa 99.0. Ele aparece em <code>WHERE preco &gt; 99</code>?</p>
+<label><input type="radio" name="q5"> Sim, porque 99.0 é maior que 99</label>
+<label><input type="radio" name="q5"> Dá erro, porque 99.0 tem casa decimal</label>
+<label><input type="radio" name="q5"> Não: 99 não é maior que 99. Com <code>&gt;=</code> ele apareceria</label>
+<label><input type="radio" name="q5"> Só se escrever <code>'99'</code> entre aspas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana escreveu <code>WHERE salario &gt; 5.000</code> querendo quem ganha mais de cinco mil. O que acontece?</p>
+<label><input type="radio" name="q6"> Vêm todos os funcionários, porque <code>5.000</code> é 5 (o ponto é a casa decimal)</label>
+<label><input type="radio" name="q6"> Dá erro de sintaxe</label>
+<label><input type="radio" name="q6"> Vem só quem ganha mais de 5000</label>
+<label><input type="radio" name="q6"> Não vem ninguém</label>
+</div>
+
+<h3>Missão final: o frete grátis</h3>
+
+<div class="trysql" data-goal="linhas:79">
+<p class="try-task"><strong>Missão:</strong> na tabela <code>pedidos</code>, o frete grátis aparece como <code>0.0</code> na coluna <code>frete</code>. Mostre o <code>id</code> e o <code>frete</code> dos pedidos que <strong>pagaram</strong> frete, ou seja, com frete diferente de zero.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, frete
+FROM pedidos
+WHERE frete = 0;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, frete
+FROM pedidos
+WHERE frete &lt;&gt; 0;
+</pre>
+</div>
+
+<p>São 79 pedidos com frete pago e 11 com frete grátis: 90 ao todo. A condição <code>frete &gt; 0</code> também resolve, porque nenhum frete é negativo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma comparação é uma pergunta de sim ou não. O banco responde com <strong>1</strong> (verdadeiro) ou <strong>0</strong> (falso), e o <code>WHERE</code> deixa passar só as linhas que deram 1.</li>
+  <li>Os operadores: <code>=</code> igual, <code>&lt;&gt;</code> ou <code>!=</code> diferente, <code>&gt;</code> maior, <code>&lt;</code> menor, <code>&gt;=</code> maior ou igual, <code>&lt;=</code> menor ou igual.</li>
+  <li><code>&gt;</code> e <code>&lt;</code> deixam a borda de fora; <code>&gt;=</code> e <code>&lt;=</code> incluem. O <code>=</code> vem sempre depois: <code>&gt;=</code>, nunca <code>=&gt;</code>.</li>
+  <li>Textos são comparados letra por letra, pelo código de cada letra: maiúsculas antes das minúsculas, acentuadas depois do Z. Em outros bancos, isso depende da collation.</li>
+  <li>Datas no formato ano-mês-dia, entre aspas, podem ser comparadas com <code>&gt;</code> e <code>&lt;</code>.</li>
+  <li>Números sem aspas, com ponto decimal e sem ponto de milhar: <code>3200</code>, <code>99.90</code>.</li>
+  <li>Linhas com <code>NULL</code> na coluna comparada nunca entram, nem num "diferente".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
