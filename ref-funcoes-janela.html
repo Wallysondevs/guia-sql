@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções de Janela — referência do SQLite | Guia SQL</title>
+<meta name="description" content="Referência rápida das funções de janela do SQLite 3.50: row_number, rank, dense_rank, percent_rank, cume_dist, ntile, lag, lead, first_value, last_value, nth_value e as agregadas com OVER; PARTITION BY, ORDER BY, as molduras ROWS, RANGE e GROUPS, EXCLUDE, WINDOW e FILTER. Resultados reais na Loja Aurora, erros comuns e diferenças no MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções de Janela</span></h1>
+
+<p class="intro">Uma função de <strong>janela</strong> faz uma conta olhando para <strong>outras linhas</strong> do resultado, sem juntar as linhas numa só como o <code>GROUP BY</code> faz: numerar os pedidos de cada cliente, dar a posição de cada produto no ranking de preços, pegar o frete do pedido anterior, somar o frete acumulado. Toda função de janela tem um <code>OVER (…)</code> depois dela. Esta página reúne todas as do SQLite 3.50; as explicações passo a passo estão em <a href="janelas.html">Funções de Janela (OVER)</a>, <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>, <a href="lag-lead.html">LAG e LEAD</a> e <a href="partition-by.html">PARTITION BY</a>.</p>
+
+<div class="note">
+<strong>Como ler esta página</strong>
+<ul>
+  <li>Cada função de janela devolve um valor <strong>para cada linha</strong>. Por isso, os resultados estão nos quadros "Resultado", que rodam o SQL de verdade no seu navegador (SQLite 3.50.4, banco da Loja Aurora).</li>
+  <li>As tabelas resumem o que cada função faz e citam os valores que aparecem nesses quadros.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="over">A anatomia do <code>OVER</code></h2>
+
+<pre class="file" data-file="anatomia.sql">função(…) OVER (
+    PARTITION BY coluna      -- divide as linhas em grupos (opcional)
+    ORDER BY coluna          -- a ordem dentro de cada grupo (opcional)
+    ROWS BETWEEN … AND …     -- a "moldura": quais linhas entram na conta (opcional)
+)
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>O que faz</th><th>Sem ela</th><th>Aula</th></tr>
+<tr><td><code>OVER ()</code></td><td>Diz que a função é de janela. Vazio: a janela é o resultado inteiro.</td><td>sem <code>OVER</code>, <code>row_number()</code> dá erro e <code>sum(x)</code> vira agregada comum</td><td><a href="janelas.html">Funções de Janela</a></td></tr>
+<tr><td><code>PARTITION BY</code></td><td>Divide as linhas em partições ("pedaços"); a conta recomeça em cada uma. Parecido com o <code>GROUP BY</code>, mas <strong>sem juntar</strong> as linhas.</td><td>uma partição só, com todas as linhas</td><td><a href="partition-by.html">PARTITION BY</a></td></tr>
+<tr><td><code>ORDER BY</code></td><td>A ordem das linhas dentro da partição: decide quem é o 1º, quem é o "anterior".</td><td>ordem não garantida; nas agregadas, todas as linhas entram na conta</td><td><a href="row-number.html">ROW_NUMBER</a></td></tr>
+<tr><td>moldura (<code>ROWS</code>, <code>RANGE</code>, <code>GROUPS</code>)</td><td>Quais linhas, em volta da atual, entram na conta das agregadas e de <code>first_value</code>/<code>last_value</code>/<code>nth_value</code>.</td><td>com <code>ORDER BY</code>: do começo até a linha atual (e as empatadas com ela)</td><td><a href="#moldura">Moldura</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="ranking">Numerar e classificar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Com empate</th><th>Aula</th></tr>
+<tr><td><code>row_number()</code></td><td>Numera as linhas: 1, 2, 3…</td><td>números diferentes para os empatados (a ordem entre eles não é garantida)</td><td><a href="row-number.html">ROW_NUMBER</a></td></tr>
+<tr><td><code>rank()</code></td><td>Posição no ranking, como no esporte.</td><td>empatados recebem a mesma posição, e o próximo <strong>pula</strong> (1, 1, 1, 4…)</td><td><a href="row-number.html">RANK</a></td></tr>
+<tr><td><code>dense_rank()</code></td><td>Posição no ranking, sem buracos.</td><td>empatados recebem a mesma posição, e o próximo <strong>não pula</strong> (1, 1, 1, 2…)</td><td><a href="row-number.html">DENSE_RANK</a></td></tr>
+<tr><td><code>percent_rank()</code></td><td>Posição relativa de 0 a 1: <code>(rank - 1) / (linhas - 1)</code>.</td><td>igual para os empatados</td><td></td></tr>
+<tr><td><code>cume_dist()</code></td><td>Distribuição acumulada: a fração das linhas que vêm antes ou empatam com esta (de 0 a 1).</td><td>igual para os empatados</td><td></td></tr>
+<tr><td><code>ntile(n)</code></td><td>Divide as linhas em <code>n</code> grupos do mesmo tamanho (o quanto der) e diz o número do grupo: 1, 2… n.</td><td>—</td><td></td></tr>
+</table>
+</div>
+
+<p>Os três números lado a lado, nos fretes de seis pedidos. Os pedidos 4, 12 e 20 tiveram frete grátis (empate em <code>0.0</code>):</p>
+
+<pre class="file" data-file="empates.sql" data-resultado>SELECT id, frete,
+       row_number() OVER w AS row_number,
+       rank()       OVER w AS rank,
+       dense_rank() OVER w AS dense_rank
+FROM pedidos
+WHERE id IN (1, 3, 4, 12, 20, 5)
+WINDOW w AS (ORDER BY frete);
+</pre>
+
+<p>O <code>row_number</code> deu 1, 2, 3 para os três empatados; o <code>rank</code> deu 1, 1, 1 e pulou para 4; o <code>dense_rank</code> deu 1, 1, 1 e seguiu com 2. O <code>WINDOW w AS (…)</code> no fim dá um nome à janela, para não repetir o <code>OVER (ORDER BY frete)</code> três vezes.</p>
+
+<p>E as outras três, nos 6 produtos de papelaria (categoria 1), do mais caro para o mais barato:</p>
+
+<pre class="file" data-file="ranking.sql" data-resultado>SELECT nome, preco,
+       round(percent_rank() OVER w, 3) AS percent_rank,
+       round(cume_dist() OVER w, 3)    AS cume_dist,
+       ntile(3) OVER w                 AS terco
+FROM produtos
+WHERE categoria_id = 1
+WINDOW w AS (ORDER BY preco DESC);
+</pre>
+
+<hr>
+
+<h2 id="valores">Pegar o valor de outra linha</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que devolve</th><th>Quando não existe</th><th>Aula</th></tr>
+<tr><td><code>lag(x)</code></td><td>o valor de <code>x</code> na linha <strong>anterior</strong> (<em>lag</em> = "atraso")</td><td><em>NULL</em> (na primeira linha)</td><td><a href="lag-lead.html">LAG e LEAD</a></td></tr>
+<tr><td><code>lag(x, n)</code></td><td>o valor <code>n</code> linhas antes</td><td><em>NULL</em></td><td></td></tr>
+<tr><td><code>lag(x, n, padrão)</code></td><td>o mesmo, com um valor padrão</td><td>o <code>padrão</code></td><td></td></tr>
+<tr><td><code>lead(x)</code>, <code>lead(x, n)</code>, <code>lead(x, n, padrão)</code></td><td>o valor na linha <strong>seguinte</strong> (<em>lead</em> = "dianteira")</td><td><em>NULL</em> ou o padrão (na última linha)</td><td><a href="lag-lead.html">LAG e LEAD</a></td></tr>
+<tr><td><code>first_value(x)</code></td><td>o valor na <strong>primeira</strong> linha da moldura</td><td>—</td><td></td></tr>
+<tr><td><code>last_value(x)</code></td><td>o valor na <strong>última</strong> linha da moldura. Cuidado: com a moldura padrão, a última linha é a <strong>atual</strong> (veja o exemplo).</td><td>—</td><td></td></tr>
+<tr><td><code>nth_value(x, n)</code></td><td>o valor na <code>n</code>-ésima linha da moldura</td><td><em>NULL</em> (se a moldura ainda não tem <code>n</code> linhas)</td><td></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="lag-lead.sql" data-resultado>SELECT id, data, frete,
+       lag(frete)        OVER (ORDER BY id) AS anterior,
+       lead(frete)       OVER (ORDER BY id) AS proximo,
+       lag(frete, 2, 0)  OVER (ORDER BY id) AS dois_antes
+FROM pedidos
+WHERE id &lt;= 5;
+</pre>
+
+<p>A armadilha do <code>last_value</code>: com só <code>ORDER BY</code>, a moldura vai do começo até a linha atual, então o "último" é sempre a própria linha (coluna <code>ultimo_padrao</code>). Para o último da partição inteira, estique a moldura até o fim (<code>UNBOUNDED FOLLOWING</code>):</p>
+
+<pre class="file" data-file="first-last.sql" data-resultado>SELECT nome, preco,
+       first_value(nome) OVER w AS mais_barato,
+       last_value(nome)  OVER w AS ultimo_padrao,
+       last_value(nome)  OVER (ORDER BY preco
+                               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS mais_caro,
+       nth_value(nome, 2) OVER w AS segundo
+FROM produtos
+WHERE categoria_id = 1
+WINDOW w AS (ORDER BY preco);
+</pre>
+
+<hr>
+
+<h2 id="agregadas">Agregadas como janela</h2>
+<p>Qualquer <a href="ref-funcoes-agregadas.html">função agregada</a> (<code>sum</code>, <code>avg</code>, <code>count</code>, <code>min</code>, <code>max</code>, <code>total</code>, <code>group_concat</code>…) vira função de janela quando ganha um <code>OVER</code>. Ela continua calculando sobre várias linhas, mas devolve o resultado <strong>em cada linha</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que dá</th></tr>
+<tr><td><code>sum(frete) OVER ()</code></td><td>o total geral, repetido em todas as linhas</td></tr>
+<tr><td><code>sum(frete) OVER (ORDER BY id)</code></td><td>a soma <strong>acumulada</strong> (do primeiro pedido até este)</td></tr>
+<tr><td><code>avg(frete) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW)</code></td><td>a média <strong>móvel</strong> das 3 últimas linhas</td></tr>
+<tr><td><code>count(*) OVER (PARTITION BY cliente_id)</code></td><td>quantos pedidos o cliente desta linha tem</td></tr>
+<tr><td><code>salario * 100.0 / sum(salario) OVER ()</code></td><td>a porcentagem de cada um no total</td></tr>
+<tr><td><code>count(*) FILTER (WHERE frete = 0) OVER (ORDER BY id)</code></td><td>quantos fretes grátis houve até esta linha</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="acumulado.sql" data-resultado>SELECT id, frete,
+       sum(frete) OVER (ORDER BY id) AS acumulado,
+       round(avg(frete) OVER (ORDER BY id ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS media_3,
+       count(*) OVER () AS total
+FROM pedidos
+WHERE id &lt;= 5;
+</pre>
+
+<p>A porcentagem de cada salário na folha da loja:</p>
+
+<pre class="file" data-file="porcentagem.sql" data-resultado>SELECT nome, salario,
+       round(salario * 100.0 / sum(salario) OVER (), 1) AS pct
+FROM funcionarios;
+</pre>
+
+<hr>
+
+<h2 id="moldura">A moldura (<em>frame</em>)</h2>
+<p>A moldura diz quais linhas, em volta da atual, entram na conta. Ela vale para as agregadas e para <code>first_value</code>, <code>last_value</code> e <code>nth_value</code>; as funções de ranking e o <code>lag</code>/<code>lead</code> a ignoram.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que quer dizer</th></tr>
+<tr><td><code>ROWS</code></td><td>conta em <strong>linhas</strong>: "2 linhas antes" são 2 linhas, mesmo que tenham valores iguais</td></tr>
+<tr><td><code>RANGE</code></td><td>conta em <strong>valores</strong> do <code>ORDER BY</code>: as linhas empatadas entram juntas; <code>RANGE BETWEEN 5 PRECEDING …</code> quer dizer "valores até 5 a menos" (exige um <code>ORDER BY</code> de uma coluna só)</td></tr>
+<tr><td><code>GROUPS</code></td><td>conta em <strong>grupos de empatados</strong>: "1 grupo antes" é o conjunto de linhas com o valor anterior</td></tr>
+<tr><td><code>UNBOUNDED PRECEDING</code></td><td>desde a primeira linha da partição</td></tr>
+<tr><td><code>n PRECEDING</code></td><td>n antes da atual</td></tr>
+<tr><td><code>CURRENT ROW</code></td><td>a linha atual</td></tr>
+<tr><td><code>n FOLLOWING</code></td><td>n depois da atual</td></tr>
+<tr><td><code>UNBOUNDED FOLLOWING</code></td><td>até a última linha da partição</td></tr>
+<tr><td><code>ROWS UNBOUNDED PRECEDING</code></td><td>forma curta de <code>ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code></td></tr>
+<tr><td><code>EXCLUDE NO OTHERS</code></td><td>(o padrão) não tira ninguém da moldura</td></tr>
+<tr><td><code>EXCLUDE CURRENT ROW</code></td><td>tira a linha atual</td></tr>
+<tr><td><code>EXCLUDE GROUP</code></td><td>tira a linha atual e as empatadas com ela</td></tr>
+<tr><td><code>EXCLUDE TIES</code></td><td>tira só as empatadas, deixando a atual</td></tr>
+<tr><td>(sem moldura, com <code>ORDER BY</code>)</td><td><code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code>: do começo até a atual <strong>e as empatadas com ela</strong></td></tr>
+<tr><td>(sem moldura e sem <code>ORDER BY</code>)</td><td>a partição inteira</td></tr>
+</table>
+</div>
+
+<p>A diferença entre <code>RANGE</code> (o padrão) e <code>ROWS</code> só aparece nos empates. Os pedidos 7 e 15 têm o mesmo frete (<code>7.25</code>), e os pedidos 1 e 9 também (<code>9.9</code>). Com <code>RANGE</code>, os empatados entram <strong>juntos</strong> no acumulado (os dois de 7,25 já mostram 14.5); com <code>ROWS</code>, entram um de cada vez (7.25 e depois 14.5). A coluna <code>grupos</code> mostra, com <code>GROUPS</code>, quais pedidos entram na moldura "o grupo de empatados anterior e o atual":</p>
+
+<pre class="file" data-file="molduras.sql" data-resultado>SELECT id, frete,
+       sum(frete) OVER (ORDER BY frete) AS range_padrao,
+       sum(frete) OVER (ORDER BY frete ROWS UNBOUNDED PRECEDING) AS rows_ac,
+       group_concat(id) OVER (ORDER BY frete GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW) AS grupos
+FROM pedidos
+WHERE id IN (4, 7, 15, 1, 9);
+</pre>
+
+<hr>
+
+<h2 id="topn">O padrão "o primeiro de cada grupo"</h2>
+<p>Funções de janela não podem ir no <code>WHERE</code> (elas são calculadas depois dele). Para filtrar pelo número, calcule numa subconsulta e filtre por fora. O produto mais caro de cada categoria:</p>
+
+<pre class="file" data-file="mais-caro.sql" data-resultado>SELECT nome, categoria_id, preco
+FROM (
+    SELECT nome, categoria_id, preco,
+           row_number() OVER (PARTITION BY categoria_id ORDER BY preco DESC) AS n
+    FROM produtos
+)
+WHERE n = 1;
+</pre>
+
+<p>Troque <code>n = 1</code> por <code>n &lt;= 3</code> para os 3 mais caros de cada categoria. O mesmo dá para escrever com uma <a href="with-cte.html">CTE (WITH)</a>.</p>
+
+<hr>
+
+<h2 id="erros">Quando dá errado</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem (como sai)</th><th>Em português</th><th>Causa</th><th>Como resolver</th></tr>
+<tr><td><code>misuse of window function rank()</code></td><td>uso errado da função de janela <code>rank()</code></td><td>função de janela no <code>WHERE</code>, no <code>GROUP BY</code> ou no <code>HAVING</code>, ou sem <code>OVER</code></td><td>escreva o <code>OVER</code>; para filtrar, use uma subconsulta (acima)</td></tr>
+<tr><td><code>misuse of aliased window function r</code></td><td>uso errado da função de janela apelidada <code>r</code></td><td>o apelido de uma função de janela usado no <code>WHERE</code> (<code>… AS r … WHERE r = 1</code>)</td><td>subconsulta</td></tr>
+<tr><td><code>argument of ntile must be a positive integer</code></td><td>o argumento do <code>ntile</code> deve ser um inteiro positivo</td><td><code>ntile(0)</code></td><td>use 1 ou mais</td></tr>
+<tr><td><code>second argument to nth_value must be a positive integer</code></td><td>o segundo argumento do <code>nth_value</code> deve ser um inteiro positivo</td><td><code>nth_value(nome, 0)</code>: a contagem começa em 1</td><td>use 1 ou mais</td></tr>
+<tr><td><code>frame starting offset must be a non-negative integer</code></td><td>o deslocamento do começo da moldura deve ser um inteiro não negativo</td><td><code>ROWS BETWEEN -1 PRECEDING …</code></td><td>o sentido vem de <code>PRECEDING</code>/<code>FOLLOWING</code>; o número é sempre 0 ou mais</td></tr>
+<tr><td><code>RANGE with offset PRECEDING/FOLLOWING requires one ORDER BY expression</code></td><td><code>RANGE</code> com deslocamento exige uma expressão no <code>ORDER BY</code></td><td><code>RANGE BETWEEN 1 PRECEDING …</code> sem <code>ORDER BY</code> (ou com mais de uma coluna)</td><td>ponha um <code>ORDER BY</code> de uma coluna, ou use <code>ROWS</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="erro-where.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+WHERE rank() OVER (ORDER BY preco) = 1;
+</pre>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>O básico é igual; as molduras mudam</strong>
+<p>As funções desta página são do padrão SQL e têm os mesmos nomes no MySQL (8.0 em diante), no PostgreSQL e no SQL Server. As diferenças estão nas molduras e nos extras. Conferido nas documentações oficiais; trechos só para comparar.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Recurso</th><th>SQLite</th><th>MySQL 8.4</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td><code>ROWS</code>, <code>RANGE</code></td><td>sim</td><td>sim</td><td>sim</td><td>sim; mas <code>RANGE</code> não aceita números (<code>2 PRECEDING</code>), só <code>UNBOUNDED</code> e <code>CURRENT ROW</code></td></tr>
+<tr><td><code>GROUPS</code></td><td>sim</td><td>não</td><td>sim</td><td>não</td></tr>
+<tr><td><code>EXCLUDE …</code></td><td>sim</td><td>não</td><td>sim</td><td>não</td></tr>
+<tr><td><code>FILTER (WHERE …)</code> numa agregada de janela</td><td>sim</td><td>não (use <code>CASE</code>)</td><td>sim</td><td>não (use <code>CASE</code>)</td></tr>
+<tr><td>moldura padrão com <code>ORDER BY</code></td><td colspan="4"><code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code> nos quatro</td></tr>
+</table>
+</div>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="trysql" data-goal="colunas:cliente_id,id,data,n;;linhas:90;;contem:1|79|2026-06-29|4">
+<p class="try-task"><strong>Missão:</strong> numere os pedidos de <strong>cada cliente</strong> em ordem de data: o primeiro pedido de cada cliente recebe 1, o segundo 2, e assim por diante. Mostre <code>cliente_id</code>, <code>id</code>, <code>data</code> e o número numa coluna <code>n</code>. Dica: <code>row_number()</code> com <code>PARTITION BY</code> e <code>ORDER BY</code>.</p>
+<pre class="script" data-file="numerar.sql">SELECT cliente_id, id, data
+FROM pedidos
+ORDER BY cliente_id, data;
+</pre>
+<pre class="solucao" data-file="numerar.sql">SELECT cliente_id, id, data,
+       row_number() OVER (PARTITION BY cliente_id ORDER BY data) AS n
+FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Função de janela = função + <code>OVER (PARTITION BY … ORDER BY … moldura)</code>. Ela calcula olhando outras linhas, mas não junta as linhas.</li>
+  <li>Numerar e classificar: <code>row_number</code>, <code>rank</code> (pula depois do empate), <code>dense_rank</code> (não pula), <code>percent_rank</code>, <code>cume_dist</code>, <code>ntile(n)</code>.</li>
+  <li>Outra linha: <code>lag</code>, <code>lead</code>, <code>first_value</code>, <code>last_value</code> (cuidado com a moldura padrão), <code>nth_value</code>.</li>
+  <li>Qualquer agregada com <code>OVER</code>: total acumulado, média móvel, porcentagem do total.</li>
+  <li>Moldura: <code>ROWS</code> (linhas), <code>RANGE</code> (valores), <code>GROUPS</code> (grupos de empatados), com <code>EXCLUDE</code> opcional.</li>
+  <li>Não vão no <code>WHERE</code>: filtre numa subconsulta.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
