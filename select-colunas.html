@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Escolhendo Colunas — a lista de colunas do SELECT | Guia SQL</title>
+<meta name="description" content="Como escolher as colunas de um SELECT para quem está começando: uma coluna, várias colunas separadas por vírgula, a ordem do resultado, como descobrir o nome das colunas, colunas calculadas e os erros reais do SQLite, incluindo a vírgula esquecida que não dá erro, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Escolhendo Colunas</span></h1>
+
+<p class="intro">Na aula <a href="select.html">SELECT</a>, a Ana viu a tabela de produtos inteira: 7 colunas e 45 linhas. Mas, quando um cliente liga perguntando o preço de alguma coisa, ela não precisa do código do fornecedor nem do número da categoria. Precisa do <strong>nome</strong> e do <strong>preço</strong>, e só. Nesta aula você aprende a pedir ao banco exatamente as colunas que quer, na ordem que quer, e conhece o erro mais traiçoeiro de quem está começando: a vírgula esquecida, que <strong>não</strong> dá mensagem de erro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A pedir uma coluna, ou várias, separadas por vírgula.</li>
+  <li>Que o resultado sai na <strong>ordem</strong> em que você escreveu as colunas.</li>
+  <li>Como descobrir o nome das colunas de uma tabela.</li>
+  <li>Que dá para mostrar a mesma coluna duas vezes e até uma conta, como <code>preco * estoque</code>.</li>
+  <li>Os erros mais comuns: coluna que não existe, vírgula sobrando, vírgula faltando e aspas simples no nome da coluna.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: esconder as colunas da planilha</h2>
+<p>Pense numa planilha com os produtos da loja. Para imprimir uma lista de preços, você esconderia as colunas que não interessam e ficaria só com "nome" e "preço". A planilha continua com todas as colunas; a <strong>folha impressa</strong> é que mostra só duas.</p>
+
+<p>No SQL é igual. No lugar do <code>*</code>, você escreve a <strong>lista de colunas</strong> que quer ver. A tabela no banco não muda nada; só o resultado que volta para você é que vem "enxuto".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você escreve</th><th>O resultado mostra</th></tr>
+<tr><td><code>SELECT * FROM produtos;</code></td><td>as 7 colunas: <code>id</code>, <code>nome</code>, <code>categoria_id</code>, <code>fornecedor_id</code>, <code>preco</code>, <code>estoque</code>, <code>descontinuado</code></td></tr>
+<tr><td><code>SELECT nome, preco FROM produtos;</code></td><td>só <code>nome</code> e <code>preco</code></td></tr>
+</table>
+</div>
+
+<p>Nos dois casos vêm as <strong>45 linhas</strong>: escolher colunas não escolhe linhas. Para ficar só com algumas linhas, existe o <code>WHERE</code>, assunto da aula <a href="where.html">WHERE</a>.</p>
+
+<hr>
+
+<h2>1. Uma coluna só</h2>
+<p>A forma mais simples: o nome de uma coluna no lugar do <code>*</code>.</p>
+
+<pre class="file" data-file="uma-coluna.sql" data-resultado>SELECT nome FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>"Selecione": vou pedir dados.</dd>
+  <dt>nome</dt><dd>A <strong>única</strong> coluna que você quer ver. O nome tem de ser exatamente o da tabela: <code>nome</code>, sem acento e sem espaço.</dd>
+  <dt>FROM categorias</dt><dd>De qual tabela.</dd>
+  <dt>;</dt><dd>Fim do comando.</dd>
+</dl>
+
+<p>O resultado tem uma coluna e 8 linhas: o nome de cada categoria. O cabeçalho é o nome da coluna, <code>nome</code>.</p>
+
+<hr>
+
+<h2>2. Várias colunas: separe com vírgula</h2>
+<p>Para mais de uma coluna, escreva os nomes um depois do outro, com uma <strong>vírgula</strong> entre eles. A lista de preços da Ana fica assim:</p>
+
+<pre class="file" data-file="lista-de-precos.sql" data-resultado>SELECT nome, preco FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>nome</dt><dd>A primeira coluna do resultado.</dd>
+  <dt>,</dt><dd>A vírgula separa uma coluna da outra. Ela vai <strong>entre</strong> as colunas: nem antes da primeira, nem depois da última.</dd>
+  <dt>preco</dt><dd>A segunda coluna. O preço aparece do jeito que o banco guarda: com ponto decimal e sem os zeros do fim (<code>4.9</code>, e não <code>4,90</code>).</dd>
+  <dt>FROM produtos;</dt><dd>De qual tabela, e o fim do comando.</dd>
+</dl>
+
+<p>O espaço depois da vírgula é opcional (<code>nome,preco</code> também funciona), mas deixa a consulta mais fácil de ler. Com três colunas, a regra é a mesma, uma vírgula entre cada par:</p>
+
+<pre class="file" data-file="tres-colunas.sql" data-resultado>SELECT nome, cargo, salario FROM funcionarios;
+</pre>
+
+<div class="trysql" data-goal="colunas:nome,preco;;linhas:45">
+<p class="try-task"><strong>Missão:</strong> esta consulta mostra a tabela de produtos inteira. Mude-a para mostrar <strong>só</strong> o nome e o preço de cada produto, nessa ordem.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A ordem das colunas é você quem escolhe</h2>
+<p>Com <code>*</code>, as colunas vêm na ordem em que a tabela foi criada. Com a lista, elas vêm na ordem em que <strong>você</strong> escreveu. Compare:</p>
+
+<pre class="file" data-file="cargo-primeiro.sql" data-resultado>SELECT cargo, nome FROM funcionarios;
+</pre>
+
+<p>Agora o cargo vem antes do nome, embora na tabela <code>funcionarios</code> o <code>nome</code> venha primeiro. Repare que só mudou a ordem das <strong>colunas</strong>; as <strong>linhas</strong> continuam na mesma ordem (Marta, Caio, Renata…). Para mudar a ordem das linhas, existe o <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>).</p>
+
+<p>Isso é útil para montar o resultado do jeito que quem vai ler espera. Uma lista de contatos dos clientes, por exemplo, fica melhor com o nome primeiro e o email depois:</p>
+
+<pre class="file" data-file="contatos.sql" data-resultado>SELECT nome, email, cidade FROM clientes;
+</pre>
+
+<p>Três clientes aparecem com <em>NULL</em> no email (Luís Otávio, Roberto e Henrique): eles não deixaram email na loja. É o "sem valor" que você já viu; a aula <a href="null.html">O Valor NULL</a> conta tudo sobre ele.</p>
+
+<hr>
+
+<h2>4. Como descobrir o nome das colunas</h2>
+<p>Para escrever a lista, você precisa saber como as colunas se chamam. Três jeitos:</p>
+
+<ol class="passo">
+  <li><strong>Rode um <code>SELECT *</code></strong> e leia o cabeçalho. É o jeito mais rápido no editor.</li>
+  <li><strong>Consulte o mapa do banco</strong>: a aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a> lista todas as tabelas e colunas da loja.</li>
+  <li><strong>No terminal</strong>, use o comando de ponto <code>.schema</code>, que mostra como a tabela foi criada:</li>
+</ol>
+
+<pre class="term">$ sqlite3 loja.db ".schema produtos"
+CREATE TABLE produtos (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL,
+    estoque       INTEGER NOT NULL DEFAULT 0,
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);</pre>
+
+<p>Cada linha do meio é uma coluna: primeiro o <strong>nome</strong> (<code>id</code>, <code>nome</code>, <code>categoria_id</code>…), depois o tipo e as regras dela, que você vai aprender em <a href="create-table.html">CREATE TABLE</a>. Por enquanto, olhe só a primeira palavra de cada linha. O <code>.schema</code> só existe no terminal (veja <a href="comandos-ponto.html">Comandos de Ponto</a>); no editor, use o <code>SELECT *</code>.</p>
+
+<div class="tip">
+<strong>Por que <code>preco</code>, sem cedilha?</strong>
+<p>Quem criou a tabela escolheu nomes sem acento, sem cedilha e sem espaço: <code>preco</code>, <code>descricao</code>, <code>itens_pedido</code> (com sublinhado no lugar do espaço). É uma boa prática no mundo inteiro: nomes assim funcionam em qualquer banco, em qualquer teclado e em qualquer linguagem de programação. Quando for a sua vez de criar tabelas, faça igual.</p>
+</div>
+
+<hr>
+
+<h2>5. Repetir colunas e fazer contas</h2>
+<p>A lista de colunas aceita algumas coisas que surpreendem quem está começando.</p>
+
+<h3>A mesma coluna duas vezes</h3>
+<pre class="file" data-file="duas-vezes.sql" data-resultado>SELECT nome, nome FROM categorias;
+</pre>
+<p>Funciona: o banco mostra o que você pediu, quantas vezes pediu. Não é muito útil assim, mas mostra que cada item da lista é independente dos outros.</p>
+
+<h3>Uma conta como coluna</h3>
+<p>Um item da lista não precisa ser só o nome de uma coluna: pode ser uma <strong>conta</strong> com ela. Quanto a loja gasta por ano com o salário de cada funcionário? O salário vezes 12:</p>
+
+<pre class="file" data-file="salario-anual.sql" data-resultado>SELECT nome, salario, salario * 12 FROM funcionarios;
+</pre>
+
+<dl class="anatomy">
+  <dt>nome, salario</dt><dd>Duas colunas comuns.</dd>
+  <dt>salario * 12</dt><dd>Uma <strong>coluna calculada</strong>: para cada linha, o banco pega o salário e multiplica por 12 (o <code>*</code> aqui é "vezes", não "todas as colunas"). A Marta ganha 9800.0 por mês, então a conta dá 117600.0.</dd>
+</dl>
+
+<p>Repare no cabeçalho da coluna nova: é a própria conta, <code>salario * 12</code>. Para dar a ela um nome melhor, como <code>salario_anual</code>, existe o <code>AS</code>, assunto da aula <a href="aliases.html">Apelidos (AS)</a>. E a conta não muda a tabela: o salário guardado continua sendo o mensal.</p>
+
+<p>O <code>*</code> só quer dizer "todas as colunas" quando aparece <strong>sozinho</strong> no lugar da lista. Entre dois valores, como em <code>salario * 12</code>, ele é a multiplicação.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> quanto vale, em dinheiro, o estoque de cada produto? Rode a consulta e veja a coluna <code>preco * estoque</code>. Depois troque o <code>*</code> da conta por <code>+</code> ou <code>-</code> e veja o que muda.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco, estoque, preco * estoque FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de escrever a mesma lista</h2>
+<p>As três consultas abaixo dão o mesmo resultado: nome e preço dos 45 produtos.</p>
+
+<pre class="file" data-file="forma1.sql">SELECT nome, preco FROM produtos;
+</pre>
+
+<pre class="file" data-file="forma2.sql">SELECT nome,
+       preco
+FROM produtos;
+</pre>
+
+<pre class="file" data-file="forma3.sql" data-resultado>SELECT produtos.nome, produtos.preco FROM produtos;
+</pre>
+
+<p>A terceira escreve o nome da tabela antes de cada coluna, com um ponto no meio: <code>produtos.nome</code> quer dizer "a coluna <code>nome</code> da tabela <code>produtos</code>". Com uma tabela só, isso é desnecessário. Mas, quando você juntar duas tabelas que têm colunas com o mesmo nome (<code>produtos</code> e <code>categorias</code> têm, as duas, uma coluna <code>nome</code>), vai ser obrigatório. Isso fica para a aula <a href="inner-join.html">INNER JOIN</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>SELECT nome, preco FROM produtos;</code></td><td>O normal, com poucas colunas</td></tr>
+<tr><td>Uma coluna por linha</td><td>Listas compridas: fica fácil ler, comentar e apagar uma coluna</td></tr>
+<tr><td><code>produtos.nome, produtos.preco</code></td><td>Quando a consulta usa mais de uma tabela (JOIN)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A coluna não existe</strong>
+<p>A Ana digitou rápido demais:</p>
+<pre class="file" data-file="erro-nme.sql" data-resultado data-erro>SELECT nme, preco FROM produtos;
+</pre>
+<p><code>no such column: nme</code> quer dizer "não existe a coluna <code>nme</code>". O mesmo acontece com o nome escrito com acento, como se fala:</p>
+<pre class="file" data-file="erro-acento.sql" data-resultado data-erro>SELECT nome, preço FROM produtos;
+</pre>
+<p><code>no such column: preço</code>. Para o banco, <code>preço</code> e <code>preco</code> são nomes diferentes. <strong>Como consertar:</strong> copie o nome exato do cabeçalho de um <code>SELECT *</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A coluna existe, mas em outra tabela</strong>
+<pre class="file" data-file="erro-outra-tabela.sql" data-resultado data-erro>SELECT nome, cidade FROM produtos;
+</pre>
+<p>De novo <code>no such column: cidade</code>. A coluna <code>cidade</code> existe no banco (nas tabelas <code>clientes</code> e <code>fornecedores</code>), mas não em <code>produtos</code>. O banco só procura as colunas na tabela do <code>FROM</code>. <strong>Como consertar:</strong> use a tabela certa (<code>SELECT nome, cidade FROM clientes;</code>) ou, se precisar de dados de duas tabelas, espere a aula de <a href="joins.html">JOIN</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula sobrando no fim da lista</strong>
+<p>Acontece muito quando se apaga a última coluna da lista e a vírgula fica para trás:</p>
+<pre class="file" data-file="erro-virgula-fim.sql" data-resultado data-erro>SELECT nome, preco, FROM produtos;
+</pre>
+<p><code>near "FROM": syntax error</code>. Depois de uma vírgula, o banco espera mais uma coluna, e encontrou o <code>FROM</code>. O mesmo vale para duas vírgulas seguidas (<code>nome,, preco</code> dá <code>near ",": syntax error</code>). <strong>Como consertar:</strong> apague a vírgula que sobrou. A regra: vírgula só <strong>entre</strong> duas colunas.</p>
+</div>
+
+<div class="cenario">
+<strong>Vírgula faltando: o erro que não dá erro</strong>
+<p>Este é o mais perigoso. A Ana esqueceu a vírgula entre <code>nome</code> e <code>preco</code>:</p>
+<pre class="file" data-file="sem-virgula.sql" data-resultado>SELECT nome preco FROM produtos;
+</pre>
+<p><strong>Nenhuma mensagem de erro.</strong> Mas olhe o resultado: veio uma coluna só, chamada <code>preco</code>, com os <strong>nomes</strong> dos produtos dentro! Sem a vírgula, o banco entendeu "mostre a coluna <code>nome</code> e dê a ela o apelido <code>preco</code>". Apelidos são um recurso de verdade do SQL (aula <a href="aliases.html">Apelidos (AS)</a>), e por isso o banco não reclama.</p>
+<p><strong>Como perceber:</strong> confira sempre o cabeçalho. Se vieram menos colunas do que você pediu, ou se os valores não combinam com o nome da coluna, procure uma vírgula faltando. Com três nomes seguidos sem vírgula (<code>SELECT nome preco estoque FROM produtos;</code>) aí sim aparece erro: <code>near "estoque": syntax error</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas simples no nome da coluna</strong>
+<pre class="file" data-file="aspas-simples.sql" data-resultado>SELECT 'nome' FROM categorias;
+</pre>
+<p>De novo, sem mensagem de erro, e de novo um resultado estranho: 8 linhas com a palavra <code>nome</code>. Entre aspas simples, <code>'nome'</code> não é mais o nome de uma coluna: é um <strong>texto</strong>, igual ao <code>'Olá, Ana'</code> da aula <a href="select.html">SELECT</a>. O banco mostra esse texto uma vez para cada linha da tabela. <strong>Como consertar:</strong> nomes de colunas vão <strong>sem</strong> aspas. Aspas simples são para textos, como você vai usar no <a href="where.html">WHERE</a>.</p>
+</div>
+
+<div class="trysql" data-goal="colunas:nome,email,cidade;;linhas:30">
+<p class="try-task"><strong>Missão:</strong> a Ana quer a lista de contatos com nome, email e cidade dos clientes, mas o resultado saiu com uma coluna só. Encontre o problema e conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, email cidade FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, email, cidade FROM clientes;
+</pre>
+</div>
+
+<p>Dica: aqui vieram duas colunas, <code>nome</code> e <code>cidade</code>, mas a coluna <code>cidade</code> está cheia de emails. É a vírgula faltando de novo.</p>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT coluna FROM tabela;</code></td><td>Uma coluna</td></tr>
+<tr><td><code>SELECT col1, col2, col3 FROM tabela;</code></td><td>Várias colunas, nessa ordem</td></tr>
+<tr><td><code>SELECT col2, col1 FROM tabela;</code></td><td>Mesmas colunas, ordem trocada</td></tr>
+<tr><td><code>SELECT salario * 12 FROM funcionarios;</code></td><td>Uma coluna calculada (o cabeçalho é a conta)</td></tr>
+<tr><td><code>SELECT tabela.coluna FROM tabela;</code></td><td>A coluna com o nome da tabela na frente (útil nos JOINs)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma</th><th>Causa provável</th></tr>
+<tr><td><code>no such column: nme</code></td><td>Nome da coluna errado, ou a coluna está em outra tabela</td></tr>
+<tr><td><code>near "FROM": syntax error</code></td><td>Vírgula sobrando antes do <code>FROM</code></td></tr>
+<tr><td>Menos colunas do que você pediu, com valores "trocados"</td><td>Vírgula faltando: uma coluna virou apelido da outra</td></tr>
+<tr><td>A mesma palavra repetida em todas as linhas</td><td>Nome da coluna entre aspas simples: virou texto</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Nome e cidade</h3>
+<p>Complete para mostrar o nome e a cidade dos fornecedores:</p>
+<div class="ex-code">SELECT nome<input data-answer="," aria-label="separador"> cidade FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só o cargo</h3>
+<p>Complete para mostrar só o cargo de cada funcionário:</p>
+<div class="ex-code">SELECT <input data-answer="cargo" aria-label="coluna"> FROM funcionarios;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Em que ordem vêm as colunas de <code>SELECT preco, nome FROM produtos;</code>?</p>
+<label><input type="radio" name="q3"> <code>nome</code> e depois <code>preco</code>, a ordem da tabela</label>
+<label><input type="radio" name="q3"> <code>preco</code> e depois <code>nome</code>, a ordem em que foram escritas</label>
+<label><input type="radio" name="q3"> Em ordem alfabética</label>
+<label><input type="radio" name="q3"> Dá erro, porque <code>nome</code> tem de vir primeiro</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. A Ana rodou <code>SELECT nome estoque FROM produtos;</code>. O que aparece?</p>
+<label><input type="radio" name="q4"> Erro: <code>near "estoque": syntax error</code></label>
+<label><input type="radio" name="q4"> Duas colunas, <code>nome</code> e <code>estoque</code></label>
+<label><input type="radio" name="q4"> Uma coluna chamada <code>estoque</code>, com os nomes dos produtos dentro</label>
+<label><input type="radio" name="q4"> Só a coluna <code>estoque</code>, com os números do estoque</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quantas linhas vêm em <code>SELECT nome, preco FROM produtos;</code>?</p>
+<label><input type="radio" name="q5"> 45, todas as linhas da tabela: escolher colunas não escolhe linhas</label>
+<label><input type="radio" name="q5"> 2, uma para cada coluna</label>
+<label><input type="radio" name="q5"> 1</label>
+<label><input type="radio" name="q5"> Depende do preço</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. <code>SELECT nome, cidade FROM produtos;</code> dá <code>no such column: cidade</code>. Por quê?</p>
+<label><input type="radio" name="q6"> Faltou o <code>;</code></label>
+<label><input type="radio" name="q6"> Só dá para pedir uma coluna por vez</label>
+<label><input type="radio" name="q6"> A coluna deveria estar entre aspas simples</label>
+<label><input type="radio" name="q6"> A tabela <code>produtos</code> não tem a coluna <code>cidade</code></label>
+</div>
+
+<h3>Missão final: a ficha do fornecedor</h3>
+
+<div class="trysql" data-goal="colunas:nome,telefone,pais;;linhas:6">
+<p class="try-task"><strong>Missão:</strong> a Ana vai ligar para os fornecedores. Monte a lista com o <strong>nome</strong>, o <strong>telefone</strong> e o <strong>país</strong> de cada um, nessa ordem. Comece com <code>SELECT *</code> para descobrir os nomes das colunas, se precisar.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM fornecedores;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, telefone, pais FROM fornecedores;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No lugar do <code>*</code>, escreva a <strong>lista de colunas</strong> que quer ver, separadas por vírgula: <code>SELECT nome, preco FROM produtos;</code>.</li>
+  <li>As colunas saem na ordem em que você escreveu. Escolher colunas não muda quantas linhas vêm.</li>
+  <li>Para saber o nome das colunas: o cabeçalho de um <code>SELECT *</code>, o mapa em <a href="banco-do-guia.html">O Banco da Loja Aurora</a> ou o <code>.schema</code> no terminal.</li>
+  <li>A lista aceita a mesma coluna duas vezes e contas como <code>salario * 12</code>. Entre dois valores, o <code>*</code> é multiplicação.</li>
+  <li>Vírgula só <strong>entre</strong> colunas. Sobrando, dá <code>syntax error</code>; faltando, não dá erro nenhum, e uma coluna vira o apelido da outra. Confira sempre o cabeçalho.</li>
+  <li>Nomes de colunas vão sem aspas. <code>'nome'</code>, com aspas simples, é um texto.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
