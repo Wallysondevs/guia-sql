@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Os Bancos Famosos — MySQL, PostgreSQL, SQLite, SQL Server e Oracle | Guia SQL</title>
+<meta name="description" content="Os bancos de dados mais conhecidos, para quem está começando: SQLite, MySQL e MariaDB, PostgreSQL, SQL Server e Oracle. Banco de arquivo × banco de servidor, o que cada um tem de bom, onde é usado, qual escolher e por que o SQL aprendido num serve nos outros, com os erros reais de usar o sotaque de um banco no outro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Os <span class="hl">Bancos Famosos</span></h1>
+
+<p class="intro">Quem aprende a dirigir num carro consegue dirigir quase qualquer outro: o volante, o freio e o acelerador ficam no mesmo lugar, mesmo que o painel mude. Com os bancos de dados é parecido. Você já sabe que o programa que cuida do banco se chama <strong>SGBD</strong> e que todos falam <strong>SQL</strong>. Nesta aula você vai conhecer os cinco mais famosos (SQLite, MySQL, PostgreSQL, SQL Server e Oracle), entender a grande diferença entre eles e saber por que este guia escolheu o SQLite.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre um banco <strong>de arquivo</strong> (embutido) e um banco <strong>de servidor</strong>.</li>
+  <li>Quem é quem: <strong>SQLite</strong>, <strong>MySQL</strong> e <strong>MariaDB</strong>, <strong>PostgreSQL</strong>, <strong>SQL Server</strong> e <strong>Oracle</strong>.</li>
+  <li>Onde cada um costuma ser usado e qual escolher para cada situação.</li>
+  <li>Por que o SQL que você aprende aqui serve nos outros, e onde estão os "sotaques".</li>
+  <li>O que acontece quando você usa o jeito de um banco dentro de outro: os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: o caderno na mochila e o cartório</h2>
+<p>Existem duas maneiras bem diferentes de cuidar de um banco de dados:</p>
+
+<ul>
+  <li><strong>O caderno na mochila.</strong> A Ana tem um caderno de controle da lojinha que leva para todo lado. Ela mesma abre, lê e escreve. Não depende de ninguém, não precisa marcar horário. Esse é o <strong>banco de arquivo</strong>: o banco inteiro é um arquivo no computador (ou no celular), e o programa que usa o banco o abre direto, sozinho. O <strong>SQLite</strong> é assim.</li>
+  <li><strong>O cartório.</strong> Os registros ficam guardados num prédio, com funcionários no balcão. Muita gente chega ao mesmo tempo, cada uma com uma senha; o cartório confere quem pode ver o quê, atende uma fila enorme e nunca fecha. Esse é o <strong>banco de servidor</strong>: um programa fica ligado o tempo todo num computador (o <strong>servidor</strong>), e os outros programas se conectam a ele pela rede, com usuário e senha. MySQL, PostgreSQL, SQL Server e Oracle são assim.</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Banco de arquivo (SQLite)</th><th>Banco de servidor (MySQL, PostgreSQL…)</th></tr>
+<tr><td>Onde ficam os dados</td><td>Num arquivo só, como o <code>loja.db</code></td><td>Em arquivos que só o servidor mexe</td></tr>
+<tr><td>Precisa instalar e ligar um servidor?</td><td>Não</td><td>Sim, e ele fica ligado o tempo todo</td></tr>
+<tr><td>Usuário e senha</td><td>Não tem: quem abre o arquivo pode ler</td><td>Tem, com permissões por usuário</td></tr>
+<tr><td>Quantos escrevem ao mesmo tempo</td><td>Um de cada vez (muitos podem ler)</td><td>Muitos, ao mesmo tempo</td></tr>
+<tr><td>Copiar o banco para outro lugar</td><td>Copiar o arquivo</td><td>Exportar e importar (ou ferramentas próprias)</td></tr>
+<tr><td>Bom para</td><td>Aplicativos, celulares, programas, estudo, sites pequenos</td><td>Sites e sistemas com muitos usuários, empresas</td></tr>
+</table>
+</div>
+
+<p>Nenhum dos dois é "melhor". Ninguém leva um cartório na mochila, e ninguém registra os imóveis de uma cidade num caderno. Cada um serve para uma coisa.</p>
+
+<hr>
+
+<h2>1. SQLite: o banco que está em todo lugar</h2>
+<p>O <strong>SQLite</strong> é o banco de arquivo mais usado do mundo, e o deste guia. O site oficial (sqlite.org) o descreve como um motor de banco de dados SQL "autossuficiente, sem servidor e sem configuração": um banco completo, com todas as tabelas, cabe num arquivo só, e o código é de <strong>domínio público</strong>, livre para qualquer uso, comercial ou pessoal.</p>
+
+<p>Você usa o SQLite todos os dias sem saber. Segundo o próprio projeto, ele está em todo celular Android, todo iPhone, todo Mac, toda instalação do Windows 10 e 11, nos navegadores Firefox, Chrome e Safari, em televisores e nas centrais multimídia de carros. A conta do site: mais de um trilhão de bancos SQLite em uso. Os contatos e as mensagens do seu celular, muito provavelmente, estão num banco SQLite.</p>
+
+<p>E está aqui também: o editor deste guia roda um SQLite de verdade dentro do seu navegador. Pergunte a ele a versão:</p>
+
+<pre class="file" data-file="versao.sql" data-resultado>SELECT sqlite_version();
+</pre>
+
+<dl class="anatomy">
+  <dt>sqlite_version()</dt><dd>Uma <strong>função</strong> do SQLite: um comando pronto que devolve um valor. Esta devolve a versão do motor. Os parênteses vazios dizem "rode a função, sem nada dentro".</dd>
+  <dt>3.50.4</dt><dd>A versão do SQLite do guia: a mesma no editor e no terminal da Ana, por isso todo resultado das aulas bate. O <strong>3</strong> é a "geração" do SQLite (a mesma desde 2004), o <strong>50</strong> é a versão, e o <strong>4</strong> é a quarta correção dessa versão.</dd>
+</dl>
+
+<ul>
+  <li><strong>Pontos fortes:</strong> nada para instalar ou configurar, um arquivo só, rápido, confiável, gratuito para tudo.</li>
+  <li><strong>Limites:</strong> uma escrita de cada vez; não tem usuários e senhas; não é feito para servir, sozinho, um site gigante com milhares de pessoas gravando ao mesmo tempo.</li>
+</ul>
+
+<hr>
+
+<h2>2. MySQL e MariaDB: os bancos dos sites</h2>
+<p>O <strong>MySQL</strong> é o banco de servidor mais conhecido da web. Nasceu na Suécia nos anos 1990, ficou famoso junto com o PHP e hoje pertence à <strong>Oracle</strong>. Tem uma versão gratuita e de código aberto, a <em>Community</em>. Se você contratar uma hospedagem de site barata, quase certamente vai ganhar um MySQL de brinde: o WordPress, por exemplo, guarda os posts num banco MySQL (ou MariaDB).</p>
+
+<p>O <strong>MariaDB</strong> é um "irmão" do MySQL, criado por desenvolvedores originais do MySQL, entre eles Michael "Monty" Widenius. O projeto se apresenta como um substituto direto do MySQL ("<em>drop-in replacement</em>") e promete continuar sempre livre, sob a licença GPLv2. No dia a dia, o SQL dos dois é praticamente o mesmo.</p>
+
+<ul>
+  <li><strong>Pontos fortes:</strong> muito usado, fácil de achar em hospedagens, muita documentação e muita gente que sabe usar.</li>
+  <li><strong>Onde você vai encontrar:</strong> sites, lojas virtuais, blogs, sistemas em PHP.</li>
+</ul>
+
+<hr>
+
+<h2>3. PostgreSQL: o mais completo dos livres</h2>
+<p>O <strong>PostgreSQL</strong> (fala-se "póst-grés-quiu-él"; o apelido é <strong>Postgres</strong>) é um banco de servidor livre e gratuito, mantido por uma comunidade, sem dono. É famoso por seguir de perto o SQL padrão e por ter recursos avançados: tipos de dados variados, JSON, buscas de texto, extensões para mapas. Na data deste guia, a versão atual é a 18.</p>
+
+<ul>
+  <li><strong>Pontos fortes:</strong> completo, segue o padrão, confiável, gratuito até para grandes empresas.</li>
+  <li><strong>Onde você vai encontrar:</strong> startups, sistemas de empresas, governos, aplicativos com servidor próprio.</li>
+</ul>
+
+<hr>
+
+<h2>4. SQL Server: o banco da Microsoft</h2>
+<p>O <strong>Microsoft SQL Server</strong> é o banco de servidor da Microsoft. O SQL dele tem até nome próprio, <strong>T-SQL</strong> (<em>Transact-SQL</em>), com vários sotaques. É pago para uso em empresas, mas tem edições gratuitas para estudo e para sistemas pequenos. Roda no Windows e também no Linux, e existe em versão na nuvem (o Azure SQL).</p>
+
+<ul>
+  <li><strong>Pontos fortes:</strong> integrado aos produtos da Microsoft (Windows, Excel, Power BI, .NET), ferramentas gráficas caprichadas.</li>
+  <li><strong>Onde você vai encontrar:</strong> empresas que usam Windows e programas da Microsoft, bancos, indústrias.</li>
+</ul>
+
+<hr>
+
+<h2>5. Oracle Database: o veterano das grandes empresas</h2>
+<p>O <strong>Oracle Database</strong> é o banco comercial mais antigo da lista, da empresa Oracle (a mesma que hoje é dona do MySQL e do Java). É pago e caro, com uma edição gratuita para aprender. O SQL dele também tem nome, <strong>PL/SQL</strong>, quando se escrevem programas dentro do banco.</p>
+
+<ul>
+  <li><strong>Pontos fortes:</strong> feito para sistemas enormes que não podem parar: bancos, companhias aéreas, operadoras de telefone, governos.</li>
+  <li><strong>Onde você vai encontrar:</strong> grandes corporações, quase sempre com uma equipe só para cuidar do banco.</li>
+</ul>
+
+<hr>
+
+<h2>Lado a lado, e qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Tipo</th><th>De quem</th><th>Custo</th><th>Uso típico</th></tr>
+<tr><td><strong>SQLite</strong></td><td>Arquivo (embutido)</td><td>Projeto SQLite</td><td>Grátis, domínio público</td><td>Celulares, aplicativos, navegadores, estudo, sites pequenos</td></tr>
+<tr><td><strong>MySQL</strong></td><td>Servidor</td><td>Oracle</td><td>Versão Community grátis; versões pagas</td><td>Sites, lojas virtuais, PHP</td></tr>
+<tr><td><strong>MariaDB</strong></td><td>Servidor</td><td>Comunidade MariaDB</td><td>Grátis (GPLv2)</td><td>O mesmo do MySQL</td></tr>
+<tr><td><strong>PostgreSQL</strong></td><td>Servidor</td><td>Comunidade</td><td>Grátis</td><td>Sistemas de empresas, startups, dados com mapas e JSON</td></tr>
+<tr><td><strong>SQL Server</strong></td><td>Servidor</td><td>Microsoft</td><td>Pago; edições grátis para estudo e uso pequeno</td><td>Empresas no mundo Microsoft</td></tr>
+<tr><td><strong>Oracle</strong></td><td>Servidor</td><td>Oracle</td><td>Pago; edição grátis para aprender</td><td>Grandes corporações</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Se você quer…</th><th>Comece com</th></tr>
+<tr><td>Aprender SQL sem instalar servidor nenhum</td><td><strong>SQLite</strong> (é o que este guia faz)</td></tr>
+<tr><td>Guardar dados dentro de um aplicativo de celular ou de computador</td><td><strong>SQLite</strong></td></tr>
+<tr><td>Fazer um site numa hospedagem comum, ou mexer com WordPress</td><td><strong>MySQL</strong> ou <strong>MariaDB</strong></td></tr>
+<tr><td>Um sistema novo, com servidor, que vai crescer</td><td><strong>PostgreSQL</strong></td></tr>
+<tr><td>Trabalhar numa empresa que usa os produtos da Microsoft</td><td><strong>SQL Server</strong></td></tr>
+<tr><td>Trabalhar numa grande corporação ou num banco</td><td>Provavelmente <strong>Oracle</strong> ou <strong>SQL Server</strong></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Por que este guia usa o SQLite</strong>
+<p>Para aprender, ele é perfeito: instala em um minuto (próxima aula, <a href="instalar.html">Instalar o SQLite</a>), o banco da loja é um arquivo que você pode copiar e apagar à vontade, e ele roda até dentro do navegador, no editor das aulas. E o SQL dele segue o padrão: tudo o que você aprender aqui, você leva para o MySQL, o PostgreSQL ou o SQL Server, com poucos ajustes. Quando houver diferença, as aulas avisam numa caixa "Nos outros bancos".</p>
+</div>
+
+<hr>
+
+<h2>6. O mesmo SQL em todos</h2>
+<p>A consulta abaixo roda <strong>igualzinha</strong> no SQLite, no MySQL, no MariaDB, no PostgreSQL, no SQL Server e no Oracle. É o "volante e pedais" do SQL:</p>
+
+<pre class="file" data-file="universal.sql" data-resultado>SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Gerente';
+</pre>
+
+<p>A gerente da Loja Aurora é a Marta Lustosa, e qualquer um dos seis bancos daria a mesma resposta, se tivesse as mesmas tabelas. As diferenças aparecem nas bordas: em funções, em alguns comandos e nas ferramentas de cada um. Três exemplos que você vai ver de novo pelo guia (os trechos dos outros bancos são <strong>ilustrativos</strong>: não rodam no SQLite, por isso não têm quadro de resultado):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que fazer</th><th>SQLite</th><th>MySQL / MariaDB</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>Ver a versão</td><td><code>SELECT sqlite_version();</code></td><td><code>SELECT VERSION();</code></td><td><code>SELECT version();</code></td><td><code>SELECT @@VERSION;</code></td></tr>
+<tr><td>Só as 3 primeiras linhas</td><td><code>… LIMIT 3</code></td><td><code>… LIMIT 3</code></td><td><code>… LIMIT 3</code></td><td><code>SELECT TOP (3) …</code></td></tr>
+<tr><td>Listar as tabelas</td><td><code>.tables</code> (no terminal <code>sqlite3</code>)</td><td><code>SHOW TABLES;</code></td><td><code>\dt</code> (no terminal <code>psql</code>)</td><td><code>SELECT name FROM sys.tables;</code></td></tr>
+</table>
+</div>
+
+<p>Fontes: manuais oficiais do <a href="https://dev.mysql.com/doc/refman/8.4/en/information-functions.html">MySQL</a> (<code>VERSION()</code>, <a href="https://dev.mysql.com/doc/refman/8.4/en/show-tables.html"><code>SHOW TABLES</code></a>), do <a href="https://www.postgresql.org/docs/current/functions-info.html">PostgreSQL</a> (<code>version()</code>) e do SQL Server (<a href="https://learn.microsoft.com/en-us/sql/t-sql/functions/version-transact-sql-configuration-functions"><code>@@VERSION</code></a>, <a href="https://learn.microsoft.com/en-us/sql/t-sql/queries/top-transact-sql"><code>TOP</code></a>).</p>
+
+<div class="trysql" data-goal="linhas:1;;contem:Marta Lustosa">
+<p class="try-task"><strong>Experimente:</strong> a consulta mostra todos os funcionários e os seus cargos. Acrescente a linha <code>WHERE cargo = 'Gerente'</code> antes do ponto e vírgula para ficar só com a gerente, como no exemplo acima. Depois, por curiosidade, troque <code>'Gerente'</code> por <code>'Vendedora'</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cargo
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Gerente';
+</pre>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>O erro mais comum de quem copia exemplos da internet: o exemplo era de <strong>outro banco</strong>. O SQLite não entende o sotaque dos outros e reclama. As mensagens abaixo são as reais.</p>
+
+<div class="cenario">
+<strong>O <code>TOP</code> do SQL Server</strong>
+<pre class="file" data-file="top.sql" data-resultado data-erro>SELECT TOP 3 nome FROM produtos;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "3": syntax error</code>. O SQLite não conhece <code>TOP</code>; ele achou que <code>TOP</code> fosse o nome de uma coluna e se perdeu logo depois, no <code>3</code>. Por isso a mensagem aponta o número, e não a palavra <code>TOP</code>.</p>
+<p><strong>Como consertar:</strong> no SQLite, o limite vai no fim: <code>SELECT nome FROM produtos LIMIT 3;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A função de versão do MySQL e do PostgreSQL</strong>
+<pre class="file" data-file="version.sql" data-resultado data-erro>SELECT version();
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such function: version</code>, "não existe a função <code>version</code>". O SQLite tem a sua: <code>sqlite_version()</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>@@VERSION</code> do SQL Server</strong>
+<pre class="file" data-file="arroba.sql" data-resultado data-erro>SELECT @@VERSION;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>unrecognized token: "@"</code>, "símbolo não reconhecido". Para o SQLite, aquele <code>@</code> nem é uma palavra que ele conheça; o erro acontece antes até de entender a frase.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>SHOW TABLES</code> do MySQL</strong>
+<pre class="file" data-file="show.sql" data-resultado data-erro>SHOW TABLES;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "SHOW": syntax error</code>. O SQLite não tem o comando <code>SHOW</code>. Para listar as tabelas no terminal do SQLite existe o comando <code>.tables</code>, que você vai usar em <a href="comandos-ponto.html">Comandos de Ponto</a>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:3">
+<p class="try-task"><strong>Missão:</strong> a Ana achou esta consulta num site sobre SQL Server e ela dá erro no SQLite. Reescreva no jeito do SQLite, para mostrar os nomes dos 3 primeiros produtos.</p>
+<pre class="script" data-file="consulta.sql">SELECT TOP 3 nome FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome FROM produtos LIMIT 3;
+</pre>
+</div>
+
+<p>Moral: quando um exemplo da internet não funcionar, veja para qual banco ele foi escrito. Uma busca como "LIMIT no SQL Server" ou "SHOW TABLES no SQLite" resolve quase sempre. As diferenças têm um grupo inteiro de aulas no Nível 3: <a href="dialetos.html">As Diferenças entre os Bancos</a>, <a href="mysql.html">SQL no MySQL e MariaDB</a>, <a href="postgresql.html">SQL no PostgreSQL</a> e <a href="sql-server.html">SQL no SQL Server</a>.</p>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th></tr>
+<tr><td>Banco de arquivo (embutido)</td><td>O banco é um arquivo; o programa o abre direto, sem servidor (SQLite)</td></tr>
+<tr><td>Banco de servidor (cliente-servidor)</td><td>Um programa fica ligado num computador e atende conexões pela rede, com usuário e senha</td></tr>
+<tr><td>Servidor</td><td>O computador (ou o programa) que fica ligado atendendo pedidos</td></tr>
+<tr><td>Cliente</td><td>O programa que se conecta ao servidor para fazer pedidos</td></tr>
+<tr><td>Código aberto, livre</td><td>O código do programa é público e pode ser usado e modificado</td></tr>
+<tr><td>Domínio público</td><td>Sem dono nenhum: qualquer um usa para qualquer coisa (o caso do SQLite)</td></tr>
+<tr><td>T-SQL, PL/SQL</td><td>Os nomes do SQL "com sotaque" do SQL Server e do Oracle</td></tr>
+<tr><td>Dialeto</td><td>O jeito particular de cada banco falar SQL</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A versão</h3>
+<p>Complete o nome da função que mostra a versão do SQLite:</p>
+<div class="ex-code">SELECT <input data-answer="sqlite_version" aria-label="nome da função">();</div>
+</div>
+
+<div class="exercise">
+<h3>2. O limite</h3>
+<p>No SQLite, complete a palavra que limita o resultado às 5 primeiras linhas:</p>
+<div class="ex-code">SELECT nome FROM clientes <input data-answer="LIMIT" aria-label="palavra-chave"> 5;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é a grande diferença do SQLite para o MySQL e o PostgreSQL?</p>
+<label><input type="radio" name="q3"> O SQLite não usa SQL</label>
+<label><input type="radio" name="q3"> O SQLite não tem servidor: o banco é um arquivo que o programa abre direto</label>
+<label><input type="radio" name="q3"> O SQLite é pago</label>
+<label><input type="radio" name="q3"> O SQLite só funciona no Windows</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Um site com milhares de pessoas comprando ao mesmo tempo, cada vendedor com o seu usuário e senha. Qual tipo de banco combina mais?</p>
+<label><input type="radio" name="q4"> Um banco de arquivo, copiado para cada vendedor</label>
+<label><input type="radio" name="q4"> Uma planilha compartilhada</label>
+<label><input type="radio" name="q4"> Tanto faz</label>
+<label><input type="radio" name="q4"> Um banco de servidor, como PostgreSQL ou MySQL</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. A Ana rodou <code>SELECT version();</code> no SQLite e recebeu <code>no such function: version</code>. Por quê?</p>
+<label><input type="radio" name="q5"> O SQLite está desatualizado</label>
+<label><input type="radio" name="q5"> Faltou escrever em maiúsculas</label>
+<label><input type="radio" name="q5"> <code>version()</code> é de outros bancos; no SQLite a função é <code>sqlite_version()</code></label>
+<label><input type="radio" name="q5"> O banco da loja não tem tabela de versões</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual afirmação é verdadeira?</p>
+<label><input type="radio" name="q6"> O <code>SELECT … FROM … WHERE</code> básico é o mesmo em todos os bancos famosos</label>
+<label><input type="radio" name="q6"> Cada banco tem um SQL completamente diferente</label>
+<label><input type="radio" name="q6"> O MariaDB não tem nada a ver com o MySQL</label>
+<label><input type="radio" name="q6"> O SQLite é usado só em computadores antigos</label>
+</div>
+
+<h3>Missão final: a versão e as vendedoras</h3>
+
+<div class="trysql" data-goal="contem:3.50.4;;linhas:2">
+<p class="try-task"><strong>Missão:</strong> o código abaixo foi escrito para o PostgreSQL e dá erro aqui. Faça duas coisas: troque a função de versão pela do SQLite, e, no segundo comando, troque o cargo para mostrar só as funcionárias com o cargo <code>Vendedora</code>. Os dois resultados devem aparecer, um embaixo do outro.</p>
+<pre class="script" data-file="consulta.sql">SELECT version();
+
+SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Gerente';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT sqlite_version();
+
+SELECT nome, cargo
+FROM funcionarios
+WHERE cargo = 'Vendedora';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Há dois tipos de banco: <strong>de arquivo</strong> (o banco é um arquivo, sem servidor: o SQLite) e <strong>de servidor</strong> (um programa sempre ligado atende muita gente pela rede, com usuário e senha: MySQL, MariaDB, PostgreSQL, SQL Server, Oracle).</li>
+  <li><strong>SQLite</strong>: domínio público, um arquivo só, está em todo celular e navegador. É o deste guia, versão 3.50.4.</li>
+  <li><strong>MySQL</strong> (da Oracle) e o irmão <strong>MariaDB</strong>: os bancos dos sites. <strong>PostgreSQL</strong>: livre, completo e fiel ao padrão. <strong>SQL Server</strong>: o da Microsoft. <strong>Oracle</strong>: o das grandes corporações.</li>
+  <li>O SQL básico é o mesmo em todos. As diferenças estão nas bordas: <code>LIMIT</code> × <code>TOP</code>, <code>sqlite_version()</code> × <code>version()</code> × <code>@@VERSION</code>, <code>.tables</code> × <code>SHOW TABLES</code>.</li>
+  <li>Exemplo da internet deu <code>syntax error</code> ou <code>no such function</code>? Veja se ele não foi escrito para outro banco.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
