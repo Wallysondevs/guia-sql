@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções Agregadas — resumir muitas linhas num número | Guia SQL</title>
+<meta name="description" content="Funções agregadas em SQL para quem nunca usou um banco: COUNT, SUM, AVG, MIN e MAX transformam muitas linhas num só valor. A diferença para uma função comum, o WHERE que filtra antes da conta, os NULLs que ficam de fora, a tabela vazia e os erros reais do SQLite, com o banco da Loja Aurora rodando no seu navegador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções Agregadas</span></h1>
+
+<p class="intro">Fim do expediente na Loja Aurora. A gerente pergunta para a Ana: "Quantos produtos a gente vende? Qual é o mais caro? Quantas unidades temos no estoque?". Nenhuma dessas perguntas quer uma <strong>lista</strong> de produtos; cada uma quer <strong>um número só</strong>. Até agora, todo <code>SELECT</code> que você escreveu devolvia linhas da tabela, uma por uma. Nesta aula você conhece as <strong>funções agregadas</strong>: elas olham muitas linhas de uma vez e devolvem um resumo. São cinco, e cada uma ganha uma aula própria logo depois desta.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma função agregada e por que ela devolve <strong>uma linha só</strong>.</li>
+  <li>As cinco do dia a dia: <code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code> e <code>MAX</code>.</li>
+  <li>A diferença entre uma função comum (que trabalha linha por linha) e uma agregada (que junta as linhas).</li>
+  <li>Como o <code>WHERE</code> escolhe <strong>quais</strong> linhas entram na conta.</li>
+  <li>O que acontece com os <code>NULL</code> e com uma tabela sem nenhuma linha.</li>
+  <li>Os erros reais do SQLite quando uma agregada vai parar no lugar errado.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da Loja Aurora (veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>). O quadro "Resultado" embaixo de cada código é o que o SQLite devolveu.</p>
+
+<hr>
+
+<h2>A ideia: a linha de total da planilha</h2>
+<p>Pense na planilha de estoque da loja. Embaixo da coluna de preços, alguém sempre escreve uma linha de <strong>total</strong>, ou de <strong>média</strong>. A planilha pega a coluna inteira e "espreme" tudo num valor só:</p>
+
+<pre class="file" data-file="planilha de estoque">produto              preço    estoque
+Caderno Pautado      12.35      120
+Caneta Azul           2.79      500
+Lápis HB              1.15      430
+...                    ...      ...
+─────────────────────────────────────
+quantos produtos?       45
+estoque total:                 3301
+</pre>
+
+<p>Uma <strong>função agregada</strong> faz exatamente isso: recebe os valores de <strong>muitas linhas</strong> e devolve <strong>um valor</strong>. "Agregar" quer dizer juntar, reunir. As cinco que todo banco de dados tem são estas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Em inglês</th><th>Pergunta que ela responde</th><th>Aula</th></tr>
+<tr><td><code>COUNT()</code></td><td><em>count</em>, "contar"</td><td>Quantas linhas (ou quantos valores) existem?</td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td><code>SUM()</code></td><td><em>sum</em>, "soma"</td><td>Quanto dá tudo somado?</td><td><a href="sum.html">SUM()</a></td></tr>
+<tr><td><code>AVG()</code></td><td><em>average</em>, "média"</td><td>Qual é a média?</td><td><a href="avg.html">AVG()</a></td></tr>
+<tr><td><code>MIN()</code></td><td><em>minimum</em>, "mínimo"</td><td>Qual é o menor valor?</td><td><a href="min.html">MIN()</a></td></tr>
+<tr><td><code>MAX()</code></td><td><em>maximum</em>, "máximo"</td><td>Qual é o maior valor?</td><td><a href="max.html">MAX()</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A primeira agregada: contar as categorias</h2>
+<p>Compare duas consultas na mesma tabela, <code>categorias</code>. A primeira você já conhece: lista os nomes.</p>
+
+<pre class="file" data-file="lista.sql" data-resultado>SELECT nome FROM categorias;
+</pre>
+
+<p>Oito linhas, uma por categoria. Agora a pergunta "<strong>quantas</strong> categorias a loja tem?":</p>
+
+<pre class="file" data-file="conta.sql" data-resultado>SELECT COUNT(*) FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>"Selecione": o mesmo de sempre. O que vem depois dele diz o que vai aparecer no resultado.</dd>
+  <dt>COUNT(…)</dt><dd>A função agregada de contar. Toda função tem um nome e um par de parênteses; dentro deles vai o que ela deve olhar.</dd>
+  <dt>*</dt><dd>Aqui, o asterisco quer dizer "a linha inteira": conte as <strong>linhas</strong>, sem olhar coluna nenhuma. Os detalhes de <code>COUNT(*)</code> e <code>COUNT(coluna)</code> estão na aula <a href="count.html">COUNT()</a>.</dd>
+  <dt>FROM categorias</dt><dd>"De categorias": a tabela cujas linhas vão ser contadas.</dd>
+</dl>
+
+<p>Repare no resultado: <strong>uma linha só</strong>, com o número 8. As oito linhas da tabela entraram na conta, mas saiu um resumo. O nome da coluna, <code>COUNT(*)</code>, é o próprio texto que você escreveu. Ele fica mais amigável com um apelido (aula <a href="aliases.html">Apelidos (AS)</a>):</p>
+
+<pre class="file" data-file="conta-apelido.sql" data-resultado>SELECT COUNT(*) AS categorias FROM categorias;
+</pre>
+
+<hr>
+
+<h2>2. As cinco numa consulta só</h2>
+<p>Você pode pedir várias agregadas no mesmo <code>SELECT</code>, separadas por vírgula, como faz com colunas. Aqui está o "relatório do fim do dia" da gerente, todo de uma vez:</p>
+
+<pre class="file" data-file="resumo.sql" data-resultado>SELECT COUNT(*)     AS produtos,
+       MIN(preco)   AS mais_barato,
+       MAX(preco)   AS mais_caro,
+       SUM(estoque) AS unidades,
+       AVG(preco)   AS preco_medio
+FROM produtos;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>O que faz</th><th>Resultado</th></tr>
+<tr><td><code>COUNT(*)</code></td><td>Conta as linhas da tabela <code>produtos</code></td><td>45 produtos</td></tr>
+<tr><td><code>MIN(preco)</code></td><td>O menor valor da coluna <code>preco</code></td><td>1.15 (o Lápis Grafite HB)</td></tr>
+<tr><td><code>MAX(preco)</code></td><td>O maior valor da coluna <code>preco</code></td><td>249.9 (o Jogo de Panelas)</td></tr>
+<tr><td><code>SUM(estoque)</code></td><td>Soma a coluna <code>estoque</code> de todas as linhas</td><td>3301 unidades</td></tr>
+<tr><td><code>AVG(preco)</code></td><td>A média da coluna <code>preco</code></td><td>48.2053333333333</td></tr>
+</table>
+</div>
+
+<p>Duas coisas para reparar:</p>
+<ul>
+  <li><strong>As cinco cabem numa linha só.</strong> Cada agregada resume a tabela inteira, então todas juntas continuam dando uma linha.</li>
+  <li><strong>A média saiu com muitas casas.</strong> O SQLite mostra até 15 algarismos, e não arredonda sozinho para centavos. Para isso existe <code>ROUND()</code>, que você usa na aula <a href="avg.html">AVG()</a>. Repare também que o SQLite escreve <code>249.9</code>, e não <code>249.90</code>: ele não completa zeros à direita.</li>
+</ul>
+
+<div class="trysql" data-goal="out:^7$">
+<p class="try-task"><strong>Missão:</strong> a categoria Eletrônicos tem o <code>id</code> 2. Mude a consulta para contar só os produtos dessa categoria. Dica: um <code>WHERE</code> (aula <a href="where.html">WHERE</a>) antes do ponto e vírgula.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) AS produtos
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*) AS produtos
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Função comum × função agregada</h2>
+<p>Você já viu (ou ainda vai ver) funções que trabalham <strong>uma linha de cada vez</strong>. A <code>LENGTH()</code>, por exemplo, conta as letras de um texto. Compare:</p>
+
+<pre class="file" data-file="comum.sql" data-resultado>SELECT nome, LENGTH(nome) AS letras
+FROM categorias;
+</pre>
+
+<p>Oito linhas entraram, oito linhas saíram: a <code>LENGTH()</code> rodou uma vez para cada categoria. Uma agregada, não: oito linhas entram e <strong>uma</strong> sai.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Função comum (escalar)</th><th>Função agregada</th></tr>
+<tr><td>Olha</td><td>Uma linha por vez</td><td>Todas as linhas juntas</td></tr>
+<tr><td>Linhas no resultado</td><td>Tantas quantas entraram</td><td>Uma (sem <code>GROUP BY</code>)</td></tr>
+<tr><td>Exemplos</td><td><code>LENGTH()</code>, <code>UPPER()</code>, <code>ROUND()</code></td><td><code>COUNT()</code>, <code>SUM()</code>, <code>AVG()</code>, <code>MIN()</code>, <code>MAX()</code></td></tr>
+<tr><td>Pergunta típica</td><td>"Quantas letras tem <strong>cada</strong> nome?"</td><td>"Quantos nomes existem <strong>ao todo</strong>?"</td></tr>
+</table>
+</div>
+
+<p>"Escalar" é o nome técnico da função comum: ela devolve um valor para cada linha. Guarde a ideia de "muitas entram, uma sai", porque ela explica quase todos os erros desta parte do guia.</p>
+
+<hr>
+
+<h2>4. O WHERE escolhe quem entra na conta</h2>
+<p>A gerente agora quer o resumo só da <strong>Papelaria</strong> (a categoria de <code>id</code> 1). Basta pôr um <code>WHERE</code>, como em qualquer consulta:</p>
+
+<pre class="file" data-file="papelaria.sql" data-resultado>SELECT COUNT(*)     AS produtos,
+       MIN(preco)   AS mais_barato,
+       MAX(preco)   AS mais_caro,
+       SUM(estoque) AS unidades
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<p>O banco trabalha nesta ordem:</p>
+<ol class="passo">
+  <li><strong>FROM produtos</strong>: pega as 45 linhas da tabela.</li>
+  <li><strong>WHERE categoria_id = 1</strong>: joga fora as que não são da Papelaria. Sobram 6.</li>
+  <li><strong>As agregadas</strong>: contam, procuram o menor e o maior e somam <strong>só essas 6</strong>.</li>
+</ol>
+
+<p>Ou seja: o <code>WHERE</code> filtra as <strong>linhas</strong> antes, e a conta é feita depois, com o que sobrou. Essa ordem vai ser importante na aula <a href="having.html">HAVING</a>.</p>
+
+<hr>
+
+<h2>5. Os NULL ficam de fora</h2>
+<p>Lembra do <code>NULL</code>, o "valor desconhecido" (aula <a href="null.html">O Valor NULL</a>)? Na tabela <code>clientes</code>, três pessoas não têm email cadastrado. Veja o que acontece quando você conta as linhas e quando conta os emails:</p>
+
+<pre class="file" data-file="nulls.sql" data-resultado>SELECT COUNT(*)     AS clientes,
+       COUNT(email) AS com_email
+FROM clientes;
+</pre>
+
+<p>São 30 clientes, mas só 27 emails: as funções agregadas <strong>ignoram os <code>NULL</code></strong>. O <code>COUNT(email)</code> pulou os três clientes sem email. O mesmo vale para <code>SUM</code>, <code>AVG</code>, <code>MIN</code> e <code>MAX</code>: um valor desconhecido não entra na soma, nem na média, nem na disputa de menor e maior. A única que conta tudo é <code>COUNT(*)</code>, porque ela conta linhas, e não valores.</p>
+
+<hr>
+
+<h2>6. E se nenhuma linha entrar na conta?</h2>
+<p>A loja não tem nenhum produto acima de R$ 1000. O que as agregadas devolvem quando o <code>WHERE</code> não deixa passar nada?</p>
+
+<pre class="file" data-file="vazio.sql" data-resultado>SELECT COUNT(*), SUM(estoque), MIN(preco), MAX(preco), AVG(preco)
+FROM produtos
+WHERE preco &gt; 1000;
+</pre>
+
+<p>Mesmo sem nenhuma linha, o resultado tem <strong>uma linha</strong>. Uma consulta com agregadas (e sem <code>GROUP BY</code>) sempre devolve exatamente uma linha:</p>
+<ul>
+  <li><code>COUNT(*)</code> dá <strong>0</strong>: contar nada dá zero, faz sentido.</li>
+  <li><code>SUM</code>, <code>MIN</code>, <code>MAX</code> e <code>AVG</code> dão <strong><code>NULL</code></strong>: não existe "o maior preço" de uma lista vazia. Atenção: a soma de nada também sai <code>NULL</code>, e não 0. A aula <a href="sum.html">SUM()</a> mostra como trocar esse <code>NULL</code> por zero.</li>
+</ul>
+
+<hr>
+
+<h2>7. ORDER BY e LIMIT não mudam a conta</h2>
+<p>Um engano comum: achar que <code>LIMIT 5</code> faz o <code>COUNT</code> contar só cinco produtos.</p>
+
+<pre class="file" data-file="limit.sql" data-resultado>SELECT COUNT(*) FROM produtos LIMIT 5;
+</pre>
+
+<p>Deu 45. O <code>LIMIT</code> (aula <a href="limit.html">LIMIT e OFFSET</a>) corta as linhas <strong>do resultado</strong>, e o resultado aqui já tem uma linha só; cortar para cinco não muda nada. O mesmo vale para o <code>ORDER BY</code>: ordenar as linhas antes de somar não muda a soma. Para escolher quais linhas entram na conta, quem trabalha é o <code>WHERE</code>.</p>
+
+<hr>
+
+<h2>8. Formas diferentes de saber "quantos"</h2>
+<p>Para descobrir quantos clientes são VIP, você tem dois caminhos:</p>
+
+<pre class="file" data-file="listar.sql" data-resultado>SELECT nome FROM clientes WHERE vip = 1;
+</pre>
+
+<pre class="file" data-file="contar.sql" data-resultado>SELECT COUNT(*) AS vips FROM clientes WHERE vip = 1;
+</pre>
+
+<p>O primeiro mostra os cinco nomes, e o editor escreve o total de linhas embaixo da tabela. O segundo devolve só o número 5. Os dois estão certos; a escolha depende do que você precisa:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Quer ver <strong>quem</strong> são</td><td>Listar (<code>SELECT nome …</code>)</td><td>Você precisa dos dados, não só do número</td></tr>
+<tr><td>Quer só o <strong>número</strong></td><td><code>COUNT(*)</code></td><td>O banco faz a conta e manda uma linha; numa tabela de 1 milhão de linhas, isso é muito mais rápido do que trazer tudo</td></tr>
+<tr><td>Quer o número dentro de um programa (PHP, Python…)</td><td><code>COUNT(*)</code></td><td>O "N linhas" embaixo da tabela é coisa do editor; o programa recebe só o que o <code>SELECT</code> devolve</td></tr>
+</table>
+</div>
+
+<h3>No terminal do sqlite3</h3>
+<p>No programa <code>sqlite3</code> (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>), as agregadas funcionam igual. A Ana abriu o banco da loja e pediu o resumo em forma de quadro com <code>.mode box</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT COUNT(*) FROM clientes;
+30
+sqlite> .mode box
+sqlite> SELECT COUNT(*), MIN(preco), MAX(preco), AVG(preco) FROM produtos;
+┌──────────┬────────────┬────────────┬──────────────────┐
+│ COUNT(*) │ MIN(preco) │ MAX(preco) │    AVG(preco)    │
+├──────────┼────────────┼────────────┼──────────────────┤
+│ 45       │ 1.15       │ 249.9      │ 48.2053333333333 │
+└──────────┴────────────┴────────────┴──────────────────┘
+sqlite> .quit</pre>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Agregada dentro do WHERE</strong>
+<p>A Ana quer os produtos mais caros que a média e escreve o que parece óbvio:</p>
+<pre class="file" data-file="acima-da-media.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; AVG(preco);
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate function AVG()</code>, "uso indevido da função agregada <code>AVG()</code>". No terminal, ela vem com o prefixo e a seta apontando o lugar:</p>
+<pre class="term">sqlite> SELECT nome, preco FROM produtos WHERE preco &gt; AVG(preco);
+Parse error: misuse of aggregate function AVG()
+  SELECT nome, preco FROM produtos WHERE preco &gt; AVG(preco);
+                                   error here ---^</pre>
+<p><strong>Por que acontece:</strong> lembre a ordem da seção 4. O <code>WHERE</code> olha <strong>uma linha de cada vez</strong>, decidindo se ela fica ou sai. Nesse momento a média ainda não existe: ela só pode ser calculada depois, com todas as linhas juntas. Uma agregada nunca pode ficar no <code>WHERE</code>.</p>
+<p><strong>Como consertar:</strong> calcule a média numa consulta separada e use o número, ou espere a aula <a href="subconsultas.html">Subconsultas</a>, que faz as duas coisas numa consulta só: <code>WHERE preco &gt; (SELECT AVG(preco) FROM produtos)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um asterisco onde não cabe</strong>
+<p>O <code>*</code> só funciona no <code>COUNT</code>. Somar "a linha inteira" não faz sentido:</p>
+<pre class="file" data-file="soma-asterisco.sql" data-resultado data-erro>SELECT SUM(*) FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function SUM()</code>, "número errado de argumentos para a função <code>SUM()</code>". Para o SQLite, <code>SUM(*)</code> é um <code>SUM</code> sem nada dentro, e ele precisa de exatamente um valor.</p>
+<p><strong>Como consertar:</strong> diga qual coluna somar: <code>SUM(estoque)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O nome da função em português</strong>
+<pre class="file" data-file="soma.sql" data-resultado data-erro>SELECT SOMA(preco) FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such function: SOMA</code>, "não existe a função <code>SOMA</code>". Os nomes das funções são fixos, em inglês: <code>SUM</code>, <code>AVG</code>, <code>COUNT</code>… Maiúsculas ou minúsculas tanto faz (<code>sum(preco)</code> também funciona); neste guia elas vão em maiúsculas, como as outras palavras do SQL.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma coluna comum ao lado da agregada</strong>
+<p>Este não dá erro, e por isso é perigoso:</p>
+<pre class="file" data-file="nome-e-max.sql" data-resultado>SELECT nome, MAX(preco) FROM produtos;
+</pre>
+<p>O resultado tem uma linha, mas a tabela tem 45 nomes: qual deles vai na coluna <code>nome</code>? O SQLite tem uma regra especial para esse caso, e a maioria dos outros bancos recusa a consulta com erro. A explicação completa está na aula <a href="max.html">MAX()</a>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code> e <code>MAX</code> fazem parte do SQL padrão e têm o mesmo nome no MySQL, no PostgreSQL e no SQL Server. O que muda entre eles são detalhes, como o tipo do número que a média devolve, e cada aula desta parte mostra a diferença que importa.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que devolve</th><th>Ignora NULL?</th><th>Sem nenhuma linha</th></tr>
+<tr><td><code>COUNT(*)</code></td><td>Quantas linhas</td><td>Conta todas as linhas</td><td>0</td></tr>
+<tr><td><code>COUNT(coluna)</code></td><td>Quantos valores não <code>NULL</code></td><td>Sim</td><td>0</td></tr>
+<tr><td><code>SUM(coluna)</code></td><td>A soma</td><td>Sim</td><td><code>NULL</code></td></tr>
+<tr><td><code>AVG(coluna)</code></td><td>A média</td><td>Sim</td><td><code>NULL</code></td></tr>
+<tr><td><code>MIN(coluna)</code></td><td>O menor valor</td><td>Sim</td><td><code>NULL</code></td></tr>
+<tr><td><code>MAX(coluna)</code></td><td>O maior valor</td><td>Sim</td><td><code>NULL</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate function AVG()</code></td><td>Uma agregada num lugar que olha linha por linha, como o <code>WHERE</code></td></tr>
+<tr><td><code>wrong number of arguments to function SUM()</code></td><td>A função recebeu argumentos demais ou de menos (ex.: <code>SUM(*)</code>)</td></tr>
+<tr><td><code>no such function: SOMA</code></td><td>O nome da função não existe</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Contar os fornecedores</h3>
+<p>Complete para saber quantas linhas tem a tabela <code>fornecedores</code>:</p>
+<div class="ex-code">SELECT <input data-answer="COUNT" aria-label="função">(*) FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O maior frete</h3>
+<p>Complete com a função que devolve o <strong>maior</strong> valor da coluna <code>frete</code>:</p>
+<div class="ex-code">SELECT <input data-answer="MAX" aria-label="função">(frete) FROM pedidos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A tabela <code>produtos</code> tem 45 linhas. Quantas linhas tem o resultado de <code>SELECT SUM(estoque), AVG(preco) FROM produtos;</code>?</p>
+<label><input type="radio" name="q3"> 45</label>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 2</label>
+<label><input type="radio" name="q3"> 0</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Três clientes têm <code>email</code> <code>NULL</code>. O que acontece com eles em <code>COUNT(email)</code>?</p>
+<label><input type="radio" name="q4"> Contam como 1 cada um</label>
+<label><input type="radio" name="q4"> A consulta dá erro</label>
+<label><input type="radio" name="q4"> Ficam de fora da contagem</label>
+<label><input type="radio" name="q4"> Contam como 0, e a soma vira NULL</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que <code>WHERE preco &gt; AVG(preco)</code> dá <code>misuse of aggregate function AVG()</code>?</p>
+<label><input type="radio" name="q5"> Porque o WHERE decide linha por linha, e a média só existe depois de juntar todas as linhas</label>
+<label><input type="radio" name="q5"> Porque AVG só funciona com números inteiros</label>
+<label><input type="radio" name="q5"> Porque faltou o apelido com AS</label>
+<label><input type="radio" name="q5"> Porque o nome certo da função é AVERAGE</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Nenhum produto custa mais de R$ 1000. O que devolve <code>SELECT MAX(preco) FROM produtos WHERE preco &gt; 1000;</code>?</p>
+<label><input type="radio" name="q6"> Nenhuma linha</label>
+<label><input type="radio" name="q6"> 0</label>
+<label><input type="radio" name="q6"> Um erro</label>
+<label><input type="radio" name="q6"> Uma linha com NULL</label>
+</div>
+
+<h3>Missão final: o resumo da equipe</h3>
+
+<div class="trysql" data-goal="colunas:funcionarios,menor,maior,folha;;out:^8\|2650\.0\|9800\.0\|33507\.8$">
+<p class="try-task"><strong>Missão:</strong> a gerente quer, numa linha só, o resumo da tabela <code>funcionarios</code>: quantos funcionários são (<code>funcionarios</code>), o menor salário (<code>menor</code>), o maior salário (<code>maior</code>) e a folha de pagamento, que é a soma de todos os salários (<code>folha</code>). Use esses apelidos, nessa ordem.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*)     AS funcionarios,
+       MIN(salario) AS menor,
+       MAX(salario) AS maior,
+       SUM(salario) AS folha
+FROM funcionarios;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>função agregada</strong> recebe os valores de muitas linhas e devolve um só: <code>COUNT</code> (quantos), <code>SUM</code> (soma), <code>AVG</code> (média), <code>MIN</code> (menor) e <code>MAX</code> (maior).</li>
+  <li>Sem <code>GROUP BY</code>, uma consulta com agregadas devolve <strong>sempre uma linha</strong>, mesmo que nenhuma linha da tabela entre na conta.</li>
+  <li>O <code>WHERE</code> filtra as linhas <strong>antes</strong>; as agregadas fazem a conta com o que sobrou. <code>ORDER BY</code> e <code>LIMIT</code> não mudam a conta.</li>
+  <li>As agregadas ignoram os <code>NULL</code>; só <code>COUNT(*)</code> conta todas as linhas.</li>
+  <li>Sem nenhuma linha, <code>COUNT</code> dá 0 e as outras dão <code>NULL</code>.</li>
+  <li>Agregada no <code>WHERE</code> dá <code>misuse of aggregate function</code>: o <code>WHERE</code> olha uma linha por vez.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
