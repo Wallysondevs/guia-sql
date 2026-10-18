@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Usuários e Permissões — GRANT, REVOKE e o SQLite | Guia SQL</title>
+<meta name="description" content="Usuários e permissões em bancos com servidor, para quem está começando: por que o SQLite (banco embutido num arquivo) não tem usuários, como MySQL, PostgreSQL e SQL Server usam CREATE USER, GRANT e REVOKE (exemplos conferidos na documentação oficial), e o que o SQLite oferece no lugar — a permissão do arquivo, a conexão só-leitura e a view que mostra só algumas colunas, rodando de verdade no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Usuários e <span class="hl">Permissões</span></h1>
+
+<p class="intro">Num banco grande, muita gente usa o mesmo banco: o caixa só precisa ler os preços, o gerente pode mudar os salários, o estagiário nem deveria ver a folha de pagamento. Para isso, os bancos com <strong>servidor</strong> (MySQL, PostgreSQL, SQL Server) têm <strong>usuários</strong> e <strong>permissões</strong>: cada pessoa entra com um login e só pode fazer o que foi liberado para ela. O SQLite, que é um <strong>banco embutido num arquivo</strong>, não tem nada disso — e nesta aula você vai entender por quê, ver os comandos <code>GRANT</code> e <code>REVOKE</code> dos bancos com servidor e descobrir o que o SQLite oferece no lugar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que o SQLite não tem usuários nem senhas (a resposta está no "embutido num arquivo").</li>
+  <li>Como os bancos com servidor criam usuários (<code>CREATE USER</code>) e dão poderes (<code>GRANT</code>).</li>
+  <li>Como tirar um poder de volta (<code>REVOKE</code>).</li>
+  <li>O princípio do <strong>menor privilégio</strong>, e por que ele protege até contra o <a href="sql-injection.html">SQL Injection</a>.</li>
+  <li>O que faz as vezes de permissão no SQLite: a permissão do arquivo (no sistema), a conexão <strong>só-leitura</strong> e a <strong>view</strong> que mostra só algumas colunas.</li>
+</ul>
+</div>
+
+<p>Os comandos <code>CREATE USER</code>, <code>GRANT</code> e <code>REVOKE</code> são <strong>ilustrativos</strong>: eles não existem no SQLite, então não rodam no editor. Vêm da documentação oficial de cada banco. Os exemplos do que o SQLite faz no lugar rodam de verdade, no editor.</p>
+
+<hr>
+
+<h2>A ideia: a loja com chaves diferentes</h2>
+<p>Pense na Loja Aurora à noite, fechada. Nem todo funcionário tem a mesma chave:</p>
+<ul>
+  <li>o <strong>caixa</strong> tem a chave da frente, mas não a do cofre;</li>
+  <li>a <strong>gerente</strong> tem a chave do cofre e do escritório;</li>
+  <li>o <strong>estoquista</strong> só entra no depósito.</li>
+</ul>
+<p>Cada chave abre só o que aquela pessoa precisa. Se o chaveiro do caixa for roubado, o ladrão não chega ao cofre. Num banco com servidor, as "chaves" são as <strong>permissões</strong>, e cada <strong>usuário</strong> recebe só as suas. Dar a cada um só o necessário é o princípio do <strong>menor privilégio</strong> — a regra de ouro desta aula.</p>
+
+<hr>
+
+<h2>1. Por que o SQLite não tem usuários</h2>
+<p>O SQLite é um <strong>banco embutido</strong>: o banco inteiro é um <strong>arquivo</strong> (o <code>loja.db</code>) e o "servidor" é a própria biblioteca que roda dentro do seu programa. Não há um servidor ligado o tempo todo, esperando gente se conectar com login e senha. Quem pode <strong>abrir o arquivo</strong> pode fazer tudo nele; quem não pode abrir, não faz nada.</p>
+
+<p>Por isso, no SQLite, <strong>quem manda é o sistema operacional</strong>, não o banco. A permissão de ler e escrever é a permissão do <strong>arquivo</strong> <code>loja.db</code> (dona Ana, no computador dela). No Linux, você a vê e a muda com as ferramentas do sistema:</p>
+
+<pre class="term" data-cwd="~">$ ls -l loja.db
+-rw-r--r-- 1 ana ana 196608 loja.db      « a Ana lê e escreve; os outros só leem</pre>
+
+<p>Como o SQLite nasceu para ficar <strong>dentro</strong> de um programa (um aplicativo de celular, um navegador, um joguinho), um sistema de usuários dentro dele não faria sentido: o controle de quem usa o aplicativo é do próprio aplicativo e do sistema. A documentação do SQLite é explícita sobre isso ser uma escolha de projeto, não uma falta.</p>
+
+<div class="note">
+<strong>Banco embutido × banco com servidor</strong>
+<p>A aula <a href="bancos-famosos.html">Os Bancos Famosos</a> explica a diferença. Em resumo: o <strong>SQLite</strong> é um arquivo que o seu programa abre (sem servidor, sem login). O <strong>MySQL</strong>, o <strong>PostgreSQL</strong> e o <strong>SQL Server</strong> são <strong>servidores</strong>: ficam ligados numa máquina, e os programas se <strong>conectam</strong> a eles por rede, cada um com um usuário e uma senha. Usuários e permissões só existem nesse segundo grupo.</p>
+</div>
+
+<hr>
+
+<h2>2. Criar um usuário (bancos com servidor)</h2>
+<p>Nos bancos com servidor, primeiro você <strong>cria o usuário</strong> e depois <strong>dá as permissões</strong>. No MySQL, segundo a documentação oficial, é assim:</p>
+
+<pre class="file" data-file="mysql — criar usuário (ilustrativo)">CREATE USER 'caixa'@'localhost' IDENTIFIED BY 'uma_senha_forte';</pre>
+
+<dl class="anatomy">
+  <dt>CREATE USER</dt><dd>"Criar usuário". Cria a conta, ainda <strong>sem nenhum poder</strong> sobre os dados.</dd>
+  <dt>'caixa'@'localhost'</dt><dd>No MySQL, o usuário é o nome <strong>mais</strong> de onde ele se conecta (<code>localhost</code> = a própria máquina).</dd>
+  <dt>IDENTIFIED BY '…'</dt><dd>Define a senha. Sem permissões, esse usuário entra mas não vê nada ainda.</dd>
+</dl>
+
+<p>No PostgreSQL o comando equivalente é <code>CREATE ROLE caixa LOGIN PASSWORD '…';</code> e no SQL Server costuma-se criar um <em>login</em> no servidor e depois um <em>usuário</em> no banco (<code>CREATE LOGIN …</code> e <code>CREATE USER …</code>). Os nomes mudam; a ideia é a mesma: a conta nasce vazia.</p>
+
+<hr>
+
+<h2>3. Dar poderes: <code>GRANT</code></h2>
+<p><code>GRANT</code> ("conceder") é o comando que entrega uma permissão a um usuário. A forma geral é sempre a mesma: <strong>que poder</strong>, <strong>sobre o quê</strong>, <strong>para quem</strong>.</p>
+
+<pre class="file" data-file="a forma do GRANT">GRANT  que-poderes   ON  qual-tabela   TO  qual-usuário;</pre>
+
+<p>Para o nosso caixa, que só precisa <strong>ler</strong> produtos e clientes, damos só o <code>SELECT</code>. Veja a forma em cada banco, como aparece na documentação oficial:</p>
+
+<pre class="file" data-file="mysql (ilustrativo)">GRANT SELECT, INSERT ON aurora.produtos TO 'caixa'@'localhost';</pre>
+
+<pre class="file" data-file="postgresql (ilustrativo)">GRANT SELECT ON produtos TO caixa;</pre>
+
+<pre class="file" data-file="sql server (ilustrativo)">GRANT SELECT ON OBJECT::dbo.produtos TO caixa;</pre>
+
+<p>Depois disso, o caixa consegue <code>SELECT</code> na tabela <code>produtos</code>, mas um <code>DELETE</code> dele é recusado pelo banco, porque esse poder não foi concedido. Os poderes mais comuns são os próprios comandos que você já conhece: <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>.</p>
+
+<h3>Só algumas colunas</h3>
+<p>Dá para ser ainda mais fino e liberar só <strong>certas colunas</strong>. No PostgreSQL, a documentação mostra o GRANT por coluna assim:</p>
+
+<pre class="file" data-file="postgresql — por coluna (ilustrativo)">GRANT SELECT (nome, cargo) ON funcionarios TO caixa;</pre>
+
+<p>Agora o caixa vê <code>nome</code> e <code>cargo</code> dos funcionários, mas <strong>não</strong> o <code>salario</code>. Guarde essa ideia: no fim da aula você vai fazer algo parecido no SQLite, com uma <strong>view</strong>.</p>
+
+<hr>
+
+<h2>4. Tirar poderes de volta: <code>REVOKE</code></h2>
+<p><code>REVOKE</code> ("revogar") é o contrário do <code>GRANT</code>: tira uma permissão. A forma é igual, só trocando o <code>TO</code> ("para") por <code>FROM</code> ("de"):</p>
+
+<pre class="file" data-file="mysql (ilustrativo)">REVOKE INSERT ON aurora.produtos FROM 'caixa'@'localhost';</pre>
+
+<pre class="file" data-file="postgresql (ilustrativo)">REVOKE SELECT ON produtos FROM caixa;</pre>
+
+<p>Depois do <code>REVOKE INSERT</code>, o caixa continua lendo (ainda tem o <code>SELECT</code>), mas não insere mais. É assim que se corrige um poder dado a mais.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th><th>Palavra-chave de ligação</th></tr>
+<tr><td><code>CREATE USER</code></td><td>Cria a conta (sem poderes)</td><td>—</td></tr>
+<tr><td><code>GRANT</code></td><td>Dá uma permissão</td><td><code>TO</code> (para)</td></tr>
+<tr><td><code>REVOKE</code></td><td>Tira uma permissão</td><td><code>FROM</code> (de)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. O princípio do menor privilégio</h2>
+<p>A regra é simples: <strong>dê a cada usuário só o que ele precisa, e nada mais</strong>. O site que só mostra o catálogo deve conectar com um usuário que só tem <code>SELECT</code>. Assim, mesmo que esse site tenha uma falha de <a href="sql-injection.html">SQL Injection</a>, o estrago é limitado: o invasor não consegue um <code>DELETE</code> ou um <code>DROP TABLE</code>, porque o usuário daquele site nunca teve esse poder.</p>
+
+<div class="warning">
+<strong>Permissão não substitui parâmetro</strong>
+<p>O menor privilégio é uma <strong>segunda linha de defesa</strong>, não a primeira. A primeira continua sendo usar <a href="parametros.html">parâmetros</a> para que o dado do visitante nunca vire SQL. As duas juntas: parâmetros para o ataque não acontecer, e poucas permissões para, se algo escapar, o dano ser pequeno.</p>
+</div>
+
+<hr>
+
+<h2>6. O que o SQLite faz no lugar</h2>
+<p>Sem usuários, o SQLite resolve "quem pode o quê" por outros caminhos. Dois deles você roda aqui no editor.</p>
+
+<h3>Conexão só-leitura</h3>
+<p>Você pode abrir o banco em modo <strong>só-leitura</strong>, e aí nenhuma escrita passa. No editor, o <code>PRAGMA query_only = ON</code> liga esse modo. Um <code>SELECT</code> continua funcionando:</p>
+
+<pre class="file" data-file="so-leitura-ok.sql" data-resultado>PRAGMA query_only = ON;
+SELECT nome, salario FROM funcionarios WHERE id = 1;
+</pre>
+
+<p>Mas uma tentativa de mudar os dados é barrada, com a mensagem real do SQLite:</p>
+
+<pre class="file" data-file="so-leitura-bloqueia.sql" data-resultado data-erro>PRAGMA query_only = ON;
+UPDATE funcionarios SET salario = 99999 WHERE id = 1;
+</pre>
+
+<p>A mensagem <code>attempt to write a readonly database</code> ("tentativa de escrever num banco só-leitura") é o SQLite dizendo "aqui você só lê". Um programa que só mostra dados deve abrir o banco assim — é o <code>SELECT</code>-only do mundo SQLite.</p>
+
+<h3>Uma view para mostrar só algumas colunas</h3>
+<p>Lembra do <code>GRANT SELECT (nome, cargo)</code>, que escondia o salário? No SQLite, o mais perto disso é uma <strong>view</strong> (aula <a href="views.html">Views</a>): uma "tabela de mentira" que mostra só as colunas que você escolher. Você cria a view com as colunas públicas e deixa o programa usar <strong>a view</strong>, não a tabela:</p>
+
+<pre class="file" data-file="view-equipe.sql" data-resultado>CREATE VIEW equipe AS
+SELECT nome, cargo FROM funcionarios;
+
+SELECT * FROM equipe;
+</pre>
+
+<p>A view <code>equipe</code> mostra <code>nome</code> e <code>cargo</code> dos oito funcionários, e <strong>nada</strong> do salário. Quem usa a view não tem como pedir a coluna escondida: ela não existe ali. Veja o que acontece ao tentar:</p>
+
+<pre class="file" data-file="view-sem-salario.sql" data-resultado data-erro>CREATE VIEW equipe AS
+SELECT nome, cargo FROM funcionarios;
+
+SELECT salario FROM equipe;
+</pre>
+
+<p>O erro <code>no such column: salario</code> ("não existe a coluna salario") confirma: pela view, o salário está fora de alcance. É um controle <strong>por dentro do banco</strong>, que funciona mesmo no SQLite. (Não é uma tranca de verdade — quem tem o arquivo ainda alcança a tabela original —, mas organiza bem o acesso dentro do programa.)</p>
+
+<div class="note">
+<strong>Nos bancos com servidor, os dois se juntam</strong>
+<p>Lá, o costume é criar a view com as colunas públicas <strong>e</strong> dar <code>GRANT SELECT</code> só na view, revogando o acesso à tabela crua. Aí a view deixa de ser só organização e vira uma tranca de verdade. No SQLite, falta a parte do <code>GRANT</code>; sobra a view como boa prática de organização.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Tentar <code>GRANT</code> no SQLite</strong>
+<p>Como o <code>GRANT</code> não existe no SQLite, escrevê-lo no editor dá erro de sintaxe — o motor não conhece a palavra:</p>
+<pre class="file" data-file="grant-no-sqlite.sql" data-resultado data-erro>GRANT SELECT ON produtos TO caixa;
+</pre>
+<p>A mensagem <code>near "GRANT": syntax error</code> ("erro de sintaxe perto de GRANT") é o SQLite dizendo que não entende o comando. Isso é esperado: esses comandos são só dos bancos com servidor.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Controle de acesso</th></tr>
+<tr><td>MySQL / PostgreSQL / SQL Server</td><td><code>CREATE USER</code>, <code>GRANT</code>, <code>REVOKE</code> (usuários e permissões por tabela e por coluna)</td></tr>
+<tr><td>SQLite — no sistema</td><td>Permissão do arquivo <code>loja.db</code> (quem pode abrir)</td></tr>
+<tr><td>SQLite — na conexão</td><td>Abrir só-leitura (<code>PRAGMA query_only = ON</code> no editor)</td></tr>
+<tr><td>SQLite — no banco</td><td><code>VIEW</code> mostrando só algumas colunas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Por que o SQLite não tem usuários nem senhas?</p>
+<label><input type="radio" name="q1"> Porque é um banco velho e nunca atualizaram</label>
+<label><input type="radio" name="q1"> Porque é proibido por lei</label>
+<label><input type="radio" name="q1"> Porque é um banco embutido num arquivo: quem pode abrir o arquivo faz tudo; o controle é do sistema</label>
+<label><input type="radio" name="q1"> Porque ninguém usa o SQLite para nada sério</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Qual comando dá a um usuário o poder de ler uma tabela, num banco com servidor?</p>
+<label><input type="radio" name="q2"> <code>SELECT USER</code></label>
+<label><input type="radio" name="q2"> <code>GRANT SELECT ON tabela TO usuario</code></label>
+<label><input type="radio" name="q2"> <code>ALLOW SELECT</code></label>
+<label><input type="radio" name="q2"> <code>CREATE PERMISSION</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. O site só mostra o catálogo. Pelo princípio do menor privilégio, com que usuário ele deve conectar?</p>
+<label><input type="radio" name="q3"> Um usuário com todos os poderes, para não dar erro</label>
+<label><input type="radio" name="q3"> O usuário administrador do banco</label>
+<label><input type="radio" name="q3"> Nenhum usuário; sem login é mais seguro</label>
+<label><input type="radio" name="q3"> Um usuário que só tem <code>SELECT</code></label>
+</div>
+
+<div class="exercise">
+<h3>4. Tirar um poder</h3>
+<p>Complete o comando que <strong>tira</strong> do usuário <code>caixa</code> o poder de inserir na tabela <code>produtos</code> (MySQL). Lembre a palavra que liga o comando ao usuário:</p>
+<div class="ex-code">REVOKE INSERT ON aurora.produtos <input data-answer="FROM" aria-label="palavra de ligação"> 'caixa'@'localhost';</div>
+</div>
+
+<h3>Experimente: a view que esconde o salário</h3>
+<div class="trysql" data-goal="colunas:nome,cargo;;linhas:8">
+<p class="try-task"><strong>Missão:</strong> crie uma view chamada <code>equipe</code> que mostre só <code>nome</code> e <code>cargo</code> dos funcionários (sem o salário) e, depois, liste a view inteira. Devem vir 8 linhas, com as colunas <code>nome</code> e <code>cargo</code>.</p>
+<pre class="script" data-file="consulta.sql">-- 1. crie a view equipe só com nome e cargo
+-- 2. SELECT * nela
+
+SELECT * FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE VIEW equipe AS
+SELECT nome, cargo FROM funcionarios;
+
+SELECT * FROM equipe;
+</pre>
+</div>
+
+<h3>Missão final: trancar a escrita</h3>
+<div class="trysql" data-goal="erro:readonly">
+<p class="try-task"><strong>Missão:</strong> ligue o modo só-leitura e tente, de propósito, dar um aumento ao funcionário de <code>id</code> 1. A caixa espera o <strong>erro</strong> de banco só-leitura. (Dica: <code>PRAGMA query_only = ON;</code> antes do <code>UPDATE</code>.)</p>
+<pre class="script" data-file="consulta.sql">UPDATE funcionarios SET salario = 99999 WHERE id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">PRAGMA query_only = ON;
+UPDATE funcionarios SET salario = 99999 WHERE id = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Bancos com <strong>servidor</strong> (MySQL, PostgreSQL, SQL Server) têm <strong>usuários</strong> e <strong>permissões</strong>: <code>CREATE USER</code> cria a conta, <code>GRANT</code> dá poderes (com <code>TO</code>), <code>REVOKE</code> tira (com <code>FROM</code>), até por coluna.</li>
+  <li>O <strong>SQLite</strong> é um banco embutido num arquivo: não tem usuários. Quem pode abrir o arquivo faz tudo; o controle fica com o <strong>sistema operacional</strong>.</li>
+  <li>No lugar das permissões, o SQLite oferece: a <strong>permissão do arquivo</strong>, a <strong>conexão só-leitura</strong> (<code>PRAGMA query_only = ON</code> dá <code>attempt to write a readonly database</code> numa escrita) e a <strong>view</strong> que mostra só algumas colunas.</li>
+  <li>Em qualquer banco, vale o <strong>menor privilégio</strong>: dê só o necessário. É a defesa que limita o estrago se um <a href="sql-injection.html">ataque</a> passar — mas a defesa principal continua sendo o <a href="parametros.html">parâmetro</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
