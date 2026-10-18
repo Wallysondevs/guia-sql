@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Self Join — juntar uma tabela com ela mesma | Guia SQL</title>
+<meta name="description" content="Self join em SQL para quem está começando: juntar a tabela de funcionários com ela mesma para descobrir quem é o chefe de quem, por que os apelidos são obrigatórios, LEFT JOIN para não perder a gerente, pares de clientes da mesma cidade sem repetição e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Self Join</span></h1>
+
+<p class="intro">Na Loja Aurora, cada funcionário tem um chefe, e o chefe também é um funcionário: está na <strong>mesma</strong> tabela <code>funcionarios</code>. A coluna <code>chefe_id</code> guarda só o número do chefe. Para ver o <strong>nome</strong> do chefe ao lado do nome de cada funcionário, você precisa juntar a tabela com ela mesma. Isso tem nome: <strong>self join</strong> (em inglês, "junção consigo mesma"). Não é um comando novo; é um JOIN comum, com um truque nos apelidos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Quando uma tabela "aponta para ela mesma" e por que isso pede um self join.</li>
+  <li>Como abrir a mesma tabela duas vezes com <strong>apelidos diferentes</strong> (<code>f</code> e <code>c</code>).</li>
+  <li>Por que a gerente some com <code>INNER JOIN</code> e volta com <code>LEFT JOIN</code>.</li>
+  <li>Como contar a equipe de cada chefe e subir dois níveis (o chefe do chefe).</li>
+  <li>Como formar pares de clientes da mesma cidade sem repetir e sem parear a pessoa com ela mesma.</li>
+  <li>Os erros reais: <code>ambiguous column name</code> e a ligação <code>ON</code> invertida, que não dá erro nenhum.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora (veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>). Se o JOIN ainda é novidade, comece por <a href="inner-join.html">INNER JOIN</a> e <a href="left-join.html">LEFT JOIN</a>; esta aula usa os dois.</p>
+
+<hr>
+
+<h2>A ideia: a mesma lista impressa duas vezes</h2>
+<p>Imagine que a Ana imprimiu a lista de funcionários da loja. Ao lado de cada nome há um número: o número do chefe. Para descobrir quem é o chefe do Igor, ela olha o número dele (5), corre o dedo pela <strong>mesma lista</strong> até achar a linha de número 5 e lê o nome: Luana Castelo.</p>
+
+<p>Agora imagine que ela imprimiu a lista <strong>duas vezes</strong> e pôs as folhas lado a lado. Na da esquerda, ela lê o funcionário; na da direita, procura o chefe. São a mesma lista, só que cada folha tem um papel diferente. É exatamente isso que o self join faz:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na mesa da Ana</th><th>No SQL</th></tr>
+<tr><td>A folha da esquerda: "os funcionários"</td><td><code>funcionarios AS f</code></td></tr>
+<tr><td>A folha da direita: "os chefes"</td><td><code>funcionarios AS c</code></td></tr>
+<tr><td>"O número do chefe do Igor é o número da linha do chefe"</td><td><code>ON f.chefe_id = c.id</code></td></tr>
+</table>
+</div>
+
+<p>Os apelidos <code>f</code> e <code>c</code> (aula <a href="aliases.html">Apelidos (AS)</a>) são as etiquetas nas duas folhas. Sem elas, o banco não sabe de qual cópia você está falando.</p>
+
+<hr>
+
+<h2>1. A tabela que aponta para ela mesma</h2>
+<p>Veja a tabela inteira. Repare na última coluna:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, nome, cargo, chefe_id
+FROM funcionarios;
+</pre>
+
+<p>A coluna <code>chefe_id</code> é uma <strong>chave estrangeira</strong> (aula <a href="foreign-key.html">FOREIGN KEY</a>) como as outras, com uma diferença: ela não aponta para outra tabela, aponta para a coluna <code>id</code> da <strong>própria</strong> <code>funcionarios</code>. Lendo os números, dá para montar o organograma da loja:</p>
+
+<pre class="file" data-file="organograma da Loja Aurora">Marta Lustosa (1, Gerente)           chefe_id NULL: não tem chefe
+├── Caio Teles (2)                   chefe_id 1
+├── Renata Borges (3)                chefe_id 1
+├── Pedro Araújo (4)                 chefe_id 1
+└── Luana Castelo (5, Supervisora)   chefe_id 1
+    ├── Igor Mendes (6)              chefe_id 5
+    ├── Sofia Rocha (7)              chefe_id 5
+    └── Davi Nunes (8, Estoquista)   chefe_id 5
+</pre>
+
+<p>A Marta é a gerente: ninguém manda nela, e por isso o <code>chefe_id</code> dela é <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>). Guarde esse detalhe, ele vai fazer diferença na seção 3.</p>
+
+<hr>
+
+<h2>2. O primeiro self join: quem é o chefe de quem</h2>
+<p>Agora a consulta que põe o nome do chefe ao lado de cada funcionário:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM funcionarios AS f</dt><dd>A primeira "cópia" da tabela, com o apelido <code>f</code> (de funcionário). É a folha da esquerda.</dd>
+  <dt>INNER JOIN funcionarios AS c</dt><dd>A <strong>mesma</strong> tabela de novo, agora com o apelido <code>c</code> (de chefe). O banco não copia nada de verdade: ele só lê a tabela duas vezes, como se fossem duas.</dd>
+  <dt>ON f.chefe_id = c.id</dt><dd>A regra que liga as duas: "o <code>chefe_id</code> do funcionário é o <code>id</code> do chefe". É aqui que o self join acontece.</dd>
+  <dt>f.nome AS funcionario</dt><dd>O nome lido da cópia <code>f</code>, com o nome de coluna <code>funcionario</code> no resultado.</dd>
+  <dt>c.nome AS chefe</dt><dd>O nome lido da cópia <code>c</code>. As duas colunas se chamam <code>nome</code> na tabela; os apelidos de coluna (<code>AS funcionario</code>, <code>AS chefe</code>) é que deixam o resultado legível.</dd>
+</dl>
+
+<p>Para entender como o banco chegou a cada linha, siga o Igor:</p>
+<ol class="passo">
+  <li>Na cópia <code>f</code>, o banco encontra a linha do Igor: <code>id</code> 6, <code>chefe_id</code> 5.</li>
+  <li>Ele procura, na cópia <code>c</code>, as linhas em que <code>c.id = 5</code>. Só tem uma: a da Luana.</li>
+  <li>Junta as duas numa linha do resultado: <code>f.nome</code> = Igor Mendes, <code>c.nome</code> = Luana Castelo.</li>
+  <li>Repete isso para cada funcionário da cópia <code>f</code>.</li>
+</ol>
+
+<p>Conte as linhas do resultado: são <strong>7</strong>, e a loja tem 8 funcionários. Quem ficou de fora? A Marta. Isso não é defeito do self join; é o comportamento normal do <code>INNER JOIN</code>, e a seção 3 explica.</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:Igor Mendes;;contem:Davi Nunes">
+<p class="try-task"><strong>Missão:</strong> a Luana quer a lista só da equipe dela. Acrescente um <code>WHERE</code> que filtre pelo nome do chefe (<code>c.nome</code>) e deixe só as 3 pessoas que respondem a ela.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.chefe_id = c.id
+WHERE c.nome = 'Luana Castelo';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Não perca a gerente: LEFT JOIN</h2>
+<p>A Marta sumiu porque o <code>chefe_id</code> dela é <code>NULL</code>. A condição <code>f.chefe_id = c.id</code> vira <code>NULL = c.id</code>, e uma comparação com <code>NULL</code> nunca é verdadeira (aula <a href="null.html">O Valor NULL</a>). O <code>INNER JOIN</code> só mostra linhas que encontraram par; a Marta não encontrou nenhum chefe, então ficou fora.</p>
+
+<p>Para mostrar <strong>todos</strong> os funcionários, até quem não tem chefe, troque por <code>LEFT JOIN</code> (aula <a href="left-join.html">LEFT JOIN</a>): todas as linhas da cópia da esquerda (<code>f</code>) aparecem, e onde não houver par, as colunas da direita (<code>c</code>) vêm <code>NULL</code>.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+LEFT JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+
+<p>Agora são 8 linhas, e a Marta aparece com o chefe <em>NULL</em>. Se você quiser escrever "(ninguém)" no lugar do <code>NULL</code>, existe uma função para isso: <code>IFNULL(c.nome, '(ninguém)')</code>. Ela tem aula própria, mais adiante: <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>.</p>
+
+<div class="tip">
+<strong>Qual dos dois usar?</strong>
+<p>Pergunte-se: "quem não tem par deve aparecer?". Para um organograma completo, sim: <code>LEFT JOIN</code>. Para "a lista de quem tem chefe", não: <code>INNER JOIN</code>.</p>
+</div>
+
+<hr>
+
+<h2>4. Do outro lado: a equipe de cada chefe</h2>
+<p>A mesma ligação serve para olhar a hierarquia de cima para baixo. Agora a cópia <code>c</code> vem primeiro, e você agrupa por chefe para contar quantas pessoas cada um comanda (aulas <a href="group-by.html">GROUP BY</a> e <a href="count.html">COUNT()</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome AS chefe, COUNT(*) AS equipe
+FROM funcionarios AS c
+INNER JOIN funcionarios AS f ON f.chefe_id = c.id
+GROUP BY c.id, c.nome;
+</pre>
+
+<p>A Marta comanda 4 pessoas (Caio, Renata, Pedro e Luana) e a Luana comanda 3. Repare que a regra do <code>ON</code> continua <strong>igual</strong>: <code>f.chefe_id = c.id</code>. O que mudou foi só a ordem das tabelas e o agrupamento. Quem não chefia ninguém (o Caio, por exemplo) não aparece, pelo mesmo motivo da seção 3: não achou par.</p>
+
+<hr>
+
+<h2>5. Dois degraus: o chefe do chefe</h2>
+<p>Dá para abrir a tabela uma <strong>terceira</strong> vez. A cópia <code>cc</code> é "o chefe do chefe":</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome  AS funcionario,
+       c.nome  AS chefe,
+       cc.nome AS chefe_do_chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c  ON f.chefe_id = c.id
+LEFT  JOIN funcionarios AS cc ON c.chefe_id = cc.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>INNER JOIN … AS c ON f.chefe_id = c.id</dt><dd>O primeiro degrau, igual à seção 2.</dd>
+  <dt>LEFT JOIN … AS cc ON c.chefe_id = cc.id</dt><dd>O segundo degrau: agora quem procura o chefe é a cópia <code>c</code>. O <code>LEFT</code> garante que quem responde direto à Marta continue no resultado, com <code>chefe_do_chefe</code> <em>NULL</em> (a Marta não tem chefe).</dd>
+</dl>
+
+<p>O Igor, a Sofia e o Davi respondem à Luana, que responde à Marta. Cada degrau a mais é mais um JOIN. Para uma hierarquia de profundidade desconhecida (dez, vinte níveis), escrever um JOIN por degrau não funciona; para isso existe a <a href="cte-recursiva.html">CTE Recursiva</a>, no Nível 3.</p>
+
+<hr>
+
+<h2>6. Pares na mesma tabela: clientes da mesma cidade</h2>
+<p>O self join não serve só para chefes. Ele serve sempre que você quer <strong>comparar uma linha com outras linhas da mesma tabela</strong>. A Ana quer saber quais clientes moram na mesma cidade, para combinar entregas juntas. Comece por Recife, que tem só dois clientes:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT a.nome, b.nome
+FROM clientes AS a
+INNER JOIN clientes AS b ON a.cidade = b.cidade
+WHERE a.cidade = 'Recife';
+</pre>
+
+<p>Quatro linhas para duas pessoas? O banco combinou <strong>cada</strong> cliente de Recife com <strong>cada</strong> cliente de Recife, inclusive com ele mesmo: Juliana com Juliana, Bruno com Bruno. E o par Juliana–Bruno aparece duas vezes, uma em cada ordem. Vamos limpar em dois passos.</p>
+
+<p><strong>Passo 1: tire a pessoa pareada com ela mesma.</strong> Exija que os <code>id</code> sejam diferentes:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT a.nome, b.nome
+FROM clientes AS a
+INNER JOIN clientes AS b ON a.cidade = b.cidade AND a.id &lt;&gt; b.id
+WHERE a.cidade = 'Recife';
+</pre>
+
+<p><strong>Passo 2: tire o par repetido.</strong> Troque <code>&lt;&gt;</code> por <code>&lt;</code>. Assim só vale a ordem em que o <code>id</code> da esquerda é o menor (Juliana é a 10, Bruno é o 19), e cada par aparece uma vez só:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT a.nome, b.nome
+FROM clientes AS a
+INNER JOIN clientes AS b ON a.cidade = b.cidade AND a.id &lt; b.id
+WHERE a.cidade = 'Recife';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Condição extra</th><th>Recife (2 clientes)</th><th>O que sobra</th></tr>
+<tr><td>nenhuma</td><td>4 linhas</td><td>todas as combinações, até a pessoa com ela mesma</td></tr>
+<tr><td><code>a.id &lt;&gt; b.id</code></td><td>2 linhas</td><td>cada par duas vezes (A–B e B–A)</td></tr>
+<tr><td><code>a.id &lt; b.id</code></td><td>1 linha</td><td>cada par uma vez só</td></tr>
+</table>
+</div>
+
+<p>Sem o <code>WHERE</code> de Recife, a mesma consulta com <code>a.id &lt; b.id</code> devolve os pares de todas as cidades: são 88.</p>
+
+<div class="trysql" data-goal="linhas:21">
+<p class="try-task"><strong>Missão:</strong> Fortaleza tem 7 clientes. A consulta abaixo devolve 49 linhas, porque combina todo mundo com todo mundo. Mude a condição do <code>ON</code> para que cada par de clientes de Fortaleza apareça <strong>uma vez só</strong>, sem ninguém pareado consigo mesmo. (Dica: o certo dá 21 linhas.)</p>
+<pre class="script" data-file="consulta.sql">SELECT a.nome, b.nome
+FROM clientes AS a
+INNER JOIN clientes AS b ON a.cidade = b.cidade
+WHERE a.cidade = 'Fortaleza';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT a.nome, b.nome
+FROM clientes AS a
+INNER JOIN clientes AS b ON a.cidade = b.cidade AND a.id &lt; b.id
+WHERE a.cidade = 'Fortaleza';
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Formas diferentes de escrever o mesmo self join</h2>
+<p>As três consultas abaixo respondem "quem é o chefe de quem". As duas primeiras dão as mesmas 7 linhas da seção 2; a terceira dá 8, porque mantém a Marta, como o <code>LEFT JOIN</code>.</p>
+
+<p><strong>Forma antiga, com vírgula e <code>WHERE</code>:</strong></p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios f, funcionarios c
+WHERE f.chefe_id = c.id;
+</pre>
+<p>Aqui as tabelas vêm separadas por vírgula e a ligação vai no <code>WHERE</code>. Também repare que o <code>AS</code> foi omitido: <code>funcionarios f</code> é o mesmo que <code>funcionarios AS f</code>. Funciona, mas o <code>JOIN … ON</code> separa melhor "como ligar" (no <code>ON</code>) de "o que filtrar" (no <code>WHERE</code>).</p>
+
+<p><strong>Com uma subconsulta no SELECT:</strong></p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario,
+       (SELECT c.nome FROM funcionarios AS c WHERE c.id = f.chefe_id) AS chefe
+FROM funcionarios AS f;
+</pre>
+<p>Para cada funcionário, o banco roda a consulta entre parênteses e busca o nome do chefe. Quando não acha (a Marta), ela devolve <code>NULL</code>, por isso as 8 linhas. Isso é uma <strong>subconsulta</strong>, assunto da aula <a href="subconsultas.html">Subconsultas</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quem não tem chefe</th><th>Quando usar</th></tr>
+<tr><td><code>INNER JOIN … ON</code></td><td>some</td><td>a forma recomendada, quando só interessa quem tem par</td></tr>
+<tr><td><code>LEFT JOIN … ON</code></td><td>aparece com <code>NULL</code></td><td>listas completas (organograma, relatórios)</td></tr>
+<tr><td>vírgula + <code>WHERE</code></td><td>some</td><td>só para ler código antigo; prefira o <code>JOIN</code></td></tr>
+<tr><td>subconsulta no <code>SELECT</code></td><td>aparece com <code>NULL</code></td><td>quando você quer só uma coluna da outra cópia</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu os apelidos</strong>
+<p>A tabela aparece duas vezes, mas sem etiqueta:</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM funcionarios
+INNER JOIN funcionarios ON chefe_id = id;
+</pre>
+<p><strong>A mensagem:</strong> <code>ambiguous column name: nome</code>, "nome de coluna ambíguo: nome". Agora existem duas colunas <code>nome</code> (uma em cada cópia) e o banco não sabe qual você quer. Tentar resolver com o nome da tabela não adianta, porque as duas cópias têm o mesmo nome: <code>funcionarios.nome</code> dá <code>ambiguous column name: funcionarios.nome</code>.</p>
+<p><strong>Como consertar:</strong> dê um apelido diferente a cada cópia (<code>AS f</code>, <code>AS c</code>) e use o apelido antes de <strong>toda</strong> coluna: <code>f.nome</code>, <code>c.nome</code>, <code>f.chefe_id</code>, <code>c.id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Deu o mesmo apelido às duas cópias</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT f.nome
+FROM funcionarios AS f
+INNER JOIN funcionarios AS f ON f.chefe_id = f.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>ambiguous column name: f.nome</code>. É o mesmo problema de cima: dois <code>f</code> são tão ambíguos quanto nenhum.</p>
+<p><strong>Como consertar:</strong> um apelido por cópia, todos diferentes.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>ON</code> invertido: sem erro, mas errado</strong>
+<p>A Ana trocou os lados da ligação: escreveu <code>f.id = c.chefe_id</code> em vez de <code>f.chefe_id = c.id</code>.</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.id = c.chefe_id;
+</pre>
+<p><strong>O que acontece:</strong> nenhuma mensagem, 7 linhas, tudo com cara de certo. Mas leia: segundo esse resultado, o "chefe" da Marta é o Caio! A ligação invertida faz <code>c</code> ser o <strong>subordinado</strong>, e os nomes das colunas (<code>funcionario</code>, <code>chefe</code>) passaram a mentir. Esse é o erro mais perigoso do self join, justamente porque o banco não reclama.</p>
+<p><strong>Como consertar:</strong> leia o <code>ON</code> em voz alta: "o <strong>chefe_id do funcionário</strong> é o <strong>id do chefe</strong>": <code>f.chefe_id = c.id</code>. E confira uma linha que você conhece (o Igor tem de aparecer com a Luana).</p>
+</div>
+
+<div class="cenario">
+<strong>Duas colunas com o mesmo nome no resultado</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT f.nome, c.nome
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+<p><strong>O que acontece:</strong> funciona, mas o cabeçalho tem <code>nome</code> e <code>nome</code>. Quem lê o resultado (ou um programa que pega as colunas pelo nome) não sabe qual é o funcionário e qual é o chefe.</p>
+<p><strong>Como consertar:</strong> num self join, dê sempre um apelido de coluna: <code>f.nome AS funcionario, c.nome AS chefe</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O self join não é um comando especial: é um <code>JOIN</code> comum em que as duas tabelas são a mesma. Por isso ele se escreve igual no MySQL, no PostgreSQL e no SQL Server. O que muda de banco para banco é só o texto das mensagens de erro quando falta o apelido.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>FROM t AS a INNER JOIN t AS b ON …</code></td><td>Junta a tabela <code>t</code> com ela mesma; <code>a</code> e <code>b</code> são as duas cópias</td></tr>
+<tr><td><code>ON f.chefe_id = c.id</code></td><td>Liga cada linha à linha "de cima" (o chefe)</td></tr>
+<tr><td><code>LEFT JOIN</code></td><td>Mantém quem não tem par (a gerente, com chefe <code>NULL</code>)</td></tr>
+<tr><td><code>AND a.id &lt;&gt; b.id</code></td><td>Não pareia uma linha com ela mesma</td></tr>
+<tr><td><code>AND a.id &lt; b.id</code></td><td>Cada par uma vez só</td></tr>
+<tr><td>Uma cópia a mais (<code>AS cc</code>)</td><td>Sobe mais um degrau da hierarquia</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>ambiguous column name: nome</code></td><td>Há duas colunas <code>nome</code> e você não disse de qual cópia: faltou o apelido</td></tr>
+<tr><td><code>ambiguous column name: f.nome</code></td><td>Duas cópias com o mesmo apelido</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A ligação</h3>
+<p>Complete a condição que liga cada funcionário (<code>f</code>) ao seu chefe (<code>c</code>):</p>
+<div class="ex-code">FROM funcionarios AS f INNER JOIN funcionarios AS c ON f.chefe_id = <input data-answer="c.id" aria-label="coluna do chefe"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem perder ninguém</h3>
+<p>Que tipo de JOIN mostra também a gerente, que não tem chefe?</p>
+<div class="ex-code">FROM funcionarios AS f <input data-answer="LEFT JOIN|left join|LEFT OUTER JOIN|left outer join" aria-label="tipo de join"> funcionarios AS c ON f.chefe_id = c.id</div>
+</div>
+
+<div class="exercise">
+<h3>3. Cada par uma vez</h3>
+<p>Complete o operador para que cada par de clientes da mesma cidade apareça uma vez só:</p>
+<div class="ex-code">ON a.cidade = b.cidade AND a.id <input data-answer="&lt;|&gt;" aria-label="operador"> b.id</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que um self join precisa de apelidos?</p>
+<label><input type="radio" name="q4"> Porque o SQLite não aceita a mesma tabela duas vezes</label>
+<label><input type="radio" name="q4"> Porque as duas cópias têm as mesmas colunas, e sem apelido o banco não sabe de qual você está falando</label>
+<label><input type="radio" name="q4"> Porque os apelidos deixam a consulta mais rápida</label>
+<label><input type="radio" name="q4"> Não precisa: os apelidos são opcionais</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Com <code>INNER JOIN funcionarios AS c ON f.chefe_id = c.id</code>, quantas linhas saem, e por quê?</p>
+<label><input type="radio" name="q5"> 8, uma por funcionário</label>
+<label><input type="radio" name="q5"> 2, uma por chefe</label>
+<label><input type="radio" name="q5"> 7, porque a Marta tem <code>chefe_id</code> NULL e não acha par</label>
+<label><input type="radio" name="q5"> 0, porque a tabela não pode se juntar com ela mesma</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana escreveu <code>ON f.id = c.chefe_id</code> no lugar de <code>ON f.chefe_id = c.id</code>. O que acontece?</p>
+<label><input type="radio" name="q6"> A consulta roda, mas a coluna "chefe" passa a mostrar os subordinados</label>
+<label><input type="radio" name="q6"> Dá <code>ambiguous column name</code></label>
+<label><input type="radio" name="q6"> Dá o mesmo resultado, porque a ordem do <code>=</code> não importa</label>
+<label><input type="radio" name="q6"> Não sai nenhuma linha</label>
+</div>
+
+<h3>Missão final: o organograma completo</h3>
+
+<div class="trysql" data-goal="colunas:funcionario,chefe;;linhas:8;;contem:Marta Lustosa|">
+<p class="try-task"><strong>Missão:</strong> a Ana quer imprimir o organograma da loja com <strong>todos os 8</strong> funcionários, cada um com o nome do chefe ao lado. A consulta abaixo esquece a gerente. Conserte-a, mantendo as colunas <code>funcionario</code> e <code>chefe</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+INNER JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome AS funcionario, c.nome AS chefe
+FROM funcionarios AS f
+LEFT JOIN funcionarios AS c ON f.chefe_id = c.id;
+</pre>
+</div>
+
+<p>Quer ir além? Acrescente a coluna <code>c.cargo AS cargo_do_chefe</code>, ou uma terceira cópia para mostrar o chefe do chefe, como na seção 5.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>Self join</strong> é juntar uma tabela com ela mesma. Não é um comando novo: é um <code>JOIN</code> comum em que as duas tabelas são a mesma.</li>
+  <li>Ele aparece quando uma coluna aponta para a própria tabela, como <code>funcionarios.chefe_id</code> → <code>funcionarios.id</code>, e quando você quer comparar linhas da mesma tabela entre si.</li>
+  <li>Os apelidos são obrigatórios e têm de ser diferentes (<code>f</code>, <code>c</code>); sem eles sai <code>ambiguous column name</code>. Dê também apelidos às colunas do resultado.</li>
+  <li><code>INNER JOIN</code> some com quem não tem par (a gerente); <code>LEFT JOIN</code> mantém, com <code>NULL</code>.</li>
+  <li>Para pares: <code>a.id &lt;&gt; b.id</code> tira a linha com ela mesma; <code>a.id &lt; b.id</code> mostra cada par uma vez.</li>
+  <li>Cuidado com o <code>ON</code> invertido: ele não dá erro, mas troca chefe por subordinado. Confira sempre uma linha conhecida.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
