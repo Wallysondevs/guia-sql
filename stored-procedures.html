@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Stored Procedures — e o que o SQLite usa no lugar | Guia SQL</title>
+<meta name="description" content="Stored procedures (procedimentos guardados) para quem está começando: o que são, como MySQL, PostgreSQL e SQL Server criam com CREATE PROCEDURE e chamam com CALL/EXEC (exemplos da documentação oficial), por que o SQLite (banco embutido) não tem, e o que ele usa no lugar — a lógica na linguagem do programa e, dentro do banco, o TRIGGER, mostrado rodando de verdade no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Stored <span class="hl">Procedures</span></h1>
+
+<p class="intro">Uma <strong>stored procedure</strong> ("procedimento guardado") é um bloco de comandos SQL que fica <strong>salvo dentro do banco</strong>, com um nome, pronto para ser chamado quando você quiser — como uma receita guardada na gaveta, em vez de ditar os passos toda vez. Os bancos com <strong>servidor</strong> (MySQL, PostgreSQL, SQL Server) têm esse recurso. O SQLite, por ser um <strong>banco embutido num arquivo</strong>, não tem — e nesta aula você vai ver como os outros bancos criam uma procedure, por que o SQLite faz diferente e qual é o recurso dele que mais se parece: o <strong>TRIGGER</strong>, que você vai rodar de verdade no editor.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma stored procedure e para que serve.</li>
+  <li>Como MySQL, PostgreSQL e SQL Server criam (<code>CREATE PROCEDURE</code>) e chamam (<code>CALL</code> / <code>EXEC</code>).</li>
+  <li>Por que o SQLite não tem procedures (a lógica fica na linguagem do programa).</li>
+  <li>O recurso mais próximo no SQLite: o <strong>TRIGGER</strong>, um mini-procedimento que dispara sozinho.</li>
+  <li>Como um TRIGGER registra mudanças e como ele pode <strong>barrar</strong> uma operação ruim.</li>
+</ul>
+</div>
+
+<p>Os comandos <code>CREATE PROCEDURE</code>, <code>CALL</code> e <code>EXEC</code> são <strong>ilustrativos</strong> (não existem no SQLite, não rodam no editor) e vêm da documentação oficial de cada banco. Os <code>TRIGGER</code> do fim rodam de verdade, no editor, contra a Loja Aurora.</p>
+
+<hr>
+
+<h2>A ideia: a receita guardada</h2>
+<p>Imagine que, toda sexta, a Ana faz o mesmo cálculo: somar as vendas da semana, tirar a média e guardar num relatório. Ela pode <strong>reescrever</strong> todos os comandos toda vez — fácil errar — ou escrever uma vez, dar um nome (<code>fechar_semana</code>) e, nas próximas, só dizer "rode o <code>fechar_semana</code>". Esse "bloco com nome, guardado no banco" é a stored procedure. As vantagens:</p>
+<ul>
+  <li><strong>Não repetir</strong> um SQL comprido em vários lugares do programa.</li>
+  <li><strong>Padronizar</strong>: todo mundo chama a mesma procedure e faz a conta do mesmo jeito.</li>
+  <li>Às vezes, <strong>desempenho</strong>: o banco já tem o plano pronto.</li>
+</ul>
+
+<hr>
+
+<h2>1. Criar e chamar (bancos com servidor)</h2>
+<p>A procedure tem um <strong>nome</strong>, pode receber <strong>parâmetros</strong> e tem um <strong>corpo</strong> (os comandos). Depois, você a <strong>chama</strong> pelo nome. Veja em cada banco, como na documentação oficial.</p>
+
+<h3>MySQL</h3>
+<pre class="file" data-file="mysql (ilustrativo)">DELIMITER //
+
+CREATE PROCEDURE contar_clientes (IN uf CHAR(2), OUT quantos INT)
+BEGIN
+  SELECT COUNT(*) INTO quantos FROM clientes WHERE estado = uf;
+END//
+
+DELIMITER ;
+
+CALL contar_clientes('PI', @quantos);
+SELECT @quantos;</pre>
+
+<dl class="anatomy">
+  <dt>CREATE PROCEDURE contar_clientes (…)</dt><dd>"Criar procedimento" com esse nome e seus parâmetros.</dd>
+  <dt>IN uf CHAR(2)</dt><dd>Um parâmetro de <strong>entrada</strong> (<code>IN</code>): o valor que você passa. Há também <code>OUT</code> (saída) e <code>INOUT</code>.</dd>
+  <dt>BEGIN … END</dt><dd>O corpo: os comandos que a procedure roda.</dd>
+  <dt>DELIMITER //</dt><dd>Um truque do cliente <code>mysql</code>: como o corpo tem <code>;</code> dentro, troca-se o fim de comando para <code>//</code> enquanto se cria a procedure, e depois volta para <code>;</code>. A própria documentação explica isso.</dd>
+  <dt>CALL contar_clientes('PI', @quantos)</dt><dd>"Chamar": roda a procedure passando <code>PI</code> e recebendo a contagem na variável <code>@quantos</code>.</dd>
+</dl>
+
+<h3>PostgreSQL</h3>
+<pre class="file" data-file="postgresql (ilustrativo)">CREATE PROCEDURE inserir_categoria(nome TEXT, descricao TEXT)
+LANGUAGE SQL
+BEGIN ATOMIC
+  INSERT INTO categorias (nome, descricao) VALUES (nome, descricao);
+END;
+
+CALL inserir_categoria('Pet Shop', 'Produtos para animais');</pre>
+
+<p>No PostgreSQL também se chama com <code>CALL</code>. Repare que ele pede a linguagem do corpo (<code>LANGUAGE SQL</code>, entre outras).</p>
+
+<h3>SQL Server</h3>
+<pre class="file" data-file="sql server (ilustrativo)">CREATE PROC contar_clientes @uf CHAR(2)
+AS
+SELECT COUNT(*) AS quantos FROM clientes WHERE estado = @uf;</pre>
+
+<p>Chamada com <code>EXEC</code>: <code>EXEC contar_clientes 'PI';</code>. No SQL Server os parâmetros começam com <code>@</code> (como mostra a documentação, <code>@ID INT</code>) e se chama com <code>EXECUTE</code> (abreviado <code>EXEC</code>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Criar</th><th>Chamar</th></tr>
+<tr><td>MySQL</td><td><code>CREATE PROCEDURE</code> (com <code>DELIMITER</code>)</td><td><code>CALL nome(...)</code></td></tr>
+<tr><td>PostgreSQL</td><td><code>CREATE PROCEDURE … LANGUAGE …</code></td><td><code>CALL nome(...)</code></td></tr>
+<tr><td>SQL Server</td><td><code>CREATE PROC … AS …</code></td><td><code>EXEC nome ...</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Procedure × função</strong>
+<p>Você também vai ouvir falar em <strong>função</strong> guardada (<code>CREATE FUNCTION</code>). A diferença prática: uma <strong>função</strong> devolve um valor e entra no meio de um <code>SELECT</code> (como <code>COUNT()</code>); uma <strong>procedure</strong> é um bloco que você chama à parte com <code>CALL</code>/<code>EXEC</code> e que pode fazer várias coisas. Os dois ficam guardados no banco.</p>
+</div>
+
+<hr>
+
+<h2>2. Por que o SQLite não tem procedures</h2>
+<p>É a mesma razão dos <a href="usuarios-permissoes.html">usuários e permissões</a>: o SQLite é um <strong>banco embutido</strong>. Ele não fica ligado como um servidor; ele roda <strong>dentro</strong> do seu programa. Então o lugar natural para guardar "um bloco de passos com um nome" não é o banco — é a <strong>linguagem do programa</strong>. Onde outro banco teria uma procedure, um programa com SQLite tem uma <strong>função</strong> comum na sua linguagem (aula <a href="sql-nas-linguagens.html">SQL nas Linguagens</a>).</p>
+
+<p>Veja a "procedure" <code>contar_clientes</code> escrita como uma função Python — é onde a lógica mora no mundo SQLite:</p>
+
+<pre class="file" data-file="procedures_no_sqlite.py">import sqlite3
+con = sqlite3.connect("loja.db")
+
+def contar_clientes(uf):                 # a "procedure" vira uma função
+    sql = "SELECT COUNT(*) FROM clientes WHERE estado = ?"
+    return con.execute(sql, (uf,)).fetchone()[0]
+
+print(contar_clientes("PI"))             # a "chamada"
+</pre>
+
+<p>Essa escolha mantém o SQLite pequeno e previsível. O que o banco <strong>não</strong> guarda, o programa guarda — e fica mais fácil de testar e versionar junto com o resto do código.</p>
+
+<hr>
+
+<h2>3. O recurso mais próximo: o TRIGGER</h2>
+<p>Há um pedaço de "procedure" que o SQLite <strong>tem</strong>: o <strong>TRIGGER</strong> ("gatilho"). Um trigger é um bloco de SQL, guardado no banco, que <strong>dispara sozinho</strong> quando acontece um <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> numa tabela. Você não o chama; ele reage. É como uma procedure que o banco executa automaticamente na hora certa. (Há uma aula sobre eles no roteiro; aqui vemos o essencial para comparar com as procedures.)</p>
+
+<h3>Um trigger que registra mudanças de preço</h3>
+<p>Suponha que a Ana queira guardar um histórico toda vez que o preço de um produto muda. Ela cria uma tabela de log e um trigger que, <strong>depois</strong> de cada mudança de <code>preco</code>, grava o antes e o depois:</p>
+
+<pre class="file" data-file="trigger-log.sql" data-resultado>CREATE TABLE precos_log (
+  produto_id   INTEGER,
+  preco_antigo REAL,
+  preco_novo   REAL
+);
+
+CREATE TRIGGER registrar_mudanca_preco
+AFTER UPDATE OF preco ON produtos
+BEGIN
+  INSERT INTO precos_log (produto_id, preco_antigo, preco_novo)
+  VALUES (OLD.id, OLD.preco, NEW.preco);
+END;
+
+UPDATE produtos SET preco = 1.49 WHERE id = 1;
+UPDATE produtos SET preco = 3.20 WHERE id = 2;
+
+SELECT * FROM precos_log;
+</pre>
+
+<dl class="anatomy">
+  <dt>AFTER UPDATE OF preco ON produtos</dt><dd>Quando disparar: <strong>depois</strong> de um <code>UPDATE</code> da coluna <code>preco</code> na tabela <code>produtos</code>.</dd>
+  <dt>BEGIN … END</dt><dd>O corpo do trigger, igual ao corpo de uma procedure: o que ele faz quando dispara.</dd>
+  <dt>OLD.preco e NEW.preco</dt><dd>Dentro do trigger, <code>OLD</code> é a linha <strong>antes</strong> da mudança e <code>NEW</code> é <strong>depois</strong>. Aqui ele grava os dois no log.</dd>
+</dl>
+
+<p>Repare que você só deu dois <code>UPDATE</code>; o <code>INSERT</code> no log aconteceu <strong>sozinho</strong>, duas vezes, por conta do trigger. Isso é a cara de uma procedure que roda na hora certa, sem ninguém chamar.</p>
+
+<h3>Um trigger que barra uma operação ruim</h3>
+<p>Triggers também servem para <strong>proteger</strong> os dados. Este dispara <strong>antes</strong> de um <code>UPDATE</code> de preço e, se o novo preço for negativo, cancela tudo com uma mensagem — usando a função <code>RAISE</code> ("levantar [um erro]"):</p>
+
+<pre class="file" data-file="trigger-raise.sql" data-resultado data-erro>CREATE TRIGGER preco_nao_negativo
+BEFORE UPDATE OF preco ON produtos
+WHEN NEW.preco &lt; 0
+BEGIN
+  SELECT RAISE(ABORT, 'preço não pode ser negativo');
+END;
+
+UPDATE produtos SET preco = -5 WHERE id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>BEFORE UPDATE OF preco</dt><dd>Dispara <strong>antes</strong> da mudança, a tempo de impedi-la.</dd>
+  <dt>WHEN NEW.preco &lt; 0</dt><dd>Uma condição: o corpo só roda se o novo preço for negativo.</dd>
+  <dt>RAISE(ABORT, '…')</dt><dd>Cancela a operação (<code>ABORT</code>) e devolve a mensagem. O <code>UPDATE</code> não acontece.</dd>
+</dl>
+
+<p>A mensagem <code>preço não pode ser negativo</code> é a que o próprio trigger definiu: o SQLite a repassa como erro. A regra "preço nunca é negativo" passou a viver <strong>dentro</strong> do banco, valendo para qualquer programa que o use — exatamente o tipo de coisa que, num banco com servidor, você poria numa procedure ou numa <em>trigger procedure</em>.</p>
+
+<div class="note">
+<strong>E as views?</strong>
+<p>O outro recurso do SQLite que lembra "lógica guardada no banco" é a <strong>view</strong> (aula <a href="views.html">Views</a>): uma consulta salva com um nome, que você usa como se fosse uma tabela. Ela não executa ações como uma procedure, mas guarda, com um nome, um <code>SELECT</code> que você reaproveita — a mesma ideia de "não repetir" das procedures. Você viu uma em <a href="usuarios-permissoes.html">Usuários e Permissões</a>.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Tentar <code>CREATE PROCEDURE</code> no SQLite</strong>
+<p>Como não existe no SQLite, escrever <code>CREATE PROCEDURE</code> no editor dá erro de sintaxe já na palavra <code>PROCEDURE</code>:</p>
+<pre class="file" data-file="procedure-no-sqlite.sql" data-resultado data-erro>CREATE PROCEDURE contar() BEGIN SELECT 1; END;
+</pre>
+<p>A mensagem <code>near "PROCEDURE": syntax error</code> ("erro de sintaxe perto de PROCEDURE") confirma: o motor não conhece esse comando. Para "um bloco com nome", use uma função na sua linguagem (seção 2) ou, para algo que dispara sozinho, um <code>TRIGGER</code> (seção 3).</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>"Bloco de SQL guardado"</th></tr>
+<tr><td>MySQL / PostgreSQL / SQL Server</td><td><code>CREATE PROCEDURE</code> (chamado com <code>CALL</code>/<code>EXEC</code>) e <code>CREATE FUNCTION</code></td></tr>
+<tr><td>SQLite — no programa</td><td>Uma função na linguagem (Python, PHP…) com o SQL dentro</td></tr>
+<tr><td>SQLite — no banco, disparando sozinho</td><td><code>CREATE TRIGGER</code> (<code>BEFORE</code>/<code>AFTER</code>, com <code>OLD</code>/<code>NEW</code> e <code>RAISE</code>)</td></tr>
+<tr><td>SQLite — consulta salva com nome</td><td><code>CREATE VIEW</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que é uma stored procedure?</p>
+<label><input type="radio" name="q1"> Um tipo de tabela especial</label>
+<label><input type="radio" name="q1"> Um bloco de SQL guardado no banco, com um nome, que você chama quando quer</label>
+<label><input type="radio" name="q1"> Um usuário com poderes de administrador</label>
+<label><input type="radio" name="q1"> Um backup automático do banco</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Por que o SQLite não tem stored procedures?</p>
+<label><input type="radio" name="q2"> Porque é mais lento que os outros</label>
+<label><input type="radio" name="q2"> Porque procedures são proibidas no padrão SQL</label>
+<label><input type="radio" name="q2"> Porque é um banco embutido; a lógica fica na linguagem do programa</label>
+<label><input type="radio" name="q2"> Porque ninguém pediu ainda</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Qual recurso do SQLite mais se parece com uma procedure que roda sozinha?</p>
+<label><input type="radio" name="q3"> O <code>SELECT</code></label>
+<label><input type="radio" name="q3"> O <code>GRANT</code></label>
+<label><input type="radio" name="q3"> O <code>INDEX</code></label>
+<label><input type="radio" name="q3"> O <code>TRIGGER</code></label>
+</div>
+
+<div class="exercise">
+<h3>4. Antes e depois</h3>
+<p>Dentro de um trigger, complete as duas palavras que se referem à linha <strong>antes</strong> e <strong>depois</strong> da mudança:</p>
+<div class="ex-code">VALUES (<input data-answer="OLD" aria-label="antes">.preco, <input data-answer="NEW" aria-label="depois">.preco);</div>
+</div>
+
+<h3>Experimente: o trigger que registra</h3>
+<div class="trysql" data-goal="tabela:precos_log;;mudou:precos_log=1">
+<p class="try-task"><strong>Missão:</strong> crie a tabela <code>precos_log</code> (com <code>produto_id</code>, <code>preco_antigo</code>, <code>preco_novo</code>) e um trigger <code>AFTER UPDATE OF preco ON produtos</code> que grave <code>OLD.id</code>, <code>OLD.preco</code> e <code>NEW.preco</code> no log. Depois, dê <strong>um</strong> <code>UPDATE</code> de preço num produto. No fim, o log deve ter 1 linha.</p>
+<pre class="script" data-file="consulta.sql">-- 1. CREATE TABLE precos_log (...)
+-- 2. CREATE TRIGGER ... AFTER UPDATE OF preco ON produtos BEGIN ... END;
+-- 3. um UPDATE de preço
+
+SELECT 'escreva o trigger acima';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE TABLE precos_log (
+  produto_id   INTEGER,
+  preco_antigo REAL,
+  preco_novo   REAL
+);
+
+CREATE TRIGGER registrar_mudanca_preco
+AFTER UPDATE OF preco ON produtos
+BEGIN
+  INSERT INTO precos_log (produto_id, preco_antigo, preco_novo)
+  VALUES (OLD.id, OLD.preco, NEW.preco);
+END;
+
+UPDATE produtos SET preco = 1.49 WHERE id = 1;
+</pre>
+</div>
+
+<h3>Missão final: o trigger que protege</h3>
+<div class="trysql" data-goal="erro:negativo">
+<p class="try-task"><strong>Missão:</strong> crie um trigger <code>BEFORE UPDATE OF preco ON produtos</code> que, quando o novo preço for menor que 0, cancele com <code>RAISE(ABORT, 'preço não pode ser negativo')</code>. Depois, tente dar um preço negativo a um produto. A caixa espera o <strong>erro</strong> com a palavra "negativo".</p>
+<pre class="script" data-file="consulta.sql">-- crie o trigger e, depois, tente: UPDATE produtos SET preco = -5 WHERE id = 1;
+
+UPDATE produtos SET preco = -5 WHERE id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE TRIGGER preco_nao_negativo
+BEFORE UPDATE OF preco ON produtos
+WHEN NEW.preco &lt; 0
+BEGIN
+  SELECT RAISE(ABORT, 'preço não pode ser negativo');
+END;
+
+UPDATE produtos SET preco = -5 WHERE id = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>stored procedure</strong> é um bloco de SQL guardado no banco, com nome, que você chama quando quer. Serve para não repetir e para padronizar.</li>
+  <li>Bancos com servidor criam com <code>CREATE PROCEDURE</code> e chamam com <code>CALL</code> (MySQL, PostgreSQL) ou <code>EXEC</code> (SQL Server).</li>
+  <li>O <strong>SQLite</strong> não tem procedures: é embutido, e a lógica fica numa <strong>função</strong> da linguagem do programa (aula <a href="sql-nas-linguagens.html">SQL nas Linguagens</a>).</li>
+  <li>Dentro do banco, o recurso mais próximo é o <strong>TRIGGER</strong>: um bloco que dispara sozinho em <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code>, com <code>OLD</code>/<code>NEW</code> e <code>RAISE</code> — bom para registrar mudanças e barrar operações ruins. A <a href="views.html">view</a> guarda uma consulta com nome.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
