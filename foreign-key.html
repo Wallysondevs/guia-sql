@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL FOREIGN KEY — a chave que liga uma tabela à outra | Guia SQL</title>
+<meta name="description" content="FOREIGN KEY (chave estrangeira) para quem nunca mexeu num banco: como REFERENCES impede pedido de cliente que não existe, o PRAGMA foreign_keys do SQLite (ligado no editor, desligado no terminal), o erro real FOREIGN KEY constraint failed, ON DELETE CASCADE e SET NULL, e como os outros bancos fazem.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">FOREIGN KEY</span></h1>
+
+<p class="intro">Na Loja Aurora, cada pedido diz de quem ele é com um número: <code>cliente_id = 3</code> quer dizer "este pedido é da cliente 3". E se alguém gravar um pedido com <code>cliente_id = 999</code>, de um cliente que não existe? O pedido ficaria "órfão": ninguém para entregar, ninguém para cobrar. A <strong>chave estrangeira</strong> (<em>foreign key</em>) é a regra que impede isso: ela obriga o número a apontar para uma linha que existe de verdade em outra tabela. Nesta aula você vai ver essa regra funcionando, a pegadinha do SQLite (ela vem <strong>desligada</strong> no terminal) e o que fazer com os filhos quando o "pai" é apagado.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma chave estrangeira e como ela liga a tabela "filha" à tabela "mãe".</li>
+  <li>As duas formas de escrever: <code>REFERENCES</code> na coluna e <code>FOREIGN KEY (…) REFERENCES …</code> no fim da tabela.</li>
+  <li>O erro real <code>FOREIGN KEY constraint failed</code> ao inserir, mudar e apagar.</li>
+  <li>O <code>PRAGMA foreign_keys</code>: por que no editor do guia a regra vale e no terminal do <code>sqlite3</code> ela vem desligada.</li>
+  <li>Como achar linhas órfãs com <code>PRAGMA foreign_key_check</code>.</li>
+  <li><code>ON DELETE CASCADE</code>, <code>SET NULL</code> e <code>RESTRICT</code>: o que acontece com os filhos quando o pai some.</li>
+</ul>
+</div>
+
+<p>Antes, vale ter visto <a href="primary-key.html">PRIMARY KEY</a> e <a href="relacionamentos.html">Tabelas que se Relacionam</a>. Todos os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo: pode apagar à vontade.</p>
+
+<hr>
+
+<h2>A ideia: a comanda e o fichário</h2>
+<p>Pense numa lojinha de bairro com um fichário de clientes, cada ficha com um número. Quando alguém faz uma encomenda, o vendedor anota numa comanda: "cliente nº 3, dois cadernos". A comanda não repete o nome nem o endereço: ela só <strong>aponta</strong> para a ficha 3.</p>
+
+<p>Agora imagine que a dona da loja tem uma regra: "não se aceita comanda com número de ficha que não está no fichário". E outra: "não se joga fora a ficha de um cliente que ainda tem comanda". É exatamente isso que a chave estrangeira faz no banco:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na lojinha</th><th>No banco</th><th>Na Loja Aurora</th></tr>
+<tr><td>O fichário</td><td>A tabela <strong>mãe</strong> (ou "pai", <em>parent</em>)</td><td><code>clientes</code></td></tr>
+<tr><td>O número da ficha</td><td>A chave primária da mãe</td><td><code>clientes.id</code></td></tr>
+<tr><td>As comandas</td><td>A tabela <strong>filha</strong> (<em>child</em>)</td><td><code>pedidos</code></td></tr>
+<tr><td>O número anotado na comanda</td><td>A <strong>chave estrangeira</strong></td><td><code>pedidos.cliente_id</code></td></tr>
+</table>
+</div>
+
+<p>"Estrangeira" porque é uma chave que vem de <strong>fora</strong>: <code>cliente_id</code> mora na tabela <code>pedidos</code>, mas o valor dele é a chave de outra tabela.</p>
+
+<hr>
+
+<h2>1. As chaves estrangeiras da Loja Aurora</h2>
+<p>O banco da loja já foi criado com chaves estrangeiras. Peça ao SQLite o <code>CREATE TABLE</code> da tabela <code>produtos</code>; ele fica guardado na tabela interna <code>sqlite_schema</code>:</p>
+
+<pre class="file" data-file="ver-produtos.sql" data-resultado>SELECT sql
+FROM sqlite_schema
+WHERE name = 'produtos';
+</pre>
+
+<p>Repare nas duas linhas com <code>REFERENCES</code>:</p>
+
+<dl class="anatomy">
+  <dt>categoria_id</dt><dd>A coluna da tabela filha (<code>produtos</code>) que guarda o número da categoria.</dd>
+  <dt>INTEGER NOT NULL</dt><dd>O tipo e a regra de não ficar vazio (aula <a href="not-null.html">NOT NULL</a>).</dd>
+  <dt>REFERENCES</dt><dd>"Faz referência a": aqui começa a chave estrangeira.</dd>
+  <dt>categorias(id)</dt><dd>A tabela mãe e, entre parênteses, a coluna dela para onde o número aponta. Essa coluna tem de ser a chave primária (ou uma coluna <code>UNIQUE</code>) da mãe.</dd>
+</dl>
+
+<p>O SQLite também mostra a lista de chaves estrangeiras de uma tabela, já desmontada, com <code>PRAGMA foreign_key_list</code>:</p>
+
+<pre class="file" data-file="lista-fk.sql" data-resultado>PRAGMA foreign_key_list(produtos);
+</pre>
+
+<p>As colunas que importam: <code>table</code> (a mãe), <code>from</code> (a coluna desta tabela), <code>to</code> (a coluna da mãe) e <code>on_delete</code>/<code>on_update</code> (o que fazer se a mãe mudar; <code>NO ACTION</code> é o padrão, e você vai entender na seção 5).</p>
+
+<hr>
+
+<h2>2. A regra funcionando</h2>
+
+<h3>Inserir um filho sem mãe</h3>
+<p>A Loja Aurora tem 8 categorias, numeradas de 1 a 8. A Ana tenta cadastrar uma caneta na categoria 99:</p>
+
+<pre class="file" data-file="orfao.sql" data-resultado data-erro>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Caneta Gel Azul', 99, 1, 4.5);
+</pre>
+
+<p>A resposta do SQLite: <code>FOREIGN KEY constraint failed</code>, "a regra de chave estrangeira falhou". O produto <strong>não</strong> foi gravado. Repare que a mensagem não diz qual coluna deu problema: com duas chaves estrangeiras (<code>categoria_id</code> e <code>fornecedor_id</code>), você tem de conferir as duas. Com a categoria 1 (Papelaria), que existe, o mesmo <code>INSERT</code> passa:</p>
+
+<pre class="file" data-file="com-mae.sql" data-resultado>INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Caneta Gel Azul', 1, 1, 4.5);
+
+SELECT id, nome, categoria_id
+FROM produtos
+WHERE id = 46;
+</pre>
+
+<div class="trysql" data-goal="mudou:produtos=46">
+<p class="try-task"><strong>Experimente:</strong> rode o código e veja o erro. A Ana queria cadastrar o regador na categoria <strong>Jardim</strong>. Consulte <code>SELECT id, nome FROM categorias;</code> para descobrir o número certo e conserte o <code>INSERT</code>.</p>
+<pre class="script" data-file="regador.sql">INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Regador 5 litros', 80, 1, 29.9);
+</pre>
+<pre class="solucao" data-file="regador.sql">INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Regador 5 litros', 8, 1, 29.9);
+</pre>
+</div>
+
+<h3>Mudar o número para um que não existe</h3>
+<p>A regra vale também para o <code>UPDATE</code>. Trocar a categoria do produto 1 para 50 deixaria o produto apontando para o vazio:</p>
+
+<pre class="file" data-file="update-orfao.sql" data-resultado data-erro>UPDATE produtos
+SET categoria_id = 50
+WHERE id = 1;
+</pre>
+
+<h3>Apagar uma mãe que tem filhos</h3>
+<p>Agora o outro lado da regra. A categoria 1, Papelaria, tem vários produtos. Se a Ana apagar a categoria, esses produtos ficariam apontando para nada:</p>
+
+<pre class="file" data-file="apagar-mae.sql" data-resultado data-erro>DELETE FROM categorias
+WHERE id = 1;
+</pre>
+
+<p>O mesmo erro. Mas apagar um cliente que <strong>nunca fez pedido</strong> funciona, porque ninguém aponta para ele. O cliente 27, Paulo Sérgio Andrade, é um dos quatro que nunca compraram:</p>
+
+<pre class="file" data-file="apagar-sem-filhos.sql" data-resultado>DELETE FROM clientes
+WHERE id = 27;
+
+SELECT COUNT(*) AS clientes FROM clientes;
+</pre>
+
+<p>Já o cliente 1, que tem pedidos, não sai: <code>DELETE FROM clientes WHERE id = 1;</code> dá <code>FOREIGN KEY constraint failed</code>. Para apagá-lo, você teria de apagar (ou passar para outro cliente) os pedidos dele primeiro, e antes ainda os itens desses pedidos, que apontam para os pedidos. Ou deixar o banco fazer isso sozinho, com <code>ON DELETE CASCADE</code> (seção 5).</p>
+
+<div class="tip">
+<strong>E o NULL?</strong>
+<p>Uma chave estrangeira <em>NULL</em> não aponta para lugar nenhum, e isso é permitido: quer dizer "não tem". Na tabela <code>funcionarios</code>, a gerente Marta Lustosa tem <code>chefe_id</code> <em>NULL</em>, porque não tem chefe. Se o "não tem" não fizer sentido (todo pedido tem cliente), junte <code>NOT NULL</code> à coluna, como a Loja Aurora fez em <code>pedidos.cliente_id</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. A pegadinha do SQLite: PRAGMA foreign_keys</h2>
+<p>Aqui o SQLite é diferente de quase todos os outros bancos. A documentação diz: "as chaves estrangeiras vêm <strong>desligadas</strong> por padrão (por compatibilidade com versões antigas), e precisam ser ligadas separadamente em cada conexão com o banco". Quem liga e desliga é o comando <code>PRAGMA foreign_keys</code>. Um <code>PRAGMA</code> é um comando especial do SQLite para ver e mudar configurações (aula <a href="pragma.html">PRAGMAs Úteis</a>).</p>
+
+<h3>No editor do guia: ligado</h3>
+<p>Pergunte ao editor como está a regra:</p>
+
+<pre class="file" data-file="pragma.sql" data-resultado>PRAGMA foreign_keys;
+</pre>
+
+<p>O <code>1</code> quer dizer <strong>ligado</strong>. Isso acontece porque o arquivo que monta a Loja Aurora a cada Rodar começa com <code>PRAGMA foreign_keys = ON;</code>. Foi por isso que todos os erros acima apareceram.</p>
+
+<h3>No terminal: desligado</h3>
+<p>O banco da Ana no computador dela, <code>~/loja.db</code>, tem exatamente as mesmas tabelas e as mesmas chaves estrangeiras. Mas o ligado/desligado <strong>não fica gravado no arquivo</strong>: cada vez que o programa <code>sqlite3</code> abre o banco, a regra começa desligada. Veja o que acontece com a caneta da categoria 99:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA foreign_keys;
+0
+sqlite&gt; INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco) VALUES ('Caneta Fantasma', 99, 1, 2.5);
+sqlite&gt; SELECT id, nome, categoria_id FROM produtos WHERE id = 46;
+46|Caneta Fantasma|99
+sqlite&gt; .quit</pre>
+
+<p>O <code>0</code> quer dizer <strong>desligado</strong>, e o <code>INSERT</code> passou calado. Agora o banco tem um produto órfão, de uma categoria que não existe. Com a regra ligada logo no começo da sessão (a Ana já tinha apagado a caneta fantasma):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; PRAGMA foreign_keys;
+1
+sqlite&gt; INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco) VALUES ('Caneta Fantasma', 99, 1, 2.5);
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite&gt; .quit
+$ sqlite3 loja.db 'PRAGMA foreign_keys;'
+0                        « abriu de novo: voltou a ficar desligado</pre>
+
+<dl class="anatomy">
+  <dt>PRAGMA foreign_keys = ON;</dt><dd>Liga a regra <strong>nesta conexão</strong>, até fechar o programa. <code>= OFF</code> desliga.</dd>
+  <dt>Runtime error:</dt><dd>"Erro na execução": é como o terminal do <code>sqlite3</code> mostra um erro que aconteceu ao rodar (e não ao ler) o comando.</dd>
+  <dt>(19)</dt><dd>O código numérico do erro. 19 é o código de "regra violada" (<em>constraint</em>), o mesmo do <code>UNIQUE</code> e do <code>NOT NULL</code>. O editor do guia mostra só a frase.</dd>
+</dl>
+
+<div class="warning">
+<strong>Ligue sempre</strong>
+<p>Quem usa o SQLite num programa (em PHP, Python…) precisa mandar <code>PRAGMA foreign_keys = ON;</code> <strong>logo depois de abrir</strong> o banco, toda vez. Esquecer é um dos erros mais comuns com o SQLite: as chaves estrangeiras ficam escritas no <code>CREATE TABLE</code>, parecem funcionar, e não protegem nada. E um detalhe: dentro de uma transação aberta com <code>BEGIN</code> (aula <a href="transacoes.html">Transações</a>), o pragma não tem efeito nenhum, e também não dá erro. Ligue antes do <code>BEGIN</code>.</p>
+</div>
+
+<h3>Achar os órfãos: PRAGMA foreign_key_check</h3>
+<p>E se o banco já foi usado com a regra desligada? O <code>PRAGMA foreign_key_check</code> ("conferir chaves estrangeiras") procura as linhas que apontam para o vazio, mesmo com a regra desligada. No terminal, logo depois de gravar a caneta fantasma, a Ana veria:</p>
+
+<pre class="term">sqlite&gt; PRAGMA foreign_key_check;
+produtos|46|categorias|1</pre>
+
+<p>Dá para ver o mesmo no editor: desligue a regra, faça o estrago e confira.</p>
+
+<pre class="file" data-file="check.sql" data-resultado>PRAGMA foreign_keys = OFF;
+
+DELETE FROM categorias WHERE id = 1;
+
+PRAGMA foreign_key_check;
+</pre>
+
+<dl class="anatomy">
+  <dt>table</dt><dd>A tabela filha que tem o problema: <code>produtos</code>.</dd>
+  <dt>rowid</dt><dd>O número da linha órfã: os produtos 1 a 6 eram todos da Papelaria.</dd>
+  <dt>parent</dt><dd>A tabela mãe que deveria ter a linha: <code>categorias</code>.</dd>
+  <dt>fkid</dt><dd>Qual das chaves estrangeiras da tabela falhou, pelo número que aparece no <code>id</code> do <code>PRAGMA foreign_key_list</code>. Aqui, 1 = <code>categoria_id</code>.</dd>
+</dl>
+
+<p>Resultado vazio quer dizer "nenhum órfão". No banco limpo da Loja Aurora, o <code>PRAGMA foreign_key_check</code> não devolve nenhuma linha.</p>
+
+<hr>
+
+<h2>4. Criando a sua chave estrangeira</h2>
+<p>A Ana quer guardar as avaliações que os clientes dão aos produtos. Cada avaliação aponta para um produto e para um cliente. Há duas formas de escrever.</p>
+
+<h3>Forma 1: REFERENCES na própria coluna</h3>
+<pre class="file" data-file="avaliacoes.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+    nota       INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes (produto_id, cliente_id, nota)
+VALUES (1, 3, 5), (2, 8, 4);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<h3>Forma 2: FOREIGN KEY no fim da tabela</h3>
+<pre class="file" data-file="avaliacoes2.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL,
+    cliente_id INTEGER NOT NULL,
+    nota       INTEGER NOT NULL,
+    FOREIGN KEY (produto_id) REFERENCES produtos(id),
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+);
+
+INSERT INTO avaliacoes (produto_id, cliente_id, nota)
+VALUES (1, 99, 5);
+</pre>
+
+<dl class="anatomy">
+  <dt>FOREIGN KEY (cliente_id)</dt><dd>"Chave estrangeira": qual coluna desta tabela é a chave. Fica depois de todas as colunas, separada por vírgula.</dd>
+  <dt>REFERENCES clientes(id)</dt><dd>Para onde ela aponta, igual à forma 1.</dd>
+</dl>
+
+<p>As duas formas fazem a mesma coisa; o exemplo de cima falhou de propósito, porque não existe o cliente 99. A forma 2 tem duas vantagens: deixa todas as ligações juntas no fim, fáceis de achar, e é a única que serve para chaves de <strong>mais de uma coluna</strong> (por exemplo, <code>FOREIGN KEY (pedido_id, produto_id) REFERENCES …</code>). Também é a forma que aparece na documentação de todos os bancos grandes.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Escrita</th><th>Quando usar</th></tr>
+<tr><td>Na coluna</td><td><code>cliente_id INTEGER REFERENCES clientes(id)</code></td><td>Tabelas pequenas, uma coluna por chave. É a que a Loja Aurora usa.</td></tr>
+<tr><td>No fim da tabela</td><td><code>FOREIGN KEY (cliente_id) REFERENCES clientes(id)</code></td><td>Chave de várias colunas, ou quando o mesmo SQL vai rodar em outro banco.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. Quando a mãe é apagada: ON DELETE</h2>
+<p>Até aqui, apagar uma mãe com filhos dava erro. Esse é o comportamento padrão, chamado <code>NO ACTION</code> ("nenhuma ação"): o banco não faz nada com os filhos e recusa a mudança que os deixaria órfãos. Mas você pode escolher outra coisa, escrevendo <code>ON DELETE</code> ("ao apagar") depois do <code>REFERENCES</code>.</p>
+
+<h3>ON DELETE CASCADE: os filhos vão junto</h3>
+<p>A Ana vai guardar os endereços de entrega dos clientes. Um endereço não tem sentido sem o cliente: se o cliente for apagado, os endereços dele podem ir junto. Isso é <code>CASCADE</code> ("em cascata"):</p>
+
+<pre class="file" data-file="cascade.sql" data-resultado>CREATE TABLE enderecos (
+    id         INTEGER PRIMARY KEY,
+    cliente_id INTEGER NOT NULL
+               REFERENCES clientes(id) ON DELETE CASCADE,
+    rua        TEXT NOT NULL
+);
+
+INSERT INTO enderecos (cliente_id, rua) VALUES
+(27, 'Rua das Flores, 10'),
+(27, 'Av. Frei Serafim, 200'),
+(28, 'Rua Areolino de Abreu, 55');
+
+DELETE FROM clientes WHERE id = 27;
+
+SELECT * FROM enderecos;
+</pre>
+
+<dl class="anatomy">
+  <dt>ON DELETE</dt><dd>"Ao apagar" a linha da mãe (o cliente)…</dd>
+  <dt>CASCADE</dt><dd>…apague também os filhos (os endereços dele).</dd>
+</dl>
+
+<p>O <code>DELETE</code> só falava de <code>clientes</code>, mas os dois endereços do cliente 27 sumiram junto; sobrou só o do cliente 28. É poderoso e perigoso na mesma medida: um <code>DELETE</code> errado numa tabela mãe pode apagar muita coisa em outras tabelas sem você ver. Use <code>CASCADE</code> só onde o filho realmente não vive sem o pai (endereços de um cliente, itens de um pedido), nunca em coisas que precisam ficar guardadas, como os pedidos.</p>
+
+<h3>ON DELETE SET NULL: o filho fica, sem pai</h3>
+<p>Para as avaliações, a Ana prefere outra coisa: se o cliente sair da loja, a avaliação continua valendo para o produto, só que "de autor desconhecido":</p>
+
+<pre class="file" data-file="set-null.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    cliente_id INTEGER
+               REFERENCES clientes(id) ON DELETE SET NULL,
+    nota       INTEGER NOT NULL
+);
+
+INSERT INTO avaliacoes (produto_id, cliente_id, nota)
+VALUES (1, 27, 5), (2, 28, 4);
+
+DELETE FROM clientes WHERE id = 27;
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>A avaliação 1 ficou com <code>cliente_id</code> <em>NULL</em>. Repare que, para isso funcionar, a coluna <strong>não</strong> pode ser <code>NOT NULL</code>.</p>
+
+<h3>Todas as opções</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ação</th><th>Ao apagar (ou mudar o id de) uma mãe com filhos</th><th>Exemplo na loja</th></tr>
+<tr><td><code>NO ACTION</code> (padrão)</td><td>Recusa com <code>FOREIGN KEY constraint failed</code>.</td><td>Categoria com produtos, cliente com pedidos.</td></tr>
+<tr><td><code>RESTRICT</code></td><td>Também recusa. A diferença para o <code>NO ACTION</code> só aparece com regras adiadas para o fim da transação, assunto avançado.</td><td>Igual ao de cima.</td></tr>
+<tr><td><code>CASCADE</code></td><td>Apaga os filhos junto (ou, no <code>ON UPDATE</code>, muda o número neles também).</td><td>Endereços de um cliente.</td></tr>
+<tr><td><code>SET NULL</code></td><td>Põe <em>NULL</em> na chave estrangeira dos filhos.</td><td>Avaliação de um cliente que saiu.</td></tr>
+<tr><td><code>SET DEFAULT</code></td><td>Põe o valor <code>DEFAULT</code> da coluna; esse valor tem de existir na mãe.</td><td>Produtos de uma categoria apagada vão para uma categoria "Outros".</td></tr>
+</table>
+</div>
+
+<p>O mesmo vale para <code>ON UPDATE</code> ("ao mudar"), quando o <code>id</code> da mãe muda. Na Loja Aurora, nenhuma chave tem ação, então <code>UPDATE clientes SET id = 100 WHERE id = 1;</code> também dá <code>FOREIGN KEY constraint failed</code>. Mudar a chave primária de uma linha é raro; é mais um motivo para usar números sem significado como chave.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>FOREIGN KEY constraint failed</strong>
+<p>É o erro desta aula, e ele aparece em três situações. Ele nunca diz qual coluna nem qual valor; você tem de investigar:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você tentou</th><th>O que conferir</th></tr>
+<tr><td><code>INSERT</code> ou <code>UPDATE</code> na filha</td><td>Cada chave estrangeira da linha aponta para um id que existe? (<code>SELECT id FROM categorias;</code>)</td></tr>
+<tr><td><code>DELETE</code> ou <code>UPDATE</code> do id na mãe</td><td>Alguém ainda aponta para ela? (<code>SELECT COUNT(*) FROM produtos WHERE categoria_id = 1;</code>)</td></tr>
+<tr><td><code>DROP TABLE</code> da mãe</td><td>Mesma coisa: veja abaixo.</td></tr>
+</table>
+</div>
+</div>
+
+<div class="cenario">
+<strong>Apagar a tabela mãe inteira</strong>
+<pre class="file" data-file="drop-mae.sql" data-resultado data-erro>DROP TABLE categorias;
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>. Com a regra ligada, o <code>DROP TABLE</code> primeiro apaga todas as linhas da tabela, e isso esbarra nos produtos que apontam para as categorias. A tabela continua lá. Já <code>DROP TABLE itens_pedido;</code> funciona: ninguém aponta para os itens. Mais na aula <a href="drop-table.html">DROP TABLE</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apontar para uma coluna que não é chave</strong>
+<p>A Ana quis ligar pelo nome do cliente:</p>
+<pre class="file" data-file="mismatch.sql" data-resultado data-erro>CREATE TABLE recados (
+    cliente_nome TEXT REFERENCES clientes(nome),
+    texto        TEXT
+);
+INSERT INTO recados VALUES ('Ana Beatriz Sousa', 'Ligar amanhã');
+</pre>
+<p><strong>A mensagem:</strong> <code>foreign key mismatch - "recados" referencing "clientes"</code>, "chave estrangeira incompatível: recados fazendo referência a clientes". Repare que o <code>CREATE TABLE</code> passou; o erro só aparece no primeiro <code>INSERT</code>. A coluna da mãe tem de ser a chave primária ou ter <code>UNIQUE</code> (aula <a href="unique.html">UNIQUE</a>), porque a chave estrangeira precisa apontar para <strong>uma</strong> linha só, e podem existir dois clientes com o mesmo nome.</p>
+<p><strong>Como consertar:</strong> aponte para o <code>id</code>: <code>cliente_id INTEGER REFERENCES clientes(id)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome da tabela mãe errado</strong>
+<pre class="file" data-file="sem-mae.sql" data-resultado data-erro>CREATE TABLE recados (
+    cliente_id INTEGER REFERENCES cliente(id),
+    texto      TEXT
+);
+INSERT INTO recados VALUES (3, 'Ligar amanhã');
+</pre>
+<p><strong>A mensagem:</strong> <code>no such table: main.cliente</code>, "não existe a tabela main.cliente" (<code>main</code> é o nome do banco principal aberto). Faltou o <strong>s</strong>: a tabela é <code>clientes</code>. De novo, o <code>CREATE TABLE</code> aceitou sem conferir, e o erro só apareceu no <code>INSERT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A regra "não funciona" no seu programa</strong>
+<p>Você criou tudo com <code>REFERENCES</code>, gravou um pedido de cliente inexistente e o banco aceitou. Quase sempre é o <code>PRAGMA foreign_keys</code> desligado (seção 3). Confira com <code>PRAGMA foreign_keys;</code>: se der <code>0</code>, mande <code>PRAGMA foreign_keys = ON;</code> logo depois de abrir o banco, e use <code>PRAGMA foreign_key_check;</code> para achar o que já entrou errado.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>No MySQL (com o motor de tabelas InnoDB, o padrão), no PostgreSQL e no SQL Server, as chaves estrangeiras <strong>valem sempre</strong>, sem pragma nenhum. No MySQL existe a variável <code>foreign_key_checks</code>, que vem ligada e pode ser desligada para importar dados. A forma "no fim da tabela" funciona em todos (trecho <strong>ilustrativo</strong>, no estilo do MySQL):</p>
+<pre class="file" data-file="mysql.sql">CREATE TABLE enderecos (
+    id         INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    cliente_id INT NOT NULL,
+    rua        VARCHAR(200) NOT NULL,
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+);
+</pre>
+<p><code>CASCADE</code>, <code>SET NULL</code> e <code>NO ACTION</code> existem nos três. Uma diferença: no MySQL, segundo a documentação, as tabelas InnoDB recusam <code>SET DEFAULT</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna INTEGER REFERENCES mae(id)</code></td><td>Chave estrangeira na própria coluna.</td></tr>
+<tr><td><code>FOREIGN KEY (coluna) REFERENCES mae(id)</code></td><td>Chave estrangeira no fim da tabela (serve para várias colunas).</td></tr>
+<tr><td><code>… ON DELETE CASCADE</code></td><td>Apagar a mãe apaga os filhos.</td></tr>
+<tr><td><code>… ON DELETE SET NULL</code></td><td>Apagar a mãe põe <em>NULL</em> nos filhos.</td></tr>
+<tr><td><code>… ON UPDATE CASCADE</code></td><td>Mudar o id da mãe muda o número nos filhos.</td></tr>
+<tr><td><code>PRAGMA foreign_keys;</code></td><td>Mostra se a regra está ligada (1) ou desligada (0).</td></tr>
+<tr><td><code>PRAGMA foreign_keys = ON;</code></td><td>Liga a regra nesta conexão (fora de transação).</td></tr>
+<tr><td><code>PRAGMA foreign_key_list(tabela);</code></td><td>Lista as chaves estrangeiras de uma tabela.</td></tr>
+<tr><td><code>PRAGMA foreign_key_check;</code></td><td>Lista as linhas órfãs de todo o banco.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>A mudança deixaria uma linha órfã (filha sem mãe).</td></tr>
+<tr><td><code>Runtime error: FOREIGN KEY constraint failed (19)</code></td><td>O mesmo, no terminal do <code>sqlite3</code>.</td></tr>
+<tr><td><code>foreign key mismatch - "recados" referencing "clientes"</code></td><td>A coluna da mãe não é chave primária nem <code>UNIQUE</code>.</td></tr>
+<tr><td><code>no such table: main.cliente</code></td><td>A tabela mãe do <code>REFERENCES</code> não existe.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ligando a regra</h3>
+<p>Complete o comando que liga as chaves estrangeiras no terminal do SQLite:</p>
+<div class="ex-code">PRAGMA <input data-answer="foreign_keys" aria-label="nome do pragma"> = ON;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os endereços vão junto</h3>
+<p>Complete para que os endereços sejam apagados junto com o cliente:</p>
+<div class="ex-code">cliente_id INTEGER REFERENCES clientes(id) ON DELETE <input data-answer="CASCADE" aria-label="ação"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Na tabela <code>pedidos</code>, qual é a tabela mãe da chave estrangeira <code>cliente_id</code>?</p>
+<label><input type="radio" name="q3"> <code>pedidos</code></label>
+<label><input type="radio" name="q3"> <code>itens_pedido</code></label>
+<label><input type="radio" name="q3"> <code>clientes</code></label>
+<label><input type="radio" name="q3"> <code>funcionarios</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana abriu o <code>loja.db</code> no terminal e, sem rodar nenhum pragma, inseriu um produto da categoria 99. O que aconteceu?</p>
+<label><input type="radio" name="q4"> Deu <code>FOREIGN KEY constraint failed</code></label>
+<label><input type="radio" name="q4"> O produto foi gravado sem erro, porque a regra vem desligada no terminal</label>
+<label><input type="radio" name="q4"> O SQLite criou a categoria 99 sozinho</label>
+<label><input type="radio" name="q4"> Deu <code>no such table: categorias</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A chave <code>avaliacoes.cliente_id</code> tem <code>ON DELETE SET NULL</code>. O que acontece com a avaliação quando o cliente é apagado?</p>
+<label><input type="radio" name="q5"> Ela é apagada junto</label>
+<label><input type="radio" name="q5"> O <code>DELETE</code> do cliente dá erro</label>
+<label><input type="radio" name="q5"> Ela passa a apontar para o cliente 1</label>
+<label><input type="radio" name="q5"> Ela fica, com <code>cliente_id</code> <em>NULL</em></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual destes comandos funciona no editor do guia (com a regra ligada), sem erro?</p>
+<label><input type="radio" name="q6"> <code>DELETE FROM clientes WHERE id = 28;</code> (cliente que nunca fez pedido)</label>
+<label><input type="radio" name="q6"> <code>DELETE FROM clientes WHERE id = 1;</code></label>
+<label><input type="radio" name="q6"> <code>DELETE FROM categorias WHERE id = 1;</code></label>
+<label><input type="radio" name="q6"> <code>DROP TABLE categorias;</code></label>
+</div>
+
+<h3>Missão final: endereços que vão junto</h3>
+
+<div class="trysql" data-goal="mudou:enderecos=1;;mudou:clientes=29">
+<p class="try-task"><strong>Missão:</strong> o código cria a tabela de endereços, grava dois endereços do cliente 27 e um do 28, e tenta apagar o cliente 27. Rode e veja o erro. Mude <strong>só a criação da tabela</strong> para que, ao apagar o cliente, os endereços dele sejam apagados junto. No fim, deve sobrar 1 endereço.</p>
+<pre class="script" data-file="enderecos.sql">CREATE TABLE enderecos (
+    id         INTEGER PRIMARY KEY,
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+    rua        TEXT NOT NULL
+);
+
+INSERT INTO enderecos (cliente_id, rua) VALUES
+(27, 'Rua das Flores, 10'),
+(27, 'Av. Frei Serafim, 200'),
+(28, 'Rua Areolino de Abreu, 55');
+
+DELETE FROM clientes WHERE id = 27;
+
+SELECT * FROM enderecos;
+</pre>
+<pre class="solucao" data-file="enderecos.sql">CREATE TABLE enderecos (
+    id         INTEGER PRIMARY KEY,
+    cliente_id INTEGER NOT NULL
+               REFERENCES clientes(id) ON DELETE CASCADE,
+    rua        TEXT NOT NULL
+);
+
+INSERT INTO enderecos (cliente_id, rua) VALUES
+(27, 'Rua das Flores, 10'),
+(27, 'Av. Frei Serafim, 200'),
+(28, 'Rua Areolino de Abreu, 55');
+
+DELETE FROM clientes WHERE id = 27;
+
+SELECT * FROM enderecos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>chave estrangeira</strong> é uma coluna da tabela filha que aponta para a chave de uma tabela mãe: <code>pedidos.cliente_id</code> → <code>clientes.id</code>.</li>
+  <li>Escreva <code>REFERENCES mae(id)</code> na coluna ou <code>FOREIGN KEY (coluna) REFERENCES mae(id)</code> no fim da tabela.</li>
+  <li>Com a regra ligada, inserir um filho sem mãe, mudar o número para um que não existe ou apagar uma mãe com filhos dá <code>FOREIGN KEY constraint failed</code>.</li>
+  <li>No SQLite, a regra vem <strong>desligada</strong> em cada conexão: no terminal, <code>PRAGMA foreign_keys;</code> dá <code>0</code>. Ligue com <code>PRAGMA foreign_keys = ON;</code> toda vez que abrir o banco. No editor do guia ela já vem ligada.</li>
+  <li><code>PRAGMA foreign_key_check;</code> acha as linhas órfãs que entraram com a regra desligada.</li>
+  <li><code>ON DELETE CASCADE</code> apaga os filhos junto; <code>ON DELETE SET NULL</code> os deixa sem pai; o padrão (<code>NO ACTION</code>) recusa.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
