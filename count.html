@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL COUNT() — contar linhas, valores e valores diferentes | Guia SQL</title>
+<meta name="description" content="COUNT em SQL para quem nunca usou um banco: COUNT(*) conta linhas, COUNT(coluna) pula os NULL e COUNT(DISTINCT coluna) conta valores diferentes. Os clientes sem email da Loja Aurora, as armadilhas do COUNT(vip) e do COUNT('email'), e as mensagens reais do SQLite, rodando no seu navegador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">COUNT()</span></h1>
+
+<p class="intro">A Ana vai mandar a newsletter de fim de ano da Loja Aurora por email. Antes, ela precisa de três números: quantos clientes a loja tem, quantos deles têm email cadastrado e de quantas cidades diferentes eles são. As três perguntas começam com "quantos", e quem responde todas é a mesma função: <code>COUNT()</code> ("contar", em inglês). Só que cada pergunta pede um jeito diferente de usá-la, e confundir os três é um dos erros mais comuns de quem começa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>COUNT(*)</code>: contar <strong>linhas</strong>.</li>
+  <li><code>COUNT(coluna)</code>: contar os <strong>valores preenchidos</strong> de uma coluna, pulando os <code>NULL</code>.</li>
+  <li><code>COUNT(DISTINCT coluna)</code>: contar os <strong>valores diferentes</strong>.</li>
+  <li>Como contar os que <strong>faltam</strong> (os clientes sem email).</li>
+  <li>As armadilhas: <code>COUNT(vip)</code> que conta todo mundo, <code>COUNT('email')</code> com aspas simples, <code>= NULL</code>.</li>
+  <li>Os erros reais do SQLite com <code>COUNT</code>.</li>
+</ul>
+</div>
+
+<p>Se você ainda não leu, comece por <a href="funcoes-agregadas.html">O que são Funções Agregadas</a>: lá está a ideia de "muitas linhas entram, uma sai".</p>
+
+<hr>
+
+<h2>A ideia: a lista de chamada</h2>
+<p>Imagine a professora com a lista de chamada da turma. Ela pode fazer três contas diferentes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta da professora</th><th>Como ela conta</th><th>Em SQL</th></tr>
+<tr><td>Quantos alunos estão na lista?</td><td>Conta as linhas da lista, uma por aluno</td><td><code>COUNT(*)</code></td></tr>
+<tr><td>Quantos deixaram o telefone?</td><td>Conta só as linhas em que o telefone está preenchido</td><td><code>COUNT(telefone)</code></td></tr>
+<tr><td>De quantos bairros diferentes eles vêm?</td><td>Conta cada bairro uma vez só, mesmo que se repita</td><td><code>COUNT(DISTINCT bairro)</code></td></tr>
+</table>
+</div>
+
+<p>A Loja Aurora tem exatamente esse caso na tabela <code>clientes</code>: 30 clientes, 3 sem email (os de <code>id</code> 7, 15 e 23) e várias cidades repetidas.</p>
+
+<hr>
+
+<h2>1. COUNT(*): quantas linhas</h2>
+<p>O jeito mais simples: <code>COUNT(*)</code> conta as linhas da tabela, sem olhar o que tem dentro delas.</p>
+
+<pre class="file" data-file="clientes.sql" data-resultado>SELECT COUNT(*) AS clientes
+FROM clientes;
+</pre>
+
+<dl class="anatomy">
+  <dt>COUNT</dt><dd>A função de contar.</dd>
+  <dt>(*)</dt><dd>O asterisco quer dizer "a linha toda". <code>COUNT(*)</code> conta cada linha, mesmo uma linha cheia de <code>NULL</code>. É a única função agregada que aceita o <code>*</code>.</dd>
+  <dt>AS clientes</dt><dd>Um apelido para a coluna do resultado (aula <a href="aliases.html">Apelidos (AS)</a>). Sem ele, a coluna se chamaria <code>COUNT(*)</code>.</dd>
+  <dt>FROM clientes</dt><dd>A tabela cujas linhas são contadas.</dd>
+</dl>
+
+<p>Com <code>WHERE</code>, o <code>COUNT(*)</code> conta só as linhas que passaram no filtro. Quantos pedidos tiveram frete grátis?</p>
+
+<pre class="file" data-file="frete-gratis.sql" data-resultado>SELECT COUNT(*) AS frete_gratis
+FROM pedidos
+WHERE frete = 0;
+</pre>
+
+<p>Onze pedidos. Primeiro o <code>WHERE</code> separa as linhas com <code>frete = 0</code>, depois o <code>COUNT(*)</code> conta o que sobrou.</p>
+
+<div class="trysql" data-goal="out:^10$">
+<p class="try-task"><strong>Experimente:</strong> a consulta conta todos os clientes. Acrescente um <code>WHERE</code> para contar só os de <code>Teresina</code>, a cidade da loja. Lembre: texto vai entre aspas simples.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) AS clientes
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*) AS clientes
+FROM clientes
+WHERE cidade = 'Teresina';
+</pre>
+</div>
+
+<hr>
+
+<h2>2. COUNT(coluna): quantos valores preenchidos</h2>
+<p>Agora a pergunta da newsletter: quantos clientes têm email? Em vez do <code>*</code>, ponha o nome da coluna:</p>
+
+<pre class="file" data-file="emails.sql" data-resultado>SELECT COUNT(*)          AS clientes,
+       COUNT(email)      AS com_email,
+       COUNT(nascimento) AS com_nascimento
+FROM clientes;
+</pre>
+
+<dl class="anatomy">
+  <dt>COUNT(*)</dt><dd>Conta as 30 linhas.</dd>
+  <dt>COUNT(email)</dt><dd>Conta as linhas em que <code>email</code> <strong>não é</strong> <code>NULL</code>. Os três clientes sem email ficam de fora: 27.</dd>
+  <dt>COUNT(nascimento)</dt><dd>Mesma ideia na coluna <code>nascimento</code>: dois clientes (9 e 21) não informaram a data, então dá 28.</dd>
+</dl>
+
+<p>A regra é uma só: <strong><code>COUNT(coluna)</code> conta os valores que não são <code>NULL</code></strong>. Ele não olha se o valor é bonito, se é zero ou se é um texto vazio; só pergunta "tem algo aqui ou é desconhecido?".</p>
+
+<p>O mesmo truque responde "quantos pedidos já foram entregues?", porque o pedido que ainda não chegou tem <code>entregue_em</code> <code>NULL</code>:</p>
+
+<pre class="file" data-file="entregues.sql" data-resultado>SELECT COUNT(*)          AS pedidos,
+       COUNT(entregue_em) AS entregues
+FROM pedidos;
+</pre>
+
+<p>90 pedidos, 85 entregues. Os outros 5 estão a caminho.</p>
+
+<hr>
+
+<h2>3. Contar os que faltam</h2>
+<p>A Ana quer ligar para os clientes sem email e pedir o endereço. Quantos são? Há dois caminhos, e os dois dão 3:</p>
+
+<pre class="file" data-file="faltam-subtracao.sql" data-resultado>SELECT COUNT(*) - COUNT(email) AS sem_email
+FROM clientes;
+</pre>
+
+<pre class="file" data-file="faltam-where.sql" data-resultado>SELECT COUNT(*) AS sem_email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+
+<p>O primeiro faz uma conta de menos: todas as linhas menos as que têm email. O segundo filtra com <code>IS NULL</code> (aula <a href="is-null.html">IS NULL e IS NOT NULL</a>) e conta as linhas que sobraram. O segundo é mais fácil de ler; o primeiro é útil quando você quer os dois números na mesma linha, ao lado de outras contas.</p>
+
+<hr>
+
+<h2>4. COUNT(DISTINCT coluna): quantos valores diferentes</h2>
+<p>A terceira pergunta: de quantas cidades são os clientes? Se você contar a coluna <code>cidade</code>, dá 30, porque todo cliente tem cidade. Mas Teresina aparece 10 vezes, São Paulo 7… A palavra <code>DISTINCT</code> ("distinto", "diferente") manda contar <strong>cada valor uma vez só</strong>:</p>
+
+<pre class="file" data-file="cidades.sql" data-resultado>SELECT COUNT(cidade)          AS cidades,
+       COUNT(DISTINCT cidade) AS cidades_diferentes
+FROM clientes;
+</pre>
+
+<dl class="anatomy">
+  <dt>COUNT(cidade)</dt><dd>30: conta as cidades preenchidas, com repetição.</dd>
+  <dt>COUNT(DISTINCT cidade)</dt><dd>8: primeiro tira as repetições (Teresina, São Paulo, Fortaleza, Recife, Parnaíba, Picos, Oeiras e Floriano), depois conta.</dd>
+</dl>
+
+<p>É o mesmo <code>DISTINCT</code> da aula <a href="select-distinct.html">SELECT DISTINCT</a>, só que aqui ele trabalha <strong>dentro</strong> do <code>COUNT</code>. Ele responde perguntas ótimas sobre a loja:</p>
+
+<pre class="file" data-file="vendidos.sql" data-resultado>SELECT COUNT(DISTINCT produto_id) AS produtos_vendidos
+FROM itens_pedido;
+</pre>
+
+<p>A tabela <code>itens_pedido</code> tem 220 linhas, mas os mesmos produtos aparecem em vários pedidos. Produtos diferentes que já foram vendidos pelo menos uma vez: 42. Como a loja tem 45 produtos, três nunca foram vendidos (você vai descobrir quais na aula <a href="left-join.html">LEFT JOIN</a>).</p>
+
+<h3>O DISTINCT também pula o NULL</h3>
+<p>Na tabela <code>fornecedores</code>, os dois estrangeiros (de Portugal e da Argentina) têm <code>estado</code> <code>NULL</code>. Compare a lista com a contagem:</p>
+
+<pre class="file" data-file="estados-lista.sql" data-resultado>SELECT DISTINCT estado FROM fornecedores;
+</pre>
+
+<pre class="file" data-file="estados-conta.sql" data-resultado>SELECT COUNT(DISTINCT estado) AS estados FROM fornecedores;
+</pre>
+
+<p>A lista tem <strong>4</strong> linhas, uma delas <code>NULL</code>. A contagem dá <strong>3</strong>. Não é contradição: o <code>SELECT DISTINCT</code> mostra o <code>NULL</code> como um valor a mais, mas o <code>COUNT</code>, como toda função agregada, não conta <code>NULL</code>. Se alguém perguntar "quantos estados aparecem na lista?", confira se a pessoa quer contar o "sem estado" ou não.</p>
+
+<hr>
+
+<h2>5. COUNT(*), COUNT(1) ou COUNT(id)?</h2>
+<p>Você vai ver estas três formas por aí. Numa coluna que nunca é <code>NULL</code>, como a chave primária <code>id</code>, elas dão o mesmo número:</p>
+
+<pre class="file" data-file="tres-formas.sql" data-resultado>SELECT COUNT(*), COUNT(1), COUNT(id)
+FROM clientes;
+</pre>
+
+<p><code>COUNT(1)</code> conta quantas vezes o número 1 "não é <code>NULL</code>", ou seja, uma vez por linha. Funciona, mas <code>COUNT(*)</code> diz melhor o que você quer ("conte as linhas") e é a forma que todo banco reconhece e otimiza. Use <code>COUNT(*)</code> para linhas e <code>COUNT(coluna)</code> só quando quiser pular os <code>NULL</code> daquela coluna.</p>
+
+<hr>
+
+<h2>6. Formas diferentes de contar os VIPs</h2>
+<p>Na tabela <code>clientes</code>, a coluna <code>vip</code> vale 1 para os clientes VIP e 0 para os outros. Quantos VIPs a loja tem? Primeiro, a armadilha:</p>
+
+<pre class="file" data-file="vip-errado.sql" data-resultado>SELECT COUNT(vip) AS vips FROM clientes;
+</pre>
+
+<p>Deu 30, a tabela inteira! O <code>COUNT(vip)</code> não pergunta se o valor é 1; pergunta se ele <strong>não é <code>NULL</code></strong>. E o 0 não é <code>NULL</code>: é um valor conhecido, que quer dizer "não é VIP". Então todo mundo foi contado. As formas certas:</p>
+
+<pre class="file" data-file="vip-where.sql" data-resultado>SELECT COUNT(*) AS vips FROM clientes WHERE vip = 1;
+</pre>
+
+<pre class="file" data-file="vip-sum.sql" data-resultado>SELECT SUM(vip) AS vips FROM clientes;
+</pre>
+
+<p>As duas dão 5. A segunda funciona porque <code>vip</code> só tem 0 e 1: somar os uns é o mesmo que contar os VIPs (aula <a href="sum.html">SUM()</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Resultado</th><th>Quando usar</th></tr>
+<tr><td><code>COUNT(*) … WHERE vip = 1</code></td><td>5 (certo)</td><td>A forma mais clara. Use esta.</td></tr>
+<tr><td><code>SUM(vip)</code></td><td>5 (certo)</td><td>Só para colunas 0/1, quando você quer esse número ao lado de outros, na mesma linha</td></tr>
+<tr><td><code>COUNT(vip)</code></td><td>30 (errado)</td><td>Nunca para "quantos são 1": conta tudo que não é <code>NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu os parênteses</strong>
+<pre class="file" data-file="sem-parenteses.sql" data-resultado data-erro>SELECT COUNT * FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "FROM": syntax error</code>, "erro de sintaxe perto de <code>FROM</code>". Sem os parênteses, o SQLite não enxerga uma função: lê <code>COUNT</code> como o nome de uma coluna e o <code>*</code> como "vezes", e fica esperando o número da multiplicação. Quando chega o <code>FROM</code>, ele desiste. Repare que a mensagem aponta o <code>FROM</code>, e não o <code>COUNT</code>: o erro de sintaxe aparece onde o SQLite percebeu o problema, que às vezes é um pouco depois de onde ele está.</p>
+<p><strong>Como consertar:</strong> <code>COUNT(*)</code>, com os parênteses.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas simples em volta da coluna</strong>
+<p>Em vez de errar, a consulta abaixo dá um resultado errado, sem aviso nenhum:</p>
+<pre class="file" data-file="aspas-simples.sql" data-resultado>SELECT COUNT('email') AS com_email FROM clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> deu 30, e não 27. Com aspas simples, <code>'email'</code> é o <strong>texto</strong> "email", igual em todas as linhas, e um texto nunca é <code>NULL</code>. O <code>COUNT</code> contou 30 vezes a palavra "email".</p>
+<p><strong>Como consertar:</strong> nome de coluna vai sem aspas: <code>COUNT(email)</code>. Aspas simples são só para texto. E aspas duplas? Neste editor, <code>"email"</code> é um <strong>nome de coluna</strong>, então <code>COUNT("email")</code> funciona e dá 27. Com um nome que não existe, como <code>COUNT("e-mail")</code>, o SQLite responde <code>no such column: "e-mail" - should this be a string literal in single-quotes?</code> ("não existe a coluna "e-mail"; isto devia ser um texto entre aspas simples?"). Escreva os nomes de coluna sem aspas e em minúsculas.</p>
+</div>
+
+<div class="cenario">
+<strong>Contar os sem email com <code>= NULL</code></strong>
+<pre class="file" data-file="igual-null.sql" data-resultado>SELECT COUNT(*) AS sem_email
+FROM clientes
+WHERE email = NULL;
+</pre>
+<p><strong>O que aconteceu:</strong> deu 0, mas são 3. Qualquer comparação com <code>NULL</code> usando <code>=</code> dá "desconhecido", nunca "verdadeiro", e o <code>WHERE</code> só deixa passar o verdadeiro. Nenhuma linha passou, e contar nada dá zero (veja <a href="null.html">O Valor NULL</a>).</p>
+<p><strong>Como consertar:</strong> <code>WHERE email IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>DISTINCT com duas colunas</strong>
+<p>A Ana quer contar as combinações diferentes de cidade e estado:</p>
+<pre class="file" data-file="distinct-duas.sql" data-resultado data-erro>SELECT COUNT(DISTINCT cidade, estado) FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function COUNT()</code>, "número errado de argumentos para a função <code>COUNT()</code>". No SQLite, o <code>COUNT(DISTINCT …)</code> aceita <strong>uma</strong> coluna só.</p>
+<p><strong>Como consertar:</strong> para contar combinações, conte as linhas de um <code>SELECT DISTINCT cidade, estado</code>, o que você aprende a fazer numa consulta só na aula <a href="subconsultas.html">Subconsultas</a>. Ou agrupe com <a href="group-by-varios.html">GROUP BY em várias colunas</a> e veja quantas linhas saem.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>MySQL e MariaDB</strong> aceitam várias colunas no <code>COUNT(DISTINCT …)</code>: <code>COUNT(DISTINCT cidade, estado)</code> conta as combinações diferentes que não têm <code>NULL</code>. No SQLite e no padrão, é uma coluna só.</li>
+  <li><strong>SQL Server</strong>: <code>COUNT</code> devolve um <code>int</code> (até uns 2,1 bilhões). Para tabelas maiores existe <code>COUNT_BIG</code>, que devolve <code>bigint</code>.</li>
+  <li><strong>PostgreSQL</strong>: <code>COUNT</code> devolve <code>bigint</code>.</li>
+</ul>
+<pre class="file" data-file="mysql (ilustrativo, não roda no SQLite)">SELECT COUNT(DISTINCT cidade, estado) FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Conta</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>COUNT(*)</code></td><td>Todas as linhas</td><td>30 clientes</td></tr>
+<tr><td><code>COUNT(coluna)</code></td><td>As linhas em que a coluna não é <code>NULL</code></td><td><code>COUNT(email)</code> = 27</td></tr>
+<tr><td><code>COUNT(DISTINCT coluna)</code></td><td>Os valores diferentes, sem contar <code>NULL</code></td><td><code>COUNT(DISTINCT cidade)</code> = 8</td></tr>
+<tr><td><code>COUNT(*) - COUNT(coluna)</code></td><td>As linhas em que a coluna é <code>NULL</code></td><td>3 sem email</td></tr>
+<tr><td><code>COUNT(*) … WHERE cond</code></td><td>As linhas que passaram no filtro</td><td><code>WHERE vip = 1</code> → 5</td></tr>
+<tr><td>Sem nenhuma linha</td><td>Sempre 0, nunca <code>NULL</code></td><td></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "FROM": syntax error</code></td><td>Faltou o parêntese em <code>COUNT *</code></td></tr>
+<tr><td><code>wrong number of arguments to function COUNT()</code></td><td>Mais de uma coluna dentro do <code>COUNT(DISTINCT …)</code></td></tr>
+<tr><td><code>misuse of aggregate function COUNT()</code></td><td><code>COUNT</code> dentro do <code>WHERE</code> (veja <a href="having.html">HAVING</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quantos pedidos</h3>
+<p>Complete para contar todas as linhas da tabela <code>pedidos</code>:</p>
+<div class="ex-code">SELECT COUNT(<input data-answer="*" aria-label="o que contar" size="3">) FROM pedidos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantos têm nascimento</h3>
+<p>Complete para contar só os clientes que informaram a data de nascimento:</p>
+<div class="ex-code">SELECT COUNT(<input data-answer="nascimento" aria-label="coluna">) FROM clientes;</div>
+</div>
+
+<div class="exercise">
+<h3>3. Vendedores diferentes</h3>
+<p>Complete para contar quantos funcionários <strong>diferentes</strong> já atenderam pedidos:</p>
+<div class="ex-code">SELECT COUNT(<input data-answer="DISTINCT" aria-label="palavra-chave"> funcionario_id) FROM pedidos;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. A coluna <code>descontinuado</code> vale 0 ou 1 em todos os 45 produtos, e só 2 são 1. Quanto dá <code>SELECT COUNT(descontinuado) FROM produtos;</code>?</p>
+<label><input type="radio" name="q4"> 2</label>
+<label><input type="radio" name="q4"> 43</label>
+<label><input type="radio" name="q4"> 45</label>
+<label><input type="radio" name="q4"> 0</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. <code>SELECT DISTINCT estado FROM fornecedores;</code> mostra 4 linhas (PI, CE, SP e <em>NULL</em>). Quanto dá <code>COUNT(DISTINCT estado)</code>?</p>
+<label><input type="radio" name="q5"> 4</label>
+<label><input type="radio" name="q5"> 3</label>
+<label><input type="radio" name="q5"> 6</label>
+<label><input type="radio" name="q5"> NULL</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que devolve <code>COUNT(*)</code> quando o <code>WHERE</code> não deixa passar nenhuma linha?</p>
+<label><input type="radio" name="q6"> NULL</label>
+<label><input type="radio" name="q6"> Nenhuma linha</label>
+<label><input type="radio" name="q6"> Um erro</label>
+<label><input type="radio" name="q6"> 0</label>
+</div>
+
+<h3>Missão final: o relatório da newsletter</h3>
+
+<div class="trysql" data-goal="colunas:clientes,com_email,sem_email,cidades;;out:^30\|27\|3\|8$">
+<p class="try-task"><strong>Missão:</strong> monte, numa linha só, o relatório que a Ana precisa: o total de clientes (<code>clientes</code>), quantos têm email (<code>com_email</code>), quantos não têm (<code>sem_email</code>) e de quantas cidades diferentes eles são (<code>cidades</code>). Use esses apelidos, nessa ordem.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) AS clientes
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*)                AS clientes,
+       COUNT(email)            AS com_email,
+       COUNT(*) - COUNT(email) AS sem_email,
+       COUNT(DISTINCT cidade)  AS cidades
+FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>COUNT(*)</code> conta <strong>linhas</strong>, inclusive as que têm <code>NULL</code>.</li>
+  <li><code>COUNT(coluna)</code> conta os valores <strong>que não são <code>NULL</code></strong>. Zero e texto vazio contam; só o <code>NULL</code> fica de fora.</li>
+  <li><code>COUNT(DISTINCT coluna)</code> conta os valores <strong>diferentes</strong>, também sem o <code>NULL</code>. No SQLite, uma coluna só.</li>
+  <li>Os que faltam: <code>COUNT(*) - COUNT(coluna)</code> ou <code>COUNT(*) … WHERE coluna IS NULL</code>. Nunca <code>= NULL</code>.</li>
+  <li>Para "quantos são 1" numa coluna 0/1, use <code>WHERE coluna = 1</code> (ou <code>SUM</code>), nunca <code>COUNT(coluna)</code>.</li>
+  <li><code>COUNT</code> sem nenhuma linha dá 0. Nome de coluna vai sem aspas: <code>COUNT('email')</code> conta um texto, e dá o total de linhas.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
