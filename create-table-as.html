@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL CREATE TABLE AS — criar uma tabela a partir de uma consulta | Guia SQL</title>
+<meta name="description" content="CREATE TABLE ... AS SELECT para quem nunca mexeu num banco: criar uma tabela nova com o resultado de uma consulta (cópia, recorte, relatório), o que é copiado e o que se perde (chave primária, NOT NULL, DEFAULT), nomes de coluna com AS, a cópia que não se atualiza, os erros reais e o SELECT INTO do SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Criar Tabela a partir de Consulta</span></h1>
+
+<p class="intro">Até agora, toda tabela nova começou vazia: um <code>CREATE TABLE</code> com as colunas e, depois, os <code>INSERT</code>. Mas às vezes a tabela que você quer <strong>já existe como resultado de uma consulta</strong>: "os clientes do Piauí", "os pedidos de 2024", "quanto cada produto vendeu". Com <code>CREATE TABLE … AS SELECT</code> ("crie a tabela como o resultado desta consulta"), o banco cria a tabela e a enche numa tacada só. Nesta aula você vai usar isso para fazer cópias de segurança, recortes e relatórios da Loja Aurora, e vai ver o que a cópia <strong>não</strong> leva junto.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como criar uma tabela com o resultado de um <code>SELECT</code>.</li>
+  <li>Os três usos mais comuns: cópia de segurança, recorte e tabela de relatório.</li>
+  <li>O que é copiado (nomes, tipos, dados) e o que se perde (chave primária, <code>NOT NULL</code>, <code>DEFAULT</code>, chaves estrangeiras).</li>
+  <li>Por que dar nome às colunas calculadas com <code>AS</code>.</li>
+  <li>Que a tabela nova é uma <strong>fotografia</strong>: não acompanha as mudanças da original.</li>
+  <li>Os erros reais e o <code>SELECT INTO</code> do SQL Server.</li>
+</ul>
+</div>
+
+<p>Você vai precisar do que viu em <a href="create-table.html">CREATE TABLE</a> e em <a href="select.html">SELECT</a>. Os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo.</p>
+
+<hr>
+
+<h2>A ideia: tirar uma xerox</h2>
+<p>A Ana tem o caderno de clientes da loja. O gerente de Teresina pediu "a lista dos clientes do Piauí". Ela pode copiar à mão, cliente por cliente, num caderno novo. Ou pode marcar as páginas certas e tirar uma <strong>xerox</strong>: sai um caderno novo, já com tudo escrito.</p>
+
+<p>Duas coisas sobre a xerox valem também para o banco:</p>
+<ul>
+  <li>Ela copia o que está escrito, mas <strong>não as regras</strong> do caderno original. Se o original tinha "não pode deixar o nome em branco" impresso no topo, a xerox só tem o texto.</li>
+  <li>Ela é uma <strong>fotografia</strong>: se amanhã um cliente mudar de endereço no caderno original, a xerox continua com o endereço antigo.</li>
+</ul>
+
+<hr>
+
+<h2>1. A primeira tabela feita de consulta</h2>
+
+<pre class="file" data-file="clientes-pi.sql" data-resultado>CREATE TABLE clientes_pi AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+
+SELECT * FROM clientes_pi;
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE clientes_pi</dt><dd>Cria uma tabela nova, chamada <code>clientes_pi</code>. Repare que <strong>não</strong> há lista de colunas entre parênteses.</dd>
+  <dt>AS</dt><dd>"Como": a tabela vai ser como o resultado da consulta que vem a seguir. Aqui o <code>AS</code> é obrigatório.</dd>
+  <dt>SELECT id, nome, cidade FROM clientes WHERE estado = 'PI'</dt><dd>Uma consulta comum. As colunas dela viram as colunas da tabela nova; as linhas dela viram as linhas.</dd>
+</dl>
+
+<p>A tabela nova tem 3 colunas e 14 linhas, e é uma tabela de verdade: dá para fazer <code>SELECT</code>, <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code> nela, como em qualquer outra. Se você apagar um cliente de <code>clientes_pi</code>, a tabela <code>clientes</code> não muda.</p>
+
+<p>No terminal, o <code>.schema</code> mostra como o SQLite montou a tabela:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE clientes_pi AS SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+sqlite&gt; .schema clientes_pi
+CREATE TABLE clientes_pi(id INT,nome TEXT,cidade TEXT);
+sqlite&gt; SELECT COUNT(*) FROM clientes_pi;
+14
+sqlite&gt; .quit</pre>
+
+<p>Guarde esse <code>id INT</code>: ele vai ser importante na seção 3.</p>
+
+<div class="trysql" data-goal="tabela:clientes_ce;;mudou:clientes_ce=7">
+<p class="try-task"><strong>Experimente:</strong> o código só mostra os clientes do Ceará. Transforme a consulta numa tabela nova chamada <code>clientes_ce</code>, com o <code>id</code>, o <code>nome</code> e a <code>cidade</code>, e depois mostre a tabela nova.</p>
+<pre class="script" data-file="clientes-ce.sql">SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'CE';
+</pre>
+<pre class="solucao" data-file="clientes-ce.sql">CREATE TABLE clientes_ce AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'CE';
+
+SELECT * FROM clientes_ce;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Três usos do dia a dia</h2>
+
+<h3>Cópia de segurança antes de mexer</h3>
+<p>Antes de um <code>UPDATE</code> grande nos preços, a Ana guarda uma cópia da tabela inteira. O <code>SELECT *</code> leva todas as colunas e, sem <code>WHERE</code>, todas as linhas:</p>
+
+<pre class="file" data-file="copia.sql" data-resultado>CREATE TABLE produtos_copia AS
+SELECT * FROM produtos;
+
+SELECT COUNT(*) AS produtos_na_copia FROM produtos_copia;
+</pre>
+
+<p>Se o reajuste der errado, os preços antigos estão na cópia, e a aula <a href="insert-select.html">INSERT INTO SELECT</a> mostra como trazê-los de volta. (Para o banco inteiro, a ferramenta certa é o backup: aula <a href="dump-backup.html">Backup</a>.)</p>
+
+<h3>Um recorte</h3>
+<p>Os pedidos de 2024 vão para uma tabela própria, para o contador:</p>
+
+<pre class="file" data-file="recorte.sql" data-resultado>CREATE TABLE pedidos_2024 AS
+SELECT *
+FROM pedidos
+WHERE data &lt; '2025-01-01';
+
+SELECT COUNT(*) AS pedidos,
+       MIN(data) AS primeiro,
+       MAX(data) AS ultimo
+FROM pedidos_2024;
+</pre>
+
+<h3>Uma tabela de relatório</h3>
+<p>O relatório "quanto cada produto vendeu" junta duas tabelas e soma (aulas <a href="inner-join.html">INNER JOIN</a> e <a href="group-by.html">GROUP BY</a>). Calcular isso toda vez pode ser lento num banco grande. Guardado numa tabela, o relatório fica pronto para consultar:</p>
+
+<pre class="file" data-file="relatorio.sql" data-resultado>CREATE TABLE vendas_produto AS
+SELECT p.id                    AS produto_id,
+       p.nome                  AS nome,
+       SUM(i.quantidade)       AS unidades,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM itens_pedido AS i
+JOIN produtos AS p ON p.id = i.produto_id
+GROUP BY p.id, p.nome;
+
+SELECT *
+FROM vendas_produto
+ORDER BY unidades DESC, nome
+LIMIT 5;
+</pre>
+
+<p>A tabela tem 42 linhas, uma por produto que já vendeu (os produtos 43, 44 e 45 nunca venderam, e o <code>JOIN</code> os deixa de fora).</p>
+
+<hr>
+
+<h2>3. O que a cópia leva, e o que perde</h2>
+<p>Peça ao SQLite o <code>CREATE TABLE</code> que ele montou para a cópia dos produtos, e compare com o original:</p>
+
+<pre class="file" data-file="estrutura.sql" data-resultado>CREATE TABLE produtos_copia AS
+SELECT * FROM produtos;
+
+SELECT name, sql
+FROM sqlite_schema
+WHERE name IN ('produtos', 'produtos_copia');
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No original (<code>produtos</code>)</th><th>Na cópia (<code>produtos_copia</code>)</th></tr>
+<tr><td><code>id INTEGER PRIMARY KEY</code></td><td><code>id INT</code>: não é mais chave, não numera sozinho, aceita repetido</td></tr>
+<tr><td><code>nome TEXT NOT NULL</code></td><td><code>nome TEXT</code>: aceita vazio</td></tr>
+<tr><td><code>categoria_id INTEGER NOT NULL REFERENCES categorias(id)</code></td><td><code>categoria_id INT</code>: sem chave estrangeira</td></tr>
+<tr><td><code>estoque INTEGER NOT NULL DEFAULT 0</code></td><td><code>estoque INT</code>: sem valor padrão</td></tr>
+</table>
+</div>
+
+<p>Vão junto os <strong>nomes</strong>, os <strong>tipos</strong> (de um jeito resumido: <code>INTEGER</code> vira <code>INT</code>) e os <strong>dados</strong>. Ficam para trás <strong>todas as regras</strong>: <code>PRIMARY KEY</code>, <code>NOT NULL</code>, <code>UNIQUE</code>, <code>DEFAULT</code>, <code>CHECK</code> e as chaves estrangeiras. E o <code>INT</code> no lugar de <code>INTEGER</code> tem uma consequência que você viu na aula <a href="auto-increment.html">AUTOINCREMENT</a>: a coluna deixa de numerar sozinha.</p>
+
+<pre class="file" data-file="sem-regras.sql" data-resultado>CREATE TABLE clientes_copia AS
+SELECT * FROM clientes;
+
+INSERT INTO clientes_copia (nome) VALUES ('Rita Moura');
+INSERT INTO clientes_copia (id, nome) VALUES (1, NULL);
+
+SELECT id, nome
+FROM clientes_copia
+WHERE id = 1 OR nome = 'Rita Moura' OR nome IS NULL;
+</pre>
+
+<p>A Rita entrou sem id (<em>NULL</em>), e entrou um segundo cliente 1, sem nome. Na tabela <code>clientes</code> original, nenhum dos dois <code>INSERT</code> passaria. Para uma cópia de segurança que só vai ser lida, isso não importa. Para uma tabela que vai ser <strong>usada</strong> e receber dados novos, crie a tabela com <code>CREATE TABLE</code> completo e encha com <a href="insert-select.html">INSERT INTO SELECT</a>.</p>
+
+<h3>Só a estrutura, sem os dados</h3>
+<p>Um truque comum: um <code>WHERE</code> que nunca é verdadeiro. A tabela nasce com as colunas e nenhuma linha:</p>
+
+<pre class="file" data-file="vazia.sql" data-resultado>CREATE TABLE produtos_vazia AS
+SELECT * FROM produtos
+WHERE 0;
+
+SELECT COUNT(*) AS linhas FROM produtos_vazia;
+</pre>
+
+<p>O <code>WHERE 0</code> quer dizer "onde falso": nenhuma linha passa. Mas lembre-se: as regras continuam ficando para trás.</p>
+
+<hr>
+
+<h2>4. Dê nome às colunas calculadas</h2>
+<p>No relatório da seção 2, todas as colunas ganharam nome com <code>AS</code>. Veja o que acontece sem os apelidos:</p>
+
+<pre class="file" data-file="sem-apelido.sql" data-resultado>CREATE TABLE resumo AS
+SELECT cliente_id, COUNT(*), SUM(frete)
+FROM pedidos
+GROUP BY cliente_id;
+
+SELECT sql FROM sqlite_schema WHERE name = 'resumo';
+</pre>
+
+<p>As colunas se chamam <code>"COUNT(*)"</code> e <code>"SUM(frete)"</code>, com parênteses e asterisco no nome. Para usar, só entre aspas duplas: <code>SELECT "COUNT(*)" FROM resumo;</code>. Ninguém quer isso. E repare que essas colunas nem têm tipo. Com apelidos (aula <a href="aliases.html">Apelidos (AS)</a>), fica limpo:</p>
+
+<pre class="file" data-file="com-apelido.sql" data-resultado>CREATE TABLE resumo AS
+SELECT cliente_id,
+       COUNT(*)   AS qtd_pedidos,
+       SUM(frete) AS total_frete
+FROM pedidos
+GROUP BY cliente_id;
+
+SELECT * FROM resumo LIMIT 3;
+</pre>
+
+<p>O mesmo vale quando duas colunas têm o mesmo nome, como num <code>JOIN</code>: <code>SELECT c.id, p.id …</code> cria as colunas <code>id</code> e <code>"id:1"</code>. Dê um apelido a cada uma: <code>c.id AS cliente_id, p.id AS pedido_id</code>.</p>
+
+<hr>
+
+<h2>5. É uma fotografia, não uma janela</h2>
+<p>A tabela nova é independente. Se o original mudar depois, ela não fica sabendo:</p>
+
+<pre class="file" data-file="fotografia.sql" data-resultado>CREATE TABLE produtos_copia AS
+SELECT * FROM produtos;
+
+UPDATE produtos SET preco = 13.90 WHERE id = 1;
+
+SELECT p.nome,
+       p.preco AS preco_hoje,
+       c.preco AS preco_na_copia
+FROM produtos AS p
+JOIN produtos_copia AS c ON c.id = p.id
+WHERE p.id = 1;
+</pre>
+
+<p>O preço do produto 1 mudou na tabela <code>produtos</code>, e a cópia continua com o preço de quando foi tirada. Isso é ótimo para cópia de segurança e para "como estava no fim do mês". Mas, se você quer uma consulta com nome que mostre <strong>sempre</strong> os dados de agora, a ferramenta certa é uma <strong>view</strong> (aula <a href="views.html">Views</a>): <code>CREATE VIEW clientes_pi AS SELECT …</code>. A view é uma janela; a tabela criada por consulta é uma fotografia.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>CREATE TABLE … AS SELECT</code></th><th><code>CREATE VIEW … AS SELECT</code></th></tr>
+<tr><td>Guarda</td><td>Os dados, copiados</td><td>Só a consulta</td></tr>
+<tr><td>Quando o original muda</td><td>Fica como estava</td><td>Mostra o novo</td></tr>
+<tr><td>Ocupa espaço</td><td>Sim, como qualquer tabela</td><td>Quase nada</td></tr>
+<tr><td>Aceita <code>INSERT</code>/<code>UPDATE</code></td><td>Sim</td><td>Não (no SQLite)</td></tr>
+<tr><td>Bom para</td><td>Cópia de segurança, foto do fim do mês, relatório pesado</td><td>Consulta repetida que tem de estar sempre em dia</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>6. Formas de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Escrita</th><th>Quando usar</th></tr>
+<tr><td>Cópia inteira</td><td><code>CREATE TABLE t2 AS SELECT * FROM t;</code></td><td>Cópia de segurança rápida.</td></tr>
+<tr><td>Recorte</td><td><code>CREATE TABLE t2 AS SELECT colunas FROM t WHERE …;</code></td><td>Entregar uma parte dos dados.</td></tr>
+<tr><td>Só a estrutura</td><td><code>CREATE TABLE t2 AS SELECT * FROM t WHERE 0;</code></td><td>Tabela de rascunho com as mesmas colunas (sem regras).</td></tr>
+<tr><td>Só se não existir</td><td><code>CREATE TABLE IF NOT EXISTS t2 AS SELECT …;</code></td><td>Roteiros que rodam várias vezes.</td></tr>
+<tr><td>Temporária</td><td><code>CREATE TEMP TABLE t2 AS SELECT …;</code></td><td>Contas intermediárias: a tabela some quando o banco é fechado.</td></tr>
+<tr><td>Com as regras</td><td><code>CREATE TABLE t2 (… completo …);</code> + <code>INSERT INTO t2 SELECT … FROM t;</code></td><td>Tabela que vai ser usada de verdade (aula <a href="insert-select.html">INSERT INTO SELECT</a>).</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O IF NOT EXISTS não confere o conteúdo</strong>
+<p><code>CREATE TABLE IF NOT EXISTS clientes AS SELECT 1;</code> responde "ok" e não faz nada, porque a tabela <code>clientes</code> já existe. Ele não compara colunas nem dados: se já existe uma tabela com esse nome, mesmo que seja outra coisa, o comando passa calado.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A tabela já existe</strong>
+<pre class="file" data-file="ja-existe.sql" data-resultado data-erro>CREATE TABLE produtos_copia AS SELECT * FROM produtos;
+
+CREATE TABLE produtos_copia AS SELECT * FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>table produtos_copia already exists</code>, "a tabela produtos_copia já existe". Acontece ao rodar o mesmo roteiro duas vezes.</p>
+<p><strong>Como consertar:</strong> escolha outro nome (ex.: <code>produtos_copia_2026_10</code>), ou apague a cópia velha antes com <code>DROP TABLE IF EXISTS produtos_copia;</code> (aula <a href="drop-table.html">DROP TABLE</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o AS (a forma do MySQL)</strong>
+<pre class="file" data-file="sem-as.sql" data-resultado data-erro>CREATE TABLE produtos_copia
+SELECT * FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. O MySQL aceita sem o <code>AS</code>; o SQLite não.</p>
+<p><strong>Como consertar:</strong> <code>CREATE TABLE produtos_copia AS SELECT * FROM produtos;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>SELECT INTO (a forma do SQL Server)</strong>
+<pre class="file" data-file="select-into.sql" data-resultado data-erro>SELECT *
+INTO produtos_copia
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "INTO": syntax error</code>. O SQLite não tem <code>SELECT … INTO</code>.</p>
+<p><strong>Como consertar:</strong> mesma coisa: <code>CREATE TABLE produtos_copia AS SELECT * FROM produtos;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A cópia aceitou o que não devia</strong>
+<p>Não há mensagem: esse é o problema. A cópia não tem chave primária nem <code>NOT NULL</code> (seção 3), então aceita ids repetidos, ids vazios e nomes vazios.</p>
+<p><strong>Como consertar:</strong> se a tabela vai receber dados novos, crie-a com <code>CREATE TABLE</code> completo e copie com <code>INSERT INTO … SELECT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna com nome estranho</strong>
+<p>Também sem mensagem: a tabela foi criada, mas uma coluna se chama <code>"preco * 0.9"</code> ou <code>"COUNT(*)"</code> (seção 4).</p>
+<p><strong>Como consertar:</strong> apague a tabela, dê um apelido a cada coluna calculada (<code>preco * 0.9 AS preco_promocional</code>) e crie de novo. Ou renomeie a coluna: <code>ALTER TABLE x RENAME COLUMN "preco * 0.9" TO preco_promocional;</code> (aula <a href="alter-table.html">ALTER TABLE</a>).</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>A ideia existe nos quatro bancos, mas a escrita muda (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- PostgreSQL e MySQL: igual ao SQLite
+CREATE TABLE clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+-- MySQL também aceita sem o AS
+CREATE TABLE clientes_pi
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+-- SQL Server: SELECT ... INTO
+SELECT id, nome, cidade
+INTO clientes_pi
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+<p>Em todos, como no SQLite, a tabela nova leva os dados e não leva a chave primária nem as chaves estrangeiras. Para copiar só a <strong>estrutura</strong> com as regras, MySQL e PostgreSQL têm uma forma própria com <code>LIKE</code>: <code>CREATE TABLE produtos_nova LIKE produtos;</code> no MySQL e <code>CREATE TABLE produtos_nova (LIKE produtos INCLUDING ALL);</code> no PostgreSQL. O SQLite não tem; lá, copie o <code>CREATE TABLE</code> que o <code>.schema</code> mostra e troque o nome.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>CREATE TABLE nova AS SELECT …;</code></td><td>Cria a tabela com as colunas e as linhas do <code>SELECT</code>.</td></tr>
+<tr><td><code>CREATE TABLE nova AS SELECT * FROM t;</code></td><td>Cópia completa dos dados (sem as regras).</td></tr>
+<tr><td><code>… WHERE 0;</code></td><td>Só as colunas, nenhuma linha.</td></tr>
+<tr><td><code>CREATE TABLE IF NOT EXISTS nova AS SELECT …;</code></td><td>Não faz nada se já existir uma tabela com esse nome.</td></tr>
+<tr><td><code>CREATE TEMP TABLE nova AS SELECT …;</code></td><td>Tabela temporária, some ao fechar o banco.</td></tr>
+<tr><td><code>expressão AS nome</code> no <code>SELECT</code></td><td>Dá o nome da coluna na tabela nova.</td></tr>
+<tr><td>Copiado</td><td>Nomes, tipos (resumidos: <code>INTEGER</code> → <code>INT</code>) e dados.</td></tr>
+<tr><td>Não copiado</td><td><code>PRIMARY KEY</code>, <code>NOT NULL</code>, <code>UNIQUE</code>, <code>DEFAULT</code>, <code>CHECK</code>, <code>REFERENCES</code>, índices.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>table produtos_copia already exists</code></td><td>Já existe uma tabela com esse nome.</td></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td>Faltou o <code>AS</code> depois do nome da tabela.</td></tr>
+<tr><td><code>near "INTO": syntax error</code></td><td><code>SELECT … INTO</code> é do SQL Server; no SQLite, use <code>CREATE TABLE … AS</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra que liga</h3>
+<p>Complete para criar a tabela <code>fornecedores_copia</code> com todos os fornecedores:</p>
+<div class="ex-code">CREATE TABLE fornecedores_copia <input data-answer="AS" aria-label="palavra-chave"> SELECT * FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só a estrutura</h3>
+<p>Complete para criar <code>pedidos_vazia</code> com as colunas de <code>pedidos</code> e nenhuma linha:</p>
+<div class="ex-code">CREATE TABLE pedidos_vazia AS SELECT * FROM pedidos WHERE <input data-answer="0" aria-label="condição">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana criou <code>clientes_copia</code> com <code>CREATE TABLE clientes_copia AS SELECT * FROM clientes;</code>. O que a cópia <strong>não</strong> tem?</p>
+<label><input type="radio" name="q3"> Os nomes das colunas</label>
+<label><input type="radio" name="q3"> A chave primária e o <code>NOT NULL</code></label>
+<label><input type="radio" name="q3"> Os 30 clientes</label>
+<label><input type="radio" name="q3"> Os emails</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Depois de criar <code>produtos_copia</code>, a Ana mudou o preço de um produto na tabela <code>produtos</code>. O que acontece na cópia?</p>
+<label><input type="radio" name="q4"> O preço muda também, na hora</label>
+<label><input type="radio" name="q4"> O preço muda na próxima vez que o banco for aberto</label>
+<label><input type="radio" name="q4"> A cópia é apagada</label>
+<label><input type="radio" name="q4"> Nada: a cópia continua com o preço de quando foi criada</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual será o nome da segunda coluna em <code>CREATE TABLE r AS SELECT estado, COUNT(*) FROM clientes GROUP BY estado;</code>?</p>
+<label><input type="radio" name="q5"> <code>COUNT(*)</code>, o que obriga a usar aspas duplas para consultá-la</label>
+<label><input type="radio" name="q5"> <code>count</code></label>
+<label><input type="radio" name="q5"> <code>coluna2</code></label>
+<label><input type="radio" name="q5"> Dá erro: coluna sem nome</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual é a forma do SQLite de fazer o que o SQL Server faz com <code>SELECT * INTO copia FROM clientes;</code>?</p>
+<label><input type="radio" name="q6"> <code>SELECT * INTO copia FROM clientes;</code>, igual</label>
+<label><input type="radio" name="q6"> <code>INSERT INTO copia SELECT * FROM clientes;</code>, sem criar a tabela antes</label>
+<label><input type="radio" name="q6"> <code>CREATE TABLE copia AS SELECT * FROM clientes;</code></label>
+<label><input type="radio" name="q6"> <code>COPY clientes TO copia;</code></label>
+</div>
+
+<h3>Missão final: a tabela dos pedidos pendentes</h3>
+
+<div class="trysql" data-goal="tabela:pedidos_pendentes;;mudou:pedidos_pendentes=5;;colunas:pedido_id,cliente,data">
+<p class="try-task"><strong>Missão:</strong> a equipe de entregas quer uma tabela própria só com os pedidos que ainda não foram entregues (<code>entregue_em</code> vazio). Crie a tabela <code>pedidos_pendentes</code> a partir da consulta, com três colunas chamadas exatamente <code>pedido_id</code>, <code>cliente</code> (o <strong>nome</strong> do cliente) e <code>data</code>. Depois mostre a tabela nova.</p>
+<pre class="script" data-file="pendentes.sql">SELECT p.id, c.nome, p.data
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+WHERE p.entregue_em IS NULL;
+</pre>
+<pre class="solucao" data-file="pendentes.sql">CREATE TABLE pedidos_pendentes AS
+SELECT p.id   AS pedido_id,
+       c.nome AS cliente,
+       p.data AS data
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+WHERE p.entregue_em IS NULL;
+
+SELECT * FROM pedidos_pendentes;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>CREATE TABLE nova AS SELECT …;</code> cria uma tabela com as colunas e as linhas do resultado de uma consulta.</li>
+  <li>Serve para cópias de segurança (<code>SELECT *</code>), recortes (<code>WHERE</code>) e tabelas de relatório (<code>GROUP BY</code>).</li>
+  <li>A tabela nova leva nomes, tipos e dados, mas <strong>nenhuma regra</strong>: sem chave primária, sem <code>NOT NULL</code>, sem <code>DEFAULT</code>, sem chave estrangeira. O <code>id</code> vira <code>INT</code> e para de numerar sozinho.</li>
+  <li>Dê nome com <code>AS</code> a toda coluna calculada, senão ela se chama <code>"COUNT(*)"</code>.</li>
+  <li>É uma fotografia: não acompanha as mudanças do original. Para uma janela sempre atualizada, use uma view.</li>
+  <li>O MySQL aceita sem <code>AS</code>; o SQL Server usa <code>SELECT … INTO</code>. No SQLite, as duas formas dão erro de sintaxe.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
