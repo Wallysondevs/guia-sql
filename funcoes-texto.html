@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções de Texto — length, upper, substr, replace, || | Guia SQL</title>
+<meta name="description" content="Funções de texto em SQL para quem está começando: length, upper e lower (e o problema com acentos no SQLite), substr, instr, trim, replace, a junção de textos com || e o NULL que estraga tudo, concat e concat_ws, printf e format para números com duas casas, com as armadilhas reais e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções de Texto</span></h1>
+
+<p class="intro">Os dados da Loja Aurora estão cheios de texto: nomes de clientes, emails, cidades, telefones, nomes de produtos. E quase nunca do jeito que a Ana precisa mostrar. Ela quer o <strong>primeiro nome</strong> do cliente para o email de aniversário, o <strong>domínio</strong> de cada email, o telefone <strong>só com números</strong>, a cidade e o estado juntos ("Teresina - PI") e o preço com <strong>duas casas</strong> ("4,90"). Tudo isso se faz no próprio <code>SELECT</code>, com as <strong>funções de texto</strong>. Nesta aula você vai conhecer as principais e as armadilhas de cada uma, incluindo a mais traiçoeira para quem escreve em português: o <code>upper</code> do SQLite não entende acentos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Medir um texto com <code>length</code>.</li>
+  <li>Trocar maiúsculas e minúsculas com <code>upper</code> e <code>lower</code>, e o que elas fazem com <code>é</code>, <code>ç</code> e <code>ã</code>.</li>
+  <li>Recortar pedaços com <code>substr</code> e achar posições com <code>instr</code>.</li>
+  <li>Limpar com <code>trim</code> e trocar trechos com <code>replace</code>.</li>
+  <li>Juntar textos com <code>||</code>, e por que um <code>NULL</code> estraga a junção inteira; <code>concat</code> e <code>concat_ws</code>.</li>
+  <li>Formatar números e textos com <code>printf</code> (ou <code>format</code>): <code>4.9</code> vira <code>4.90</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, num SQLite com o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada exemplo parte do banco limpo. Texto, em SQL, vai sempre entre <strong>aspas simples</strong>: <code>'Ana'</code>.</p>
+
+<hr>
+
+<h2>A ideia: a tesoura, a cola e o carimbo</h2>
+<p>Pense no balcão da loja com uma ficha de papel de cada cliente. Para preparar as etiquetas de envio, a Ana usa três ferramentas:</p>
+<ul>
+  <li>a <strong>tesoura</strong>, para recortar só um pedaço: o primeiro nome, o DDD do telefone (<code>substr</code>, <code>trim</code>);</li>
+  <li>a <strong>cola</strong>, para juntar pedaços: cidade + " - " + estado (<code>||</code>, <code>concat</code>);</li>
+  <li>os <strong>carimbos</strong>, que mudam a cara do texto sem mudar o conteúdo: tudo em maiúsculas, o preço com duas casas (<code>upper</code>, <code>printf</code>).</li>
+</ul>
+<p>As funções de texto são essas ferramentas. Um detalhe importante: elas <strong>não mudam a tabela</strong>. Um <code>SELECT upper(nome) FROM clientes</code> mostra os nomes em maiúsculas, mas os nomes guardados continuam como estavam. Só um <code>UPDATE</code> (aula <a href="update.html">UPDATE</a>) muda o que está guardado.</p>
+
+<p>Toda função tem o mesmo molde: o nome, e entre parênteses o que ela recebe (os <strong>argumentos</strong>), separados por vírgula: <code>substr(nome, 1, 3)</code>.</p>
+
+<hr>
+
+<h2>1. <code>length</code>: quantas letras</h2>
+<pre class="file" data-file="length.sql" data-resultado>SELECT nome, length(nome) AS letras
+FROM clientes
+ORDER BY letras DESC
+LIMIT 3;
+</pre>
+
+<p><code>length</code> ("comprimento") conta os <strong>caracteres</strong> do texto, contando os espaços. O nome mais comprido da loja é "Gustavo Henrique Prado", com 22. As letras acentuadas contam como uma letra cada, como deveria ser:</p>
+
+<pre class="file" data-file="length-acento.sql" data-resultado>SELECT nome,
+       length(nome)       AS letras,
+       octet_length(nome) AS bytes
+FROM clientes
+WHERE id IN (3, 5);
+</pre>
+
+<p>"Conceição Prado" tem 15 letras, mas ocupa 17 <strong>bytes</strong> no arquivo: o <code>ç</code> e o <code>ã</code> gastam 2 bytes cada (é assim que o formato UTF-8 guarda letras acentuadas). A <code>octet_length</code> ("comprimento em octetos", ou bytes) mostra isso. Para contar letras, use sempre a <code>length</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>length('Ana')</code></td><td><code>3</code></td><td>Três letras</td></tr>
+<tr><td><code>length('')</code></td><td><code>0</code></td><td>Texto vazio</td></tr>
+<tr><td><code>length(NULL)</code></td><td><em>NULL</em></td><td>Sem valor, sem tamanho (os clientes sem email têm <code>length(email)</code> <em>NULL</em>)</td></tr>
+<tr><td><code>length(12.5)</code></td><td><code>4</code></td><td>Um número é medido como texto: <code>'12.5'</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>2. <code>upper</code> e <code>lower</code>: maiúsculas e minúsculas</h2>
+<p><code>upper</code> ("de cima", as letras maiúsculas) e <code>lower</code> ("de baixo", as minúsculas) trocam a caixa das letras. Com nomes sem acento, tudo certo:</p>
+
+<pre class="file" data-file="upper.sql" data-resultado>SELECT upper('Ana Beatriz Sousa') AS maiusculas,
+       lower('Ana Beatriz Sousa') AS minusculas;
+</pre>
+
+<p>Agora com os nomes acentuados da loja:</p>
+
+<pre class="file" data-file="upper-acento.sql" data-resultado>SELECT nome, upper(nome) AS maiusculas, lower(nome) AS minusculas
+FROM clientes
+WHERE id IN (1, 5, 9);
+</pre>
+
+<p>Olhe com atenção: <code>JOSé RIBAMAR SILVA</code>, <code>CONCEIçãO PRADO</code>, <code>ANTôNIO CARLOS NEVES</code>. As letras acentuadas <strong>não mudaram</strong>. O <code>upper</code> e o <code>lower</code> do SQLite só sabem trocar as 26 letras do alfabeto inglês, de <code>a</code> a <code>z</code> (o conjunto ASCII). O <code>é</code>, o <code>ç</code>, o <code>ã</code> e o <code>ô</code> passam direto, do jeito que estavam. É uma escolha do SQLite, para ficar pequeno: tratar maiúsculas e minúsculas de todas as línguas do mundo exige tabelas grandes.</p>
+
+<div class="warning">
+<strong>O que isso quebra</strong>
+<ul>
+  <li><strong>Etiquetas em maiúsculas</strong> com acento saem misturadas (<code>CONCEIçãO</code>).</li>
+  <li><strong>Buscas que ignoram maiúsculas.</strong> <code>WHERE upper(nome) LIKE '%CONCEIÇÃO%'</code> não acha a Conceição, porque <code>upper('Conceição')</code> é <code>'CONCEIçãO'</code>, e não <code>'CONCEIÇÃO'</code>. Pelo mesmo motivo, o <code>LIKE</code> (aula <a href="like.html">LIKE</a>) ignora maiúsculas só nas letras sem acento: <code>'Ana' LIKE 'ana'</code> é verdadeiro, mas <code>'Água' LIKE 'água'</code> é falso.</li>
+</ul>
+<p>O que fazer: para emails e códigos (que não têm acento), <code>lower</code> funciona perfeitamente. Para nomes, guarde os dados já bem escritos e busque como eles estão guardados, ou deixe as maiúsculas para o programa que mostra os dados (PHP, Python, JavaScript sabem lidar com acentos). Existe também uma extensão do SQLite, a ICU, que ensina acentos ao <code>upper</code> e ao <code>lower</code>; ela não vem no SQLite padrão nem no editor do guia.</p>
+</div>
+
+<pre class="file" data-file="busca-acento.sql" data-resultado>SELECT 'Ana' LIKE 'ana'                AS sem_acento,
+       'Água' LIKE 'água'              AS com_acento,
+       upper('josé') = 'JOSÉ'          AS upper_com_acento,
+       lower('ANA.BEATRIZ@EXEMPLO.COM.BR') AS email_minusculo;
+</pre>
+
+<p>Os resultados <code>1</code> e <code>0</code> são o "verdadeiro" e o "falso" do SQLite. O email ficou certinho em minúsculas: só tinha letras sem acento.</p>
+
+<hr>
+
+<h2>3. <code>substr</code>: recortar um pedaço</h2>
+<p><code>substr</code> (de <em>substring</em>, "pedaço do texto") recorta um trecho. Ela recebe o texto, a <strong>posição</strong> onde começa e, se quiser, <strong>quantos</strong> caracteres levar. A primeira letra é a posição <strong>1</strong>:</p>
+
+<pre class="file" data-file="substr.sql" data-resultado>SELECT substr('Ana Beatriz Sousa', 1, 3)  AS do_1_leva_3,
+       substr('Ana Beatriz Sousa', 5, 7)  AS do_5_leva_7,
+       substr('Ana Beatriz Sousa', 5)     AS do_5_ate_o_fim,
+       substr('Ana Beatriz Sousa', -5)    AS ultimas_5;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Posição</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th><th>9</th><th>10</th><th>11</th><th>12</th><th>13</th><th>14</th><th>15</th><th>16</th><th>17</th></tr>
+<tr><td>Letra</td><td>A</td><td>n</td><td>a</td><td>␣</td><td>B</td><td>e</td><td>a</td><td>t</td><td>r</td><td>i</td><td>z</td><td>␣</td><td>S</td><td>o</td><td>u</td><td>s</td><td>a</td></tr>
+</table>
+</div>
+<p>(O <code>␣</code> marca os espaços: eles também ocupam uma posição.)</p>
+
+<dl class="anatomy">
+  <dt>substr(texto, 1, 3)</dt><dd>Começa na posição 1 e leva 3: <code>Ana</code>.</dd>
+  <dt>substr(texto, 5, 7)</dt><dd>Começa na posição 5 (o <code>B</code>) e leva 7: <code>Beatriz</code>.</dd>
+  <dt>substr(texto, 5)</dt><dd>Sem o terceiro argumento, vai até o fim: <code>Beatriz Sousa</code>.</dd>
+  <dt>substr(texto, -5)</dt><dd>Posição negativa conta do fim para o começo: as 5 últimas, <code>Sousa</code>.</dd>
+</dl>
+
+<p>O SQLite também aceita o nome <code>substring</code>, do SQL padrão, com os mesmos argumentos.</p>
+
+<h3><code>instr</code>: onde está?</h3>
+<p>Para recortar o primeiro nome, a posição do corte muda de cliente para cliente: "Ana" tem 3 letras, "Carlos" tem 6. A <code>instr</code> (de <em>in string</em>, "no texto") diz <strong>em que posição</strong> um trecho aparece pela primeira vez, ou <code>0</code> se não aparece:</p>
+
+<pre class="file" data-file="instr.sql" data-resultado>SELECT nome,
+       instr(nome, ' ') AS posicao_do_espaco,
+       substr(nome, 1, instr(nome, ' ') - 1) AS primeiro_nome
+FROM clientes
+WHERE id &lt;= 4;
+</pre>
+
+<p>Em "José Ribamar Silva", o primeiro espaço está na posição 5. O primeiro nome vai da posição 1 e leva <strong>5 − 1 = 4</strong> letras: "José". O <code>- 1</code> é para não levar o espaço junto. O mesmo truque separa as duas partes de um email:</p>
+
+<pre class="file" data-file="email.sql" data-resultado>SELECT email,
+       substr(email, 1, instr(email, '@') - 1) AS usuario,
+       substr(email, instr(email, '@') + 1)    AS dominio
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<p>O usuário é tudo <strong>antes</strong> do <code>@</code> (até a posição dele − 1); o domínio é tudo <strong>depois</strong> (da posição dele + 1 até o fim).</p>
+
+<div class="trysql" data-goal="colunas:primeiro_nome;;out:^José\nMaria\nAna\nCarlos\n">
+<p class="try-task"><strong>Experimente:</strong> a Ana vai mandar um email de aniversário que começa com "Olá, José!". Ela precisa só do <strong>primeiro nome</strong> de cada cliente. Troque o <code>nome</code> do <code>SELECT</code> por um <code>substr</code> com <code>instr</code> que recorte até antes do primeiro espaço, mantendo o apelido <code>primeiro_nome</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome AS primeiro_nome
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT substr(nome, 1, instr(nome, ' ') - 1) AS primeiro_nome
+FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. <code>trim</code> e <code>replace</code>: limpar e trocar</h2>
+<h3><code>trim</code>: tirar as sobras das pontas</h3>
+<p>Quem digita um cadastro às vezes deixa espaços sobrando no começo ou no fim: <code>'   Ana   '</code>. Para o banco, <code>'Ana'</code> e <code>'Ana '</code> são textos diferentes, e uma busca por <code>'Ana'</code> não acha o segundo. A <code>trim</code> ("aparar") tira os espaços das duas pontas; <code>ltrim</code> só da esquerda (<em>left</em>) e <code>rtrim</code> só da direita (<em>right</em>). As barras <code>|</code> no exemplo estão lá só para você enxergar onde o texto acaba:</p>
+
+<pre class="file" data-file="trim.sql" data-resultado>SELECT '|' || trim('   Ana   ')  || '|' AS com_trim,
+       '|' || ltrim('   Ana   ') || '|' AS com_ltrim,
+       '|' || rtrim('   Ana   ') || '|' AS com_rtrim,
+       trim('--Ana--', '-')             AS outro_caractere;
+</pre>
+
+<p>Com um segundo argumento, a <code>trim</code> tira <strong>outros caracteres</strong> das pontas: <code>trim('--Ana--', '-')</code> tira os hífens. Ela nunca mexe no meio do texto: <code>trim('Ana Lima')</code> mantém o espaço entre os nomes.</p>
+
+<h3><code>replace</code>: trocar um trecho por outro</h3>
+<p><code>replace</code> ("substituir") troca <strong>todas</strong> as vezes que um trecho aparece. Ela recebe o texto, o que procurar e o que pôr no lugar:</p>
+
+<pre class="file" data-file="replace.sql" data-resultado>SELECT replace('Caneta Esferográfica Azul', 'Azul', 'Preta') AS outra_cor,
+       replace('banana', 'a', 'o')                            AS todas_as_vezes,
+       replace('(86) 99821-4455', '-', '')                    AS sem_hifen;
+</pre>
+
+<p>Para deixar o telefone só com números, é preciso tirar quatro coisas: parênteses, espaço e hífen. Uma <code>replace</code> dentro da outra, de dentro para fora:</p>
+
+<pre class="file" data-file="telefone.sql" data-resultado>SELECT nome, telefone,
+       replace(replace(replace(replace(telefone, '(', ''), ')', ''), ' ', ''), '-', '') AS so_numeros
+FROM fornecedores;
+</pre>
+
+<p>Leia de dentro para fora: a <code>replace</code> mais de dentro tira o <code>(</code>; a de fora dela tira o <code>)</code>; depois o espaço; por último o hífen. Os telefones de Portugal e da Argentina ficaram com o <code>+</code> do código do país, porque ele não estava na lista.</p>
+
+<hr>
+
+<h2>5. Juntar textos: <code>||</code>, <code>concat</code> e <code>concat_ws</code></h2>
+<p>No SQL padrão, quem junta (ou <strong>concatena</strong>) textos é o operador <code>||</code>, duas barras verticais. Ele cola o da esquerda com o da direita, sem pôr nada no meio; os espaços e separadores são por sua conta:</p>
+
+<pre class="file" data-file="concatenar.sql" data-resultado>SELECT nome,
+       cidade || ' - ' || estado AS local
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<p>Três pedaços colados: a cidade, o texto <code>' - '</code> (espaço, hífen, espaço) e o estado. Números também podem entrar na junção, e viram texto: <code>'Total: ' || 30.94</code> dá <code>Total: 30.94</code>.</p>
+
+<h3>O <code>NULL</code> estraga a junção inteira</h3>
+<p>Agora com os fornecedores. Dois deles são estrangeiros e estão com <code>estado</code> <em>NULL</em>:</p>
+
+<pre class="file" data-file="concat-null.sql" data-resultado>SELECT nome, cidade, estado,
+       cidade || ' - ' || estado AS local
+FROM fornecedores;
+</pre>
+
+<p>Para a Lusitana Comércio (Porto) e a Pampa Sur (Buenos Aires), o <code>local</code> inteiro virou <em>NULL</em>, e a cidade, que existia, sumiu junto. É a regra do <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>): qualquer conta com um valor desconhecido dá desconhecido, e juntar textos é uma conta. Três jeitos de consertar:</p>
+
+<pre class="file" data-file="concat-consertos.sql" data-resultado>SELECT nome,
+       cidade || ' - ' || coalesce(estado, pais) AS com_coalesce,
+       concat(cidade, ' - ', estado)             AS com_concat,
+       concat_ws(' - ', cidade, estado)          AS com_concat_ws
+FROM fornecedores;
+</pre>
+
+<dl class="anatomy">
+  <dt>coalesce(estado, pais)</dt><dd>Usa o estado; se ele for <em>NULL</em>, usa o país (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>). Resultado: <code>Porto - Portugal</code>.</dd>
+  <dt>concat(a, b, c, …)</dt><dd>Junta todos os argumentos, <strong>tratando <em>NULL</em> como texto vazio</strong>. Não some com a cidade, mas sobra o separador: <code>Porto - </code>, com o hífen pendurado.</dd>
+  <dt>concat_ws(separador, a, b, …)</dt><dd>"Concat <em>with separator</em>", com separador. O primeiro argumento é o separador, posto <strong>entre</strong> os outros, e os <em>NULL</em> são pulados junto com o seu separador: <code>Porto</code>, limpinho.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:6;;contem:Porto;;contem:Buenos Aires">
+<p class="try-task"><strong>Missão:</strong> a lista de fornecedores com o <code>local</code> perdeu Porto e Buenos Aires, porque o <code>estado</code> deles é <em>NULL</em>. Conserte a coluna <code>local</code> para que nenhuma cidade suma. Pode ser com <code>coalesce</code>, <code>concat</code> ou <code>concat_ws</code>: você escolhe.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome,
+       cidade || ' - ' || estado AS local
+FROM fornecedores;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome,
+       concat_ws(' - ', cidade, estado) AS local
+FROM fornecedores;
+</pre>
+</div>
+
+<hr>
+
+<h2>6. <code>printf</code> e <code>format</code>: carimbar números e textos</h2>
+<p>O SQLite escreve os números do jeito mais curto: o marca-texto custa <code>4.9</code>, e não <code>4.90</code>. Para uma etiqueta de preço, isso é feio. A <code>printf</code> ("imprima formatado", um nome que vem da linguagem C) recebe um <strong>molde</strong> e os valores que entram nele. O SQLite também a chama de <code>format</code>; as duas são a mesma função.</p>
+
+<pre class="file" data-file="printf.sql" data-resultado>SELECT nome, preco,
+       printf('%.2f', preco)                       AS duas_casas,
+       format('R$ %.2f', preco)                    AS com_moeda,
+       replace(printf('%.2f', preco), '.', ',')    AS jeito_brasileiro
+FROM produtos
+WHERE id IN (1, 4, 9, 14);
+</pre>
+
+<dl class="anatomy">
+  <dt>'%.2f'</dt><dd>Um número com <strong>2 casas</strong> depois do ponto (<code>f</code> de <em>float</em>, número com vírgula). <code>4.9</code> vira <code>4.90</code>; <code>99.0</code> vira <code>99.00</code>.</dd>
+  <dt>'R$ %.2f'</dt><dd>O que está fora do código é copiado como está: o <code>R$ </code> fica na frente.</dd>
+  <dt>replace(…, '.', ',')</dt><dd>A <code>printf</code> usa ponto. Para o formato brasileiro, troque o ponto pela vírgula.</dd>
+</dl>
+
+<p>O resultado da <code>printf</code> é <strong>texto</strong>, pronto para mostrar. Não use esse texto para fazer contas nem para ordenar: para isso, use o número original (ou a <code>round</code>, da aula <a href="funcoes-numericas.html">Funções Numéricas</a>).</p>
+
+<h3>Os códigos da <code>printf</code></h3>
+<pre class="file" data-file="printf-codigos.sql" data-resultado>SELECT printf('%05d', 42)                AS cinco_digitos,
+       printf('%s tem %d anos', 'Ana', 30) AS frase,
+       printf('%d%%', 15)                 AS porcentagem,
+       printf('[%-6s]', 'Ana')            AS alinhado_esquerda,
+       printf('[%6s]', 'Ana')             AS alinhado_direita;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que põe no lugar</th><th>Exemplo</th></tr>
+<tr><td><code>%s</code></td><td>Um texto (<em>string</em>)</td><td><code>printf('Olá, %s!', 'Ana')</code> → <code>Olá, Ana!</code></td></tr>
+<tr><td><code>%d</code></td><td>Um número inteiro (<em>decimal</em>)</td><td><code>printf('%d itens', 3)</code> → <code>3 itens</code></td></tr>
+<tr><td><code>%.2f</code></td><td>Número com 2 casas (troque o 2 por quantas quiser)</td><td><code>printf('%.1f', 4.25)</code> → <code>4.3</code></td></tr>
+<tr><td><code>%05d</code></td><td>Inteiro com 5 dígitos, completando com zeros à esquerda</td><td><code>printf('%05d', 42)</code> → <code>00042</code></td></tr>
+<tr><td><code>%6s</code> / <code>%-6s</code></td><td>Texto ocupando 6 espaços, alinhado à direita / à esquerda</td><td><code>[   Ana]</code> / <code>[Ana   ]</code></td></tr>
+<tr><td><code>%%</code></td><td>Um <code>%</code> de verdade</td><td><code>printf('%d%%', 15)</code> → <code>15%</code></td></tr>
+</table>
+</div>
+
+<p>Cada código pega o próximo valor da lista, na ordem: em <code>printf('%s tem %d anos', 'Ana', 30)</code>, o <code>%s</code> pega <code>'Ana'</code> e o <code>%d</code> pega <code>30</code>.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de fazer</h2>
+<p>Muitas tarefas de texto têm mais de uma solução. Para "cidade - estado, sem perder ninguém":</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Com <code>estado</code> NULL dá</th><th>Quando usar</th></tr>
+<tr><td><code>cidade || ' - ' || estado</code></td><td><em>NULL</em> (perde tudo)</td><td>Quando você tem certeza de que nada é <em>NULL</em> (ex.: colunas <code>NOT NULL</code>). É o SQL padrão.</td></tr>
+<tr><td><code>cidade || ' - ' || coalesce(estado, '?')</code></td><td><code>Porto - ?</code></td><td>Quando quer um valor no lugar do <em>NULL</em>.</td></tr>
+<tr><td><code>concat(cidade, ' - ', estado)</code></td><td><code>Porto - </code></td><td>Para juntar sem perder nada; existe também no MySQL, PostgreSQL e SQL Server.</td></tr>
+<tr><td><code>concat_ws(' - ', cidade, estado)</code></td><td><code>Porto</code></td><td>Para listas com separador (endereço, nome completo), pulando o que faltar.</td></tr>
+<tr><td><code>printf('%s - %s', cidade, estado)</code></td><td><code>Porto - </code></td><td>Quando a junção também precisa formatar números.</td></tr>
+</table>
+</div>
+
+<p>E para "o primeiro nome": <code>substr(nome, 1, instr(nome, ' ') - 1)</code> funciona para todo nome com espaço. Para nomes de uma palavra só, veja o primeiro caso de <a href="#errado">Quando dá errado</a>.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O primeiro nome de quem não tem sobrenome</strong>
+<pre class="file" data-file="sem-espaco.sql" data-resultado>SELECT instr('Maria', ' ')                        AS posicao,
+       substr('Maria', 1, instr('Maria', ' ') - 1) AS primeiro_nome;
+</pre>
+<p><strong>O que aconteceu:</strong> o primeiro nome saiu <strong>vazio</strong>. "Maria" não tem espaço, a <code>instr</code> devolveu <code>0</code>, e <code>0 - 1</code> é <code>-1</code>: pedir −1 letras dá nada. Todos os clientes da loja têm sobrenome, mas um cadastro novo pode não ter.</p>
+<p><strong>Como consertar:</strong> acrescente um espaço no fim antes de procurar, para sempre achar um: <code>substr(nome, 1, instr(nome || ' ', ' ') - 1)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Juntou com <code>+</code></strong>
+<pre class="file" data-file="mais.sql" data-resultado>SELECT 'Ana' + ' Lima' AS com_mais,
+       'Ana' || ' Lima' AS com_barras;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>0</code>. No SQLite, <code>+</code> é sempre <strong>soma de números</strong>; ele tentou transformar <code>'Ana'</code> e <code>' Lima'</code> em números, não conseguiu, usou 0 para cada um e somou: 0. Sem erro. (No SQL Server, <code>+</code> junta textos; veja "Nos outros bancos".)</p>
+<p><strong>Como consertar:</strong> no SQLite, junte com <code>||</code> ou <code>concat</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Contou as posições a partir do zero</strong>
+<pre class="file" data-file="zero.sql" data-resultado>SELECT substr('Ana Beatriz', 0, 3) AS comecando_do_zero,
+       substr('Ana Beatriz', 1, 3) AS comecando_do_um;
+</pre>
+<p><strong>O que aconteceu:</strong> veio só <code>An</code>. Quem programa em linguagens como Python e JavaScript está acostumado a contar do zero, mas no SQL a primeira letra é a posição 1. A posição 0 fica "antes" do texto e gasta uma das 3 letras pedidas.</p>
+<p><strong>Como consertar:</strong> comece do 1.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas no texto</strong>
+<pre class="file" data-file="aspas.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE cidade = "Teresina";
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: "Teresina" - should this be a string literal in single-quotes?</code>, "não existe a coluna "Teresina"; deveria ser um texto entre aspas simples?". Em SQL, aspas duplas são para <strong>nomes</strong> (de colunas e tabelas). Texto é sempre com aspas simples.</p>
+<p><strong>Como consertar:</strong> <code>WHERE cidade = 'Teresina'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um apóstrofo dentro do texto</strong>
+<p>O fornecedor 2 se chama <code>Loja D'Água</code>. O apóstrofo é a mesma aspa simples que fecha o texto, então <code>'Loja D'Água'</code> termina no <code>D</code>, e o resto vira lixo de sintaxe:</p>
+<pre class="file" data-file="apostrofo.sql" data-resultado data-erro>SELECT nome, cidade
+FROM fornecedores
+WHERE nome = 'Loja D'Água';
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "Água": syntax error</code>, "erro de sintaxe perto de Água": o pedaço que ficou fora das aspas.</p>
+<p><strong>Como consertar:</strong> dentro de um texto, um apóstrofo se escreve com <strong>duas</strong> aspas simples seguidas: <code>'Loja D''Água'</code>.</p>
+<pre class="file" data-file="apostrofo-certo.sql" data-resultado>SELECT nome, cidade
+FROM fornecedores
+WHERE nome = 'Loja D''Água';
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Usou uma função de outro banco</strong>
+<pre class="file" data-file="left.sql" data-resultado data-erro>SELECT LEFT(nome, 3) AS inicio
+FROM clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such function: LEFT</code>. O <code>LEFT</code> ("esquerda") existe no MySQL e no SQL Server, mas não no SQLite.</p>
+<p><strong>Como consertar:</strong> <code>substr(nome, 1, 3)</code>. Para o <code>RIGHT</code>, <code>substr(nome, -3)</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Os nomes e alguns comportamentos mudam bastante de um banco para outro. Trechos ilustrativos, que não rodam no SQLite:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>PostgreSQL</th><th>MySQL</th><th>SQL Server</th></tr>
+<tr><td>Juntar</td><td><code>a || b</code>, <code>concat</code></td><td><code>a || b</code>, <code>concat</code></td><td><code>CONCAT(a, b)</code> (o <code>||</code> é "ou" lógico, a não ser num modo especial)</td><td><code>a + b</code>, <code>CONCAT(a, b)</code></td></tr>
+<tr><td>Tamanho em letras</td><td><code>length</code></td><td><code>length</code>, <code>char_length</code></td><td><code>CHAR_LENGTH</code> (o <code>LENGTH</code> conta <strong>bytes</strong>)</td><td><code>LEN</code> (ignora espaços no fim)</td></tr>
+<tr><td>Maiúsculas com acento</td><td>Não (só A–Z)</td><td>Sim</td><td>Sim</td><td>Sim</td></tr>
+<tr><td>Começo do texto</td><td><code>substr(s, 1, 3)</code></td><td><code>left(s, 3)</code>, <code>substr</code></td><td><code>LEFT(s, 3)</code></td><td><code>LEFT(s, 3)</code>, <code>SUBSTRING</code></td></tr>
+<tr><td>Posição</td><td><code>instr(s, t)</code></td><td><code>strpos(s, t)</code>, <code>position(t IN s)</code></td><td><code>INSTR(s, t)</code>, <code>LOCATE(t, s)</code></td><td><code>CHARINDEX(t, s)</code></td></tr>
+</table>
+</div>
+<p>O caso do MySQL merece atenção: <code>SELECT 'a' || 'b'</code>, que no SQLite dá <code>ab</code>, no MySQL (no modo padrão) é uma conta de "ou" lógico e dá <code>0</code>. Use <code>CONCAT</code> quando o mesmo SQL tiver de rodar nos dois. E o <code>LENGTH('Conceição')</code> do MySQL dá 11 (bytes), e não 9.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>O que faz</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>length(s)</code></td><td>Número de caracteres</td><td><code>length('Conceição')</code> → <code>9</code></td></tr>
+<tr><td><code>octet_length(s)</code></td><td>Número de bytes</td><td><code>octet_length('Conceição')</code> → <code>11</code></td></tr>
+<tr><td><code>upper(s)</code> / <code>lower(s)</code></td><td>Maiúsculas / minúsculas (só A–Z!)</td><td><code>upper('josé')</code> → <code>JOSé</code></td></tr>
+<tr><td><code>substr(s, início, qtd)</code></td><td>Recorta (a 1ª letra é a posição 1; negativo conta do fim)</td><td><code>substr('Aurora', 1, 3)</code> → <code>Aur</code></td></tr>
+<tr><td><code>instr(s, t)</code></td><td>Posição da 1ª vez que <code>t</code> aparece; 0 se não aparece</td><td><code>instr('ana@x', '@')</code> → <code>4</code></td></tr>
+<tr><td><code>trim(s)</code>, <code>ltrim</code>, <code>rtrim</code></td><td>Tira espaços (ou os caracteres dados) das pontas</td><td><code>trim('  Ana ')</code> → <code>Ana</code></td></tr>
+<tr><td><code>replace(s, de, para)</code></td><td>Troca todas as ocorrências</td><td><code>replace('a-b-c', '-', '')</code> → <code>abc</code></td></tr>
+<tr><td><code>a || b</code></td><td>Junta (com NULL, dá NULL)</td><td><code>'Ana' || ' Lima'</code> → <code>Ana Lima</code></td></tr>
+<tr><td><code>concat(a, b, …)</code></td><td>Junta, tratando NULL como vazio</td><td><code>concat('Ana', NULL)</code> → <code>Ana</code></td></tr>
+<tr><td><code>concat_ws(sep, a, b, …)</code></td><td>Junta com separador, pulando os NULL</td><td><code>concat_ws(', ', 'a', NULL, 'b')</code> → <code>a, b</code></td></tr>
+<tr><td><code>printf(molde, …)</code> = <code>format</code></td><td>Formata (<code>%s</code>, <code>%d</code>, <code>%.2f</code>, <code>%05d</code>, <code>%%</code>)</td><td><code>printf('%.2f', 4.9)</code> → <code>4.90</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os três primeiros caracteres</h3>
+<p>Complete para pegar as 3 primeiras letras do nome:</p>
+<div class="ex-code">SELECT substr(nome, <input data-answer="1" aria-label="início">, 3) FROM produtos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Juntar com separador</h3>
+<p>Complete o operador que junta textos no SQL padrão:</p>
+<div class="ex-code">SELECT cidade <input data-answer="||" aria-label="operador"> ' - ' <input data-answer="||" aria-label="operador"> estado FROM clientes;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que <code>upper('Conceição')</code> devolve no SQLite?</p>
+<label><input type="radio" name="q3"> <code>CONCEIÇÃO</code></label>
+<label><input type="radio" name="q3"> Um erro, por causa dos acentos</label>
+<label><input type="radio" name="q3"> <code>CONCEIçãO</code></label>
+<label><input type="radio" name="q3"> <code>conceição</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O fornecedor Pampa Sur tem <code>estado</code> NULL. O que <code>cidade || ' - ' || estado</code> mostra para ele?</p>
+<label><input type="radio" name="q4"> <code>Buenos Aires - </code></label>
+<label><input type="radio" name="q4"> <em>NULL</em></label>
+<label><input type="radio" name="q4"> <code>Buenos Aires - NULL</code></label>
+<label><input type="radio" name="q4"> <code>Buenos Aires</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual expressão mostra o preço <code>4.9</code> como <code>4.90</code>?</p>
+<label><input type="radio" name="q5"> <code>length(4.9)</code></label>
+<label><input type="radio" name="q5"> <code>4.9 || '0'</code> (funciona para todos os preços)</label>
+<label><input type="radio" name="q5"> <code>substr(4.9, 1, 4)</code></label>
+<label><input type="radio" name="q5"> <code>printf('%.2f', 4.9)</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Quanto vale <code>instr('ana.beatriz@exemplo.com.br', '@')</code>?</p>
+<label><input type="radio" name="q6"> <code>12</code></label>
+<label><input type="radio" name="q6"> <code>11</code></label>
+<label><input type="radio" name="q6"> <code>0</code></label>
+<label><input type="radio" name="q6"> <code>@</code></label>
+</div>
+
+<h3>Missão final: as etiquetas da papelaria</h3>
+
+<div class="trysql" data-goal="colunas:codigo,produto,preco_br;;linhas:6;;contem:P004|Marca-texto Amarelo|4,90">
+<p class="try-task"><strong>Missão:</strong> a papelaria (categoria 1) vai ganhar etiquetas novas. Para cada produto dela, mostre três colunas: <code>codigo</code>, a letra <code>P</code> seguida do id com 3 dígitos (o produto 4 vira <code>P004</code>); <code>produto</code>, o nome; e <code>preco_br</code>, o preço com duas casas e vírgula (<code>4,90</code>).</p>
+<pre class="script" data-file="consulta.sql">SELECT id, nome, preco
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT 'P' || printf('%03d', id)                AS codigo,
+       nome                                      AS produto,
+       replace(printf('%.2f', preco), '.', ',')  AS preco_br
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+</div>
+
+<p>Outra resposta certa para o código: <code>printf('P%03d', id)</code>, com o <code>P</code> dentro do molde.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Funções de texto mudam o que o <code>SELECT</code> <strong>mostra</strong>, nunca o que está guardado.</li>
+  <li><code>length</code> conta caracteres (com acento, 1 cada); <code>octet_length</code> conta bytes.</li>
+  <li><code>upper</code> e <code>lower</code> no SQLite só trocam as letras A–Z: <code>upper('Conceição')</code> dá <code>CONCEIçãO</code>. Use-as sem medo em emails e códigos.</li>
+  <li><code>substr(s, início, qtd)</code> recorta, contando do 1; <code>instr(s, t)</code> acha a posição (0 se não acha). Juntas, separam primeiro nome, usuário e domínio do email.</li>
+  <li><code>trim</code> limpa as pontas; <code>replace</code> troca todas as ocorrências.</li>
+  <li><code>||</code> junta textos, mas um <em>NULL</em> derruba tudo; <code>concat</code> trata NULL como vazio e <code>concat_ws</code> pula o NULL junto com o separador. <code>+</code> não junta textos no SQLite.</li>
+  <li><code>printf</code> (ou <code>format</code>) carimba: <code>'%.2f'</code> para duas casas, <code>'%05d'</code> para zeros à esquerda. O resultado é texto, para mostrar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
