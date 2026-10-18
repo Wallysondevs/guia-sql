@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL LIKE — procurando por um pedaço do texto | Guia SQL</title>
+<meta name="description" content="O operador LIKE do SQL para quem nunca mexeu num banco de dados: começa com, termina com, contém, maiúsculas e minúsculas no SQLite (só sem acento: 'á' LIKE 'Á' dá falso), NOT LIKE, LIKE com NULL e números, ESCAPE para achar um % ou _ de verdade, o GLOB como alternativa e as mensagens de erro reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">LIKE</span></h1>
+
+<p class="intro">Uma cliente liga para a Loja Aurora: "é a Ana, já comprei aí". Ana de quê? A atendente não sabe o nome completo, então o <code>=</code> não serve: <code>nome = 'Ana'</code> só acharia alguém chamado exatamente "Ana", e ninguém se chama assim. Ela precisa procurar por um <strong>pedaço</strong> do texto: "nomes que <strong>começam</strong> com Ana". É para isso que serve o <code>LIKE</code> ("parecido com", em inglês): ele compara o texto com um <strong>padrão</strong>, em vez de exigir que seja igualzinho.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Procurar textos que começam com, terminam com ou contêm um pedaço, usando o <code>%</code>.</li>
+  <li>Que, no SQLite, o <code>LIKE</code> ignora maiúsculas e minúsculas, mas <strong>só nas letras sem acento</strong>: <code>'a' LIKE 'A'</code> dá verdadeiro, <code>'á' LIKE 'Á'</code> dá falso.</li>
+  <li>O <code>NOT LIKE</code> e o que acontece com <code>NULL</code> e com números.</li>
+  <li>Como procurar um <code>%</code> ou um <code>_</code> de verdade, com <code>ESCAPE</code>.</li>
+  <li>O <code>GLOB</code>, a alternativa do SQLite que diferencia maiúsculas.</li>
+  <li>Os erros mais comuns, com as mensagens reais.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador. Os dois "curingas" do <code>LIKE</code>, o <code>%</code> e o <code>_</code>, aparecem aqui só no básico; todas as combinações estão na próxima aula, <a href="curingas.html">Curingas (% e _)</a>.</p>
+
+<hr>
+
+<h2>A ideia: o "qualquer coisa"</h2>
+<p>No <code>LIKE</code>, o padrão é um texto comum com um símbolo especial: o <code>%</code> (sinal de porcentagem), que quer dizer "<strong>qualquer coisa aqui</strong>" (qualquer sequência de letras, de qualquer tamanho, até nenhuma). É como dizer à atendente: "procure 'Ana', seguido de um espaço, seguido de qualquer coisa".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que a Ana quer</th><th>Padrão</th><th>Lê-se</th></tr>
+<tr><td>Começa com "Ana "</td><td><code>'Ana %'</code></td><td>"Ana ", depois qualquer coisa</td></tr>
+<tr><td>Termina com "Azul"</td><td><code>'%Azul'</code></td><td>Qualquer coisa, depois "Azul"</td></tr>
+<tr><td>Tem "de" em algum lugar</td><td><code>'%de%'</code></td><td>Qualquer coisa, "de", qualquer coisa</td></tr>
+<tr><td>É exatamente "Ana"</td><td><code>'Ana'</code></td><td>Sem <code>%</code>, o <code>LIKE</code> funciona como um <code>=</code> (quase: veja a seção 3)</td></tr>
+</table>
+</div>
+
+<p>Há um segundo curinga, o <code>_</code> (sublinhado), que quer dizer "<strong>exatamente uma</strong> letra qualquer". Ele é o assunto da próxima aula.</p>
+
+<hr>
+
+<h2>1. O primeiro LIKE</h2>
+
+<pre class="file" data-file="as-anas.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE nome LIKE 'Ana %';
+</pre>
+
+<dl class="anatomy">
+  <dt>nome</dt><dd>A coluna de texto que vai ser comparada.</dd>
+  <dt>LIKE</dt><dd>"Parecido com": compara com um padrão, não com um valor exato.</dd>
+  <dt>'Ana %'</dt><dd>O padrão, entre <strong>aspas simples</strong> (é um texto). "Ana", um espaço e depois qualquer coisa.</dd>
+</dl>
+
+<p>Duas clientes: Ana Beatriz Sousa, de São Paulo, e Ana Carvalho Lima, de Teresina. Agora a atendente pode perguntar "a senhora é de São Paulo ou de Teresina?".</p>
+
+<p>Por que o espaço depois de "Ana"? Sem ele, <code>'Ana%'</code> também acharia uma "Anabela" ou uma "Anastácia". Com o espaço, só quem tem "Ana" como primeiro nome inteiro.</p>
+
+<p>Compare com o <code>=</code>, que não conhece curingas:</p>
+
+<pre class="file" data-file="igual.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome = 'Ana %';
+</pre>
+
+<p>Nenhuma linha. Para o <code>=</code>, o <code>%</code> é só um caractere comum: ele procurou alguém chamado literalmente "Ana %".</p>
+
+<hr>
+
+<h2>2. Começa com, termina com, contém</h2>
+<p>A posição do <code>%</code> decide o tipo de busca. Os produtos que <strong>começam</strong> com "Garrafa":</p>
+
+<pre class="file" data-file="comeca.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome LIKE 'Garrafa%';
+</pre>
+
+<p>Os que <strong>terminam</strong> com "azul" (repare: escrevi em minúsculas, e veio "Azul"; a seção 3 explica):</p>
+
+<pre class="file" data-file="termina.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome LIKE '%azul';
+</pre>
+
+<p>E os que <strong>contêm</strong> o número de telefone de Teresina, o DDD 86, entre parênteses, no começo:</p>
+
+<pre class="file" data-file="ddd.sql" data-resultado>SELECT nome, telefone
+FROM fornecedores
+WHERE telefone LIKE '(86)%';
+</pre>
+
+<div class="trysql" data-goal="linhas:2">
+<p class="try-task"><strong>Experimente:</strong> a consulta abaixo procura um produto chamado exatamente "Jogo" e não acha nada. Use <code>LIKE</code> para achar os produtos cujo nome <strong>começa</strong> com "Jogo" (são 2).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE nome = 'Jogo';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+WHERE nome LIKE 'Jogo%';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Maiúsculas, minúsculas e acentos</h2>
+<p>No SQLite, o <code>LIKE</code> <strong>não diferencia</strong> maiúsculas de minúsculas. Por isso <code>'ana %'</code>, <code>'Ana %'</code> e <code>'ANA %'</code> acham as mesmas duas clientes:</p>
+
+<pre class="file" data-file="ana-minuscula.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE nome LIKE 'ana %';
+</pre>
+
+<p>Mas há uma pegadinha, e ela é grande para quem escreve em português. A documentação do SQLite avisa: por padrão, ele só entende maiúsculas e minúsculas das letras <strong>ASCII</strong>, ou seja, de A a Z, <strong>sem acento</strong>. Para as letras acentuadas (á, ã, ç, é, ô…), o <code>LIKE</code> diferencia maiúscula de minúscula. Veja letra por letra:</p>
+
+<pre class="file" data-file="letras.sql" data-resultado>SELECT 'a' LIKE 'A', 'á' LIKE 'Á', 'ç' LIKE 'Ç', 'Água' LIKE 'água', 'Água' LIKE 'ÁGUA';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comparação</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>'a' LIKE 'A'</code></td><td>1 (verdadeiro)</td><td>"a" é ASCII: maiúscula e minúscula são a mesma letra para o <code>LIKE</code>.</td></tr>
+<tr><td><code>'á' LIKE 'Á'</code></td><td>0 (falso)</td><td>Com acento, não é ASCII: "á" e "Á" são letras diferentes.</td></tr>
+<tr><td><code>'ç' LIKE 'Ç'</code></td><td>0 (falso)</td><td>O mesmo com o cedilha.</td></tr>
+<tr><td><code>'Água' LIKE 'água'</code></td><td>0 (falso)</td><td>O "Á" não casa com o "á"; o resto nem importa.</td></tr>
+<tr><td><code>'Água' LIKE 'ÁGUA'</code></td><td>1 (verdadeiro)</td><td>O "Á" é igual nos dois lados, e "gua" × "GUA" são ASCII.</td></tr>
+</table>
+</div>
+
+<p>Na prática, com os dados da loja: o fornecedor 2 se chama <strong>Loja D'Água</strong>, com "Á" maiúsculo. A Ana procura por "água", em minúsculas:</p>
+
+<pre class="file" data-file="agua.sql" data-resultado>SELECT nome
+FROM fornecedores
+WHERE nome LIKE '%água%';
+</pre>
+
+<p>Nada! O mesmo acontece com a cidade de São Paulo: <code>cidade LIKE 'são paulo'</code> acha os 7 clientes (o "ã" está igual, minúsculo, nos dois lados), mas <code>cidade LIKE 'SÃO PAULO'</code> não acha nenhum, porque "Ã" maiúsculo não casa com o "ã" guardado. E o acento em si sempre conta: <code>'%agua%'</code>, sem acento, também não acha a Loja D'Água.</p>
+
+<div class="tip">
+<strong>Como contornar</strong>
+<ul>
+  <li>Escreva a parte acentuada <strong>do jeito que está guardada</strong>: <code>'%Água%'</code>.</li>
+  <li>Ou procure só pela parte sem acento: <code>'%gua%'</code> acha a Loja D'Água.</li>
+  <li>Para bancos com muita busca por texto, existe a extensão ICU do SQLite (citada na documentação), que ensina maiúsculas e minúsculas de todas as letras. Ela não vem no SQLite padrão, nem no editor do guia.</li>
+</ul>
+</div>
+
+<div class="trysql" data-goal="linhas:1">
+<p class="try-task"><strong>Missão:</strong> a busca abaixo não acha o fornecedor Loja D'Água por causa do acento. Mude <strong>só o padrão</strong> do <code>LIKE</code> para que ele apareça.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade
+FROM fornecedores
+WHERE nome LIKE '%água%';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM fornecedores
+WHERE nome LIKE '%Água%';
+</pre>
+</div>
+
+<hr>
+
+<h2>4. NOT LIKE, NULL e números</h2>
+<h3>NOT LIKE: o que não combina</h3>
+<p>Com <code>NOT</code> antes do <code>LIKE</code> (aula <a href="not.html">NOT</a>), você fica com o que <strong>não</strong> combina. Os clientes cujo nome não termina com "a":</p>
+
+<pre class="file" data-file="not-like.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome NOT LIKE '%a';
+</pre>
+
+<p>22 clientes; os outros 8 (José Ribamar Silva, Ana Beatriz Sousa, Carlos Eduardo Lima…) terminam com "a".</p>
+
+<h3>NULL não combina com nada</h3>
+<p>O padrão <code>'%'</code> combina com <strong>qualquer</strong> texto, até o texto vazio. Então quantos clientes têm um email que combina com <code>'%'</code>?</p>
+
+<pre class="file" data-file="null.sql" data-resultado>SELECT count(*)
+FROM clientes
+WHERE email LIKE '%';
+</pre>
+
+<p>27, e não 30. Os 3 clientes sem email (<code>NULL</code>) ficaram de fora: o <code>NULL</code> não é um texto, é "não sei", e "não sei" não combina com padrão nenhum. E eles também não aparecem no <code>NOT LIKE</code>: a armadilha é a mesma da aula <a href="not.html">NOT</a>. (O <code>count(*)</code> conta as linhas; ele tem aula própria, <a href="count.html">COUNT()</a>.)</p>
+
+<h3>LIKE em números</h3>
+<p>O <code>LIKE</code> foi feito para texto, mas o SQLite aceita uma coluna de números: ele transforma o número em texto antes de comparar. Os produtos cujo preço termina em ",9":</p>
+
+<pre class="file" data-file="preco.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco LIKE '%.9';
+</pre>
+
+<p>Funciona, mas é um truque: ele depende de como o número vira texto (<code>4.9</code>, e não <code>4.90</code>). Para números, prefira as comparações (<code>&gt;</code>, <code>&lt;</code>, <a href="between.html">BETWEEN</a>).</p>
+
+<hr>
+
+<h2>5. ESCAPE: procurando um % ou um _ de verdade</h2>
+<p>E se o texto que você procura <strong>tem</strong> um <code>%</code> ou um <code>_</code>? Por exemplo, um aviso "50% de desconto", ou um email com sublinhado (<code>joao_silva@…</code>). Dentro do padrão, esses símbolos são curingas, e o <code>LIKE</code> não os trata como letras. Veja a Ana procurando emails que <strong>têm um sublinhado</strong>:</p>
+
+<pre class="file" data-file="sublinhado-errado.sql" data-resultado>SELECT count(*)
+FROM clientes
+WHERE email LIKE '%_%';
+</pre>
+
+<p>27, ou seja, <strong>todos</strong> os emails. Mas nenhum email da loja tem sublinhado! O que aconteceu: o <code>_</code> do padrão é o curinga "uma letra qualquer", então <code>'%_%'</code> quer dizer "tem pelo menos uma letra", e todo email tem.</p>
+
+<p>Para dizer "este <code>_</code> é um sublinhado de verdade", escolha um caractere de <strong>escape</strong> com <code>ESCAPE</code> e ponha-o antes do símbolo:</p>
+
+<pre class="file" data-file="sublinhado-certo.sql" data-resultado>SELECT count(*)
+FROM clientes
+WHERE email LIKE '%!_%' ESCAPE '!';
+</pre>
+
+<dl class="anatomy">
+  <dt>ESCAPE '!'</dt><dd>Avisa: neste padrão, o <code>!</code> é o caractere de escape. Você escolhe qual; tem de ser <strong>um</strong> caractere só, que não apareça no texto procurado. <code>!</code>, <code>\</code> e <code>#</code> são escolhas comuns.</dd>
+  <dt>!_</dt><dd>"Um <code>_</code> de verdade", e não o curinga.</dd>
+  <dt>%  …  %</dt><dd>Continuam sendo curingas: "qualquer coisa" antes e depois.</dd>
+</dl>
+
+<p>Agora deu 0: de fato, nenhum email da loja tem sublinhado. Com o <code>%</code> é igual. Como a loja não tem nenhum texto com "%", veja o <code>LIKE</code> aplicado direto a textos de exemplo:</p>
+
+<pre class="file" data-file="porcento.sql" data-resultado>SELECT '50% de desconto' LIKE '50!%%' ESCAPE '!',
+       '50 reais de desconto' LIKE '50!%%' ESCAPE '!',
+       '50 reais de desconto' LIKE '50%';
+</pre>
+
+<p>O padrão <code>'50!%%'</code> quer dizer "50, um sinal de % de verdade, depois qualquer coisa": casa com "50% de desconto" (1) e não com "50 reais" (0). Sem o escape, <code>'50%'</code> casa com qualquer coisa que comece com 50, inclusive "50 reais" (1).</p>
+
+<div class="note">
+<strong>O SQLite não tem escape "de fábrica"</strong>
+<p>Sem a palavra <code>ESCAPE</code>, nenhum caractere é de escape no SQLite: <code>'\%'</code> é uma barra seguida do curinga. É o que manda o padrão SQL. Alguns bancos usam a barra invertida <code>\</code> como escape automático (veja <a href="#outros">Nos outros bancos</a>).</p>
+</div>
+
+<hr>
+
+<h2>6. GLOB: a alternativa que diferencia maiúsculas</h2>
+<p>O SQLite tem um "primo" do <code>LIKE</code>, o <code>GLOB</code> (de <em>global</em>, o nome que o Unix dá para os padrões de nomes de arquivo, como <code>*.txt</code>). Ele faz o mesmo tipo de busca, com duas diferenças: os curingas são outros, e ele <strong>diferencia</strong> maiúsculas de minúsculas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>LIKE</code></th><th><code>GLOB</code></th></tr>
+<tr><td>Qualquer sequência</td><td><code>%</code></td><td><code>*</code></td></tr>
+<tr><td>Exatamente um caractere</td><td><code>_</code></td><td><code>?</code></td></tr>
+<tr><td>Um caractere de uma lista</td><td>não tem</td><td><code>[abc]</code>, <code>[0-9]</code></td></tr>
+<tr><td>Maiúsculas e minúsculas</td><td>Iguais (só A–Z sem acento)</td><td><strong>Diferentes</strong>, sempre</td></tr>
+<tr><td>Existe em outros bancos?</td><td>Sim, é padrão SQL</td><td>Não, é só do SQLite</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="glob.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome GLOB 'Ana *';
+</pre>
+
+<p>As mesmas duas clientes, mas agora com <code>*</code> no lugar de <code>%</code>. E com <code>'ana *'</code>, em minúsculas, o <code>GLOB</code> não acharia ninguém. A grande vantagem do <code>GLOB</code> são as listas entre colchetes. Os produtos que têm <strong>algum algarismo</strong> no nome:</p>
+
+<pre class="file" data-file="glob-numeros.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome GLOB '*[0-9]*';
+</pre>
+
+<p><code>[0-9]</code> quer dizer "um caractere entre 0 e 9". Com o <code>LIKE</code>, não dá para dizer isso.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de procurar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Busca</th><th>Escrita</th><th>Observação</th></tr>
+<tr><td>Igual, exatamente</td><td><code>nome = 'Atlas Geográfico'</code></td><td>Diferencia maiúsculas; não tem curingas</td></tr>
+<tr><td>Começa com</td><td><code>nome LIKE 'Atlas%'</code></td><td>Ignora maiúsculas (A–Z)</td></tr>
+<tr><td>Começa com, diferenciando maiúsculas</td><td><code>nome GLOB 'Atlas*'</code></td><td>Só no SQLite</td></tr>
+<tr><td>Contém um de dois pedaços</td><td><code>nome LIKE '%Azul%' OR nome LIKE '%Amarelo%'</code></td><td>Um <code>LIKE</code> para cada pedaço, unidos com <a href="or.html">OR</a></td></tr>
+<tr><td>Contém um algarismo</td><td><code>nome GLOB '*[0-9]*'</code></td><td>Listas só no <code>GLOB</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Você sabe o valor inteiro</td><td><code>=</code> (é mais rápido e mais claro)</td></tr>
+<tr><td>Você sabe só um pedaço, e maiúsculas não importam</td><td><code>LIKE</code></td></tr>
+<tr><td>Maiúsculas importam, ou você precisa de <code>[0-9]</code></td><td><code>GLOB</code> (só SQLite)</td></tr>
+<tr><td>O texto procurado tem <code>%</code> ou <code>_</code></td><td><code>LIKE … ESCAPE '!'</code></td></tr>
+<tr><td>SQL que precisa rodar em outros bancos</td><td><code>LIKE</code>, sem <code>GLOB</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O padrão entre aspas duplas</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE nome LIKE "Ana%";
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: "Ana%" - should this be a string literal in single-quotes?</code>, "não existe a coluna "Ana%"; isto deveria ser um texto entre aspas simples?". O próprio SQLite dá a dica: aspas duplas são para <strong>nomes</strong> (de coluna, de tabela), e ele foi procurar uma coluna chamada <code>Ana%</code>.</p>
+<p><strong>Como consertar:</strong> o padrão é um texto: <code>LIKE 'Ana%'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O padrão sem aspas</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE nome LIKE Ana%;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ";": syntax error</code>. Sem aspas, o SQLite leu <code>Ana</code> como uma coluna e o <code>%</code> como a conta "resto da divisão", que precisa de um número depois. Chegou no <code>;</code> sem o número.</p>
+</div>
+
+<div class="cenario">
+<strong>ESCAPE com mais de um caractere</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE nome LIKE 'Ana%' ESCAPE '!!';
+</pre>
+<p><strong>A mensagem:</strong> <code>ESCAPE expression must be a single character</code>, "a expressão do ESCAPE tem de ser um único caractere".</p>
+</div>
+
+<div class="cenario">
+<strong>Usou <code>*</code> no LIKE</strong>
+<pre class="file" data-file="asterisco.sql" data-resultado>SELECT nome FROM clientes WHERE nome LIKE 'Ana*';
+</pre>
+<p><strong>O que aconteceu:</strong> nenhuma mensagem e nenhuma linha. O <code>*</code> é curinga do <code>GLOB</code> (e da busca de arquivos do Windows e do Linux), não do <code>LIKE</code>. Para o <code>LIKE</code>, ele é um asterisco comum, e ninguém se chama "Ana*".</p>
+<p><strong>Como consertar:</strong> no <code>LIKE</code>, o curinga é o <code>%</code>: <code>LIKE 'Ana%'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>%</code></strong>
+<p><code>WHERE nome LIKE 'Ana'</code> devolve 0 linhas, sem erro. Sem curinga, o <code>LIKE</code> só aceita o texto inteiro ("Ana", e nada mais). Se a ideia é "começa com", falta o <code>%</code> no fim.</p>
+</div>
+
+<div class="cenario">
+<strong>O acento que não casa</strong>
+<p>Também sem erro: <code>nome LIKE '%água%'</code> não acha "Loja D'Água", e <code>nome LIKE '%CONCEIÇÃO%'</code> não acha "Conceição Prado". O <code>LIKE</code> do SQLite só ignora maiúsculas nas letras sem acento (seção 3).</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<p>O <code>LIKE</code> com <code>%</code>, <code>_</code> e <code>ESCAPE</code> é padrão SQL e existe em todos. A diferença está em <strong>maiúsculas, acentos e escape</strong>:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th><code>'ana' LIKE 'Ana'</code></th><th>Observação</th></tr>
+<tr><td>SQLite</td><td>Verdadeiro</td><td>Ignora maiúsculas só de A a Z; acentuadas diferenciam</td></tr>
+<tr><td>PostgreSQL</td><td><strong>Falso</strong></td><td>O <code>LIKE</code> diferencia maiúsculas; para ignorar, use <code>ILIKE</code> (extensão do PostgreSQL, que segue a língua configurada). A barra <code>\</code> é o escape automático.</td></tr>
+<tr><td>MySQL</td><td>Depende da collation</td><td>Com a padrão do MySQL 8 (<code>utf8mb4_0900_ai_ci</code>), ignora maiúsculas <strong>e</strong> acentos</td></tr>
+<tr><td>SQL Server</td><td>Depende da collation</td><td>Aceita também <code>[abc]</code> e <code>[^abc]</code> dentro do <code>LIKE</code>, como o <code>GLOB</code></td></tr>
+</table>
+</div>
+<p>Ilustrativo (não roda no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- PostgreSQL: LIKE diferencia maiúsculas; ILIKE não
+SELECT nome FROM clientes WHERE nome ILIKE 'ana %';
+
+-- SQL Server: lista de caracteres dentro do LIKE
+SELECT nome FROM produtos WHERE nome LIKE '%[0-9]%';
+</pre>
+<p>O <code>GLOB</code> não existe fora do SQLite.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>coluna LIKE 'abc%'</code></td><td>Começa com "abc"</td></tr>
+<tr><td><code>coluna LIKE '%abc'</code></td><td>Termina com "abc"</td></tr>
+<tr><td><code>coluna LIKE '%abc%'</code></td><td>Contém "abc"</td></tr>
+<tr><td><code>coluna NOT LIKE '%abc%'</code></td><td>Não contém "abc" (linhas com <code>NULL</code> ficam de fora)</td></tr>
+<tr><td><code>coluna LIKE '%!%%' ESCAPE '!'</code></td><td>Contém um <code>%</code> de verdade</td></tr>
+<tr><td><code>coluna GLOB 'Abc*'</code></td><td>Começa com "Abc", diferenciando maiúsculas (só SQLite)</td></tr>
+<tr><td><code>'a' LIKE 'A'</code> / <code>'á' LIKE 'Á'</code></td><td>1 / 0 no SQLite</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>no such column: "Ana%" - should this be a string literal in single-quotes?</code></td><td>Padrão entre aspas duplas</td></tr>
+<tr><td><code>near ";": syntax error</code></td><td>Padrão sem aspas</td></tr>
+<tr><td><code>ESCAPE expression must be a single character</code></td><td><code>ESCAPE</code> com mais de um caractere</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Começa com</h3>
+<p>Complete o padrão para achar os produtos que começam com "Caixa":</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE nome LIKE 'Caixa<input data-answer="%" aria-label="curinga">';</div>
+</div>
+
+<div class="exercise">
+<h3>2. A palavra certa</h3>
+<p>Complete com o operador que compara com um padrão:</p>
+<div class="ex-code">SELECT nome FROM clientes WHERE cidade <input data-answer="LIKE" aria-label="operador"> 'Forta%';</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. No SQLite, qual destas comparações dá <strong>falso</strong>?</p>
+<label><input type="radio" name="q3"> <code>'Ana' LIKE 'ana'</code></label>
+<label><input type="radio" name="q3"> <code>'Ana' LIKE 'ANA'</code></label>
+<label><input type="radio" name="q3"> <code>'Água' LIKE 'água'</code></label>
+<label><input type="radio" name="q3"> <code>'Água' LIKE 'Á%'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A tabela tem 30 clientes, 3 deles sem email. Quantas linhas <code>WHERE email LIKE '%'</code> devolve?</p>
+<label><input type="radio" name="q4"> 27</label>
+<label><input type="radio" name="q4"> 30</label>
+<label><input type="radio" name="q4"> 3</label>
+<label><input type="radio" name="q4"> 0</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana quer os textos que contêm um sublinhado de verdade (<code>_</code>). Qual padrão está certo?</p>
+<label><input type="radio" name="q5"> <code>LIKE '%_%'</code></label>
+<label><input type="radio" name="q5"> <code>LIKE '%\_%'</code>, sem <code>ESCAPE</code></label>
+<label><input type="radio" name="q5"> <code>GLOB '%_%'</code></label>
+<label><input type="radio" name="q5"> <code>LIKE '%!_%' ESCAPE '!'</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Qual é o curinga de "qualquer sequência" no <code>GLOB</code>?</p>
+<label><input type="radio" name="q6"> <code>%</code></label>
+<label><input type="radio" name="q6"> <code>*</code></label>
+<label><input type="radio" name="q6"> <code>_</code></label>
+<label><input type="radio" name="q6"> <code>?</code></label>
+</div>
+
+<h3>Missão final: o Rafael ou o Roberto?</h3>
+
+<div class="trysql" data-goal="linhas:2;;contem:Roberto Falcão">
+<p class="try-task"><strong>Missão:</strong> um cliente de São Paulo ligou; a atendente só entendeu que o nome começa com "R". Mostre os clientes de São Paulo cujo nome começa com R (são 2). Use <code>LIKE</code> no nome e mantenha o filtro da cidade.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, email
+FROM clientes
+WHERE cidade = 'São Paulo';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, email
+FROM clientes
+WHERE cidade = 'São Paulo'
+  AND nome LIKE 'R%';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>LIKE</code> ("parecido com") compara um texto com um padrão. O <code>%</code> quer dizer "qualquer coisa" (até nada); o <code>_</code>, "uma letra qualquer" (próxima aula).</li>
+  <li><code>'abc%'</code> começa com, <code>'%abc'</code> termina com, <code>'%abc%'</code> contém. Sem curinga, o padrão tem de casar com o texto inteiro.</li>
+  <li>No SQLite, o <code>LIKE</code> ignora maiúsculas só de A a Z: <code>'a' LIKE 'A'</code> é 1, mas <code>'á' LIKE 'Á'</code> é 0. Escreva os acentos como estão guardados.</li>
+  <li><code>NULL</code> não combina com nenhum padrão, nem com <code>'%'</code>, nem no <code>NOT LIKE</code>.</li>
+  <li>Para achar um <code>%</code> ou <code>_</code> de verdade, use <code>ESCAPE</code>: <code>LIKE '%!_%' ESCAPE '!'</code>.</li>
+  <li><code>GLOB</code> (só SQLite) usa <code>*</code>, <code>?</code> e <code>[0-9]</code>, e diferencia maiúsculas.</li>
+  <li>O padrão vai entre <strong>aspas simples</strong>; entre aspas duplas, o SQLite procura uma coluna.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
