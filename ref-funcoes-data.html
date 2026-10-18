@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Funções de Data e Hora — referência do SQLite | Guia SQL</title>
+<meta name="description" content="Referência rápida das funções de data e hora do SQLite 3.50: date, time, datetime, julianday, unixepoch, strftime, timediff, CURRENT_DATE, os modificadores (+1 day, start of month, weekday, localtime…) e todos os códigos do strftime, com o resultado real de cada exemplo e os nomes equivalentes no MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Funções de Data e Hora</span></h1>
+
+<p class="intro">O SQLite não tem um tipo especial para datas: ele guarda a data como <strong>texto</strong> no formato <code>AAAA-MM-DD</code> (como os pedidos da Loja Aurora: <code>'2026-10-14'</code>) e oferece funções para ler, calcular e formatar esse texto. Esta página reúne todas elas, com os modificadores e os códigos do <code>strftime</code>, cada um com o resultado real. A explicação passo a passo está nas aulas <a href="datas.html">Datas e Horas</a> e <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<div class="note">
+<strong>Como ler as tabelas</strong>
+<ul>
+  <li><strong>Exemplo</strong> vai dentro de um <code>SELECT</code>: <code>SELECT date('2026-10-14', '+1 day');</code>.</li>
+  <li><strong>Resultado</strong> foi colhido no editor do guia (SQLite 3.50.4). Os exemplos usam datas fixas, porque <code>'now'</code> ("agora") muda a cada segundo.</li>
+  <li>As funções trabalham em <strong>UTC</strong> (o horário de Greenwich, 3 horas à frente de Brasília), a não ser que você peça <code>'localtime'</code>.</li>
+  <li>Se a data ou um modificador estiver errado, o resultado é <em>NULL</em>, sem mensagem de erro.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="funcoes">As funções</h2>
+<p>Todas recebem um <strong>valor de tempo</strong> (uma data, uma data com hora, ou <code>'now'</code>) e, depois dele, zero ou mais <strong>modificadores</strong> (tabela <a href="#modificadores">Modificadores</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Devolve</th><th>Exemplo</th><th>Resultado</th><th>Aula</th></tr>
+<tr><td><code>date(t, …)</code></td><td>A data: <code>AAAA-MM-DD</code>.</td><td><code>date('2026-10-14 15:30:45')</code></td><td><code>2026-10-14</code></td><td><a href="funcoes-data.html">Funções de Data</a></td></tr>
+<tr><td><code>time(t, …)</code></td><td>A hora: <code>HH:MM:SS</code>.</td><td><code>time('2026-10-14 15:30:45')</code></td><td><code>15:30:45</code></td><td></td></tr>
+<tr><td><code>datetime(t, …)</code></td><td>Data e hora: <code>AAAA-MM-DD HH:MM:SS</code>.</td><td><code>datetime('2026-10-14')</code></td><td><code>2026-10-14 00:00:00</code></td><td></td></tr>
+<tr><td><code>julianday(t, …)</code></td><td>O <strong>dia juliano</strong>: quantos dias (com fração) se passaram desde o meio-dia de 24/11/4714 a.C. Serve para fazer contas de dias.</td><td><code>julianday('2026-10-14')</code></td><td><code>2461327.5</code></td><td><a href="datas.html">Datas e Horas</a></td></tr>
+<tr><td><code>unixepoch(t, …)</code></td><td>Segundos desde 01/01/1970 00:00 UTC (o "tempo Unix", muito usado em programas).</td><td><code>unixepoch('2026-10-14')</code></td><td><code>1791936000</code></td><td></td></tr>
+<tr><td><code>strftime(formato, t, …)</code></td><td>A data escrita do jeito que você quiser (tabela <a href="#strftime">strftime</a>).</td><td><code>strftime('%d/%m/%Y', '2026-10-14')</code></td><td><code>14/10/2026</code></td><td><a href="funcoes-data.html">Funções de Data</a></td></tr>
+<tr><td><code>timediff(a, b)</code></td><td>A diferença <code>a - b</code>, em anos, meses, dias e horas (para gente ler, não para contas).</td><td><code>timediff('2026-10-14 15:30', '2024-01-05 08:00')</code></td><td><code>+0002-09-09 07:30:00.000</code></td><td></td></tr>
+<tr><td></td><td>Com <code>b</code> depois de <code>a</code>, o sinal fica negativo</td><td><code>timediff('2026-10-05', '2026-10-14')</code></td><td><code>-0000-00-09 00:00:00.000</code></td><td></td></tr>
+<tr><td><code>CURRENT_DATE</code></td><td>A data de hoje (UTC), sem parênteses.</td><td><code>length(CURRENT_DATE)</code></td><td><code>10</code> (muda todo dia)</td><td><a href="default.html">DEFAULT</a></td></tr>
+<tr><td><code>CURRENT_TIME</code></td><td>A hora agora (UTC).</td><td><code>length(CURRENT_TIME)</code></td><td><code>8</code></td><td></td></tr>
+<tr><td><code>CURRENT_TIMESTAMP</code></td><td>Data e hora agora (UTC). Muito usado em <code>DEFAULT CURRENT_TIMESTAMP</code>.</td><td><code>length(CURRENT_TIMESTAMP)</code></td><td><code>19</code></td><td><a href="default.html">DEFAULT</a></td></tr>
+</table>
+</div>
+
+<p>No terminal da Ana, com o relógio de verdade. Repare que <code>'now'</code> e <code>CURRENT_TIMESTAMP</code> estão em UTC, e só o <code>'localtime'</code> mostra a hora do relógio dela (Brasília, 3 horas a menos):</p>
+
+<pre class="term">sqlite&gt; SELECT date('now'), datetime('now'), datetime('now', 'localtime');
+2026-10-18|2026-10-18 13:43:19|2026-10-18 10:43:19
+sqlite&gt; SELECT CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP;
+2026-10-18|13:43:19|2026-10-18 13:43:19</pre>
+
+<hr>
+
+<h2 id="formatos">Os formatos de data que o SQLite entende</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Exemplo</th><th>Resultado de <code>datetime(…)</code></th></tr>
+<tr><td><code>AAAA-MM-DD</code></td><td><code>datetime('2026-10-14')</code></td><td><code>2026-10-14 00:00:00</code></td></tr>
+<tr><td><code>AAAA-MM-DD HH:MM</code> (ou <code>:SS</code>, <code>:SS.SSS</code>)</td><td><code>datetime('2026-10-14 15:30')</code></td><td><code>2026-10-14 15:30:00</code></td></tr>
+<tr><td>com <code>T</code> no lugar do espaço</td><td><code>datetime('2026-10-14T15:30')</code></td><td><code>2026-10-14 15:30:00</code></td></tr>
+<tr><td>só a hora (o dia vira 2000-01-01)</td><td><code>time('15:30')</code></td><td><code>15:30:00</code></td></tr>
+<tr><td>com fuso no fim (<code>-03:00</code>, <code>Z</code>): o SQLite converte para UTC</td><td><code>datetime('2026-10-14 15:30-03:00')</code></td><td><code>2026-10-14 18:30:00</code></td></tr>
+<tr><td>um número (dia juliano)</td><td><code>date(2461327.5)</code></td><td><code>2026-10-14</code></td></tr>
+<tr><td>um número (tempo Unix), com <code>'unixepoch'</code> ou <code>'auto'</code></td><td><code>datetime(1791936000, 'unixepoch')</code></td><td><code>2026-10-14 00:00:00</code></td></tr>
+<tr><td><code>'now'</code></td><td><code>date('now')</code></td><td>a data de hoje</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Datas no formato brasileiro não funcionam</strong>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrito assim</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>date('14/10/2026')</code></td><td><em>NULL</em></td><td>O SQLite só entende <code>AAAA-MM-DD</code>.</td></tr>
+<tr><td><code>date('2026-2-5')</code></td><td><em>NULL</em></td><td>Mês e dia precisam de 2 algarismos: <code>'2026-02-05'</code>.</td></tr>
+<tr><td><code>date('2026-02-30')</code></td><td><code>2026-03-02</code></td><td>Dia que não existe "transborda" para o mês seguinte, sem aviso.</td></tr>
+<tr><td><code>'2026-10-14' &lt; '2026-9-30'</code></td><td><code>1</code> (verdadeiro!)</td><td>Datas são comparadas como texto, letra a letra: <code>'1'</code> vem antes de <code>'9'</code>. Com os zeros (<code>'2026-09-30'</code>), a comparação sai certa.</td></tr>
+</table>
+</div>
+<p>Guarde sempre no formato <code>AAAA-MM-DD</code>, com zeros, e converta para <code>DD/MM/AAAA</code> só na hora de mostrar, com <code>strftime('%d/%m/%Y', …)</code>.</p>
+</div>
+
+<hr>
+
+<h2 id="modificadores">Modificadores</h2>
+<p>Os modificadores vêm depois da data, cada um entre aspas, e são aplicados <strong>da esquerda para a direita</strong>. Os nomes são em inglês e com letras minúsculas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Modificador</th><th>O que faz</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>'+N days'</code></td><td>Soma (ou, com <code>-</code>, subtrai) N dias.</td><td><code>date('2026-10-14', '+7 days')</code></td><td><code>2026-10-21</code></td></tr>
+<tr><td><code>'+N hours'</code></td><td>Horas.</td><td><code>datetime('2026-10-14 15:30', '+2 hours')</code></td><td><code>2026-10-14 17:30:00</code></td></tr>
+<tr><td><code>'+N minutes'</code></td><td>Minutos.</td><td><code>datetime('2026-10-14 15:30', '+90 minutes')</code></td><td><code>2026-10-14 17:00:00</code></td></tr>
+<tr><td><code>'+N seconds'</code></td><td>Segundos.</td><td><code>datetime('2026-10-14 15:30', '-30 seconds')</code></td><td><code>2026-10-14 15:29:30</code></td></tr>
+<tr><td><code>'+N months'</code></td><td>Meses.</td><td><code>date('2026-10-14', '-1 month')</code></td><td><code>2026-09-14</code></td></tr>
+<tr><td><code>'+N years'</code></td><td>Anos.</td><td><code>date('2026-10-14', '+1 year')</code></td><td><code>2027-10-14</code></td></tr>
+<tr><td><code>'+HH:MM'</code></td><td>Soma horas e minutos de uma vez (também <code>:SS</code>).</td><td><code>datetime('2026-10-14', '+03:30')</code></td><td><code>2026-10-14 03:30:00</code></td></tr>
+<tr><td><code>'+AAAA-MM-DD'</code></td><td>Soma anos, meses e dias de uma vez.</td><td><code>datetime('2026-10-14', '+0001-02-03')</code></td><td><code>2027-12-17 00:00:00</code></td></tr>
+<tr><td><code>'start of month'</code></td><td>Volta para o dia 1 do mês.</td><td><code>date('2026-10-14', 'start of month')</code></td><td><code>2026-10-01</code></td></tr>
+<tr><td><code>'start of year'</code></td><td>Volta para 1º de janeiro.</td><td><code>date('2026-10-14', 'start of year')</code></td><td><code>2026-01-01</code></td></tr>
+<tr><td><code>'start of day'</code></td><td>Volta para 00:00:00 do dia.</td><td><code>datetime('2026-10-14 15:30', 'start of day')</code></td><td><code>2026-10-14 00:00:00</code></td></tr>
+<tr><td><code>'weekday N'</code></td><td>Avança até o próximo dia da semana N (0 = domingo, 1 = segunda… 6 = sábado). Se a data já for esse dia, fica nela.</td><td><code>date('2026-10-14', 'weekday 0')</code></td><td><code>2026-10-18</code> (o domingo seguinte)</td></tr>
+<tr><td><code>'unixepoch'</code></td><td>Lê o número como tempo Unix (segundos desde 1970).</td><td><code>datetime(1791936000, 'unixepoch')</code></td><td><code>2026-10-14 00:00:00</code></td></tr>
+<tr><td><code>'julianday'</code></td><td>Lê o número como dia juliano.</td><td><code>date(2461327.5, 'julianday')</code></td><td><code>2026-10-14</code></td></tr>
+<tr><td><code>'auto'</code></td><td>Adivinha se o número é dia juliano ou tempo Unix.</td><td><code>datetime(1791936000, 'auto')</code></td><td><code>2026-10-14 00:00:00</code></td></tr>
+<tr><td><code>'localtime'</code></td><td>Converte de UTC para o fuso do computador.</td><td><code>datetime('2026-10-14 15:30', 'localtime')</code></td><td>no terminal da Ana (Brasília): <code>2026-10-14 12:30:00</code></td></tr>
+<tr><td><code>'utc'</code></td><td>Converte do fuso do computador para UTC.</td><td><code>datetime('2026-10-14 12:30', 'utc')</code></td><td>no terminal da Ana: <code>2026-10-14 15:30:00</code></td></tr>
+<tr><td><code>'subsec'</code> ou <code>'subsecond'</code></td><td>Mostra também os milissegundos.</td><td><code>datetime('2026-10-14 15:30:45.123', 'subsec')</code></td><td><code>2026-10-14 15:30:45.123</code></td></tr>
+<tr><td><code>'ceiling'</code> / <code>'floor'</code></td><td>Resolve datas que "não existem" depois de somar meses ou anos (como 31/01 + 1 mês). <code>'ceiling'</code> (o padrão) transborda para o mês seguinte; <code>'floor'</code> fica no último dia do mês.</td><td><code>date('2026-01-31', '+1 month')</code><br><code>date('2026-01-31', '+1 month', 'floor')</code></td><td><code>2026-03-03</code><br><code>2026-02-28</code></td></tr>
+<tr><td>(errado)</td><td>Um modificador que não existe (ou em português) dá <em>NULL</em>.</td><td><code>date('2026-10-14', '+1 dia')</code></td><td><em>NULL</em></td></tr>
+</table>
+</div>
+
+<p>Combinando modificadores, o <strong>último dia do mês</strong>: vá para o dia 1, some um mês e volte um dia.</p>
+
+<pre class="file" data-file="ultimo-dia.sql" data-resultado>SELECT date('2026-10-14', 'start of month', '+1 month', '-1 day') AS ultimo_dia,
+       date('2026-02-10', 'start of month', '+1 month', '-1 day') AS ultimo_de_fevereiro;
+</pre>
+
+<div class="tip">
+<strong>E o <code>'end of month'</code>?</strong>
+<p>A documentação atual do SQLite (sqlite.org) já lista <code>'end of month'</code>, <code>'end of year'</code> e <code>'end of day'</code>, mas eles só existem a partir da versão 3.54. No SQLite 3.50 do guia, <code>date('2026-10-14', 'end of month')</code> dá <em>NULL</em>. Use o truque acima.</p>
+</div>
+
+<hr>
+
+<h2 id="strftime">Os códigos do <code>strftime</code></h2>
+<p>No <code>strftime(formato, data)</code>, cada código <code>%</code> do formato é trocado por uma parte da data. O resto do formato (barras, espaços, letras) sai como está. Todos os exemplos usam a quarta-feira <code>2026-10-14 15:30:45</code>, a não ser quando indicado.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Código</th><th>O que mostra</th><th>Exemplo</th><th>Resultado</th></tr>
+<tr><td><code>%Y</code></td><td>ano com 4 algarismos</td><td><code>strftime('%Y', '2026-10-14')</code></td><td><code>2026</code></td></tr>
+<tr><td><code>%m</code></td><td>mês, 01 a 12</td><td><code>strftime('%m', '2026-10-14')</code></td><td><code>10</code></td></tr>
+<tr><td><code>%d</code></td><td>dia do mês, 01 a 31</td><td><code>strftime('%d', '2026-10-14')</code></td><td><code>14</code></td></tr>
+<tr><td><code>%e</code></td><td>dia do mês sem o zero (com um espaço no lugar)</td><td><code>strftime('%e', '2026-10-05')</code></td><td><code>&nbsp;5</code></td></tr>
+<tr><td><code>%F</code></td><td>a data inteira, <code>AAAA-MM-DD</code></td><td><code>strftime('%F', '2026-10-14 15:30')</code></td><td><code>2026-10-14</code></td></tr>
+<tr><td><code>%H</code></td><td>hora, 00 a 24</td><td><code>strftime('%H', '2026-10-14 09:05')</code></td><td><code>09</code></td></tr>
+<tr><td><code>%k</code></td><td>hora sem o zero</td><td><code>strftime('%k', '2026-10-14 09:05')</code></td><td><code>&nbsp;9</code></td></tr>
+<tr><td><code>%I</code> / <code>%l</code></td><td>hora no relógio de 12 horas (com / sem o zero)</td><td><code>strftime('%I %p', '2026-10-14 15:30')</code></td><td><code>03 PM</code></td></tr>
+<tr><td><code>%p</code> / <code>%P</code></td><td><code>AM</code>/<code>PM</code> ou <code>am</code>/<code>pm</code></td><td><code>strftime('%l %P', '2026-10-14 15:30')</code></td><td><code>&nbsp;3 pm</code></td></tr>
+<tr><td><code>%M</code></td><td>minutos, 00 a 59</td><td><code>strftime('%M', '2026-10-14 15:30:45')</code></td><td><code>30</code></td></tr>
+<tr><td><code>%S</code></td><td>segundos, 00 a 59</td><td><code>strftime('%S', '2026-10-14 15:30:45')</code></td><td><code>45</code></td></tr>
+<tr><td><code>%f</code></td><td>segundos com milissegundos</td><td><code>strftime('%f', '2026-10-14 15:30:45.123')</code></td><td><code>45.123</code></td></tr>
+<tr><td><code>%R</code></td><td><code>HH:MM</code></td><td><code>strftime('%R', '2026-10-14 15:30:45')</code></td><td><code>15:30</code></td></tr>
+<tr><td><code>%T</code></td><td><code>HH:MM:SS</code></td><td><code>strftime('%T', '2026-10-14 15:30:45')</code></td><td><code>15:30:45</code></td></tr>
+<tr><td><code>%w</code></td><td>dia da semana, 0 (domingo) a 6 (sábado)</td><td><code>strftime('%w', '2026-10-14')</code></td><td><code>3</code> (quarta)</td></tr>
+<tr><td><code>%u</code></td><td>dia da semana, 1 (segunda) a 7 (domingo)</td><td><code>strftime('%u', '2026-10-18')</code></td><td><code>7</code> (domingo)</td></tr>
+<tr><td><code>%j</code></td><td>dia do ano, 001 a 366</td><td><code>strftime('%j', '2026-10-14')</code></td><td><code>287</code></td></tr>
+<tr><td><code>%W</code></td><td>semana do ano, 00 a 53 (semanas começam na segunda)</td><td><code>strftime('%W', '2026-10-14')</code></td><td><code>41</code></td></tr>
+<tr><td><code>%U</code></td><td>semana do ano, 00 a 53 (semanas começam no domingo)</td><td><code>strftime('%U', '2026-10-14')</code></td><td><code>41</code></td></tr>
+<tr><td><code>%V</code></td><td>semana do ano no padrão ISO 8601</td><td><code>strftime('%V', '2026-10-14')</code></td><td><code>42</code></td></tr>
+<tr><td><code>%G</code> / <code>%g</code></td><td>o ano da semana ISO (4 / 2 algarismos): o 1º de janeiro pode pertencer à última semana do ano anterior</td><td><code>strftime('%G', '2027-01-01')</code></td><td><code>2026</code></td></tr>
+<tr><td><code>%s</code></td><td>tempo Unix (segundos desde 1970)</td><td><code>strftime('%s', '2026-10-14')</code></td><td><code>1791936000</code></td></tr>
+<tr><td><code>%J</code></td><td>dia juliano</td><td><code>strftime('%J', '2026-10-14')</code></td><td><code>2461327.5</code></td></tr>
+<tr><td><code>%%</code></td><td>um <code>%</code> de verdade</td><td><code>strftime('%%', '2026-10-14')</code></td><td><code>%</code></td></tr>
+<tr><td>(outro)</td><td>código que não existe: <em>NULL</em></td><td><code>strftime('%Q', '2026-10-14')</code></td><td><em>NULL</em></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>O <code>strftime</code> devolve texto</strong>
+<p><code>strftime('%m', data)</code> devolve o <strong>texto</strong> <code>'10'</code>, e <code>strftime('%w', data)</code>, o texto <code>'3'</code>. Para comparar, use aspas: <code>WHERE strftime('%Y', data) = '2025'</code>. Sem as aspas (<code>= 2025</code>), a comparação de texto com número dá <strong>falso</strong> em todas as linhas.</p>
+</div>
+
+<hr>
+
+<h2 id="contas">Contas com datas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>Como</th><th>Resultado</th></tr>
+<tr><td>dias entre duas datas</td><td><code>julianday('2026-10-14') - julianday('2026-10-05')</code></td><td><code>9.0</code></td></tr>
+<tr><td>… como inteiro</td><td><code>CAST(julianday('2026-10-14') - julianday('2026-10-05') AS INTEGER)</code></td><td><code>9</code></td></tr>
+<tr><td>minutos entre duas horas</td><td><code>(unixepoch('2026-10-14 15:30') - unixepoch('2026-10-14 08:00')) / 60</code></td><td><code>450</code></td></tr>
+<tr><td>diferença para gente ler</td><td><code>timediff('2026-10-14', '2026-10-05')</code></td><td><code>+0000-00-09 00:00:00.000</code></td></tr>
+<tr><td>vencimento em 30 dias</td><td><code>date('2026-10-14', '+30 days')</code></td><td><code>2026-11-13</code></td></tr>
+<tr><td>agrupar por mês</td><td><code>GROUP BY strftime('%Y-%m', data)</code></td><td>(veja o exemplo abaixo)</td></tr>
+<tr><td>filtrar um ano</td><td><code>WHERE data BETWEEN '2026-01-01' AND '2026-12-31'</code></td><td>(26 pedidos em 2026)</td></tr>
+</table>
+</div>
+
+<p>Quantos dias cada pedido levou para ser entregue. O pedido 86 ainda não foi entregue (<code>entregue_em</code> é <em>NULL</em>), e a conta com <em>NULL</em> dá <em>NULL</em>:</p>
+
+<pre class="file" data-file="prazo.sql" data-resultado>SELECT id, data, entregue_em,
+       julianday(entregue_em) - julianday(data) AS dias
+FROM pedidos
+WHERE id IN (1, 2, 86);
+</pre>
+
+<p>E os pedidos de 2026, mês a mês, a partir de julho:</p>
+
+<pre class="file" data-file="por-mes.sql" data-resultado>SELECT strftime('%Y-%m', data) AS mes, count(*) AS pedidos
+FROM pedidos
+WHERE data &gt;= '2026-07-01'
+GROUP BY mes;
+</pre>
+
+<p>A idade de cada cliente numa data (aqui, 18/10/2026): a diferença dos anos, menos 1 se o aniversário ainda não chegou naquele ano. A comparação entre parênteses vale 1 (verdadeiro) ou 0 (falso):</p>
+
+<pre class="file" data-file="idade.sql" data-resultado>SELECT nome, nascimento,
+       (strftime('%Y', '2026-10-18') - strftime('%Y', nascimento))
+       - (strftime('%m-%d', '2026-10-18') &lt; strftime('%m-%d', nascimento)) AS idade
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<hr>
+
+<h2 id="editor">No editor do guia</h2>
+<p>O editor roda o SQLite dentro do seu navegador. Então <code>'now'</code> e <code>CURRENT_DATE</code> usam o relógio do <strong>seu</strong> computador, e <code>'localtime'</code> usa o fuso dele: o resultado muda de leitor para leitor. É por isso que os exemplos desta página usam datas fixas.</p>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>Cada banco tem seus nomes</strong>
+<p>Os outros bancos têm tipos próprios para datas (<code>DATE</code>, <code>TIMESTAMP</code>…), e as funções mudam bastante. Conferido nas documentações oficiais do MySQL 8.4, do PostgreSQL e do SQL Server; os trechos são só para comparar.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>SQLite</th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>agora</td><td><code>datetime('now')</code>, <code>CURRENT_TIMESTAMP</code></td><td><code>NOW()</code></td><td><code>now()</code></td><td><code>GETDATE()</code></td></tr>
+<tr><td>hoje</td><td><code>date('now')</code>, <code>CURRENT_DATE</code></td><td><code>CURDATE()</code>, <code>CURRENT_DATE</code></td><td><code>current_date</code></td><td><code>CAST(GETDATE() AS date)</code></td></tr>
+<tr><td>somar 1 dia</td><td><code>date(d, '+1 day')</code></td><td><code>DATE_ADD(d, INTERVAL 1 DAY)</code></td><td><code>d + interval '1 day'</code></td><td><code>DATEADD(day, 1, d)</code></td></tr>
+<tr><td>dias entre datas</td><td><code>julianday(b) - julianday(a)</code></td><td><code>DATEDIFF(b, a)</code></td><td><code>b - a</code> (com o tipo <code>date</code>)</td><td><code>DATEDIFF(day, a, b)</code></td></tr>
+<tr><td>formatar</td><td><code>strftime('%d/%m/%Y', d)</code></td><td><code>DATE_FORMAT(d, '%d/%m/%Y')</code></td><td><code>to_char(d, 'DD/MM/YYYY')</code></td><td><code>FORMAT(d, 'dd/MM/yyyy')</code></td></tr>
+<tr><td>só o ano</td><td><code>strftime('%Y', d)</code> (texto)</td><td><code>YEAR(d)</code></td><td><code>EXTRACT(YEAR FROM d)</code></td><td><code>YEAR(d)</code></td></tr>
+<tr><td>início do mês</td><td><code>date(d, 'start of month')</code></td><td>—</td><td><code>date_trunc('month', d)</code></td><td>—</td></tr>
+<tr><td>último dia do mês</td><td><code>date(d, 'start of month', '+1 month', '-1 day')</code></td><td><code>LAST_DAY(d)</code></td><td>—</td><td><code>EOMONTH(d)</code></td></tr>
+<tr><td>dia da semana</td><td><code>strftime('%w', d)</code>: 0 = domingo</td><td><code>DAYOFWEEK(d)</code>: 1 = domingo</td><td><code>EXTRACT(DOW FROM d)</code>: 0 = domingo</td><td><code>DATEPART(weekday, d)</code></td></tr>
+<tr><td>tempo Unix</td><td><code>unixepoch(d)</code></td><td><code>UNIX_TIMESTAMP(d)</code></td><td><code>EXTRACT(EPOCH FROM d)</code></td><td>—</td></tr>
+</table>
+</div>
+</div>
+
+<hr>
+
+<h2>Experimente</h2>
+
+<div class="trysql" data-goal="colunas:mes,pedidos;;linhas:12;;contem:12|4">
+<p class="try-task"><strong>Missão:</strong> monte o relatório de 2025 da loja: uma linha por mês, com o mês (<code>01</code> a <code>12</code>) numa coluna <code>mes</code> e o número de pedidos numa coluna <code>pedidos</code>. Dica: <code>strftime('%m', data)</code> dá o mês, e o filtro do ano pode ser <code>strftime('%Y', data) = '2025'</code>.</p>
+<pre class="script" data-file="relatorio-2025.sql">SELECT data
+FROM pedidos
+WHERE data LIKE '2025%';
+</pre>
+<pre class="solucao" data-file="relatorio-2025.sql">SELECT strftime('%m', data) AS mes, count(*) AS pedidos
+FROM pedidos
+WHERE strftime('%Y', data) = '2025'
+GROUP BY mes;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No SQLite, datas são texto <code>AAAA-MM-DD</code> (com zeros). Assim, ordenar e comparar como texto funciona.</li>
+  <li><code>date</code>, <code>time</code>, <code>datetime</code> leem e normalizam; <code>julianday</code> e <code>unixepoch</code> viram números para fazer contas; <code>strftime</code> formata; <code>timediff</code> mostra a diferença.</li>
+  <li>Modificadores, da esquerda para a direita: <code>'+7 days'</code>, <code>'-1 month'</code>, <code>'start of month'</code>, <code>'weekday 0'</code>, <code>'localtime'</code>…</li>
+  <li>Tudo é em UTC, a não ser com <code>'localtime'</code>.</li>
+  <li>Data ou modificador errado dá <em>NULL</em>, sem erro: <code>'14/10/2026'</code> e <code>'+1 dia'</code> não funcionam.</li>
+  <li><code>strftime</code> devolve texto: compare com <code>'2025'</code>, entre aspas.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
