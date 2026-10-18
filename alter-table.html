@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL ALTER TABLE — mudar uma tabela que já existe | Guia SQL</title>
+<meta name="description" content="ALTER TABLE para quem nunca mexeu num banco: renomear tabela e coluna, acrescentar e apagar coluna no SQLite, o que ele não aceita (mudar o tipo, acrescentar CHECK) e o roteiro para recriar a tabela sem perder dados, com os erros reais e a forma do MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">ALTER TABLE</span></h1>
+
+<p class="intro">Nenhuma tabela nasce perfeita. A Loja Aurora começou sem o telefone dos clientes, e agora a Ana quer mandar mensagem a eles. Apagar a tabela e criar de novo não dá: os 30 clientes estão lá dentro. Para mudar a <strong>estrutura</strong> de uma tabela que já tem dados, existe o <code>ALTER TABLE</code> ("altere a tabela"). Nesta aula você vai ver as quatro mudanças que o SQLite faz com ele, as que ele <strong>não</strong> faz, e o roteiro seguro para essas outras: criar uma tabela nova e mudar os dados de casa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Renomear uma tabela (<code>RENAME TO</code>) e uma coluna (<code>RENAME COLUMN</code>).</li>
+  <li>Acrescentar uma coluna (<code>ADD COLUMN</code>), com e sem valor padrão, e as regras que ela não pode ter.</li>
+  <li>Apagar uma coluna (<code>DROP COLUMN</code>), e quando o SQLite se recusa.</li>
+  <li>O que o SQLite <strong>não</strong> aceita: mudar o tipo de uma coluna, acrescentar um <code>CHECK</code>, mudar várias coisas num comando só.</li>
+  <li>O roteiro para recriar uma tabela sem perder nada, inclusive uma que outras tabelas referenciam.</li>
+  <li>Os erros reais e como o MySQL, o PostgreSQL e o SQL Server fazem.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo: pode mudar à vontade, nada fica estragado.</p>
+
+<hr>
+
+<h2>A ideia: reformar a casa com a família dentro</h2>
+<p>Uma tabela com dados é como uma casa com gente morando. Algumas reformas são fáceis e rápidas: trocar a placa com o nome da rua (renomear), pôr uma prateleira nova na parede (acrescentar coluna), tirar um quadro (apagar coluna). Outras são estruturais, como trocar o encanamento todo: aí não tem jeito, a família vai para uma casa nova já pronta, leva a mudança, e a casa velha é demolida. No SQLite, mudar o tipo de uma coluna é uma reforma desse segundo tipo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>No SQLite</th></tr>
+<tr><td>Renomear a tabela</td><td><code>ALTER TABLE … RENAME TO …</code></td></tr>
+<tr><td>Renomear uma coluna</td><td><code>ALTER TABLE … RENAME COLUMN … TO …</code></td></tr>
+<tr><td>Acrescentar uma coluna</td><td><code>ALTER TABLE … ADD COLUMN …</code></td></tr>
+<tr><td>Apagar uma coluna</td><td><code>ALTER TABLE … DROP COLUMN …</code></td></tr>
+<tr><td>Mudar o tipo, acrescentar <code>CHECK</code>, <code>UNIQUE</code>, chave…</td><td>Não tem comando: recriar a tabela (seção 6)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Renomear a tabela: RENAME TO</h2>
+<p>A Ana decidiu que "fornecedores" vai se chamar "parceiros":</p>
+
+<pre class="file" data-file="renomear-tabela.sql" data-resultado>ALTER TABLE fornecedores RENAME TO parceiros;
+
+SELECT id, nome, cidade
+FROM parceiros
+LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>ALTER TABLE fornecedores</dt><dd>"Altere a tabela fornecedores": qual tabela vai mudar.</dd>
+  <dt>RENAME TO</dt><dd>"Renomeie para".</dd>
+  <dt>parceiros</dt><dd>O nome novo. Os dados não mudam em nada.</dd>
+</dl>
+
+<p>E a tabela <code>produtos</code>, que tinha uma chave estrangeira apontando para <code>fornecedores</code>? O SQLite atualizou sozinho:</p>
+
+<pre class="file" data-file="referencia.sql" data-resultado>ALTER TABLE fornecedores RENAME TO parceiros;
+
+SELECT sql FROM sqlite_schema WHERE name = 'produtos';
+</pre>
+
+<p>Repare na linha do <code>fornecedor_id</code>: agora ela diz <code>REFERENCES "parceiros"(id)</code>. As aspas duplas foram postas pelo próprio SQLite; aqui elas marcam um <strong>nome</strong>, não um texto. O nome antigo, porém, deixou de existir: <code>SELECT * FROM fornecedores;</code> agora dá <code>no such table: fornecedores</code>. Todo programa e toda consulta salva que usavam o nome antigo param de funcionar. Renomeie com cuidado.</p>
+
+<hr>
+
+<h2>2. Renomear uma coluna: RENAME COLUMN</h2>
+<p>A coluna <code>nascimento</code> dos clientes ficaria mais clara como <code>data_nascimento</code>:</p>
+
+<pre class="file" data-file="renomear-coluna.sql" data-resultado>ALTER TABLE clientes
+RENAME COLUMN nascimento TO data_nascimento;
+
+SELECT nome, data_nascimento
+FROM clientes
+LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>RENAME COLUMN nascimento</dt><dd>"Renomeie a coluna nascimento". A palavra <code>COLUMN</code> ("coluna") pode ser omitida: <code>RENAME nascimento TO …</code> também funciona, mas com ela fica mais claro.</dd>
+  <dt>TO data_nascimento</dt><dd>"Para data_nascimento". Os valores continuam os mesmos, na mesma coluna.</dd>
+</dl>
+
+<div class="trysql" data-goal="colunas:nome,uf;;linhas:14">
+<p class="try-task"><strong>Experimente:</strong> o pessoal da loja chama o estado de "UF". Antes do <code>SELECT</code>, renomeie a coluna <code>estado</code> da tabela <code>clientes</code> para <code>uf</code>, e mude o <code>SELECT</code> para mostrar <code>nome</code> e <code>uf</code> dos clientes do Piauí (<code>'PI'</code>).</p>
+<pre class="script" data-file="uf.sql">SELECT nome, estado
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+<pre class="solucao" data-file="uf.sql">ALTER TABLE clientes RENAME COLUMN estado TO uf;
+
+SELECT nome, uf
+FROM clientes
+WHERE uf = 'PI';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Acrescentar uma coluna: ADD COLUMN</h2>
+<p>Finalmente, o telefone dos clientes:</p>
+
+<pre class="file" data-file="add-telefone.sql" data-resultado>ALTER TABLE clientes ADD COLUMN telefone TEXT;
+
+SELECT id, nome, telefone
+FROM clientes
+LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>ADD COLUMN</dt><dd>"Acrescente a coluna". Como no <code>RENAME</code>, a palavra <code>COLUMN</code> é opcional.</dd>
+  <dt>telefone TEXT</dt><dd>A coluna nova, escrita igual a uma linha do <code>CREATE TABLE</code>: nome, tipo e, se quiser, regras.</dd>
+</dl>
+
+<p>A coluna nova vai sempre para o <strong>fim</strong> da tabela, e todas as linhas que já existiam ficam com ela <em>NULL</em>: o banco não tem como adivinhar o telefone de ninguém. No terminal, dá para ver como o SQLite guardou a mudança: ele simplesmente emenda a coluna no fim do <code>CREATE TABLE</code> original.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; ALTER TABLE clientes ADD COLUMN telefone TEXT;
+sqlite&gt; .schema clientes
+CREATE TABLE clientes (
+    id         INTEGER PRIMARY KEY,
+    nome       TEXT NOT NULL,
+    email      TEXT,
+    cidade     TEXT,
+    estado     TEXT,
+    nascimento TEXT,
+    vip        INTEGER NOT NULL DEFAULT 0
+, telefone TEXT);
+sqlite&gt; .quit</pre>
+
+<h3>Com valor padrão</h3>
+<p>A Ana vai começar um programa de pontos. Todo cliente começa com 0 pontos, e o campo não pode ficar vazio:</p>
+
+<pre class="file" data-file="add-pontos.sql" data-resultado>ALTER TABLE clientes
+ADD COLUMN pontos INTEGER NOT NULL DEFAULT 0;
+
+SELECT id, nome, pontos
+FROM clientes
+LIMIT 3;
+</pre>
+
+<p>Com <code>DEFAULT 0</code> (aula <a href="default.html">DEFAULT</a>), os 30 clientes que já existiam ganharam 0, e os próximos também ganharão, se ninguém disser outro número. Aqui o <code>DEFAULT</code> é <strong>obrigatório</strong>: sem ele, o <code>NOT NULL</code> não teria o que pôr nas linhas antigas (veja <a href="#errado">Quando dá errado</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A coluna nova pode ter</th><th>A coluna nova <strong>não</strong> pode ter</th></tr>
+<tr><td>Qualquer tipo</td><td><code>PRIMARY KEY</code></td></tr>
+<tr><td><code>DEFAULT</code> com um valor fixo (<code>0</code>, <code>'PI'</code>)</td><td><code>UNIQUE</code></td></tr>
+<tr><td><code>NOT NULL</code>, se tiver um <code>DEFAULT</code> que não seja <em>NULL</em></td><td><code>DEFAULT CURRENT_TIMESTAMP</code> (ou outro valor que muda)</td></tr>
+<tr><td><code>REFERENCES</code>, se o <code>DEFAULT</code> for <em>NULL</em></td><td><code>NOT NULL</code> sem <code>DEFAULT</code></td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="colunas:id,nome,pontos;;linhas:30">
+<p class="try-task"><strong>Experimente:</strong> acrescente à tabela <code>clientes</code> a coluna <code>pontos</code>, inteira, que nunca fica vazia e começa em 0. Depois mostre <code>id</code>, <code>nome</code> e <code>pontos</code> de todos os clientes.</p>
+<pre class="script" data-file="pontos.sql">SELECT id, nome
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="pontos.sql">ALTER TABLE clientes
+ADD COLUMN pontos INTEGER NOT NULL DEFAULT 0;
+
+SELECT id, nome, pontos
+FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Apagar uma coluna: DROP COLUMN</h2>
+<p>A Ana desistiu da marcação de cliente VIP:</p>
+
+<pre class="file" data-file="drop-coluna.sql" data-resultado>ALTER TABLE clientes DROP COLUMN vip;
+
+SELECT * FROM clientes LIMIT 2;
+</pre>
+
+<dl class="anatomy">
+  <dt>DROP COLUMN vip</dt><dd>"Jogue fora a coluna vip": a coluna some, e os valores dela em todas as linhas também. <strong>Não tem desfazer</strong>. Se houver alguma chance de precisar dos valores, faça uma cópia antes (aula <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>) ou um backup (aula <a href="dump-backup.html">Backup</a>).</dd>
+</dl>
+
+<p>Para apagar duas colunas, são dois comandos, um depois do outro: <code>ALTER TABLE clientes DROP COLUMN email;</code> e <code>ALTER TABLE clientes DROP COLUMN cidade;</code>. O SQLite não aceita uma lista separada por vírgula.</p>
+
+<p>O SQLite se <strong>recusa</strong> a apagar uma coluna quando outra parte do banco depende dela. Os casos mais comuns:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A coluna…</th><th>A mensagem</th></tr>
+<tr><td>é a chave primária</td><td><code>cannot drop PRIMARY KEY column: "id"</code></td></tr>
+<tr><td>tem <code>UNIQUE</code></td><td><code>cannot drop UNIQUE column: "a"</code></td></tr>
+<tr><td>está num índice</td><td><code>error in index idx_cidade after drop column: no such column: cidade</code></td></tr>
+<tr><td>aparece no <code>CHECK</code> de outra coluna</td><td><code>error in table t after drop column: no such column: a</code></td></tr>
+<tr><td>está numa <code>FOREIGN KEY (…)</code> escrita no fim da tabela</td><td><code>error in table t after drop column: unknown column "a" in foreign key definition</code></td></tr>
+<tr><td>não existe</td><td><code>no such column: "fone"</code></td></tr>
+</table>
+</div>
+
+<p>As mensagens do tipo <code>error in … after drop column</code> querem dizer "erro em tal lugar depois de apagar a coluna": o SQLite tentou, viu que o índice ou a regra ficaria quebrada, e desfez tudo. Para apagar uma coluna dessas, primeiro apague o que depende dela (o índice, por exemplo, com <code>DROP INDEX</code>) ou recrie a tabela (seção 6).</p>
+
+<hr>
+
+<h2>5. O que o SQLite não faz com ALTER TABLE</h2>
+<p>Quem vem de outro banco tenta logo mudar o tipo de uma coluna. No SQLite deste guia (a versão 3.50) não existe comando para isso:</p>
+
+<pre class="file" data-file="modify.sql" data-resultado data-erro>ALTER TABLE produtos MODIFY preco NUMERIC;
+</pre>
+
+<p>No terminal, a mensagem vem com a seta apontando onde o SQLite se perdeu:</p>
+
+<pre class="term">sqlite&gt; ALTER TABLE produtos MODIFY preco NUMERIC;
+Parse error: near "MODIFY": syntax error
+  ALTER TABLE produtos MODIFY preco NUMERIC;
+                       ^--- error here</pre>
+
+<p>A forma do PostgreSQL, <code>ALTER TABLE produtos ALTER COLUMN preco TYPE NUMERIC;</code>, também dá erro de sintaxe, desta vez <code>near "ALTER"</code>. Também não dá para acrescentar uma regra a uma tabela pronta (<code>ADD CONSTRAINT</code>, aula <a href="check.html">CHECK</a>), nem fazer várias mudanças num comando só.</p>
+
+<div class="tip">
+<strong>Versões mais novas</strong>
+<p>A documentação atual do SQLite mostra que versões mais recentes que a deste guia (a partir da 3.53) passaram a aceitar <code>ALTER COLUMN … SET NOT NULL</code> e <code>DROP NOT NULL</code>. Mudar o tipo continua fora da lista. Confira a sua versão com <code>SELECT sqlite_version();</code>; aqui, ela é 3.50.4.</p>
+</div>
+
+<hr>
+
+<h2>6. Recriar a tabela: a mudança de casa</h2>
+<p>Para as reformas "estruturais", a documentação do SQLite dá um roteiro de 12 passos. Ele parece grande, mas a ideia é a da família que muda de casa: <strong>construir a casa nova, levar a mudança, demolir a velha, pôr a placa com o nome antigo na nova</strong>. Vamos começar pelo caso simples.</p>
+
+<h3>O caso simples: uma tabela que ninguém referencia</h3>
+<p>A Ana criou a tabela de cupons com o desconto como <code>TEXT</code>, por engano. Ordenando pelo desconto, a ordem sai errada, porque texto se ordena letra por letra (<code>'10.5'</code> vem antes de <code>'5'</code>, como "abacate" vem antes de "banana"):</p>
+
+<pre class="file" data-file="cupons-texto.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto TEXT NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('NATAL', '15'), ('BEMVINDO', '10.5'), ('PIAUI', '5');
+
+SELECT codigo, desconto, typeof(desconto)
+FROM cupons
+ORDER BY desconto;
+</pre>
+
+<p>A mudança de casa, em quatro passos:</p>
+
+<pre class="file" data-file="recriar-cupons.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto TEXT NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('NATAL', '15'), ('BEMVINDO', '10.5'), ('PIAUI', '5');
+
+-- 1. a casa nova, já do jeito certo
+CREATE TABLE cupons_nova (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+-- 2. a mudança: copia tudo, convertendo o desconto
+INSERT INTO cupons_nova (id, codigo, desconto)
+SELECT id, codigo, CAST(desconto AS REAL)
+FROM cupons;
+
+-- 3. demole a velha
+DROP TABLE cupons;
+
+-- 4. a placa: a nova ganha o nome antigo
+ALTER TABLE cupons_nova RENAME TO cupons;
+
+SELECT codigo, desconto, typeof(desconto)
+FROM cupons
+ORDER BY desconto;
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE cupons_nova</dt><dd>A tabela nova, com a estrutura que você quer. Aqui você pode mudar tipos, acrescentar <code>CHECK</code>, <code>UNIQUE</code>, tudo.</dd>
+  <dt>INSERT INTO … SELECT …</dt><dd>Copia todas as linhas da velha para a nova numa tacada só (aula <a href="insert-select.html">INSERT INTO SELECT</a>). Copie o <code>id</code> também, para os números não mudarem.</dd>
+  <dt>CAST(desconto AS REAL)</dt><dd>"Converta o desconto para REAL": transforma o texto <code>'15'</code> no número <code>15.0</code>.</dd>
+  <dt>DROP TABLE cupons</dt><dd>Apaga a tabela velha (aula <a href="drop-table.html">DROP TABLE</a>).</dd>
+  <dt>RENAME TO cupons</dt><dd>A nova assume o nome antigo, e quem usava <code>cupons</code> continua funcionando.</dd>
+</dl>
+
+<p>Agora <code>typeof</code> diz <code>real</code>, e a ordem ficou certa: 5, 10.5, 15.</p>
+
+<h3>O roteiro completo: uma tabela que outras referenciam</h3>
+<p>A tabela <code>produtos</code> é mais delicada: os 220 itens de pedido apontam para ela por chave estrangeira. Se a regra estiver ligada, o <code>DROP TABLE produtos</code> falha (veja a aula <a href="foreign-key.html">FOREIGN KEY</a>). A Ana quer acrescentar duas regras: preço maior que zero e estoque nunca negativo. Este é o roteiro de 12 passos da documentação, simplificado para o que a Loja Aurora tem (ela não tem índices, gatilhos nem views na tabela <code>produtos</code>):</p>
+
+<pre class="file" data-file="recriar-produtos.sql" data-resultado>-- passo 1: desliga as chaves estrangeiras (fora da transação!)
+PRAGMA foreign_keys = OFF;
+
+-- passo 2: começa uma transação: ou vai tudo, ou nada
+BEGIN;
+
+-- passo 4: a tabela nova, com as regras
+CREATE TABLE produtos_nova (
+    id            INTEGER PRIMARY KEY,
+    nome          TEXT NOT NULL,
+    categoria_id  INTEGER NOT NULL REFERENCES categorias(id),
+    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
+    preco         REAL NOT NULL CHECK (preco &gt; 0),
+    estoque       INTEGER NOT NULL DEFAULT 0 CHECK (estoque &gt;= 0),
+    descontinuado INTEGER NOT NULL DEFAULT 0
+);
+
+-- passo 5: a mudança
+INSERT INTO produtos_nova
+    (id, nome, categoria_id, fornecedor_id, preco, estoque, descontinuado)
+SELECT id, nome, categoria_id, fornecedor_id, preco, estoque, descontinuado
+FROM produtos;
+
+-- passo 6: demole a velha
+DROP TABLE produtos;
+
+-- passo 7: a placa
+ALTER TABLE produtos_nova RENAME TO produtos;
+
+-- passo 10: confere se ninguém ficou órfão (vazio = tudo certo)
+PRAGMA foreign_key_check;
+
+-- passo 11: confirma
+COMMIT;
+
+-- passo 12: liga as chaves de novo
+PRAGMA foreign_keys = ON;
+
+SELECT COUNT(*) AS produtos FROM produtos;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo da documentação</th><th>O que faz</th><th>Na Loja Aurora</th></tr>
+<tr><td>1. <code>PRAGMA foreign_keys = OFF</code></td><td>Senão o <code>DROP TABLE</code> esbarra nos itens de pedido.</td><td>Feito</td></tr>
+<tr><td>2. <code>BEGIN</code></td><td>Se algo der errado no meio, nada muda (aula <a href="transacoes.html">Transações</a>).</td><td>Feito</td></tr>
+<tr><td>3. Anotar índices, gatilhos e views da tabela</td><td>Eles somem com o <code>DROP TABLE</code> e precisam ser recriados. Veja com <code>SELECT type, sql FROM sqlite_schema WHERE tbl_name = 'produtos';</code></td><td>Não tem nenhum</td></tr>
+<tr><td>4. <code>CREATE TABLE</code> da nova</td><td>A estrutura nova.</td><td>Feito</td></tr>
+<tr><td>5. <code>INSERT INTO … SELECT</code></td><td>Copia os dados.</td><td>Feito: 45 produtos</td></tr>
+<tr><td>6. <code>DROP TABLE</code> da velha</td><td>Apaga a antiga.</td><td>Feito</td></tr>
+<tr><td>7. <code>RENAME TO</code></td><td>A nova assume o nome.</td><td>Feito</td></tr>
+<tr><td>8 e 9. Recriar índices, gatilhos e views</td><td>Com o SQL anotado no passo 3.</td><td>Não tem nenhum</td></tr>
+<tr><td>10. <code>PRAGMA foreign_key_check</code></td><td>Confere se alguma linha ficou apontando para o vazio.</td><td>Feito: vazio</td></tr>
+<tr><td>11. <code>COMMIT</code></td><td>Confirma tudo.</td><td>Feito</td></tr>
+<tr><td>12. <code>PRAGMA foreign_keys = ON</code></td><td>Volta a proteger o banco.</td><td>Feito</td></tr>
+</table>
+</div>
+
+<p>Para ver que as regras novas estão valendo, acrescente no fim <code>UPDATE produtos SET preco = -1 WHERE id = 1;</code>: a resposta será <code>CHECK constraint failed: preco &gt; 0</code>.</p>
+
+<div class="warning">
+<strong>Por que o PRAGMA fica fora do BEGIN</strong>
+<p>Dentro de uma transação, o <code>PRAGMA foreign_keys</code> não tem efeito nenhum (e não dá erro). Se você puser o <code>PRAGMA foreign_keys = OFF</code> depois do <code>BEGIN</code>, a regra continua ligada e o <code>DROP TABLE produtos</code> falha. A ordem do roteiro importa.</p>
+</div>
+
+<hr>
+
+<h2>7. Qual caminho usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mudança</th><th>Caminho</th><th>Cuidado</th></tr>
+<tr><td>Nome da tabela</td><td><code>RENAME TO</code></td><td>Programas que usam o nome antigo param de funcionar.</td></tr>
+<tr><td>Nome de uma coluna</td><td><code>RENAME COLUMN</code></td><td>Idem, para consultas que citam a coluna.</td></tr>
+<tr><td>Coluna nova</td><td><code>ADD COLUMN</code></td><td>Com <code>NOT NULL</code>, precisa de <code>DEFAULT</code>. Nada de <code>UNIQUE</code> nem <code>PRIMARY KEY</code>.</td></tr>
+<tr><td>Tirar uma coluna</td><td><code>DROP COLUMN</code></td><td>Não tem desfazer. Recusa se algo depende dela.</td></tr>
+<tr><td>Tipo, regras, chave, ordem das colunas</td><td>Recriar a tabela (seção 6)</td><td>Use transação; com chaves estrangeiras, o roteiro completo.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>NOT NULL sem DEFAULT</strong>
+<pre class="file" data-file="erro-not-null.sql" data-resultado data-erro>ALTER TABLE clientes ADD COLUMN pontos INTEGER NOT NULL;
+</pre>
+<p><strong>A mensagem:</strong> <code>Cannot add a NOT NULL column with default value NULL</code>, "não é possível acrescentar uma coluna NOT NULL com valor padrão NULL". Os 30 clientes antigos ficariam sem valor, e a regra não deixa.</p>
+<p><strong>Como consertar:</strong> dê um valor padrão: <code>ADD COLUMN pontos INTEGER NOT NULL DEFAULT 0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>UNIQUE ou PRIMARY KEY na coluna nova</strong>
+<pre class="file" data-file="erro-unique.sql" data-resultado data-erro>ALTER TABLE clientes ADD COLUMN cpf TEXT UNIQUE;
+</pre>
+<p><strong>A mensagem:</strong> <code>Cannot add a UNIQUE column</code>, "não é possível acrescentar uma coluna UNIQUE". Com <code>PRIMARY KEY</code>, a mensagem é <code>Cannot add a PRIMARY KEY column</code>.</p>
+<p><strong>Como consertar:</strong> acrescente a coluna sem <code>UNIQUE</code> e crie um índice único depois: <code>CREATE UNIQUE INDEX idx_cpf ON clientes(cpf);</code> (aula <a href="indices.html">Índices</a>). Para chave primária, só recriando a tabela.</p>
+</div>
+
+<div class="cenario">
+<strong>DEFAULT com a hora atual</strong>
+<pre class="file" data-file="erro-default.sql" data-resultado data-erro>ALTER TABLE clientes
+ADD COLUMN criado_em TEXT DEFAULT CURRENT_TIMESTAMP;
+</pre>
+<p><strong>A mensagem:</strong> <code>Cannot add a column with non-constant default</code>, "não é possível acrescentar uma coluna com padrão não constante". O <code>CURRENT_TIMESTAMP</code> muda a cada segundo, e o SQLite não sabe que hora pôr nas linhas antigas. No <code>CREATE TABLE</code> ele é aceito; no <code>ADD COLUMN</code>, não.</p>
+<p><strong>Como consertar:</strong> acrescente sem <code>DEFAULT</code> e preencha as linhas antigas com um <code>UPDATE</code>, ou recrie a tabela.</p>
+</div>
+
+<div class="cenario">
+<strong>A coluna já existe</strong>
+<pre class="file" data-file="erro-duplicada.sql" data-resultado data-erro>ALTER TABLE clientes ADD COLUMN cidade TEXT;
+</pre>
+<p><strong>A mensagem:</strong> <code>duplicate column name: cidade</code>, "nome de coluna repetido". Acontece muito ao rodar o mesmo roteiro de mudança duas vezes. O mesmo vale para renomear para um nome que já existe: <code>RENAME COLUMN email TO nome</code> dá <code>error in table clientes after rename: duplicate column name: nome</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou o nome antigo depois de renomear</strong>
+<pre class="file" data-file="erro-nome-antigo.sql" data-resultado data-erro>ALTER TABLE clientes
+RENAME COLUMN nascimento TO data_nascimento;
+
+SELECT nome, nascimento FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: nascimento</code>. O <code>ALTER TABLE</code> funcionou; quem errou foi a consulta, que ainda usa o nome antigo.</p>
+</div>
+
+<div class="cenario">
+<strong>Mudar o tipo com MODIFY ou ALTER COLUMN</strong>
+<p>Já visto na seção 5: <code>near "MODIFY": syntax error</code> ou <code>near "ALTER": syntax error</code>. No SQLite, mudar o tipo é recriar a tabela.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>MySQL, PostgreSQL e SQL Server mudam muito mais coisa com <code>ALTER TABLE</code>, inclusive o tipo de uma coluna e as regras, sem recriar a tabela. A escrita muda de um para outro (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="mudar-tipo.sql">-- MySQL / MariaDB
+ALTER TABLE produtos MODIFY COLUMN preco DECIMAL(10,2) NOT NULL;
+
+-- PostgreSQL
+ALTER TABLE produtos ALTER COLUMN preco TYPE numeric(10,2);
+
+-- SQL Server
+ALTER TABLE produtos ALTER COLUMN preco DECIMAL(10,2) NOT NULL;
+
+-- nos três: acrescentar uma regra numa tabela pronta
+ALTER TABLE produtos ADD CONSTRAINT preco_positivo CHECK (preco &gt; 0);
+</pre>
+<p>Renomear também muda: no SQL Server, por exemplo, renomeia-se com o procedimento <code>sp_rename</code>, e não com <code>ALTER TABLE … RENAME</code>. Na dúvida, consulte a documentação do banco que você usa; o grupo "Os Dialetos" do Nível 3 compara os três.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>ALTER TABLE velha RENAME TO nova;</code></td><td>Renomeia a tabela (as chaves estrangeiras que apontam para ela são atualizadas).</td></tr>
+<tr><td><code>ALTER TABLE t RENAME COLUMN a TO b;</code></td><td>Renomeia uma coluna.</td></tr>
+<tr><td><code>ALTER TABLE t ADD COLUMN c TIPO …;</code></td><td>Acrescenta uma coluna no fim; as linhas antigas ficam com o <code>DEFAULT</code> (ou <em>NULL</em>).</td></tr>
+<tr><td><code>ALTER TABLE t DROP COLUMN c;</code></td><td>Apaga uma coluna e seus valores.</td></tr>
+<tr><td>Recriar: <code>CREATE TABLE t_nova</code> → <code>INSERT INTO t_nova SELECT … FROM t</code> → <code>DROP TABLE t</code> → <code>ALTER TABLE t_nova RENAME TO t</code></td><td>Qualquer outra mudança. Com chaves estrangeiras: <code>PRAGMA foreign_keys = OFF</code>, <code>BEGIN</code>, …, <code>PRAGMA foreign_key_check</code>, <code>COMMIT</code>, <code>PRAGMA foreign_keys = ON</code>.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>Cannot add a NOT NULL column with default value NULL</code></td><td>Coluna nova <code>NOT NULL</code> precisa de <code>DEFAULT</code>.</td></tr>
+<tr><td><code>Cannot add a UNIQUE column</code> / <code>Cannot add a PRIMARY KEY column</code></td><td>Essas regras não entram por <code>ADD COLUMN</code>.</td></tr>
+<tr><td><code>Cannot add a column with non-constant default</code></td><td><code>DEFAULT CURRENT_TIMESTAMP</code> não vale no <code>ADD COLUMN</code>.</td></tr>
+<tr><td><code>duplicate column name: cidade</code></td><td>Já existe uma coluna com esse nome.</td></tr>
+<tr><td><code>cannot drop PRIMARY KEY column: "id"</code></td><td>A chave primária não pode ser apagada.</td></tr>
+<tr><td><code>error in index … after drop column: …</code></td><td>Um índice (ou regra) depende da coluna.</td></tr>
+<tr><td><code>near "MODIFY": syntax error</code></td><td>O SQLite não muda o tipo de coluna: recrie a tabela.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Renomear a tabela</h3>
+<p>Complete para que a tabela <code>categorias</code> passe a se chamar <code>secoes</code>:</p>
+<div class="ex-code">ALTER TABLE categorias <input data-answer="RENAME" aria-label="palavra-chave"> TO secoes;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Coluna nova</h3>
+<p>Complete para acrescentar a coluna <code>site</code> aos fornecedores:</p>
+<div class="ex-code">ALTER TABLE fornecedores <input data-answer="ADD" aria-label="palavra-chave"> COLUMN site TEXT;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Depois de <code>ALTER TABLE clientes ADD COLUMN telefone TEXT;</code>, o que os 30 clientes que já existiam têm na coluna <code>telefone</code>?</p>
+<label><input type="radio" name="q3"> Um texto vazio <code>''</code></label>
+<label><input type="radio" name="q3"> O telefone do fornecedor</label>
+<label><input type="radio" name="q3"> <em>NULL</em></label>
+<label><input type="radio" name="q3"> Nada: o comando dá erro porque a tabela tem dados</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Qual destes comandos o SQLite 3.50 aceita?</p>
+<label><input type="radio" name="q4"> <code>ALTER TABLE clientes ADD COLUMN pontos INTEGER NOT NULL DEFAULT 0;</code></label>
+<label><input type="radio" name="q4"> <code>ALTER TABLE clientes ADD COLUMN pontos INTEGER NOT NULL;</code></label>
+<label><input type="radio" name="q4"> <code>ALTER TABLE produtos MODIFY preco NUMERIC;</code></label>
+<label><input type="radio" name="q4"> <code>ALTER TABLE clientes ADD COLUMN cpf TEXT UNIQUE;</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. No roteiro de recriar a tabela <code>produtos</code>, por que o <code>PRAGMA foreign_keys = OFF</code> vem <strong>antes</strong> do <code>BEGIN</code>?</p>
+<label><input type="radio" name="q5"> Por costume; a ordem não importa</label>
+<label><input type="radio" name="q5"> Porque dentro de uma transação esse pragma não tem efeito, e o <code>DROP TABLE produtos</code> falharia</label>
+<label><input type="radio" name="q5"> Porque o <code>BEGIN</code> liga as chaves estrangeiras sozinho</label>
+<label><input type="radio" name="q5"> Porque o <code>PRAGMA</code> só funciona no terminal</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. A Ana renomeou <code>fornecedores</code> para <code>parceiros</code>. O que aconteceu com a chave estrangeira <code>produtos.fornecedor_id</code>?</p>
+<label><input type="radio" name="q6"> Foi apagada</label>
+<label><input type="radio" name="q6"> Continua apontando para <code>fornecedores</code>, que não existe mais</label>
+<label><input type="radio" name="q6"> O <code>RENAME</code> deu erro por causa dela</label>
+<label><input type="radio" name="q6"> O SQLite a atualizou sozinho para <code>REFERENCES "parceiros"(id)</code></label>
+</div>
+
+<h3>Missão final: o desconto que era texto</h3>
+
+<div class="trysql" data-goal="contem:PIAUI|5.0;;tabela:cupons">
+<p class="try-task"><strong>Missão:</strong> o desconto dos cupons foi criado como <code>TEXT</code>, e a ordem sai errada. Recrie a tabela com o desconto <code>REAL</code>, sem perder os três cupons: crie <code>cupons_nova</code>, copie as linhas convertendo com <code>CAST(desconto AS REAL)</code>, apague a velha e dê à nova o nome <code>cupons</code>. O <code>SELECT</code> do fim deve mostrar <code>PIAUI|5.0</code> em primeiro lugar.</p>
+<pre class="script" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto TEXT NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('NATAL', '15'), ('BEMVINDO', '10.5'), ('PIAUI', '5');
+
+-- escreva aqui a mudança de casa
+
+SELECT codigo, desconto, typeof(desconto)
+FROM cupons
+ORDER BY desconto;
+</pre>
+<pre class="solucao" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto TEXT NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('NATAL', '15'), ('BEMVINDO', '10.5'), ('PIAUI', '5');
+
+CREATE TABLE cupons_nova (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons_nova (id, codigo, desconto)
+SELECT id, codigo, CAST(desconto AS REAL)
+FROM cupons;
+DROP TABLE cupons;
+ALTER TABLE cupons_nova RENAME TO cupons;
+
+SELECT codigo, desconto, typeof(desconto)
+FROM cupons
+ORDER BY desconto;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ALTER TABLE</code> muda a estrutura de uma tabela que já tem dados, sem apagar as linhas.</li>
+  <li>No SQLite ele faz quatro coisas: <code>RENAME TO</code> (tabela), <code>RENAME COLUMN … TO</code>, <code>ADD COLUMN</code> e <code>DROP COLUMN</code>.</li>
+  <li>A coluna nova vai para o fim e as linhas antigas ganham o <code>DEFAULT</code> ou <em>NULL</em>. <code>NOT NULL</code> exige <code>DEFAULT</code>; <code>UNIQUE</code>, <code>PRIMARY KEY</code> e <code>DEFAULT CURRENT_TIMESTAMP</code> não entram por <code>ADD COLUMN</code>.</li>
+  <li><code>DROP COLUMN</code> não tem desfazer e é recusado quando a coluna é chave, única, está num índice ou numa regra.</li>
+  <li>Mudar o tipo ou acrescentar regras: recrie a tabela (nova → copiar → apagar a velha → renomear). Com chaves estrangeiras, desligue-as antes do <code>BEGIN</code>, confira com <code>PRAGMA foreign_key_check</code> e ligue de novo depois do <code>COMMIT</code>.</li>
+  <li>MySQL, PostgreSQL e SQL Server mudam tipos e regras direto com <code>ALTER TABLE</code>, cada um com a sua escrita.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
