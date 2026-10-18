@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: Biblioteca — livros, sócios, empréstimos e multas | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: o banco de uma biblioteca comunitária, do caderno ao SQL, versão por versão. Uma tabela só e o problema do autor repetido, a tabela de autores, sócios e empréstimos, prazo e multa com julianday, exemplares disponíveis com LEFT JOIN, regras com CHECK e UNIQUE, e o dia a dia de emprestar e devolver, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Biblioteca</span></h1>
+
+<p class="intro">Aos sábados, a Ana é voluntária na biblioteca comunitária do bairro, em Teresina. Os empréstimos são anotados num caderno: quem levou, que livro, em que dia. Para saber quem está atrasado, alguém folheia o caderno inteiro e conta os dias no calendário. Neste projeto você troca o caderno por um <strong>banco de dados</strong>, construído em versões: começa com uma tabela só, descobre por que ela não basta, separa os autores, registra sócios e empréstimos e, no fim, o banco calcula sozinho os atrasos, as multas e os livros que estão na estante.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A começar simples (uma tabela) e a perceber quando é hora de dividir.</li>
+  <li>Por que o nome do autor vai para uma tabela própria, ligada por chave estrangeira.</li>
+  <li>A registrar empréstimos com data de retirada e de devolução, e a achar os que estão em aberto com <code>IS NULL</code>.</li>
+  <li>A calcular dias, prazos e multas com <code>julianday</code> e <code>date</code>.</li>
+  <li>A contar exemplares disponíveis com <code>LEFT JOIN</code>, e a armadilha do filtro no lugar errado.</li>
+  <li>A proteger o banco com <code>CHECK</code> e <code>UNIQUE</code>, e a emprestar e devolver com <code>INSERT</code> e <code>UPDATE</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Como as caixas deste projeto funcionam</h2>
+<p>A biblioteca é um banco <strong>novo</strong>, que não tem nada a ver com a Loja Aurora. Só que o editor do guia, a cada Rodar, cria um banco limpo e carrega a Aurora; ele não lembra o que você criou no Rodar anterior. Por isso o SQL de cada caixa faz tudo, do começo:</p>
+
+<ol class="passo">
+  <li><strong>Monta</strong> a biblioteca: <code>CREATE TABLE</code> e <code>INSERT</code> das tabelas daquela versão.</li>
+  <li><strong>Consulta</strong>: o <code>SELECT</code> que responde à pergunta da versão.</li>
+</ol>
+
+<p>A montagem se repete de caixa em caixa, sempre igual à da versão anterior, mais a novidade. As tabelas da Aurora continuam lá, mas os nomes não se misturam: a biblioteca usa <code>livros</code>, <code>autores</code>, <code>socios</code> e <code>emprestimos</code>, que a Aurora não tem. Fora do editor, num arquivo de verdade, você montaria uma vez só (veja o projeto <a href="projeto-loja.html">a Loja Aurora Completa</a>, no fim).</p>
+
+<hr>
+
+<h2>Versão 1: uma tabela só, igual ao caderno</h2>
+<p>O jeito mais rápido de começar é copiar o caderno: uma tabela de livros, com o título, o autor e o ano.</p>
+
+<pre class="file" data-file="biblioteca-v1.sql" data-resultado>CREATE TABLE livros (
+    id     INTEGER PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    autor  TEXT,
+    ano    INTEGER
+);
+
+INSERT INTO livros (titulo, autor, ano) VALUES
+('Dom Casmurro',                    'Machado de Assis', 1899),
+('Memórias Póstumas de Brás Cubas', 'Machado de assis', 1881),
+('Iracema',                         'José de Alencar',  1865),
+('O Guarani',                       'José de Alencar',  1857);
+
+SELECT * FROM livros;
+</pre>
+
+<dl class="anatomy">
+  <dt>id INTEGER PRIMARY KEY</dt><dd>O número de cada livro. O <code>INSERT</code> não informou o <code>id</code>, e o SQLite numerou sozinho: 1, 2, 3, 4 (aula <a href="primary-key.html">PRIMARY KEY</a>).</dd>
+  <dt>titulo TEXT NOT NULL</dt><dd>Todo livro tem título (aula <a href="not-null.html">NOT NULL</a>).</dd>
+  <dt>autor TEXT</dt><dd>O nome do autor, digitado em cada livro, como no caderno.</dd>
+  <dt>ano INTEGER</dt><dd>O ano da primeira edição: um número inteiro, que dá para comparar e ordenar.</dd>
+</dl>
+
+<p>Funciona, e para quatro livros parece ótimo. Mas olhe o segundo livro: quem digitou escreveu <code>Machado de assis</code>, com "a" minúsculo. Guarde isso; a próxima versão mostra o estrago.</p>
+
+<div class="trysql" data-goal="mudou:livros=6;;contem:O Cortiço">
+<p class="try-task"><strong>Missão:</strong> chegaram duas doações. Cadastre <code>O Cortiço</code>, de <code>Aluísio Azevedo</code>, de <code>1890</code>, e <code>Triste Fim de Policarpo Quaresma</code>, de <code>Lima Barreto</code>, de <code>1915</code>. Termine listando os livros do mais antigo para o mais novo (aula <a href="order-by.html">ORDER BY</a>).</p>
+<pre class="script" data-file="biblioteca-v1.sql">CREATE TABLE livros (
+    id     INTEGER PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    autor  TEXT,
+    ano    INTEGER
+);
+
+INSERT INTO livros (titulo, autor, ano) VALUES
+('Dom Casmurro',                    'Machado de Assis', 1899),
+('Memórias Póstumas de Brás Cubas', 'Machado de assis', 1881),
+('Iracema',                         'José de Alencar',  1865),
+('O Guarani',                       'José de Alencar',  1857);
+
+-- as doações:
+
+
+SELECT * FROM livros;
+</pre>
+<pre class="solucao" data-file="biblioteca-v1.sql">CREATE TABLE livros (
+    id     INTEGER PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    autor  TEXT,
+    ano    INTEGER
+);
+
+INSERT INTO livros (titulo, autor, ano) VALUES
+('Dom Casmurro',                    'Machado de Assis', 1899),
+('Memórias Póstumas de Brás Cubas', 'Machado de assis', 1881),
+('Iracema',                         'José de Alencar',  1865),
+('O Guarani',                       'José de Alencar',  1857);
+
+-- as doações:
+INSERT INTO livros (titulo, autor, ano) VALUES
+('O Cortiço',                        'Aluísio Azevedo', 1890),
+('Triste Fim de Policarpo Quaresma', 'Lima Barreto',    1915);
+
+SELECT * FROM livros ORDER BY ano;
+</pre>
+</div>
+
+<hr>
+
+<h2>Versão 2: os autores ganham uma tabela</h2>
+<p>A coordenadora da biblioteca pergunta: "quantos livros temos de cada autor?". Um <code>GROUP BY</code> responde (aula <a href="group-by.html">GROUP BY</a>), e entrega o problema:</p>
+
+<pre class="file" data-file="autor-repetido.sql" data-resultado>CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL, autor TEXT, ano INTEGER);
+INSERT INTO livros (titulo, autor, ano) VALUES
+('Dom Casmurro',                    'Machado de Assis', 1899),
+('Memórias Póstumas de Brás Cubas', 'Machado de assis', 1881),
+('Iracema',                         'José de Alencar',  1865),
+('O Guarani',                       'José de Alencar',  1857);
+
+SELECT autor, COUNT(*) AS livros
+FROM livros
+GROUP BY autor;
+</pre>
+
+<p>Para o banco, <code>Machado de Assis</code> e <code>Machado de assis</code> são textos diferentes, e o Machado virou dois autores com um livro cada. Com o nome digitado em cada livro, todo erro de digitação cria um autor "novo", e corrigir exige achar cada cópia. A saída é a mesma que a Loja Aurora usa para as categorias: o autor vira uma <strong>tabela própria</strong>, com o nome escrito <strong>uma vez só</strong>, e o livro guarda apenas o número dele (aulas <a href="relacionamentos.html">Tabelas que se Relacionam</a> e <a href="normalizacao.html">Normalização</a>).</p>
+
+<pre class="file" data-file="biblioteca-v2.sql" data-resultado>CREATE TABLE autores (
+    id   INTEGER PRIMARY KEY,
+    nome TEXT NOT NULL
+);
+INSERT INTO autores VALUES
+(1, 'Machado de Assis'), (2, 'José de Alencar'),
+(3, 'Aluísio Azevedo'),  (4, 'Lima Barreto');
+
+CREATE TABLE livros (
+    id         INTEGER PRIMARY KEY,
+    titulo     TEXT NOT NULL,
+    autor_id   INTEGER NOT NULL REFERENCES autores(id),
+    ano        INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1
+);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro',                     1, 1899, 2),
+(2, 'Memórias Póstumas de Brás Cubas',  1, 1881, 1),
+(3, 'Iracema',                          2, 1865, 1),
+(4, 'O Guarani',                        2, 1857, 1),
+(5, 'O Cortiço',                        3, 1890, 1),
+(6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+
+SELECT a.nome AS autor, COUNT(*) AS livros
+FROM livros l
+JOIN autores a ON a.id = l.autor_id
+GROUP BY a.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>autores</dt><dd>Uma linha por autor. O nome do Machado existe num lugar só: se estiver errado, corrige-se uma vez.</dd>
+  <dt>autor_id … REFERENCES autores(id)</dt><dd>A chave estrangeira: o livro aponta para o autor pelo número, e o banco não deixa apontar para um autor que não existe (aula <a href="foreign-key.html">FOREIGN KEY</a>).</dd>
+  <dt>exemplares INTEGER NOT NULL DEFAULT 1</dt><dd>Quantos volumes daquele título a biblioteca tem. Dom Casmurro tem 2; os outros, 1. Vai ser útil na versão 5.</dd>
+  <dt>JOIN autores a ON a.id = l.autor_id</dt><dd>Na consulta, o número volta a ser nome (aula <a href="inner-join.html">INNER JOIN</a>).</dd>
+</dl>
+
+<p>Agora o Machado de Assis aparece uma vez, com 2 livros. Repare que o <code>INSERT</code> de <code>livros</code> não lista as colunas: os valores vêm na ordem em que as colunas foram criadas.</p>
+
+<div class="trysql" data-goal="colunas:titulo,autor,ano;;linhas:6">
+<p class="try-task"><strong>Missão:</strong> monte o catálogo da estante: os 6 livros com as colunas exatamente <code>titulo</code>, <code>autor</code> (o <strong>nome</strong>, não o número) e <code>ano</code>, em ordem alfabética de título.</p>
+<pre class="script" data-file="biblioteca-v2.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES
+(1, 'Machado de Assis'), (2, 'José de Alencar'),
+(3, 'Aluísio Azevedo'),  (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+
+-- o catálogo:
+SELECT titulo, autor_id, ano FROM livros;
+</pre>
+<pre class="solucao" data-file="biblioteca-v2.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES
+(1, 'Machado de Assis'), (2, 'José de Alencar'),
+(3, 'Aluísio Azevedo'),  (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+
+-- o catálogo:
+SELECT l.titulo, a.nome AS autor, l.ano
+FROM livros l
+JOIN autores a ON a.id = l.autor_id
+ORDER BY l.titulo;
+</pre>
+</div>
+
+<hr>
+
+<h2>Versão 3: sócios e empréstimos</h2>
+<p>O caderno da biblioteca, na verdade, é uma lista de <strong>empréstimos</strong>: "a Helena levou Dom Casmurro no dia 1º, devolveu no dia 10". Cada empréstimo liga um livro a um sócio, com duas datas. A data de devolução fica vazia (<code>NULL</code>) enquanto o livro não volta (aula <a href="null.html">O Valor NULL</a>).</p>
+
+<pre class="file" data-file="biblioteca-v3.sql" data-resultado>-- montagem da versão 2
+CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES
+(1, 'Machado de Assis'), (2, 'José de Alencar'),
+(3, 'Aluísio Azevedo'),  (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+
+-- NOVO: sócios
+CREATE TABLE socios (
+    id   INTEGER PRIMARY KEY,
+    nome TEXT NOT NULL
+);
+INSERT INTO socios VALUES
+(1, 'Helena Duarte'), (2, 'Jonas Ribeiro'), (3, 'Clara Nogueira'),
+(4, 'Davi Lemos'),    (5, 'Marina Coelho');
+
+-- NOVO: empréstimos
+CREATE TABLE emprestimos (
+    id        INTEGER PRIMARY KEY,
+    livro_id  INTEGER NOT NULL REFERENCES livros(id),
+    socio_id  INTEGER NOT NULL REFERENCES socios(id),
+    retirada  TEXT NOT NULL,
+    devolucao TEXT
+);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'),
+(2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'),
+(4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),
+(6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+SELECT e.id, s.nome AS socio, l.titulo, e.retirada, e.devolucao
+FROM emprestimos e
+JOIN socios s ON s.id = e.socio_id
+JOIN livros l ON l.id = e.livro_id;
+</pre>
+
+<dl class="anatomy">
+  <dt>emprestimos</dt><dd>A tabela "do meio": cada linha liga <strong>um</strong> livro a <strong>um</strong> sócio. Um livro tem muitos empréstimos ao longo do tempo e um sócio faz muitos: é uma relação muitos-para-muitos com informação própria, as datas (aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>).</dd>
+  <dt>retirada TEXT NOT NULL</dt><dd>Todo empréstimo tem data de saída, no formato <code>AAAA-MM-DD</code>, o que as funções de data entendem (aula <a href="datas.html">Datas e Horas</a>).</dd>
+  <dt>devolucao TEXT</dt><dd>Sem <code>NOT NULL</code>: vazia quer dizer "o livro ainda está com o sócio".</dd>
+  <dt>dois JOINs</dt><dd>O empréstimo sabe os números; os JOINs trazem o nome do sócio e o título.</dd>
+</dl>
+
+<p>Repare que Dom Casmurro saiu três vezes (empréstimos 1, 3 e 6) e que a Marina Coelho, sócia 5, nunca pegou nada.</p>
+
+<div class="trysql" data-goal="linhas:4;;contem:Helena Duarte|O Cortiço">
+<p class="try-task"><strong>Missão:</strong> a pergunta de todo sábado: <strong>quem está com livro agora?</strong> Mostre o nome do sócio, o título e a data de retirada só dos empréstimos ainda <strong>não devolvidos</strong> (aula <a href="is-null.html">IS NULL e IS NOT NULL</a>), do mais antigo para o mais recente.</p>
+<pre class="script" data-file="biblioteca-v3.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+-- quem está com livro agora?
+SELECT socio_id, livro_id, retirada FROM emprestimos;
+</pre>
+<pre class="solucao" data-file="biblioteca-v3.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+-- quem está com livro agora?
+SELECT s.nome AS socio, l.titulo, e.retirada
+FROM emprestimos e
+JOIN socios s ON s.id = e.socio_id
+JOIN livros l ON l.id = e.livro_id
+WHERE e.devolucao IS NULL
+ORDER BY e.retirada;
+</pre>
+</div>
+
+<p>Daqui em diante, todo exemplo e toda caixa começam com a montagem desta missão: as quatro tabelas, em forma compacta, sempre iguais. Pule direto para o fim de cada uma: é lá que está a consulta nova.</p>
+
+<hr>
+
+<h2>Versão 4: prazos, atrasos e multas</h2>
+<p>A regra da biblioteca: o prazo é de <strong>14 dias</strong> e cada dia de atraso custa <strong>R$ 0,50</strong>. Para contar dias entre duas datas, o SQLite tem a função <code>julianday</code>: ela transforma uma data num número de dias, e a diferença entre dois desses números é a distância em dias (aula <a href="funcoes-data.html">Funções de Data</a>).</p>
+
+<p>Um detalhe: para o resultado desta página não mudar a cada dia, o "hoje" do projeto é fixo, <strong>18 de outubro de 2026</strong>, escrito como <code>'2026-10-18'</code>. Num sistema de verdade, no lugar dele vai <code>date('now')</code>, a data do dia.</p>
+
+<pre class="file" data-file="biblioteca-v4.sql" data-resultado>CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+-- os empréstimos em aberto, com o prazo e os dias corridos
+SELECT s.nome AS socio, l.titulo, e.retirada,
+       date(e.retirada, '+14 days') AS prazo,
+       CAST(julianday('2026-10-18') - julianday(e.retirada) AS INTEGER) AS dias
+FROM emprestimos e
+JOIN socios s ON s.id = e.socio_id
+JOIN livros l ON l.id = e.livro_id
+WHERE e.devolucao IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>date(e.retirada, '+14 days')</dt><dd>A data de retirada mais 14 dias: o último dia do prazo. A Helena levou O Cortiço em 20/09 e devia ter devolvido até 04/10.</dd>
+  <dt>julianday('2026-10-18') - julianday(e.retirada)</dt><dd>Quantos dias se passaram desde a retirada. O resultado vem com casa decimal (<code>28.0</code>), porque o <code>julianday</code> também conta horas.</dd>
+  <dt>CAST(… AS INTEGER)</dt><dd>Converte para inteiro: <code>28</code> (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</dd>
+</dl>
+
+<p>A Helena está com O Cortiço há 28 dias, e o Jonas com Memórias Póstumas há 17. Os dois passaram dos 14. O atraso é "dias menos 14", mas só quando isso dá positivo; para quem está dentro do prazo, o atraso é zero. O <code>MAX</code> com dois valores devolve o maior deles, e resolve: <code>MAX(dias - 14, 0)</code>.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Helena Duarte|O Cortiço|14|7.0;;contem:1.5">
+<p class="try-task"><strong>Missão:</strong> monte a lista de cobrança: só os empréstimos em aberto <strong>atrasados</strong>, com as colunas <code>socio</code>, <code>titulo</code>, <code>atraso</code> (em dias) e <code>multa</code> (R$ 0,50 por dia). A consulta de dentro já calcula os <code>dias</code>; use-a num <code>WITH</code> (aula <a href="with-cte.html">CTE (WITH)</a>) e faça as contas por fora.</p>
+<pre class="script" data-file="biblioteca-v4.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+WITH abertos AS (
+    SELECT s.nome AS socio, l.titulo,
+           CAST(julianday('2026-10-18') - julianday(e.retirada) AS INTEGER) AS dias
+    FROM emprestimos e
+    JOIN socios s ON s.id = e.socio_id
+    JOIN livros l ON l.id = e.livro_id
+    WHERE e.devolucao IS NULL
+)
+SELECT socio, titulo, dias
+FROM abertos;
+</pre>
+<pre class="solucao" data-file="biblioteca-v4.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+WITH abertos AS (
+    SELECT s.nome AS socio, l.titulo,
+           CAST(julianday('2026-10-18') - julianday(e.retirada) AS INTEGER) AS dias
+    FROM emprestimos e
+    JOIN socios s ON s.id = e.socio_id
+    JOIN livros l ON l.id = e.livro_id
+    WHERE e.devolucao IS NULL
+)
+SELECT socio, titulo,
+       dias - 14         AS atraso,
+       (dias - 14) * 0.5 AS multa
+FROM abertos
+WHERE dias &gt; 14;
+</pre>
+</div>
+
+<p>A Helena deve 14 dias de atraso, R$ 7,00; o Jonas, 3 dias, R$ 1,50. Aqui o <code>WHERE dias &gt; 14</code> já tira quem está no prazo, então nem foi preciso o <code>MAX</code>. Ele faz falta quando você quer <strong>todos</strong> os empréstimos na lista, com atraso zero para quem está em dia:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>Escreva</th><th>Resultado</th></tr>
+<tr><td>Só os atrasados</td><td><code>SELECT dias - 14 … WHERE dias &gt; 14</code></td><td>2 linhas</td></tr>
+<tr><td>Todos, com zero para os em dia</td><td><code>MAX(dias - 14, 0) AS atraso</code></td><td>4 linhas</td></tr>
+<tr><td>Todos, com um texto</td><td><code>CASE WHEN dias &gt; 14 THEN 'atrasado' ELSE 'no prazo' END</code></td><td>4 linhas (aula <a href="case.html">CASE</a>)</td></tr>
+<tr><td>Comparar datas direto</td><td><code>WHERE date(e.retirada, '+14 days') &lt; '2026-10-18'</code></td><td>2 linhas, sem contar dias</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Versão 5: o que está na estante</h2>
+<p>Um sócio chega e pede Dom Casmurro. Tem na estante? A biblioteca tem 2 exemplares, e um está emprestado: sobra 1. A conta é "exemplares menos empréstimos em aberto", para cada livro, <strong>inclusive</strong> os que não têm empréstimo nenhum. "Inclusive os que não têm par" é trabalho do <code>LEFT JOIN</code> (aula <a href="left-join.html">LEFT JOIN</a>):</p>
+
+<pre class="file" data-file="biblioteca-v5.sql" data-resultado>CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+SELECT l.titulo, l.exemplares,
+       COUNT(e.id)                AS emprestados,
+       l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e
+       ON e.livro_id = l.id
+      AND e.devolucao IS NULL
+GROUP BY l.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>LEFT JOIN emprestimos e ON … AND e.devolucao IS NULL</dt><dd>Junta cada livro só com os seus empréstimos <strong>em aberto</strong>. A condição da devolução está no <code>ON</code>, não no <code>WHERE</code>: assim, o livro sem empréstimo aberto continua na lista, com as colunas de <code>e</code> vazias. (Ponha a condição no <code>WHERE</code> e veja o que acontece em <a href="#errado">Quando dá errado</a>.)</dd>
+  <dt>COUNT(e.id)</dt><dd>Conta só os valores não vazios. Para Iracema, o <code>e.id</code> é <code>NULL</code>, e a contagem dá 0. Um <code>COUNT(*)</code> daria 1, porque conta a linha (aula <a href="count.html">COUNT()</a>).</dd>
+  <dt>l.exemplares - COUNT(e.id)</dt><dd>O que sobra na estante.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:3;;contem:O Guarani|1">
+<p class="try-task"><strong>Missão:</strong> o sócio não quer ver a lista toda, só o que dá para levar <strong>agora</strong>. Mostre o <code>titulo</code> e os <code>disponiveis</code> só dos livros com pelo menos um exemplar na estante. Lembre-se: o filtro sobre um <code>COUNT</code> vai no <code>HAVING</code> (aula <a href="having.html">HAVING</a>).</p>
+<pre class="script" data-file="biblioteca-v5.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+SELECT l.titulo, l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e
+       ON e.livro_id = l.id
+      AND e.devolucao IS NULL
+GROUP BY l.id;
+</pre>
+<pre class="solucao" data-file="biblioteca-v5.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+SELECT l.titulo, l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e
+       ON e.livro_id = l.id
+      AND e.devolucao IS NULL
+GROUP BY l.id
+HAVING disponiveis &gt; 0;
+</pre>
+</div>
+
+<p>Três livros na estante: Dom Casmurro (1 dos 2), Iracema e O Guarani. Os outros três estão todos com sócios.</p>
+
+<hr>
+
+<h2>Versão 6: regras que o banco garante</h2>
+<p>Até aqui, o banco aceita qualquer coisa que a voluntária digitar. Duas regras evitariam os erros mais comuns do caderno:</p>
+
+<ol class="passo">
+  <li><strong>Autor repetido</strong> com outra caixa de letra, como o "Machado de assis" da versão 1. Um <code>UNIQUE</code> proíbe nome repetido (aula <a href="unique.html">UNIQUE</a>), e o <code>COLLATE NOCASE</code> faz o SQLite comparar sem ligar para maiúsculas e minúsculas.</li>
+  <li><strong>Devolução antes da retirada</strong>, por erro de digitação na data. Um <code>CHECK</code> da tabela compara as duas colunas (aula <a href="check.html">CHECK</a>).</li>
+</ol>
+
+<pre class="file" data-file="biblioteca-v6.sql" data-resultado data-erro>CREATE TABLE emprestimos (
+    id        INTEGER PRIMARY KEY,
+    livro_id  INTEGER NOT NULL,
+    socio_id  INTEGER NOT NULL,
+    retirada  TEXT NOT NULL,
+    devolucao TEXT,
+    CHECK (devolucao IS NULL OR devolucao &gt;= retirada)
+);
+
+INSERT INTO emprestimos (livro_id, socio_id, retirada, devolucao)
+VALUES (1, 1, '2026-10-18', '2026-10-08');
+</pre>
+
+<dl class="anatomy">
+  <dt>CHECK (devolucao IS NULL OR devolucao &gt;= retirada)</dt><dd>Uma regra de <strong>tabela</strong> (escrita depois das colunas), porque usa duas colunas. Lê-se: "ou ainda não devolveu, ou devolveu no mesmo dia ou depois". Comparar datas como texto funciona porque estão em <code>AAAA-MM-DD</code>.</dd>
+  <dt>a mensagem</dt><dd><code>CHECK constraint failed: devolucao IS NULL OR devolucao &gt;= retirada</code>: o SQLite recusa e repete a regra quebrada. Alguém digitou 08 no lugar de 28.</dd>
+</dl>
+
+<div class="trysql" data-goal="erro:UNIQUE constraint failed: autores.nome">
+<p class="try-task"><strong>Missão:</strong> do jeito que está, o banco aceita o "machado de assis" em minúsculas como um autor novo. Mude a coluna <code>nome</code> para <code>TEXT NOT NULL UNIQUE COLLATE NOCASE</code> e rode de novo: o segundo <code>INSERT</code> tem de ser <strong>recusado</strong>.</p>
+<pre class="script" data-file="biblioteca-v6.sql">CREATE TABLE autores (
+    id   INTEGER PRIMARY KEY,
+    nome TEXT NOT NULL
+);
+INSERT INTO autores (nome) VALUES ('Machado de Assis');
+INSERT INTO autores (nome) VALUES ('machado de assis');
+
+SELECT * FROM autores;
+</pre>
+<pre class="solucao" data-file="biblioteca-v6.sql">CREATE TABLE autores (
+    id   INTEGER PRIMARY KEY,
+    nome TEXT NOT NULL UNIQUE COLLATE NOCASE
+);
+INSERT INTO autores (nome) VALUES ('Machado de Assis');
+INSERT INTO autores (nome) VALUES ('machado de assis');
+
+SELECT * FROM autores;
+</pre>
+</div>
+
+<p>O erro é <code>UNIQUE constraint failed: autores.nome</code>. Sem o <code>COLLATE NOCASE</code>, o <code>UNIQUE</code> sozinho deixaria passar, porque "Machado" e "machado" são textos diferentes. Atenção: o <code>NOCASE</code> do SQLite só iguala as letras sem acento (A–Z); "JOSÉ" e "josé" continuam diferentes no "É".</p>
+
+<hr>
+
+<h2>Versão 7: o dia a dia, emprestar e devolver</h2>
+<p>O banco está pronto. No sábado, a voluntária não roda <code>CREATE TABLE</code>; ela faz só duas coisas: <strong>emprestar</strong> é um <code>INSERT</code> em <code>emprestimos</code>, e <strong>devolver</strong> é um <code>UPDATE</code> que preenche a <code>devolucao</code> (aulas <a href="insert.html">INSERT INTO</a> e <a href="update.html">UPDATE</a>).</p>
+
+<div class="trysql" data-goal="mudou:emprestimos=8;;contem:O Cortiço|1|0|1;;contem:O Guarani|1|1|0">
+<p class="try-task"><strong>Missão final:</strong> hoje, 18/10/2026, aconteceram duas coisas. A <strong>Helena</strong> (sócia 1) devolveu <strong>O Cortiço</strong> (é o empréstimo 4), e a <strong>Marina</strong> (sócia 5) levou <strong>O Guarani</strong> (livro 4). Registre as duas antes da consulta de estante, que já está no fim. Na devolução, use <code>WHERE id = 4</code>: um <code>UPDATE</code> sem <code>WHERE</code> devolveria todos os livros de uma vez (aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>).</p>
+<pre class="script" data-file="biblioteca-v7.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+-- o sábado, 18/10/2026:
+
+
+-- a estante depois do sábado
+SELECT l.titulo, l.exemplares,
+       COUNT(e.id)                AS emprestados,
+       l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e ON e.livro_id = l.id AND e.devolucao IS NULL
+GROUP BY l.id;
+</pre>
+<pre class="solucao" data-file="biblioteca-v7.sql">CREATE TABLE autores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO autores VALUES (1, 'Machado de Assis'), (2, 'José de Alencar'),
+                           (3, 'Aluísio Azevedo'), (4, 'Lima Barreto');
+CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL,
+    autor_id INTEGER NOT NULL REFERENCES autores(id), ano INTEGER,
+    exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros VALUES
+(1, 'Dom Casmurro', 1, 1899, 2), (2, 'Memórias Póstumas de Brás Cubas', 1, 1881, 1),
+(3, 'Iracema', 2, 1865, 1),      (4, 'O Guarani', 2, 1857, 1),
+(5, 'O Cortiço', 3, 1890, 1),    (6, 'Triste Fim de Policarpo Quaresma', 4, 1915, 1);
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+-- o sábado, 18/10/2026:
+UPDATE emprestimos SET devolucao = '2026-10-18' WHERE id = 4;
+INSERT INTO emprestimos (livro_id, socio_id, retirada) VALUES (4, 5, '2026-10-18');
+
+-- a estante depois do sábado
+SELECT l.titulo, l.exemplares,
+       COUNT(e.id)                AS emprestados,
+       l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e ON e.livro_id = l.id AND e.devolucao IS NULL
+GROUP BY l.id;
+</pre>
+</div>
+
+<p>O Cortiço voltou para a estante e O Guarani saiu. O empréstimo novo ganhou o número 8 sozinho, e a <code>devolucao</code> dele ficou <em>NULL</em>, porque o <code>INSERT</code> não a citou. E a multa da Helena? Com a devolução registrada, a lista de cobrança da versão 4 já não a mostraria: ela olha só os empréstimos em aberto. Cobrar quem <strong>devolveu</strong> atrasado é outra consulta, sobre <code>devolucao - retirada</code>, e fica de exercício para você.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A condição no WHERE em vez do ON</strong>
+<p>A Ana escreveu a consulta da estante com o filtro da devolução no <code>WHERE</code>:</p>
+<pre class="file" data-file="on-x-where.sql" data-resultado>CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL, exemplares INTEGER NOT NULL DEFAULT 1);
+INSERT INTO livros (id, titulo, exemplares) VALUES
+(1, 'Dom Casmurro', 2), (2, 'Memórias Póstumas de Brás Cubas', 1), (3, 'Iracema', 1),
+(4, 'O Guarani', 1), (5, 'O Cortiço', 1), (6, 'Triste Fim de Policarpo Quaresma', 1);
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY, livro_id INTEGER NOT NULL REFERENCES livros(id),
+                          retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos (id, livro_id, retirada, devolucao) VALUES
+(1, 1, '2026-09-01', '2026-09-10'), (2, 3, '2026-09-05', '2026-09-25'),
+(3, 1, '2026-09-15', '2026-09-28'), (4, 5, '2026-09-20', NULL),
+(5, 2, '2026-10-01', NULL),         (6, 1, '2026-10-10', NULL),
+(7, 6, '2026-10-12', NULL);
+
+SELECT l.titulo, l.exemplares - COUNT(e.id) AS disponiveis
+FROM livros l
+LEFT JOIN emprestimos e ON e.livro_id = l.id
+WHERE e.devolucao IS NULL
+GROUP BY l.id;
+</pre>
+<p><strong>O que aconteceu:</strong> 5 livros em vez de 6. <strong>Iracema sumiu</strong>, sem erro nenhum. O <code>LEFT JOIN</code> trouxe Iracema com o seu único empréstimo, que já foi devolvido; o <code>WHERE</code> veio depois e jogou essa linha fora, porque a <code>devolucao</code> dela não é <code>NULL</code>. O Guarani escapou por sorte: sem empréstimo nenhum, as colunas de <code>e</code> vieram vazias e passaram no <code>IS NULL</code>.</p>
+<p><strong>Como consertar:</strong> condição sobre a tabela da direita de um <code>LEFT JOIN</code> vai no <code>ON</code>: <code>ON e.livro_id = l.id AND e.devolucao IS NULL</code>. O <code>ON</code> escolhe <strong>com quem</strong> juntar; o <code>WHERE</code> escolhe <strong>que linhas ficam</strong>.</p>
+</div>
+
+<div class="cenario">
+<strong>Emprestou um livro que não existe</strong>
+<pre class="file" data-file="livro-99.sql" data-resultado data-erro>CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL);
+INSERT INTO livros VALUES (1, 'Dom Casmurro');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+
+INSERT INTO emprestimos (livro_id, retirada) VALUES (99, '2026-10-18');
+</pre>
+<p><strong>O que aconteceu:</strong> <code>FOREIGN KEY constraint failed</code>. Não existe livro 99. No editor as chaves estrangeiras estão ligadas; no programa <code>sqlite3</code>, lembre-se de rodar <code>PRAGMA foreign_keys = ON;</code> ao abrir o banco, senão esse empréstimo entraria (aula <a href="pragma.html">PRAGMAs Úteis</a>).</p>
+<p><strong>Como consertar:</strong> confira o número do livro, ou cadastre o livro antes.</p>
+</div>
+
+<div class="cenario">
+<strong>Data num formato que o julianday não entende</strong>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT julianday('2026-10-18') - julianday('2026-09-20') AS iso,
+       julianday('18/10/2026') - julianday('20/09/2026') AS brasileiro;
+</pre>
+<p><strong>O que aconteceu:</strong> com <code>AAAA-MM-DD</code>, 28 dias. Com <code>DD/MM/AAAA</code>, <em>NULL</em>, sem mensagem de erro: o SQLite não reconhece o formato e devolve "sem valor". Um empréstimo digitado assim nunca apareceria como atrasado.</p>
+<p><strong>Como consertar:</strong> guarde sempre as datas em <code>AAAA-MM-DD</code>. Para o banco recusar qualquer outro formato, use <code>CHECK (date(retirada) IS retirada)</code> na tabela: <code>date('18/10/2026')</code> dá <code>NULL</code>, que não <strong>é</strong> o texto digitado, e o <code>INSERT</code> falha com <code>CHECK constraint failed: date(retirada) IS retirada</code>. Cuidado com a versão "óbvia", <code>CHECK (retirada = date(retirada))</code>: ela <strong>não</strong> funciona, porque a comparação com <code>NULL</code> dá <code>NULL</code>, e um <code>CHECK</code> que dá <code>NULL</code> deixa passar (aula <a href="check.html">CHECK</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Devolveu todos os livros de uma vez</strong>
+<pre class="file" data-file="update-sem-where.sql" data-resultado>CREATE TABLE emprestimos (id INTEGER PRIMARY KEY, livro_id INTEGER NOT NULL,
+                          retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos (id, livro_id, retirada, devolucao) VALUES
+(4, 5, '2026-09-20', NULL), (5, 2, '2026-10-01', NULL),
+(6, 1, '2026-10-10', NULL), (7, 6, '2026-10-12', NULL);
+
+UPDATE emprestimos SET devolucao = '2026-10-18';
+
+SELECT * FROM emprestimos;
+</pre>
+<p><strong>O que aconteceu:</strong> "4 linhas afetadas". A voluntária queria registrar a devolução da Helena e esqueceu o <code>WHERE</code>: agora o banco acha que todos os livros voltaram, e ninguém mais aparece como atrasado.</p>
+<p><strong>Como consertar:</strong> sempre <code>WHERE id = …</code> num <code>UPDATE</code>. Um bom hábito: rode antes um <code>SELECT</code> com o mesmo <code>WHERE</code> e confira que ele mostra só a linha que você quer mudar.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>julianday</code> é do SQLite. Nos bancos com tipo <code>DATE</code> de verdade, contar dias é mais direto. Trechos ilustrativos, que não rodam no editor:</p>
+<pre class="file" data-file="dias-outros-bancos.sql">-- PostgreSQL: subtrair duas datas dá o número de dias
+SELECT DATE '2026-10-18' - DATE '2026-09-20';           -- 28
+-- MySQL / MariaDB
+SELECT DATEDIFF('2026-10-18', '2026-09-20');             -- 28
+-- SQL Server
+SELECT DATEDIFF(day, '2026-09-20', '2026-10-18');        -- 28
+</pre>
+<p>Repare que a ordem dos argumentos do <code>DATEDIFF</code> é invertida entre o MySQL e o SQL Server. O <code>COLLATE NOCASE</code> também é do SQLite; nos outros bancos, comparar sem diferenciar maiúsculas depende da <em>collation</em> da coluna. Mais em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa da biblioteca</th><th>SQL</th></tr>
+<tr><td>Livro aponta para autor</td><td><code>autor_id INTEGER NOT NULL REFERENCES autores(id)</code></td></tr>
+<tr><td>Empréstimos em aberto</td><td><code>WHERE e.devolucao IS NULL</code></td></tr>
+<tr><td>Dias desde a retirada</td><td><code>CAST(julianday('2026-10-18') - julianday(e.retirada) AS INTEGER)</code></td></tr>
+<tr><td>Último dia do prazo</td><td><code>date(e.retirada, '+14 days')</code></td></tr>
+<tr><td>Atraso nunca negativo</td><td><code>MAX(dias - 14, 0)</code></td></tr>
+<tr><td>Exemplares na estante</td><td><code>LEFT JOIN emprestimos e ON e.livro_id = l.id AND e.devolucao IS NULL</code> + <code>l.exemplares - COUNT(e.id)</code></td></tr>
+<tr><td>Nome sem repetir, sem ligar para maiúsculas</td><td><code>nome TEXT NOT NULL UNIQUE COLLATE NOCASE</code></td></tr>
+<tr><td>Devolução nunca antes da retirada</td><td><code>CHECK (devolucao IS NULL OR devolucao &gt;= retirada)</code></td></tr>
+<tr><td>Emprestar</td><td><code>INSERT INTO emprestimos (livro_id, socio_id, retirada) VALUES (…)</code></td></tr>
+<tr><td>Devolver</td><td><code>UPDATE emprestimos SET devolucao = '…' WHERE id = …</code></td></tr>
+<tr><td>"Hoje" de verdade</td><td><code>date('now')</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Ainda não voltou</h3>
+<p>Complete o filtro dos empréstimos em aberto:</p>
+<div class="ex-code">WHERE e.devolucao <input data-answer="IS NULL|is null" aria-label="condição"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O fim do prazo</h3>
+<p>Complete para calcular o último dia de um prazo de 14 dias:</p>
+<div class="ex-code">date(e.retirada, '<input data-answer="+14 days|+14 day" aria-label="modificador">')</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Por que o nome do autor saiu da tabela <code>livros</code> e foi para uma tabela <code>autores</code>?</p>
+<label><input type="radio" name="q3"> Porque o SQLite não aceita duas colunas de texto na mesma tabela</label>
+<label><input type="radio" name="q3"> Para o nome ser escrito uma vez só: um erro de digitação não cria um "autor novo" e corrige-se num lugar</label>
+<label><input type="radio" name="q3"> Para a consulta ficar mais curta</label>
+<label><input type="radio" name="q3"> Porque livros com o mesmo autor não podem ficar na mesma tabela</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Na consulta da estante com <code>LEFT JOIN</code>, o filtro <code>e.devolucao IS NULL</code> foi parar no <code>WHERE</code>. O que acontece?</p>
+<label><input type="radio" name="q4"> Erro de sintaxe</label>
+<label><input type="radio" name="q4"> Nada muda</label>
+<label><input type="radio" name="q4"> Aparecem livros repetidos</label>
+<label><input type="radio" name="q4"> Somem os livros cujos empréstimos foram todos devolvidos, como Iracema</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para Iracema, sem empréstimo aberto, quanto dá <code>COUNT(e.id)</code> e quanto daria <code>COUNT(*)</code>?</p>
+<label><input type="radio" name="q5"> 0 e 1</label>
+<label><input type="radio" name="q5"> 1 e 1</label>
+<label><input type="radio" name="q5"> 0 e 0</label>
+<label><input type="radio" name="q5"> <code>NULL</code> e 1</label>
+</div>
+
+<div class="trysql" data-goal="linhas:1;;contem:Jonas Ribeiro|Iracema|6|3.0">
+<p class="try-task"><strong>Desafio:</strong> quem <strong>devolveu</strong> atrasado também paga. Mostre <code>socio</code>, <code>titulo</code>, <code>atraso</code> e <code>multa</code> dos empréstimos já devolvidos que passaram dos 14 dias, contando da retirada até a devolução (não até hoje).</p>
+<pre class="script" data-file="desafio.sql">CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL);
+INSERT INTO livros VALUES (1, 'Dom Casmurro'), (2, 'Memórias Póstumas de Brás Cubas'),
+    (3, 'Iracema'), (4, 'O Guarani'), (5, 'O Cortiço'), (6, 'Triste Fim de Policarpo Quaresma');
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+SELECT s.nome AS socio, l.titulo, e.retirada, e.devolucao
+FROM emprestimos e
+JOIN socios s ON s.id = e.socio_id
+JOIN livros l ON l.id = e.livro_id
+WHERE e.devolucao IS NOT NULL;
+</pre>
+<pre class="solucao" data-file="desafio.sql">CREATE TABLE livros (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL);
+INSERT INTO livros VALUES (1, 'Dom Casmurro'), (2, 'Memórias Póstumas de Brás Cubas'),
+    (3, 'Iracema'), (4, 'O Guarani'), (5, 'O Cortiço'), (6, 'Triste Fim de Policarpo Quaresma');
+CREATE TABLE socios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+INSERT INTO socios VALUES (1, 'Helena Duarte'), (2, 'Jonas Ribeiro'),
+    (3, 'Clara Nogueira'), (4, 'Davi Lemos'), (5, 'Marina Coelho');
+CREATE TABLE emprestimos (id INTEGER PRIMARY KEY,
+    livro_id INTEGER NOT NULL REFERENCES livros(id),
+    socio_id INTEGER NOT NULL REFERENCES socios(id),
+    retirada TEXT NOT NULL, devolucao TEXT);
+INSERT INTO emprestimos VALUES
+(1, 1, 1, '2026-09-01', '2026-09-10'), (2, 3, 2, '2026-09-05', '2026-09-25'),
+(3, 1, 3, '2026-09-15', '2026-09-28'), (4, 5, 1, '2026-09-20', NULL),
+(5, 2, 2, '2026-10-01', NULL),         (6, 1, 4, '2026-10-10', NULL),
+(7, 6, 3, '2026-10-12', NULL);
+
+WITH devolvidos AS (
+    SELECT s.nome AS socio, l.titulo,
+           CAST(julianday(e.devolucao) - julianday(e.retirada) AS INTEGER) AS dias
+    FROM emprestimos e
+    JOIN socios s ON s.id = e.socio_id
+    JOIN livros l ON l.id = e.livro_id
+    WHERE e.devolucao IS NOT NULL
+)
+SELECT socio, titulo, dias - 14 AS atraso, (dias - 14) * 0.5 AS multa
+FROM devolvidos
+WHERE dias &gt; 14;
+</pre>
+</div>
+
+<p>Só o Jonas: ficou 20 dias com Iracema, 6 de atraso, R$ 3,00. A Helena e a Clara devolveram Dom Casmurro em 9 e 13 dias.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Comece simples, com uma tabela, e divida quando aparecer repetição: o autor digitado em cada livro virou uma tabela <code>autores</code>, ligada por <code>autor_id</code>.</li>
+  <li>Um empréstimo é a tabela do meio entre livros e sócios, com as datas. <code>devolucao</code> vazia (<code>NULL</code>) quer dizer "ainda está com o sócio".</li>
+  <li><code>julianday(b) - julianday(a)</code> conta dias; <code>date(a, '+14 days')</code> soma dias; <code>MAX(x, 0)</code> impede atraso negativo. Datas sempre em <code>AAAA-MM-DD</code>, senão as funções devolvem <code>NULL</code>.</li>
+  <li>Para contar "inclusive quem não tem par", <code>LEFT JOIN</code> + <code>COUNT(coluna)</code>. Condição sobre a tabela da direita vai no <code>ON</code>; no <code>WHERE</code>, ela some com linhas sem avisar.</li>
+  <li><code>UNIQUE COLLATE NOCASE</code> e <code>CHECK</code> fazem o banco recusar os erros do caderno.</li>
+  <li>No dia a dia, emprestar é <code>INSERT</code> e devolver é <code>UPDATE … WHERE id = …</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
