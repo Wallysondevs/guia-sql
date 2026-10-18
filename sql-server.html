@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL no SQL Server — o T-SQL lado a lado com o SQLite | Guia SQL</title>
+<meta name="description" content="SQL no SQL Server (T-SQL) para quem aprendeu com o SQLite: edições gratuitas, como subir o SQL Server num contêiner e abrir o sqlcmd, GO e lotes, TOP e OFFSET FETCH no lugar de LIMIT, [colchetes], IDENTITY, + e CONCAT, datas com DATEADD e CONVERT, bit, MERGE no lugar de ON CONFLICT, OUTPUT no lugar de RETURNING, os tipos e as mensagens de erro mais comuns, tudo conferido na documentação da Microsoft.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL no <span class="hl">SQL Server</span></h1>
+
+<p class="intro">A Ana conseguiu um estágio numa empresa de Teresina, e o sistema de lá guarda tudo no <strong>SQL Server</strong>, o banco de dados da Microsoft. Ela sabe SQL, aprendeu com o SQLite neste guia, e quer saber o que muda. A resposta: quase tudo o que ela sabe vale igual (<code>SELECT</code>, <code>WHERE</code>, <code>JOIN</code>, <code>GROUP BY</code>…), mas o SQL Server tem o seu próprio dialeto, o <strong>T-SQL</strong> (<em>Transact-SQL</em>), com outras palavras para algumas tarefas do dia a dia: <code>TOP</code> no lugar de <code>LIMIT</code>, <code>+</code> para juntar textos, <code>GETDATE()</code> para a data de hoje, <code>MERGE</code> para o "insere ou atualiza". Nesta aula ela põe cada consulta do SQLite ao lado da versão do SQL Server.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o SQL Server, quais edições são <strong>gratuitas</strong> e onde ele roda.</li>
+  <li>Como subir um SQL Server de teste num contêiner e conversar com ele pelo <code>sqlcmd</code>, o programa de terminal da Microsoft, e o que é o <code>GO</code>.</li>
+  <li>A tradução das consultas que você já sabe: <code>LIMIT</code> × <code>TOP</code> e <code>OFFSET … FETCH</code>, aspas × colchetes, numeração automática, textos, datas, booleanos.</li>
+  <li><code>MERGE</code> (o UPSERT do SQL Server) e <code>OUTPUT</code> (o <code>RETURNING</code> dele).</li>
+  <li>Os tipos de dados mais usados e as mensagens de erro mais comuns, e o que cada uma quer dizer.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>O que roda de verdade nesta página</strong>
+<p>Os quadros "Resultado" rodam o <strong>SQLite</strong> de verdade, no seu navegador, como em todo o guia. Os trechos do SQL Server <strong>não</strong> foram rodados: eles aparecem num quadro de código sem resultado, marcados como <strong>ilustrativos</strong>, e cada palavra, regra e mensagem de erro citada foi conferida na documentação oficial da Microsoft (learn.microsoft.com). Das mensagens de erro, a documentação dá o <strong>modelo</strong> (por exemplo, <code>Invalid object name '%.*ls'.</code>); nesta página o <code>%.*ls</code> aparece preenchido com o nome do exemplo.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: o mesmo idioma, outro sotaque</h2>
+<p>Se você aprendeu a dirigir num carro, consegue dirigir outro: o volante, os pedais e as marchas estão no mesmo lugar. Só alguns botões mudam de posição, e o farol de um carro liga de um jeito diferente do outro. Com os bancos de dados é igual. O SQL padrão é o volante e os pedais; cada banco tem os seus botões. A aula <a href="dialetos.html">As Diferenças entre os Bancos</a> mostra o panorama geral. Esta aqui é o manual do "carro" SQL Server.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>SQLite (este guia)</th><th>SQL Server</th></tr>
+<tr><td>Quem faz</td><td>projeto aberto, domínio público</td><td>Microsoft</td></tr>
+<tr><td>Como funciona</td><td>o banco é um arquivo; o programa vai junto com o seu aplicativo</td><td>um <strong>servidor</strong>: um programa sempre ligado, e os clientes se conectam a ele pela rede (porta 1433 no exemplo da Microsoft)</td></tr>
+<tr><td>Dialeto</td><td>SQL do SQLite</td><td>T-SQL (Transact-SQL)</td></tr>
+<tr><td>Programa de terminal</td><td><code>sqlite3</code></td><td><code>sqlcmd</code></td></tr>
+<tr><td>Programa gráfico</td><td>vários (DB Browser for SQLite…)</td><td>SSMS (SQL Server Management Studio), para Windows</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. As edições e onde ele roda</h2>
+<p>A versão atual é o <strong>SQL Server 2025</strong> (a documentação o chama de 17.x). Para estudar, duas edições não custam nada:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Edição</th><th>O que a Microsoft diz dela</th></tr>
+<tr><td><strong>Express</strong></td><td>"O banco de entrada, gratuito, ideal para aprender e criar aplicativos de desktop e pequenos servidores." No SQL Server 2025, cada banco pode ter até <strong>50 GB</strong>.</td></tr>
+<tr><td><strong>Developer</strong> (Enterprise Developer e Standard Developer)</td><td>Todos os recursos das edições pagas, mas licenciada só para <strong>desenvolvimento e teste</strong>, não para produção.</td></tr>
+</table>
+</div>
+
+<p>O SQL Server roda no Windows, no Linux e em contêineres (Docker). Também existe na nuvem da Microsoft, como Azure SQL. O T-SQL desta aula vale para todos esses lugares, com poucas exceções.</p>
+
+<hr>
+
+<h2>2. Instalar e abrir o cliente: o sqlcmd</h2>
+
+<h3>Um SQL Server de teste num contêiner</h3>
+<p>O jeito mais rápido de ter um SQL Server para treinar, em qualquer sistema com Docker, é o contêiner oficial. O comando abaixo é o do guia de início rápido da Microsoft (ilustrativo, não rodado aqui):</p>
+
+<pre class="file" data-file="terminal (ilustrativo)">docker run -e "ACCEPT_EULA=Y" -e "MSSQL_SA_PASSWORD=&lt;senha&gt;" \
+   -p 1433:1433 --name sql1 --hostname sql1 \
+   -d \
+   mcr.microsoft.com/mssql/server:2025-latest
+</pre>
+
+<dl class="anatomy">
+  <dt>ACCEPT_EULA=Y</dt><dd>Você aceita a licença de uso (EULA). Sem isso, o contêiner não sobe.</dd>
+  <dt>MSSQL_SA_PASSWORD=&lt;senha&gt;</dt><dd>A senha do administrador, o usuário <code>sa</code>. A regra padrão: pelo menos 8 caracteres, com três destes quatro grupos: maiúsculas, minúsculas, números e símbolos. Senha fraca faz o contêiner parar.</dd>
+  <dt>-p 1433:1433</dt><dd>Abre a porta 1433, a do SQL Server, para os clientes se conectarem.</dd>
+  <dt>mssql/server:2025-latest</dt><dd>A imagem do SQL Server 2025. Por padrão, ela cria a edição Developer.</dd>
+</dl>
+
+<h3>O sqlcmd</h3>
+<p>O <code>sqlcmd</code> faz para o SQL Server o que o <code>sqlite3</code> faz para o SQLite: você digita SQL e vê o resultado no terminal. Hoje há duas versões, e a documentação recomenda a nova, escrita em Go, que se instala sozinha: <code>winget install sqlcmd</code> no Windows, <code>brew install sqlcmd</code> no macOS, ou <code>apt-get install sqlcmd</code> no Debian/Ubuntu, depois de cadastrar o repositório da Microsoft. Para conectar:</p>
+
+<pre class="file" data-file="terminal (ilustrativo)">sqlcmd -S localhost -U sa
+</pre>
+
+<dl class="anatomy">
+  <dt>-S localhost</dt><dd>O servidor (<em>server</em>) a que se conectar: aqui, o da própria máquina.</dd>
+  <dt>-U sa</dt><dd>O usuário (<em>user</em>). Sem <code>-P</code>, o <code>sqlcmd</code> pede a senha na hora, sem mostrá-la na tela, que é o mais seguro.</dd>
+  <dt>-C (se precisar)</dt><dd>"Confiar no certificado do servidor". As versões recentes do <code>sqlcmd</code> exigem conexão criptografada; num servidor de teste com certificado próprio, a conexão pode falhar sem essa opção. A documentação também cita <code>-No</code>, que torna a criptografia opcional.</dd>
+</dl>
+
+<h3>O prompt <code>1&gt;</code> e o <code>GO</code></h3>
+<p>Conectado, o <code>sqlcmd</code> mostra o prompt <code>1&gt;</code>. E aqui está a primeira grande diferença para o <code>sqlite3</code>: <strong>o ponto e vírgula não faz a consulta rodar</strong>. Você escreve um ou mais comandos e, numa linha sozinha, digita <code>GO</code>. Só então o <code>sqlcmd</code> manda tudo para o servidor:</p>
+
+<pre class="file" data-file="o que a Ana digita no sqlcmd (ilustrativo)">USE loja;
+SELECT TOP (3) nome, preco FROM produtos ORDER BY preco DESC;
+GO
+</pre>
+
+<p>O conjunto de comandos enviado de uma vez se chama <strong>lote</strong> (<em>batch</em>). A documentação deixa claro: "<code>GO</code> não é um comando do Transact-SQL; é um comando reconhecido pelo <code>sqlcmd</code>" e pelo editor do SSMS. O servidor nunca vê a palavra <code>GO</code>. Para sair, digite <code>QUIT</code> (ou <code>EXIT</code>). Para rodar uma consulta só e sair, existe a opção <code>-Q</code>: <code>sqlcmd -S localhost -U sa -Q "SELECT @@VERSION"</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th><code>sqlite3</code></th><th><code>sqlcmd</code></th></tr>
+<tr><td>Abrir</td><td><code>sqlite3 loja.db</code></td><td><code>sqlcmd -S servidor -U usuario</code> (e depois <code>USE loja;</code>, ou a opção <code>-d loja</code>)</td></tr>
+<tr><td>Rodar o que foi digitado</td><td>o <code>;</code> no fim</td><td><code>GO</code> numa linha sozinha</td></tr>
+<tr><td>Rodar um arquivo</td><td><code>.read arquivo.sql</code></td><td><code>sqlcmd … -i arquivo.sql</code></td></tr>
+<tr><td>Uma consulta e sair</td><td><code>sqlite3 loja.db "SELECT …"</code></td><td><code>sqlcmd … -Q "SELECT …"</code></td></tr>
+<tr><td>Sair</td><td><code>.quit</code></td><td><code>QUIT</code> ou <code>EXIT</code></td></tr>
+</table>
+</div>
+
+<p>No Windows, muita gente usa o <strong>SSMS</strong> (SQL Server Management Studio), um programa gráfico gratuito da Microsoft; a versão atual, o SSMS 22, é instalada pelo instalador do Visual Studio. No editor do SSMS o <code>GO</code> também vale.</p>
+
+<p>E no SQLite? Aqui há uma curiosidade. O <code>GO</code> não é SQL, então no editor do guia ele dá erro:</p>
+
+<pre class="file" data-file="go.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE id = 1
+GO
+</pre>
+
+<p>Mas o <strong>programa</strong> <code>sqlite3</code>, no terminal, aceita: a documentação dele diz que a palavra <code>GO</code> (ou uma barra <code>/</code>) numa linha sozinha também termina um comando, por compatibilidade com o SQL Server e o Oracle. A Ana testou, digitando a consulta sem <code>;</code> e depois <code>GO</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT nome FROM clientes WHERE id = 1
+   ...&gt; GO
+José Ribamar Silva
+sqlite&gt; .quit</pre>
+
+<p>É o programa de terminal que trata o <code>GO</code>, como no SQL Server; o banco (o motor do SQLite, que o editor usa) nunca o vê.</p>
+
+<hr>
+
+<h2>3. Limitar linhas: LIMIT × TOP e OFFSET … FETCH</h2>
+<p>Os 3 produtos mais caros. No SQLite (aula <a href="limit.html">LIMIT e OFFSET</a>):</p>
+
+<pre class="file" data-file="limit.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3;
+</pre>
+
+<p>No SQL Server, o <code>LIMIT</code> não existe. A palavra é <code>TOP</code>, e ela vem <strong>logo depois do <code>SELECT</code></strong>, não no fim:</p>
+
+<pre class="file" data-file="top.sql (SQL Server, ilustrativo)">SELECT TOP (3) nome, preco
+FROM produtos
+ORDER BY preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>TOP (3)</dt><dd>"Os 3 primeiros". Os parênteses são opcionais num <code>SELECT</code> com número fixo (<code>TOP 3</code> funciona), mas a Microsoft recomenda usá-los sempre, porque em <code>INSERT</code>, <code>UPDATE</code>, <code>MERGE</code> e <code>DELETE</code> eles são obrigatórios.</dd>
+  <dt>ORDER BY preco DESC</dt><dd>Sem <code>ORDER BY</code>, o <code>TOP</code> devolve 3 linhas "em ordem indefinida", diz a documentação: quaisquer 3. Use sempre os dois juntos.</dd>
+</dl>
+
+<p>O <code>TOP</code> tem dois extras que o <code>LIMIT</code> não tem: <code>TOP (10) PERCENT</code> (os primeiros 10% das linhas) e <code>WITH TIES</code> (inclui também as linhas <strong>empatadas</strong> com a última, o que pode trazer mais linhas do que o número pedido).</p>
+
+<h3>Pular linhas: OFFSET … FETCH</h3>
+<p>Para a "página 2" (pular 3, mostrar 3), o SQLite usa <code>LIMIT 3 OFFSET 3</code>:</p>
+
+<pre class="file" data-file="pagina2.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3 OFFSET 3;
+</pre>
+
+<p>O SQL Server (desde a versão 2012) usa a forma do padrão SQL, que fica <strong>dentro</strong> do <code>ORDER BY</code>:</p>
+
+<pre class="file" data-file="offset-fetch.sql (SQL Server, ilustrativo)">SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+OFFSET 3 ROWS
+FETCH NEXT 3 ROWS ONLY;
+</pre>
+
+<dl class="anatomy">
+  <dt>OFFSET 3 ROWS</dt><dd>Pula 3 linhas. Faz parte do <code>ORDER BY</code>: sem <code>ORDER BY</code>, não há <code>OFFSET</code>.</dd>
+  <dt>FETCH NEXT 3 ROWS ONLY</dt><dd>"Traga as próximas 3 linhas, só". <code>NEXT</code> e <code>FIRST</code> são sinônimos, assim como <code>ROW</code> e <code>ROWS</code>.</dd>
+</dl>
+
+<p>A documentação recomenda <code>OFFSET … FETCH</code> (e não <code>TOP</code>) para paginar, e avisa que os dois não podem ser misturados na mesma consulta. O SQLite não conhece nenhuma das duas formas:</p>
+
+<pre class="file" data-file="top-no-sqlite.sql" data-resultado data-erro>SELECT TOP (3) nome
+FROM produtos;
+</pre>
+
+<p><code>no such function: TOP</code>: com o parêntese logo depois, o SQLite achou que <code>TOP</code> era uma função. (Sem os parênteses, <code>SELECT TOP 3 nome</code>, a mensagem é <code>near "3": syntax error</code>.) E o <code>OFFSET 3 ROWS</code>:</p>
+
+<pre class="file" data-file="fetch-no-sqlite.sql" data-resultado data-erro>SELECT nome
+FROM produtos
+ORDER BY preco DESC
+OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY;
+</pre>
+
+<div class="trysql" data-goal="linhas:5;;contem:Ana Beatriz Sousa">
+<p class="try-task"><strong>Experimente:</strong> a Ana copiou esta consulta do sistema do estágio (é T-SQL) e quer rodá-la no SQLite: os 5 clientes mais novos (nascimento mais recente). Traduza o <code>TOP (5)</code> para o jeito do SQLite.</p>
+<pre class="script" data-file="consulta.sql">SELECT TOP (5) nome, nascimento
+FROM clientes
+ORDER BY nascimento DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento DESC
+LIMIT 5;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Nomes entre colchetes, e maiúsculas que não importam</h2>
+<p>No SQL Server, um nome que não seria aceito sozinho (uma palavra reservada como <code>order</code>, um nome com espaço) vai entre <strong>colchetes</strong>: <code>[order]</code>, <code>[nome do cliente]</code>. As aspas duplas também servem, com a configuração <code>QUOTED_IDENTIFIER</code> ligada, que é o padrão da maioria das conexões. Você vai ver colchetes em todo lugar, porque o SSMS os põe sozinho nos scripts que gera.</p>
+
+<p>O SQLite aceita as duas formas, justamente para ser compatível:</p>
+
+<pre class="file" data-file="colchetes.sql" data-resultado>SELECT [nome], "cidade"
+FROM clientes
+WHERE id = 1;
+</pre>
+
+<p>Nos dois bancos, texto vai entre <strong>aspas simples</strong>: <code>'Teresina'</code>. No SQL Server, um texto com caracteres fora do inglês (acentos, emojis) costuma ir com um <strong>N</strong> na frente, <code>N'Conceição'</code>: a documentação explica que sem o prefixo <code>N</code> o texto é convertido para a página de código padrão do banco, que pode não reconhecer alguns caracteres.</p>
+
+<h3>Maiúsculas e minúsculas: a collation</h3>
+<p>No SQL Server, se <code>'ana'</code> é igual a <code>'ANA'</code> depende da <strong>collation</strong> (as regras de comparação de texto), escolhida na instalação conforme o idioma do sistema. Para um Windows em português do Brasil, a tabela da Microsoft indica a collation <code>Latin1_General_CI_AS</code>. O <code>CI</code> quer dizer <em>case-insensitive</em>: maiúsculas e minúsculas são <strong>iguais</strong>, tanto no <code>=</code> quanto no <code>LIKE</code>. (O <code>AS</code> quer dizer <em>accent-sensitive</em>: <code>'Jose'</code> e <code>'José'</code> continuam diferentes.) Por isso o SQL Server não precisa do <code>ILIKE</code> do PostgreSQL.</p>
+
+<p>No SQLite é outra história: o <code>=</code> diferencia maiúsculas, e o <code>LIKE</code> ignora maiúsculas <strong>só nas letras sem acento</strong> (aula <a href="like.html">LIKE</a>):</p>
+
+<pre class="file" data-file="like-acento.sql" data-resultado>SELECT nome FROM clientes WHERE nome LIKE 'jos%';
+SELECT nome FROM clientes WHERE nome LIKE 'JOSÉ%';
+</pre>
+
+<p><code>'jos%'</code> achou o José; <code>'JOSÉ%'</code> não achou ninguém, porque o SQLite não sabe que <code>É</code> e <code>é</code> são a mesma letra. Num SQL Server com collation <code>CI</code>, as duas achariam. O <code>LIKE</code> do SQL Server também tem um curinga a mais: <code>[ ]</code>, "um caractere qualquer deste conjunto", como em <code>LIKE '[A-C]%'</code> (nomes que começam com A, B ou C), e <code>[^ ]</code>, "qualquer caractere fora do conjunto".</p>
+
+<hr>
+
+<h2>5. Numeração automática: IDENTITY</h2>
+<p>No SQLite, uma coluna <code>INTEGER PRIMARY KEY</code> se numera sozinha (aula <a href="auto-increment.html">AUTOINCREMENT</a>). No SQL Server, a numeração é a propriedade <code>IDENTITY</code>:</p>
+
+<pre class="file" data-file="identity.sql (SQL Server, ilustrativo)">CREATE TABLE categorias (
+    id        INT IDENTITY(1, 1) PRIMARY KEY,
+    nome      NVARCHAR(50) NOT NULL,
+    descricao NVARCHAR(200)
+);
+</pre>
+
+<dl class="anatomy">
+  <dt>IDENTITY(1, 1)</dt><dd>Começa em 1 (a "semente", <em>seed</em>) e soma 1 a cada linha (o incremento). Sem os números, o padrão é <code>(1, 1)</code>.</dd>
+  <dt>Buracos na numeração</dt><dd>A documentação avisa que podem aparecer: um <code>INSERT</code> que falha ou é desfeito "gasta" o número, e um reinício do servidor pode pular valores. Nunca conte com ids sem buracos, em nenhum banco.</dd>
+</dl>
+
+<p>Para saber o <code>id</code> que acabou de ser criado, o SQL Server tem a função <code>SCOPE_IDENTITY()</code> e a cláusula <code>OUTPUT</code> (seção 11). E inserir um <code>id</code> escolhido por você numa coluna <code>IDENTITY</code> dá erro, a não ser que você ligue antes <code>SET IDENTITY_INSERT categorias ON</code>:</p>
+
+<pre class="file" data-file="erro 544 (SQL Server, ilustrativo)">Cannot insert explicit value for identity column in table 'categorias' when IDENTITY_INSERT is set to OFF.
+</pre>
+
+<p>"Não é possível inserir um valor explícito na coluna de identidade da tabela 'categorias' quando IDENTITY_INSERT está desligado." No SQLite, isso é permitido: <code>INSERT INTO categorias (id, nome) VALUES (20, 'Pet')</code> funciona, se o 20 estiver livre.</p>
+
+<hr>
+
+<h2>6. Textos: + × ||, LEN × length, ISNULL × IFNULL</h2>
+<p>Para juntar textos, o SQLite usa <code>||</code>. O SQL Server usa, desde sempre, o <strong><code>+</code></strong>, e a função <code>CONCAT()</code>; o <code>||</code> só chegou no SQL Server 2025. Os três tratam o <code>NULL</code> de jeitos diferentes. Primeiro, o SQLite, com o cliente 7, que não tem email:</p>
+
+<pre class="file" data-file="concatenar.sql" data-resultado>SELECT nome || ' - ' || email AS com_barras,
+       CONCAT(nome, ' - ', email) AS com_concat
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<p>Com <code>||</code>, um pedaço <code>NULL</code> deixa tudo <code>NULL</code>; com <code>CONCAT()</code>, o <code>NULL</code> vira texto vazio. A versão do SQL Server:</p>
+
+<pre class="file" data-file="concatenar.sql (SQL Server, ilustrativo)">SELECT nome + ' - ' + email AS com_mais,
+       CONCAT(nome, ' - ', email) AS com_concat
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+
+<p>No SQL Server, <code>+</code> com <code>NULL</code> dá <code>NULL</code> (o padrão da sessão; a configuração <code>CONCAT_NULL_YIELDS_NULL</code> muda isso, mas não mexa nela). O <code>||</code> do SQL Server 2025, diz a documentação, sempre dá <code>NULL</code> se algum pedaço for <code>NULL</code>, qualquer que seja a configuração. E o <code>CONCAT()</code> trata o <code>NULL</code> como texto vazio, como no SQLite.</p>
+
+<p>Cuidado com o caminho inverso: no SQLite, <code>+</code> é sempre <strong>soma de números</strong>. Juntar textos com <code>+</code> não dá erro, dá zero:</p>
+
+<pre class="file" data-file="mais-no-sqlite.sql" data-resultado>SELECT 'Ana' + ' Lima' AS tentativa;
+</pre>
+
+<p>As funções de texto que mais mudam de nome:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>SQL Server</th></tr>
+<tr><td>Tamanho do texto</td><td><code>length(t)</code></td><td><code>LEN(t)</code>: atenção, <strong>não conta os espaços do fim</strong> (para contar bytes, <code>DATALENGTH</code>)</td></tr>
+<tr><td>Pedaço do texto</td><td><code>substr(t, início, tamanho)</code></td><td><code>SUBSTRING(t, início, tamanho)</code></td></tr>
+<tr><td>Posição de um trecho</td><td><code>instr(t, trecho)</code></td><td><code>CHARINDEX(trecho, t)</code>: a ordem dos argumentos é invertida</td></tr>
+<tr><td>Valor no lugar de NULL</td><td><code>ifnull(x, y)</code> ou <code>coalesce(x, y)</code></td><td><code>ISNULL(x, y)</code> ou <code>COALESCE(x, y)</code></td></tr>
+<tr><td>Juntar os textos de um grupo</td><td><code>group_concat(t, ', ')</code> ou <code>string_agg(t, ', ')</code></td><td><code>STRING_AGG(t, ', ')</code> (desde o SQL Server 2017)</td></tr>
+<tr><td>Tirar espaços das pontas</td><td><code>trim(t)</code></td><td><code>TRIM(t)</code> (desde o SQL Server 2017)</td></tr>
+<tr><td>Maiúsculas</td><td><code>upper(t)</code></td><td><code>UPPER(t)</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="funcoes-texto.sql" data-resultado>SELECT length('Ana ')                AS tamanho,
+       instr('José Ribamar', 'Rib')   AS posicao,
+       substr('José Ribamar', 6, 3)   AS pedaco,
+       coalesce(NULL, '(sem email)')  AS troca_null;
+</pre>
+
+<p>Repare no <code>tamanho</code>: o SQLite contou 4, porque <code>'Ana '</code> tem um espaço no fim. O <code>LEN('Ana ')</code> do SQL Server daria 3. Já <code>COALESCE</code> é a escolha que funciona nos dois (e em todos os outros bancos): prefira-o ao <code>ISNULL</code> e ao <code>ifnull</code>.</p>
+
+<hr>
+
+<h2>7. Datas</h2>
+<p>O SQLite guarda datas como texto (<code>'2024-01-05'</code>) e faz as contas com funções como <code>date()</code>, <code>julianday()</code> e <code>strftime()</code> (aula <a href="funcoes-data.html">Funções de Data</a>). O SQL Server tem <strong>tipos próprios</strong> para datas, como <code>date</code> (só a data) e <code>datetime2</code> (data e hora), e outras funções. O prazo de entrega de 7 dias e o ano do pedido 1, no SQLite:</p>
+
+<pre class="file" data-file="datas.sql" data-resultado>SELECT id, data,
+       date(data, '+7 days')                 AS prazo,
+       strftime('%Y', data)                  AS ano,
+       julianday(entregue_em) - julianday(data) AS dias
+FROM pedidos
+WHERE id = 1;
+</pre>
+
+<p>O mesmo, no SQL Server:</p>
+
+<pre class="file" data-file="datas.sql (SQL Server, ilustrativo)">SELECT id, data,
+       DATEADD(day, 7, data)              AS prazo,
+       YEAR(data)                         AS ano,
+       DATEDIFF(day, data, entregue_em)   AS dias,
+       CONVERT(varchar(10), data, 103)    AS data_br
+FROM pedidos
+WHERE id = 1;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>SQL Server</th></tr>
+<tr><td>Agora (data e hora)</td><td><code>datetime('now')</code></td><td><code>GETDATE()</code>, <code>SYSDATETIME()</code> ou <code>CURRENT_TIMESTAMP</code></td></tr>
+<tr><td>Somar dias</td><td><code>date(d, '+7 days')</code></td><td><code>DATEADD(day, 7, d)</code></td></tr>
+<tr><td>Dias entre duas datas</td><td><code>julianday(b) - julianday(a)</code></td><td><code>DATEDIFF(day, a, b)</code></td></tr>
+<tr><td>Ano de uma data</td><td><code>strftime('%Y', d)</code></td><td><code>YEAR(d)</code> ou <code>DATEPART(year, d)</code></td></tr>
+<tr><td>Data no formato brasileiro</td><td><code>strftime('%d/%m/%Y', d)</code></td><td><code>CONVERT(varchar(10), d, 103)</code> (o estilo 103 é <code>dd/MM/yyyy</code>) ou <code>FORMAT(d, 'dd/MM/yyyy')</code></td></tr>
+</table>
+</div>
+
+<p>Um detalhe do <code>DATEDIFF</code>: a documentação diz que ele conta quantas <strong>fronteiras</strong> da unidade foram cruzadas entre as duas datas. <code>DATEDIFF(year, '2024-12-31', '2025-01-01')</code> dá 1, embora só tenha passado um dia. As funções de data do SQLite não existem lá, e vice-versa: <code>GETDATE()</code> no SQLite dá <code>no such function: GETDATE</code>.</p>
+
+<hr>
+
+<h2>8. Verdadeiro e falso: bit</h2>
+<p>A coluna <code>vip</code> da Loja Aurora guarda 0 ou 1. No SQL Server, o tipo certo para isso é <code>bit</code>, que a documentação define como "um inteiro que pode valer 1, 0 ou NULL", usado para guardar valores booleanos. Os textos <code>'TRUE'</code> e <code>'FALSE'</code> podem ser convertidos para 1 e 0. Na consulta, compare com o número: <code>WHERE vip = 1</code>, que funciona igual no SQLite:</p>
+
+<pre class="file" data-file="vip.sql" data-resultado>SELECT COUNT(*) AS vips
+FROM clientes
+WHERE vip = 1;
+</pre>
+
+<hr>
+
+<h2>9. Divisão de inteiros</h2>
+<p>Aqui os dois bancos concordam: inteiro dividido por inteiro dá inteiro, e a parte quebrada é <strong>cortada</strong>. A documentação do SQL Server diz exatamente isso. Para ter casas decimais, um dos lados precisa ser decimal:</p>
+
+<pre class="file" data-file="divisao.sql" data-resultado>SELECT 7 / 2   AS inteiros,
+       7 / 2.0 AS com_decimal,
+       1 / 0   AS por_zero;
+</pre>
+
+<p>A diferença está na última coluna: no SQLite, dividir por zero dá <code>NULL</code>, sem erro. No SQL Server, dá o erro 8134: <code>Divide by zero error encountered.</code> ("encontrado erro de divisão por zero").</p>
+
+<hr>
+
+<h2>10. Inserir ou atualizar: MERGE</h2>
+<p>A Ana quer renomear a categoria 8 para "Jardim e Quintal", e criá-la se não existir. No SQLite, é o <code>INSERT … ON CONFLICT … DO UPDATE</code>:</p>
+
+<pre class="file" data-file="upsert.sql" data-resultado>INSERT INTO categorias (id, nome, descricao)
+VALUES (8, 'Jardim e Quintal', 'Ferramentas e artigos de jardinagem')
+ON CONFLICT (id) DO UPDATE SET nome = excluded.nome;
+SELECT * FROM categorias WHERE id = 8;
+</pre>
+
+<p>O SQL Server não tem <code>ON CONFLICT</code>. A ferramenta dele é o <code>MERGE</code> ("mesclar"): você junta a tabela de destino com uma "origem" (aqui, uma linha escrita na hora com <code>VALUES</code>) e diz o que fazer quando há par e quando não há:</p>
+
+<pre class="file" data-file="merge.sql (SQL Server, ilustrativo)">MERGE categorias AS destino
+USING (VALUES (8, N'Jardim e Quintal', N'Ferramentas e artigos de jardinagem'))
+      AS origem (id, nome, descricao)
+ON destino.id = origem.id
+WHEN MATCHED THEN
+    UPDATE SET nome = origem.nome
+WHEN NOT MATCHED THEN
+    INSERT (nome, descricao) VALUES (origem.nome, origem.descricao);
+</pre>
+
+<dl class="anatomy">
+  <dt>MERGE categorias AS destino</dt><dd>A tabela que vai mudar.</dd>
+  <dt>USING (VALUES (…)) AS origem (id, nome, descricao)</dt><dd>De onde vêm os dados novos: uma tabela de uma linha só, com nomes para as colunas.</dd>
+  <dt>ON destino.id = origem.id</dt><dd>Como saber se a linha já existe: igual ao <code>ON</code> de um JOIN.</dd>
+  <dt>WHEN MATCHED THEN UPDATE …</dt><dd>"Quando achou par": atualiza.</dd>
+  <dt>WHEN NOT MATCHED THEN INSERT …</dt><dd>"Quando não achou": insere. O <code>id</code> fica de fora porque, com <code>IDENTITY</code>, quem escolhe o número é o banco.</dd>
+  <dt>; no fim</dt><dd><strong>Obrigatório.</strong> A documentação diz que o <code>MERGE</code> exige o ponto e vírgula, e sem ele dá o erro 10713: <code>A MERGE statement must be terminated by a semi-colon (;).</code></dd>
+</dl>
+
+<p>Num sistema com muitos usuários ao mesmo tempo, a documentação sugere a dica <code>WITH (HOLDLOCK)</code> (<code>MERGE categorias WITH (HOLDLOCK) AS destino …</code>) para evitar que duas pessoas insiram a mesma chave ao mesmo tempo. Transações e travas são assunto do Nível 3 (<a href="transacoes.html">Transações</a>).</p>
+
+<hr>
+
+<h2>11. Ver o que mudou: RETURNING × OUTPUT</h2>
+<p>O SQLite (desde a versão 3.35) tem o <code>RETURNING</code>, que devolve as linhas que um <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> mexeu. Ótimo para saber o <code>id</code> que acabou de ser criado:</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>INSERT INTO categorias (nome, descricao)
+VALUES ('Pet', 'Produtos para animais')
+RETURNING id, nome;
+</pre>
+
+<p>No SQL Server, a cláusula é <code>OUTPUT</code>, com dois "prefixos": <code>INSERTED</code> (os valores <strong>depois</strong> da mudança) e <code>DELETED</code> (os valores de <strong>antes</strong>). E ela fica num lugar diferente: no <code>INSERT</code>, antes do <code>VALUES</code>:</p>
+
+<pre class="file" data-file="output.sql (SQL Server, ilustrativo)">INSERT INTO categorias (nome, descricao)
+OUTPUT INSERTED.id, INSERTED.nome
+VALUES (N'Pet', N'Produtos para animais');
+
+UPDATE produtos
+SET preco = preco * 1.1
+OUTPUT DELETED.preco AS preco_antigo, INSERTED.preco AS preco_novo
+WHERE id = 1;
+</pre>
+
+<p>O <code>UPDATE</code> mostra uma vantagem do <code>OUTPUT</code>: o preço antigo e o novo na mesma linha. No SQLite, o <code>RETURNING</code> só mostra o valor novo:</p>
+
+<pre class="file" data-file="returning-update.sql" data-resultado>UPDATE produtos
+SET preco = preco * 1.1
+WHERE id = 1
+RETURNING id, nome, preco;
+</pre>
+
+<hr>
+
+<h2>12. Os tipos de dados</h2>
+<p>O SQLite é flexível com tipos (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). O SQL Server é rigoroso: cada coluna tem um tipo exato, e um valor que não cabe dá erro. A Loja Aurora no SQL Server ficaria mais ou menos assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>No SQLite</th><th>No SQL Server</th><th>Por quê</th></tr>
+<tr><td><code>id</code></td><td><code>INTEGER PRIMARY KEY</code></td><td><code>INT IDENTITY(1,1) PRIMARY KEY</code></td><td>numeração automática</td></tr>
+<tr><td><code>nome</code></td><td><code>TEXT</code></td><td><code>NVARCHAR(100)</code></td><td>texto com acentos, até 100 caracteres (o <code>N</code> é de Unicode)</td></tr>
+<tr><td><code>descricao</code> longa</td><td><code>TEXT</code></td><td><code>NVARCHAR(MAX)</code></td><td>texto sem limite prático</td></tr>
+<tr><td><code>preco</code></td><td><code>REAL</code></td><td><code>DECIMAL(10,2)</code></td><td>dinheiro: número exato com 2 casas, sem as "caudas" do ponto flutuante</td></tr>
+<tr><td><code>data</code></td><td><code>TEXT</code> (ISO)</td><td><code>DATE</code></td><td>tipo de data de verdade</td></tr>
+<tr><td>data e hora</td><td><code>TEXT</code></td><td><code>DATETIME2</code></td><td>o tipo moderno de data e hora</td></tr>
+<tr><td><code>vip</code></td><td><code>INTEGER</code> (0 ou 1)</td><td><code>BIT</code></td><td>0, 1 ou NULL</td></tr>
+</table>
+</div>
+
+<p>Converter um tipo no outro: <code>CAST(x AS INT)</code> funciona nos dois. O SQL Server tem também <code>CONVERT(tipo, x, estilo)</code> e <code>TRY_CAST</code>, que devolve <code>NULL</code> em vez de dar erro quando a conversão falha.</p>
+
+<hr>
+
+<h2>13. Duas regras mais rígidas</h2>
+
+<h3>O GROUP BY não aceita coluna solta</h3>
+<p>Na aula <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>, você viu que o SQLite aceita, calado, uma coluna que não está no <code>GROUP BY</code> nem numa função de agregação, e mostra o valor de uma linha qualquer:</p>
+
+<pre class="file" data-file="coluna-solta.sql" data-resultado>SELECT estado, cidade, COUNT(*) AS clientes
+FROM clientes
+GROUP BY estado;
+</pre>
+
+<p>O SQL Server recusa, com o erro 8120:</p>
+
+<pre class="file" data-file="erro 8120 (SQL Server, ilustrativo)">Column 'clientes.cidade' is invalid in the select list because it is not contained in either an aggregate function or the GROUP BY clause.
+</pre>
+
+<p>"A coluna 'clientes.cidade' é inválida na lista do SELECT porque não está numa função de agregação nem na cláusula GROUP BY." É um erro que ajuda: no SQLite, o resultado acima diz que Teresina tem 14 clientes, o que é falso.</p>
+
+<h3>Tipos não se misturam à força</h3>
+<p>No SQLite, <code>'12' + 1</code> dá 13, e um texto qualquer vira 0 numa soma. No SQL Server, uma conversão impossível é erro, o 245: <code>Conversion failed when converting the varchar value 'abc' to data type int.</code> ("a conversão falhou ao converter o valor varchar 'abc' para o tipo int").</p>
+
+<hr>
+
+<h2>Formas que funcionam nos dois</h2>
+<p>Se você escreve SQL que precisa rodar no SQLite e no SQL Server, algumas escolhas evitam a tradução:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em vez de…</th><th>Use…</th><th>Por quê</th></tr>
+<tr><td><code>ifnull</code> / <code>ISNULL</code></td><td><code>COALESCE(x, y)</code></td><td>padrão SQL, existe nos dois</td></tr>
+<tr><td><code>||</code> / <code>+</code></td><td><code>CONCAT(a, b, c)</code></td><td>existe nos dois (no SQLite desde a 3.44), e trata <code>NULL</code> igual</td></tr>
+<tr><td><code>LIMIT</code> / <code>TOP</code></td><td>não há forma comum</td><td>o SQLite não tem <code>OFFSET … FETCH</code>; aqui não tem jeito, é traduzir</td></tr>
+<tr><td><code>"nome"</code> / <code>[nome]</code></td><td>nomes simples, minúsculos, sem espaço e sem palavra reservada</td><td>não precisam de aspas em nenhum banco</td></tr>
+<tr><td>colunas soltas no <code>GROUP BY</code></td><td>toda coluna do <code>SELECT</code> no <code>GROUP BY</code> ou numa agregação</td><td>o SQLite aceita, o SQL Server não</td></tr>
+<tr><td><code>CAST(x AS INTEGER)</code></td><td><code>CAST(x AS INT)</code></td><td>o SQLite entende <code>INT</code> como inteiro, e o SQL Server só conhece <code>INT</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>As mensagens do SQL Server vêm em inglês, com um número. No <code>sqlcmd</code> elas aparecem como <code>Msg 208, Level 16, State 1</code>, seguidas do texto. O número é o que você procura na documentação. Os textos abaixo são os modelos da documentação da Microsoft, preenchidos com o exemplo (ilustrativos).</p>
+
+<div class="cenario">
+<strong>Usou o LIMIT do SQLite no SQL Server (erro 102)</strong>
+<pre class="file" data-file="limit no SQL Server (ilustrativo)">SELECT nome FROM produtos ORDER BY preco DESC LIMIT 3;
+-- Incorrect syntax near 'LIMIT'.
+</pre>
+<p>"Sintaxe incorreta perto de 'LIMIT'": o SQL Server não conhece a palavra. É a mesma família do <code>near "…": syntax error</code> do SQLite. <strong>Como consertar:</strong> <code>SELECT TOP (3) nome FROM produtos ORDER BY preco DESC;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A tabela não existe, ou você está no banco errado (erro 208)</strong>
+<pre class="file" data-file="erro 208 (SQL Server, ilustrativo)">SELECT * FROM cliente;
+-- Invalid object name 'cliente'.
+</pre>
+<p>"Nome de objeto inválido". Duas causas comuns: o nome está errado (<code>cliente</code> em vez de <code>clientes</code>) ou você esqueceu o <code>USE loja;</code> e está consultando outro banco do servidor (o <code>sqlcmd</code> entra no banco padrão do usuário, que costuma ser o <code>master</code>). No SQLite, o equivalente é <code>no such table: cliente</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna que não existe ou ambígua (erros 207 e 209)</strong>
+<pre class="file" data-file="erros 207 e 209 (SQL Server, ilustrativo)">-- Invalid column name 'nmoe'.
+-- Ambiguous column name 'id'.
+</pre>
+<p>"Nome de coluna inválido" é o <code>no such column</code> do SQLite; "nome de coluna ambíguo" é o <code>ambiguous column name</code> da aula <a href="joins.html">O que é um JOIN</a>. Mesma causa, mesmo conserto.</p>
+</div>
+
+<div class="cenario">
+<strong>Chave repetida (erro 2627)</strong>
+<p>No SQLite, inserir um cliente com um <code>id</code> que já existe dá:</p>
+<pre class="file" data-file="chave-repetida.sql" data-resultado data-erro>INSERT INTO clientes (id, nome) VALUES (1, 'Teste');
+</pre>
+<p>No SQL Server, a mensagem é a 2627, que cita o nome da restrição e o valor repetido:</p>
+<pre class="file" data-file="erro 2627 (SQL Server, ilustrativo)">Violation of PRIMARY KEY constraint 'PK_clientes'. Cannot insert duplicate key in object 'dbo.clientes'. The duplicate key value is (1).
+</pre>
+<p>("Violação da restrição PRIMARY KEY… Não é possível inserir chave duplicada… O valor duplicado é (1)".) O nome <code>PK_clientes</code> é ilustrativo: o SQL Server dá um nome à restrição, e você pode escolher o seu ao criar a tabela.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas para texto</strong>
+<p>No SQLite do guia, aspas duplas são sempre nome de coluna, e o editor explica:</p>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE cidade = "Teresina";
+</pre>
+<p>No SQL Server, com <code>QUOTED_IDENTIFIER</code> ligado (o padrão), acontece o mesmo: <code>"Teresina"</code> é lido como nome de coluna e dá o erro 207, <code>Invalid column name 'Teresina'.</code> <strong>Texto vai entre aspas simples, nos dois.</strong></p>
+</div>
+
+<div class="cenario">
+<strong>MERGE sem ponto e vírgula (erro 10713)</strong>
+<p>Visto na seção 10: <code>A MERGE statement must be terminated by a semi-colon (;).</code> No T-SQL, o <code>;</code> no fim dos comandos é quase sempre opcional, mas no <code>MERGE</code> ele é obrigatório. Pegue o costume de terminar todo comando com <code>;</code>, em qualquer banco.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o GO no sqlcmd</strong>
+<p>Você digita a consulta, aperta Enter, e nada acontece: o <code>sqlcmd</code> só mostra o prompt da linha seguinte, esperando mais linhas. Não é erro, ele está esperando o <code>GO</code>. Digite <code>GO</code> numa linha sozinha.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida: SQLite × SQL Server</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>SQL Server (T-SQL)</th></tr>
+<tr><td>Os 3 primeiros</td><td><code>… ORDER BY x LIMIT 3</code></td><td><code>SELECT TOP (3) … ORDER BY x</code></td></tr>
+<tr><td>Pular 3, mostrar 3</td><td><code>LIMIT 3 OFFSET 3</code></td><td><code>ORDER BY x OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY</code></td></tr>
+<tr><td>Nome especial</td><td><code>"order"</code> (ou <code>[order]</code>)</td><td><code>[order]</code> (ou <code>"order"</code>)</td></tr>
+<tr><td>Numeração automática</td><td><code>INTEGER PRIMARY KEY</code></td><td><code>INT IDENTITY(1,1) PRIMARY KEY</code></td></tr>
+<tr><td>Juntar textos</td><td><code>a || b</code>, <code>CONCAT(a, b)</code></td><td><code>a + b</code>, <code>CONCAT(a, b)</code>, <code>a || b</code> (2025)</td></tr>
+<tr><td>Tamanho</td><td><code>length(t)</code></td><td><code>LEN(t)</code> (sem os espaços do fim)</td></tr>
+<tr><td>Trocar NULL</td><td><code>ifnull</code>, <code>coalesce</code></td><td><code>ISNULL</code>, <code>COALESCE</code></td></tr>
+<tr><td>Agora</td><td><code>datetime('now')</code></td><td><code>GETDATE()</code>, <code>SYSDATETIME()</code></td></tr>
+<tr><td>Somar dias</td><td><code>date(d, '+7 days')</code></td><td><code>DATEADD(day, 7, d)</code></td></tr>
+<tr><td>Diferença em dias</td><td><code>julianday(b) - julianday(a)</code></td><td><code>DATEDIFF(day, a, b)</code></td></tr>
+<tr><td>Booleano</td><td><code>INTEGER</code> 0/1</td><td><code>BIT</code> 0/1</td></tr>
+<tr><td>Insere ou atualiza</td><td><code>INSERT … ON CONFLICT … DO UPDATE</code></td><td><code>MERGE … WHEN MATCHED … WHEN NOT MATCHED …;</code></td></tr>
+<tr><td>Ver o que mudou</td><td><code>… RETURNING id</code></td><td><code>OUTPUT INSERTED.id</code> (antes do <code>VALUES</code>)</td></tr>
+<tr><td>Apagar tabela se existir</td><td><code>DROP TABLE IF EXISTS t</code></td><td><code>DROP TABLE IF EXISTS t</code> (desde o 2016)</td></tr>
+<tr><td>Rodar no terminal</td><td><code>;</code></td><td><code>GO</code></td></tr>
+<tr><td>1 / 0</td><td><code>NULL</code></td><td>erro 8134</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Erro do SQL Server</th><th>Texto (modelo da documentação)</th><th>No SQLite seria</th></tr>
+<tr><td>102</td><td><code>Incorrect syntax near '%.*ls'.</code></td><td><code>near "…": syntax error</code></td></tr>
+<tr><td>208</td><td><code>Invalid object name '%.*ls'.</code></td><td><code>no such table</code></td></tr>
+<tr><td>207</td><td><code>Invalid column name '%.*ls'.</code></td><td><code>no such column</code></td></tr>
+<tr><td>209</td><td><code>Ambiguous column name '%.*ls'.</code></td><td><code>ambiguous column name</code></td></tr>
+<tr><td>2627</td><td><code>Violation of %ls constraint '%.*ls'. Cannot insert duplicate key …</code></td><td><code>UNIQUE constraint failed</code></td></tr>
+<tr><td>515</td><td><code>Cannot insert the value NULL into column '%.*ls', table '%.*ls'; column does not allow nulls. …</code></td><td><code>NOT NULL constraint failed</code></td></tr>
+<tr><td>547</td><td><code>The %ls statement conflicted with the %ls constraint …</code></td><td><code>FOREIGN KEY constraint failed</code></td></tr>
+<tr><td>8120</td><td><code>Column '…' is invalid in the select list because it is not contained in either an aggregate function or the GROUP BY clause.</code></td><td>(aceita calado)</td></tr>
+<tr><td>8134</td><td><code>Divide by zero error encountered.</code></td><td>(dá <code>NULL</code>)</td></tr>
+<tr><td>544</td><td><code>Cannot insert explicit value for identity column …</code></td><td>(permitido)</td></tr>
+<tr><td>10713</td><td><code>A MERGE statement must be terminated by a semi-colon (;).</code></td><td>(não há <code>MERGE</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O limite do SQL Server</h3>
+<p>Complete a versão T-SQL de "os 10 produtos mais caros":</p>
+<div class="ex-code">SELECT <input data-answer="TOP (10)|TOP(10)|TOP 10|top (10)|top 10" aria-label="limite"> nome, preco FROM produtos ORDER BY preco DESC;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Rodar no sqlcmd</h3>
+<p>Depois de digitar a consulta no <code>sqlcmd</code>, o que se escreve numa linha sozinha para ela rodar?</p>
+<div class="ex-code"><input data-answer="GO|go" aria-label="comando"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. No SQL Server, <code>SELECT nome + ' - ' + email FROM clientes WHERE id = 7;</code> (o cliente 7 não tem email) devolve…</p>
+<label><input type="radio" name="q3"> <code>Luís Otávio Brito - </code></label>
+<label><input type="radio" name="q3"> 0, porque <code>+</code> é soma</label>
+<label><input type="radio" name="q3"> <code>NULL</code>, porque um pedaço <code>NULL</code> no <code>+</code> deixa tudo <code>NULL</code></label>
+<label><input type="radio" name="q3"> um erro</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual é o equivalente T-SQL do <code>RETURNING id</code> num <code>INSERT</code>?</p>
+<label><input type="radio" name="q4"> <code>RETURN id</code> no fim do comando</label>
+<label><input type="radio" name="q4"> <code>OUTPUT INSERTED.id</code>, antes do <code>VALUES</code></label>
+<label><input type="radio" name="q4"> <code>SELECT LAST_ID()</code></label>
+<label><input type="radio" name="q4"> Não existe</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Num SQL Server instalado num Windows em português do Brasil, com a collation padrão, <code>WHERE nome LIKE 'JOSÉ%'</code> acha o "José Ribamar Silva"?</p>
+<label><input type="radio" name="q5"> Não, porque o <code>LIKE</code> diferencia maiúsculas</label>
+<label><input type="radio" name="q5"> Não, porque o acento atrapalha</label>
+<label><input type="radio" name="q5"> Só se usar <code>ILIKE</code></label>
+<label><input type="radio" name="q5"> Sim: a collation padrão (<code>Latin1_General_CI_AS</code>) é <em>case-insensitive</em></label>
+</div>
+
+<h3>Missão final: traduza do T-SQL para o SQLite</h3>
+
+<div class="trysql" data-goal="linhas:3;;contem:(sem email)">
+<p class="try-task"><strong>Missão:</strong> esta consulta veio do sistema do estágio, em T-SQL: mostra o nome e o tamanho do nome dos clientes sem email, com "(sem email)" no lugar do <code>NULL</code>. No SQLite ela dá erro. Traduza as duas funções do SQL Server (<code>LEN</code> e <code>ISNULL</code>) para funções que o SQLite conhece.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, LEN(nome) AS tamanho, ISNULL(email, '(sem email)') AS email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, length(nome) AS tamanho, coalesce(email, '(sem email)') AS email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+</div>
+
+<p>Se você usou <code>coalesce</code>, a sua consulta agora roda no SQLite <strong>e</strong> no SQL Server (lá, só troque <code>length</code> por <code>LEN</code>). Para ver como o mesmo tipo de tradução funciona com o banco aberto mais famoso entre os programadores, siga para <a href="postgresql.html">SQL no PostgreSQL</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O SQL Server é o banco da Microsoft, e o dialeto dele é o <strong>T-SQL</strong>. As edições Express e Developer são gratuitas; ele roda no Windows, no Linux e em contêineres.</li>
+  <li>No <code>sqlcmd</code>, o <code>;</code> não executa: digite <code>GO</code> numa linha sozinha. <code>GO</code> não é SQL, é um comando do <code>sqlcmd</code> e do SSMS.</li>
+  <li><code>LIMIT</code> vira <code>SELECT TOP (n)</code>; <code>LIMIT … OFFSET</code> vira <code>ORDER BY … OFFSET … ROWS FETCH NEXT … ROWS ONLY</code>.</li>
+  <li>Nomes especiais vão entre <code>[colchetes]</code>; texto, entre aspas simples (com <code>N'…'</code> para acentos). A collation padrão em pt-BR ignora maiúsculas.</li>
+  <li><code>IDENTITY(1,1)</code> numera; <code>+</code> ou <code>CONCAT</code> juntam textos; <code>LEN</code>, <code>ISNULL</code>, <code>GETDATE</code>, <code>DATEADD</code>, <code>DATEDIFF</code> são os nomes de lá.</li>
+  <li>O UPSERT é <code>MERGE</code> (com <code>;</code> obrigatório), e o <code>RETURNING</code> é <code>OUTPUT INSERTED.…</code> / <code>DELETED.…</code>.</li>
+  <li>O SQL Server é mais rígido: recusa coluna solta no <code>GROUP BY</code> (erro 8120), divisão por zero (8134) e conversões impossíveis (245).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
