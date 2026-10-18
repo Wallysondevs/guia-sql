@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL EXPLAIN QUERY PLAN — como o banco vai buscar os dados | Guia SQL</title>
+<meta name="description" content="EXPLAIN QUERY PLAN para quem está começando: o plano que o SQLite escolhe para cada consulta, SCAN (ler a tabela inteira) × SEARCH (ir direto), USING INDEX, COVERING INDEX, TEMP B-TREE, como ler o plano de um JOIN e de uma subconsulta, o .eqp do terminal e as mensagens reais, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">EXPLAIN QUERY PLAN</span></h1>
+
+<p class="intro">Quando você escreve um <code>SELECT</code>, você diz <strong>o que</strong> quer, não <strong>como</strong> achar. Quem decide o caminho é o banco: ler a tabela inteira, linha por linha, ou ir direto às linhas certas por um índice? Essa decisão se chama <strong>plano da consulta</strong>, e o comando <code>EXPLAIN QUERY PLAN</code> ("explique o plano da consulta") mostra qual foi a escolha. Nesta aula você vai aprender a ler esse plano, com as duas palavras que mais importam: <strong>SCAN</strong> e <strong>SEARCH</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o plano de uma consulta, e por que o banco faz um para cada <code>SELECT</code>.</li>
+  <li>Pedir o plano com <code>EXPLAIN QUERY PLAN</code>, no editor e no terminal (com o <code>.eqp on</code>).</li>
+  <li>A diferença entre <code>SCAN</code> (ler tudo) e <code>SEARCH</code> (ir direto), e o que muda quando existe um índice.</li>
+  <li>O que querem dizer <code>USING INTEGER PRIMARY KEY</code>, <code>USING INDEX</code>, <code>COVERING INDEX</code> e <code>USE TEMP B-TREE</code>.</li>
+  <li>Ler o plano de um <code>JOIN</code>, de um <code>GROUP BY</code> e de uma subconsulta.</li>
+  <li>Que o <code>EXPLAIN QUERY PLAN</code> não roda a consulta, e o que acontece quando ela tem erro.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no SQLite 3.50 com o banco da Loja Aurora. As saídas de terminal vieram do <code>sqlite3</code> 3.50.4 no notebook da Ana. O plano depende da versão do SQLite: em outra versão, o texto pode mudar um pouco.</p>
+
+<hr>
+
+<h2>A ideia: o livro e o índice</h2>
+<p>A Ana quer achar no livro de receitas tudo sobre "cenoura". Ela tem dois caminhos:</p>
+<ol class="passo">
+  <li><strong>Folhear o livro inteiro</strong>, página por página. Sempre funciona, mas, num livro de mil páginas, demora.</li>
+  <li><strong>Ir ao índice do fim do livro</strong>, achar "cenoura: 12, 47, 80" e abrir só essas três páginas. Muito mais rápido, mas só dá se o livro <strong>tiver</strong> esse índice.</li>
+</ol>
+
+<p>O banco faz a mesma escolha a cada consulta, e o <code>EXPLAIN QUERY PLAN</code> conta qual foi:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No plano</th><th>Quer dizer</th><th>No livro</th></tr>
+<tr><td><code>SCAN</code></td><td>"varrer": ler a tabela <strong>inteira</strong>, linha por linha</td><td>folhear o livro todo</td></tr>
+<tr><td><code>SEARCH</code></td><td>"procurar": ir direto a algumas linhas, por um índice ou pela chave</td><td>usar o índice do fim do livro</td></tr>
+</table>
+</div>
+
+<p>Numa tabela de 30 clientes, ler tudo é instantâneo, e tanto faz. Numa tabela de um milhão de linhas, a diferença entre os dois caminhos pode ser de segundos para milésimos (a aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a> mede isso). O plano é o primeiro lugar para olhar quando uma consulta está lenta.</p>
+
+<hr>
+
+<h2>1. O primeiro plano</h2>
+<p>Basta escrever <code>EXPLAIN QUERY PLAN</code> antes da consulta:</p>
+
+<pre class="file" data-file="plano.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT * FROM produtos WHERE id = 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>EXPLAIN QUERY PLAN</dt><dd>"Explique o plano da consulta". Em vez de devolver os produtos, o SQLite devolve <strong>como</strong> ele os acharia.</dd>
+  <dt>SELECT * FROM produtos WHERE id = 5</dt><dd>A consulta de sempre. Ela <strong>não roda</strong>: o SQLite só monta o plano.</dd>
+</dl>
+
+<p>O resultado tem quatro colunas. Só a última interessa no dia a dia:</p>
+
+<dl class="anatomy">
+  <dt>id</dt><dd>Um número que identifica o passo do plano.</dd>
+  <dt>parent</dt><dd>"Pai": o <code>id</code> do passo de que este faz parte. <code>0</code> quer dizer "está no nível de cima". Com ele, o plano vira uma árvore (seção 4).</dd>
+  <dt>notused</dt><dd>"Não usada": uso interno do SQLite. Ignore.</dd>
+  <dt>detail</dt><dd>"Detalhe": o passo, em texto. É aqui que se lê o plano.</dd>
+</dl>
+
+<p>O detalhe <code>SEARCH produtos USING INTEGER PRIMARY KEY (rowid=?)</code> se lê assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Quer dizer</th></tr>
+<tr><td><code>SEARCH produtos</code></td><td>Vai <strong>direto</strong> a algumas linhas da tabela <code>produtos</code>, sem ler as outras.</td></tr>
+<tr><td><code>USING INTEGER PRIMARY KEY</code></td><td>"Usando a chave primária inteira": o <code>id</code>, que é <code>INTEGER PRIMARY KEY</code> (aula <a href="primary-key.html">PRIMARY KEY</a>). No SQLite, a tabela já é guardada em ordem dessa chave, então achar o id 5 é como abrir o livro na página 5.</td></tr>
+<tr><td><code>(rowid=?)</code></td><td>A condição usada para ir direto: <code>rowid</code> (o número da linha, que aqui é o próprio <code>id</code>) igual a um valor. O <code>?</code> está no lugar do 5: o plano é o mesmo para qualquer número.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>2. SCAN: lendo a tabela inteira</h2>
+<p>Agora a mesma tabela, procurando pelo <strong>nome</strong>:</p>
+
+<pre class="file" data-file="scan.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT * FROM produtos WHERE nome = 'Estojo Duplo';
+</pre>
+
+<p><code>SCAN produtos</code>: o SQLite vai ler os 45 produtos, um por um, e conferir o nome de cada. Não existe índice no nome, então ele não tem atalho. É o "folhear o livro inteiro".</p>
+
+<p>Não é um erro: <code>SCAN</code> é o jeito normal de ler uma tabela pequena, ou de ler uma tabela inteira quando você quer mesmo todas as linhas (um <code>SELECT</code> sem <code>WHERE</code> sempre é <code>SCAN</code>). Ele só vira problema quando a tabela é grande e você quer poucas linhas dela.</p>
+
+<div class="trysql" data-goal="contem:SCAN pedidos">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo busca os pedidos do cliente 3. Peça o <strong>plano</strong> dela, em vez do resultado, e veja se o SQLite lê a tabela inteira ou vai direto.</p>
+<pre class="script" data-file="pedidos.sql">SELECT * FROM pedidos WHERE cliente_id = 3;
+</pre>
+<pre class="solucao" data-file="pedidos.sql">EXPLAIN QUERY PLAN
+SELECT * FROM pedidos WHERE cliente_id = 3;
+</pre>
+</div>
+
+<p>Deu <code>SCAN pedidos</code>: para achar os pedidos de um cliente, o SQLite lê os 90 pedidos. A coluna <code>cliente_id</code> não tem índice. Isso muda na próxima seção.</p>
+
+<hr>
+
+<h2>3. SEARCH com um índice</h2>
+<p>Um índice (aula <a href="indices.html">Índices (CREATE INDEX)</a>) é o "índice do fim do livro" de uma coluna. Veja o plano da mesma consulta <strong>antes</strong> e <strong>depois</strong> de criar um índice na cidade dos clientes:</p>
+
+<pre class="file" data-file="antes-depois.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT * FROM clientes WHERE cidade = 'Teresina';
+
+CREATE INDEX idx_clientes_cidade ON clientes(cidade);
+
+EXPLAIN QUERY PLAN
+SELECT * FROM clientes WHERE cidade = 'Teresina';
+</pre>
+
+<p>Antes: <code>SCAN clientes</code>. Depois: <code>SEARCH clientes USING INDEX idx_clientes_cidade (cidade=?)</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Quer dizer</th></tr>
+<tr><td><code>SEARCH clientes</code></td><td>Vai direto a algumas linhas.</td></tr>
+<tr><td><code>USING INDEX idx_clientes_cidade</code></td><td>Pelo índice que você acabou de criar (o nome aparece no plano: dê nomes claros aos índices).</td></tr>
+<tr><td><code>(cidade=?)</code></td><td>A parte do <code>WHERE</code> que o índice resolve: cidade igual a um valor.</td></tr>
+</table>
+</div>
+
+<p>Com o índice, o SQLite acha no índice as 10 entradas de "Teresina" e, para cada uma, busca a linha do cliente na tabela. São dois passos (índice, depois tabela), mas os dois vão direto.</p>
+
+<h3>Quando o índice basta: <code>COVERING INDEX</code></h3>
+<p>Se a consulta só pede colunas que <strong>já estão no índice</strong>, o SQLite nem precisa abrir a tabela:</p>
+
+<pre class="file" data-file="covering.sql" data-resultado>CREATE INDEX idx_clientes_cidade ON clientes(cidade);
+
+EXPLAIN QUERY PLAN
+SELECT cidade FROM clientes WHERE cidade = 'Teresina';
+</pre>
+
+<p><code>USING COVERING INDEX</code>: "usando um índice que cobre" a consulta. O índice <code>idx_clientes_cidade</code> guarda a cidade, e a consulta só quer a cidade; tudo o que ela precisa está no índice. É o caminho mais rápido de todos: como responder "quantas receitas têm cenoura?" olhando só o índice do livro, sem abrir nenhuma página.</p>
+
+<hr>
+
+<h2>4. Planos com vários passos</h2>
+<p>Uma consulta maior gera um plano com várias linhas. O plano se lê <strong>de cima para baixo</strong>, e a coluna <code>parent</code> diz quem está dentro de quem.</p>
+
+<h3>Um <code>JOIN</code>: um laço dentro do outro</h3>
+
+<pre class="file" data-file="join.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT c.nome, COUNT(*) AS pedidos
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+GROUP BY c.nome;
+</pre>
+
+<ol class="passo">
+  <li><code>SCAN p</code>: lê todos os pedidos (a tabela aparece pelo apelido, <code>p</code>). Isso é esperado: a consulta conta <strong>todos</strong> os pedidos.</li>
+  <li><code>SEARCH c USING INTEGER PRIMARY KEY (rowid=?)</code>: para <strong>cada</strong> pedido, vai direto ao cliente dele pelo <code>id</code>. É um laço dentro do outro: 90 pedidos, 90 buscas diretas de cliente.</li>
+  <li><code>USE TEMP B-TREE FOR GROUP BY</code>: "use uma árvore B temporária para o GROUP BY". Para agrupar por nome, o SQLite monta uma lista ordenada <strong>temporária</strong> (a "árvore B" é a estrutura que ele usa para guardar coisas em ordem). Dá trabalho extra, mas numa tabela pequena não pesa.</li>
+</ol>
+
+<p>A ordem das tabelas no plano é a ordem que o SQLite <strong>escolheu</strong>, não necessariamente a que você escreveu. Ele começou pelos pedidos porque, para cada pedido, achar o cliente é direto (pela chave). O contrário (para cada cliente, achar os pedidos dele) exigiria ler os pedidos a cada cliente, porque <code>cliente_id</code> não tem índice.</p>
+
+<h3>Ordenar também custa: <code>TEMP B-TREE FOR ORDER BY</code></h3>
+
+<pre class="file" data-file="order.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT * FROM clientes ORDER BY nome;
+
+CREATE INDEX idx_clientes_nome ON clientes(nome);
+
+EXPLAIN QUERY PLAN
+SELECT * FROM clientes ORDER BY nome;
+</pre>
+
+<p>Sem índice: <code>SCAN clientes</code> e depois <code>USE TEMP B-TREE FOR ORDER BY</code>, ou seja, ler tudo e ordenar à parte. Com um índice no nome: <code>SCAN clientes USING INDEX idx_clientes_nome</code>. Ainda é <code>SCAN</code> (a consulta quer todos os clientes), mas lendo <strong>na ordem do índice</strong>, que já está em ordem alfabética. A ordenação temporária sumiu.</p>
+
+<h3>Uma subconsulta: os passos de dentro</h3>
+
+<pre class="file" data-file="sub.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT * FROM produtos
+WHERE id IN (SELECT produto_id FROM itens_pedido);
+</pre>
+
+<p>Repare na coluna <code>parent</code>: as duas últimas linhas têm como pai o passo <code>LIST SUBQUERY 1</code> (a "lista da subconsulta 1"). Elas são os passos <strong>de dentro</strong> da subconsulta: ler os itens (pelo índice da chave primária composta de <code>itens_pedido</code>, que o SQLite criou sozinho com o nome <code>sqlite_autoindex_itens_pedido_1</code>) e montar um <code>BLOOM FILTER</code>, um filtro rápido para descartar logo os ids que não estão na lista. No terminal, essa árvore aparece desenhada, como você vai ver na seção 5.</p>
+
+<h3>Os detalhes que você vai encontrar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Detalhe</th><th>Quer dizer</th><th>Preocupa?</th></tr>
+<tr><td><code>SCAN t</code></td><td>Lê a tabela inteira</td><td>Só se a tabela for grande e você quiser poucas linhas</td></tr>
+<tr><td><code>SCAN t USING INDEX i</code></td><td>Lê tudo, na ordem do índice</td><td>Não: evita ordenar depois</td></tr>
+<tr><td><code>SEARCH t USING INTEGER PRIMARY KEY (rowid=?)</code></td><td>Vai direto pela chave primária</td><td>Não: é o melhor caso</td></tr>
+<tr><td><code>SEARCH t USING INDEX i (col=?)</code></td><td>Vai direto pelo índice <code>i</code></td><td>Não</td></tr>
+<tr><td><code>SEARCH t USING COVERING INDEX i (col=?)</code></td><td>Responde só com o índice, sem abrir a tabela</td><td>Não: é ainda melhor</td></tr>
+<tr><td><code>SEARCH t USING AUTOMATIC COVERING INDEX (col=?)</code></td><td>O SQLite criou um índice <strong>temporário</strong>, só para esta consulta</td><td>Às vezes: talvez falte um índice de verdade nessa coluna</td></tr>
+<tr><td><code>USE TEMP B-TREE FOR ORDER BY</code> (ou <code>GROUP BY</code>, <code>DISTINCT</code>)</td><td>Ordena à parte, numa estrutura temporária</td><td>Em tabelas grandes, um índice na coluna pode evitar</td></tr>
+<tr><td><code>LIST SUBQUERY n</code>, <code>CO-ROUTINE</code></td><td>Passos de uma subconsulta ou de uma CTE</td><td>Leia os passos de dentro</td></tr>
+<tr><td><code>BLOOM FILTER</code></td><td>Um filtro rápido para descartar linhas</td><td>Não: é uma otimização</td></tr>
+<tr><td><code>MULTI-INDEX OR</code></td><td>Um <code>OR</code> resolvido com um índice para cada lado</td><td>Não</td></tr>
+</table>
+</div>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> peça o plano de outras consultas: um <code>LEFT JOIN</code> de clientes com pedidos, um <code>SELECT DISTINCT cidade FROM clientes</code>, um <code>WHERE id BETWEEN 10 AND 20</code>. Crie um índice e peça o plano de novo.</p>
+<pre class="script" data-file="plano.sql">EXPLAIN QUERY PLAN
+SELECT c.nome, p.id
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. No terminal: a árvore e o <code>.eqp on</code></h2>
+<p>No programa <code>sqlite3</code>, o mesmo comando mostra o plano desenhado como uma <strong>árvore</strong>, sem as colunas <code>id</code> e <code>parent</code>: a própria indentação mostra quem está dentro de quem.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE cidade = 'Teresina';
+QUERY PLAN
+`--SCAN clientes
+sqlite> EXPLAIN QUERY PLAN SELECT * FROM produtos WHERE id IN (SELECT produto_id FROM itens_pedido);
+QUERY PLAN
+|--SEARCH produtos USING INTEGER PRIMARY KEY (rowid=?)
+`--LIST SUBQUERY 1
+   |--SCAN itens_pedido USING COVERING INDEX sqlite_autoindex_itens_pedido_1
+   `--CREATE BLOOM FILTER
+sqlite> EXPLAIN QUERY PLAN SELECT c.nome, COUNT(*) FROM pedidos p JOIN clientes c ON c.id = p.cliente_id GROUP BY c.nome;
+QUERY PLAN
+|--SCAN p
+|--SEARCH c USING INTEGER PRIMARY KEY (rowid=?)
+`--USE TEMP B-TREE FOR GROUP BY</pre>
+
+<p>Os traços <code>|--</code> e <code>`--</code> são os galhos da árvore; o <code>`--</code> marca o último galho de cada nível. Os dois passos recuados embaixo de <code>LIST SUBQUERY 1</code> são os de dentro da subconsulta, os mesmos que, no editor, tinham <code>parent</code> apontando para ela.</p>
+
+<h3>O plano de toda consulta: <code>.eqp on</code></h3>
+<p>Escrever <code>EXPLAIN QUERY PLAN</code> toda vez cansa. O comando de ponto <code>.eqp on</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>) faz o <code>sqlite3</code> mostrar o plano <strong>e depois</strong> o resultado de cada consulta, até você digitar <code>.eqp off</code>:</p>
+
+<pre class="term">sqlite> .eqp on
+sqlite> SELECT nome FROM clientes WHERE cidade = 'Picos';
+QUERY PLAN
+`--SCAN clientes
+Camila Duarte
+sqlite> .eqp off</pre>
+
+<p>O <code>.eqp</code> é só do programa <code>sqlite3</code>: no editor do guia, comandos de ponto não existem.</p>
+
+<hr>
+
+<h2>6. <code>EXPLAIN</code> sem <code>QUERY PLAN</code></h2>
+<p>Existe também o <code>EXPLAIN</code> sozinho. Ele mostra outra coisa: o <strong>programa</strong> que o SQLite monta para rodar a consulta, instrução por instrução, na "linguagem de máquina" interna dele (o <em>bytecode</em>):</p>
+
+<pre class="file" data-file="explain.sql" data-resultado>EXPLAIN
+SELECT * FROM produtos WHERE id = 5;
+</pre>
+
+<p>Dezesseis instruções para uma consulta de uma linha: <code>OpenRead</code> abre a tabela, <code>SeekRowid</code> pula direto para o id, <code>Column</code> lê cada coluna, <code>ResultRow</code> devolve a linha. Isso serve para quem estuda o funcionamento interno do SQLite. Para saber se a consulta usa um índice, o <code>EXPLAIN QUERY PLAN</code> responde muito mais fácil.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Onde</th><th>Mostra</th><th>Quando usar</th></tr>
+<tr><td><code>EXPLAIN QUERY PLAN SELECT …</code></td><td>Editor, terminal, programas</td><td>O plano (no editor, em tabela; no terminal, em árvore)</td><td>Sempre que quiser saber se a consulta usa índice</td></tr>
+<tr><td><code>.eqp on</code></td><td>Só no terminal <code>sqlite3</code></td><td>O plano <strong>e</strong> o resultado, a cada consulta</td><td>Numa sessão de testes, para acompanhar tudo</td></tr>
+<tr><td><code>EXPLAIN SELECT …</code></td><td>Editor, terminal, programas</td><td>O bytecode, instrução por instrução</td><td>Quase nunca; curiosidade sobre o funcionamento interno</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"Será que o <code>EXPLAIN</code> apagou tudo?"</strong>
+<p>A Ana queria ver o plano de um <code>DELETE</code> e ficou com medo de apagar os itens dos pedidos:</p>
+<pre class="file" data-file="delete.sql" data-resultado>EXPLAIN QUERY PLAN
+DELETE FROM itens_pedido;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+<p><strong>O que acontece:</strong> nada foi apagado. Os 220 itens continuam lá. O <code>EXPLAIN QUERY PLAN</code> só <strong>planeja</strong>; a consulta não roda. Isso vale para <code>SELECT</code>, <code>UPDATE</code> e <code>DELETE</code>: você pode ver o plano de um comando perigoso sem medo. Mesmo assim, guarde o costume do <code>WHERE</code> (aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>): o <code>DELETE</code> de verdade, sem <code>EXPLAIN</code>, apaga.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome errado: o plano também dá erro</strong>
+<pre class="file" data-file="erro.sql" data-resultado data-erro>EXPLAIN QUERY PLAN
+SELECT * FROM clientes WHERE cidad = 'Teresina';
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: cidad</code>, "não existe a coluna cidad". Para montar o plano, o SQLite precisa entender a consulta inteira, então um nome errado dá o mesmo erro que daria sem o <code>EXPLAIN</code>. No terminal, a mensagem vem com o prefixo e a seta:</p>
+<pre class="term">sqlite> EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE cidad = 'Teresina';
+Parse error: no such column: cidad
+  EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE cidad = 'Teresina';
+                                    error here ---^</pre>
+<p><strong>Como consertar:</strong> o nome certo da coluna é <code>cidade</code>. Antes de pensar no plano, a consulta tem de rodar.</p>
+</div>
+
+<div class="cenario">
+<strong>Criou o índice e o plano continua <code>SCAN</code></strong>
+<pre class="file" data-file="nao-usa.sql" data-resultado>CREATE INDEX idx_clientes_cidade ON clientes(cidade);
+
+EXPLAIN QUERY PLAN
+SELECT * FROM clientes WHERE lower(cidade) = 'teresina';
+</pre>
+<p><strong>O que acontece:</strong> sem erro, mas o índice foi ignorado: <code>SCAN clientes</code>. O índice guarda a <code>cidade</code> como ela está escrita ("Teresina"), e a consulta procura <code>lower(cidade)</code>, um valor calculado que não está no índice. Para usar o índice, o SQLite teria de calcular <code>lower()</code> de todas as linhas, e aí já leu tudo.</p>
+<p><strong>Como consertar:</strong> compare a coluna pura: <code>WHERE cidade = 'Teresina'</code>. Esse e outros casos de "índice que não é usado" estão na aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>O tutorial mostra <code>SCAN TABLE</code></strong>
+<p>Em textos antigos, o plano aparece como <code>SCAN TABLE produtos</code> ou <code>SEARCH TABLE produtos USING INDEX …</code>. Não é erro seu: o formato do plano mudou ao longo das versões do SQLite, e a própria documentação avisa que ele pode mudar de novo. A ideia continua a mesma: <code>SCAN</code> lê tudo, <code>SEARCH</code> vai direto. Por isso nunca escreva um programa que dependa do texto exato do plano: ele é para <strong>gente</strong> ler.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Todo banco mostra o plano, cada um com seu jeito. Os trechos abaixo são <strong>ilustrativos</strong>: não rodam no SQLite.</p>
+<ul>
+  <li><strong>PostgreSQL:</strong> <code>EXPLAIN SELECT …</code>. O <code>SCAN</code> do SQLite lá se chama <code>Seq Scan</code> (leitura sequencial) e o <code>SEARCH</code> por índice, <code>Index Scan</code>. O <code>EXPLAIN ANALYZE</code> <strong>roda</strong> a consulta de verdade e mostra os tempos; num <code>UPDATE</code> ou <code>DELETE</code>, a documentação recomenda fazer isso dentro de uma transação desfeita com <code>ROLLBACK</code>.</li>
+  <li><strong>MySQL:</strong> <code>EXPLAIN SELECT …</code> mostra uma tabela; <code>EXPLAIN FORMAT=TREE</code>, uma árvore; e <code>EXPLAIN ANALYZE</code> roda a consulta e mostra os tempos.</li>
+  <li><strong>SQL Server:</strong> <code>SET SHOWPLAN_TEXT ON</code> faz os comandos seguintes devolverem o plano sem rodar; lá aparecem nomes como <code>Clustered Index Scan</code> e <code>Clustered Index Seek</code>.</li>
+</ul>
+<pre class="file" data-file="ilustrativo.sql">-- PostgreSQL (ilustrativo)
+EXPLAIN SELECT * FROM clientes WHERE cidade = 'Teresina';
+
+-- MySQL (ilustrativo)
+EXPLAIN FORMAT=TREE SELECT * FROM clientes WHERE cidade = 'Teresina';
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>EXPLAIN QUERY PLAN consulta</code></td><td>Mostra o plano, sem rodar a consulta</td></tr>
+<tr><td><code>EXPLAIN consulta</code></td><td>Mostra o bytecode (o programa interno)</td></tr>
+<tr><td><code>.eqp on</code> / <code>.eqp off</code></td><td>No terminal: mostra o plano antes de cada resultado</td></tr>
+<tr><td><code>SCAN t</code></td><td>Lê a tabela inteira</td></tr>
+<tr><td><code>SEARCH t USING …</code></td><td>Vai direto a algumas linhas</td></tr>
+<tr><td><code>USING INTEGER PRIMARY KEY (rowid=?)</code></td><td>Pela chave primária</td></tr>
+<tr><td><code>USING INDEX i (col=?)</code></td><td>Pelo índice <code>i</code></td></tr>
+<tr><td><code>USING COVERING INDEX i</code></td><td>Só com o índice, sem abrir a tabela</td></tr>
+<tr><td><code>USE TEMP B-TREE FOR ORDER BY</code></td><td>Ordenação à parte (também para <code>GROUP BY</code> e <code>DISTINCT</code>)</td></tr>
+<tr><td>colunas <code>id</code>, <code>parent</code></td><td>Montam a árvore do plano (<code>parent</code> = de quem o passo faz parte)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Pedir o plano</h3>
+<p>Complete para ver o plano, e não o resultado:</p>
+<div class="ex-code"><input data-answer="EXPLAIN QUERY PLAN" aria-label="comando"> SELECT * FROM produtos WHERE preco &gt; 50;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A palavra do "ler tudo"</h3>
+<p>Que palavra aparece no começo do plano quando o SQLite lê a tabela inteira?</p>
+<div class="ex-code"><input data-answer="SCAN" aria-label="palavra"> produtos</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O plano diz <code>SEARCH clientes USING COVERING INDEX idx_clientes_cidade (cidade=?)</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q3"> Que o SQLite vai ler todos os clientes</label>
+<label><input type="radio" name="q3"> Que a consulta é respondida só com o índice, sem abrir a tabela</label>
+<label><input type="radio" name="q3"> Que o índice está quebrado</label>
+<label><input type="radio" name="q3"> Que o SQLite criou um índice temporário</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. A Ana rodou <code>EXPLAIN QUERY PLAN DELETE FROM clientes;</code>. Quantos clientes sobraram?</p>
+<label><input type="radio" name="q4"> Nenhum</label>
+<label><input type="radio" name="q4"> Só os que têm pedidos</label>
+<label><input type="radio" name="q4"> Todos os 30: o <code>EXPLAIN QUERY PLAN</code> não roda o comando</label>
+<label><input type="radio" name="q4"> Dá erro: não existe plano de <code>DELETE</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que <code>USE TEMP B-TREE FOR ORDER BY</code> no plano quer dizer?</p>
+<label><input type="radio" name="q5"> Que o SQLite vai ordenar o resultado à parte, numa estrutura temporária</label>
+<label><input type="radio" name="q5"> Que a consulta tem um erro no <code>ORDER BY</code></label>
+<label><input type="radio" name="q5"> Que o resultado vai sair sem ordem</label>
+<label><input type="radio" name="q5"> Que a tabela foi apagada e recriada</label>
+</div>
+
+<h3>Missão final: do SCAN ao SEARCH</h3>
+
+<div class="trysql" data-goal="contem:SEARCH pedidos USING INDEX">
+<p class="try-task"><strong>Missão:</strong> o plano abaixo mostra <code>SCAN pedidos</code>: para achar os pedidos de um cliente, o SQLite lê todos. Antes do <code>EXPLAIN QUERY PLAN</code>, crie um índice na coluna certa para o plano virar <code>SEARCH pedidos USING INDEX …</code>.</p>
+<pre class="script" data-file="pedidos.sql">EXPLAIN QUERY PLAN
+SELECT * FROM pedidos WHERE cliente_id = 3;
+</pre>
+<pre class="solucao" data-file="pedidos.sql">CREATE INDEX idx_pedidos_cliente ON pedidos(cliente_id);
+
+EXPLAIN QUERY PLAN
+SELECT * FROM pedidos WHERE cliente_id = 3;
+</pre>
+</div>
+
+<p>Agora troque o <code>SELECT *</code> por <code>SELECT cliente_id</code> e veja o plano virar <code>COVERING INDEX</code>. Depois tente <code>SELECT id, data</code>: a coluna <code>data</code> não está no índice, e o plano volta a ser só <code>USING INDEX</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O <strong>plano</strong> é o caminho que o banco escolhe para achar as linhas. <code>EXPLAIN QUERY PLAN</code> antes da consulta mostra esse caminho, sem rodar a consulta.</li>
+  <li><code>SCAN</code> = ler a tabela inteira; <code>SEARCH</code> = ir direto, pela chave primária ou por um índice.</li>
+  <li><code>USING INDEX i (col=?)</code> diz qual índice e qual parte do <code>WHERE</code> ele resolve. <code>COVERING INDEX</code> = o índice basta, sem abrir a tabela.</li>
+  <li><code>USE TEMP B-TREE FOR ORDER BY</code>/<code>GROUP BY</code>/<code>DISTINCT</code> = ordenação extra, que um índice às vezes evita.</li>
+  <li>Leia o plano de cima para baixo; num <code>JOIN</code>, cada linha de baixo roda uma vez para cada linha de cima. A coluna <code>parent</code> (ou a árvore do terminal) mostra os passos de dentro de uma subconsulta.</li>
+  <li>No terminal, <code>.eqp on</code> mostra o plano de toda consulta. O texto do plano muda entre versões: é para gente ler, não para programas.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
