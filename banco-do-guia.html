@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O Banco da Loja Aurora — as 7 tabelas do guia | Guia SQL</title>
+<meta name="description" content="O banco de exemplo de todas as aulas do Guia SQL, a Loja Aurora: as 7 tabelas (categorias, fornecedores, produtos, clientes, funcionarios, pedidos e itens_pedido), o que cada uma guarda, as colunas principais, como elas se ligam pelos ids, um pedido seguido de ponta a ponta e os casos especiais escondidos de propósito para as próximas aulas.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O Banco da <span class="hl">Loja Aurora</span></h1>
+
+<p class="intro">Todas as aulas deste guia usam o mesmo banco de dados: o da <strong>Loja Aurora</strong>, uma loja de departamentos fictícia com sede em Teresina, no Piauí, que vende de tudo um pouco: papelaria, eletrônicos, utensílios de cozinha, livros, brinquedos, artigos de esporte, alimentos e coisas de jardim. Ela tem clientes em várias cidades, uma pequena equipe e quase três anos de pedidos registrados. Antes de começar a escrever consultas, vale conhecer a casa: quais tabelas existem, o que cada uma guarda e como elas se ligam. É o que esta aula faz, tabela por tabela.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As <strong>7 tabelas</strong> da Loja Aurora e o que cada uma guarda.</li>
+  <li>As colunas principais de cada tabela, e os nomes exatos que você vai usar nas consultas.</li>
+  <li>Como as tabelas se ligam pelos <strong>ids</strong>: o mapa do banco.</li>
+  <li>Como seguir um pedido de ponta a ponta: quem comprou, quem atendeu, o que foi comprado e quanto custou.</li>
+  <li>Que o banco tem <strong>casos especiais de propósito</strong> (dados que faltam, clientes que nunca compraram…), e em que aulas eles aparecem.</li>
+  <li>Os primeiros tropeços com este banco: coluna na tabela errada, data no formato brasileiro e vírgula no lugar do ponto.</li>
+</ul>
+</div>
+
+<p>Os dados são <strong>inventados</strong> (nomes, emails, telefones, tudo fictício) e <strong>fixos</strong>: são os mesmos para todo mundo, sempre. No editor do guia, cada Rodar começa do banco limpo; no seu computador, é o <code>loja.db</code> que você criou em <a href="instalar.html#banco">Instalar o SQLite</a>. Por isso, todo resultado das aulas é o que você vai ver também.</p>
+
+<hr>
+
+<h2>A ideia: os cadernos da loja</h2>
+<p>Imagine a loja antes do computador. A dona tinha um caderno para cada assunto, e cada caderno anotava só o seu:</p>
+
+<ul>
+  <li>o caderno dos <strong>departamentos</strong> (papelaria, eletrônicos…);</li>
+  <li>o caderno dos <strong>fornecedores</strong>, as empresas que vendem para a loja;</li>
+  <li>o caderno do <strong>estoque</strong>, um produto por linha, com preço e quantidade;</li>
+  <li>o caderno dos <strong>clientes</strong>;</li>
+  <li>o caderno dos <strong>funcionários</strong>;</li>
+  <li>o talão de <strong>pedidos</strong>, um por venda;</li>
+  <li>e, em cada folha do talão, as <strong>linhas do pedido</strong>: o que foi levado, quantas unidades, a que preço.</li>
+</ul>
+
+<p>Cada caderno virou uma tabela. E quando um caderno precisa falar de outro (o pedido precisa dizer quem é o cliente), ele não copia o nome: anota o <strong>número da ficha</strong> do cliente. É o <code>id</code> que você conheceu em <a href="introducao.html">O que é um Banco de Dados</a>.</p>
+
+<h3>O mapa</h3>
+<pre class="file" data-file="o mapa da Loja Aurora">fornecedores (6)              categorias (8)
+       ▲                             ▲
+       │ fornecedor_id  categoria_id │
+       └──────── produtos (45) ──────┘
+                      ▲
+                      │ produto_id
+              itens_pedido (220)
+                      │ pedido_id
+                      ▼
+clientes (30) ◄─── pedidos (90) ───► funcionarios (8) ◄─┐
+          cliente_id       funcionario_id      │        │
+                                               └────────┘
+                                                chefe_id
+</pre>
+
+<p>Leia cada seta como "aponta para": um produto <strong>aponta para</strong> a sua categoria e o seu fornecedor; um pedido aponta para o cliente que comprou e para o funcionário que atendeu; cada item de pedido aponta para o pedido de que faz parte e para o produto vendido; e cada funcionário aponta para o seu chefe, que é outro funcionário. Os números entre parênteses são as linhas de cada tabela.</p>
+
+<pre class="file" data-file="contagem.sql" data-resultado>SELECT 'categorias', COUNT(*) FROM categorias
+UNION ALL SELECT 'fornecedores', COUNT(*) FROM fornecedores
+UNION ALL SELECT 'produtos', COUNT(*) FROM produtos
+UNION ALL SELECT 'clientes', COUNT(*) FROM clientes
+UNION ALL SELECT 'funcionarios', COUNT(*) FROM funcionarios
+UNION ALL SELECT 'pedidos', COUNT(*) FROM pedidos
+UNION ALL SELECT 'itens_pedido', COUNT(*) FROM itens_pedido;
+</pre>
+
+<p>Essa consulta contou as linhas das sete tabelas e empilhou as respostas. Ela usa coisas que você só vai aprender no Nível 2 (<a href="union-all.html">UNION ALL</a>); por enquanto, olhe só o resultado.</p>
+
+<hr>
+
+<h2>1. <code>categorias</code>: os departamentos</h2>
+<p>A tabela mais simples: os 8 departamentos da loja.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número da categoria (1 a 8)</td></tr>
+<tr><td><code>nome</code></td><td>O nome do departamento</td></tr>
+<tr><td><code>descricao</code></td><td>Uma frase curta sobre o departamento</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="categorias.sql" data-resultado>SELECT * FROM categorias;
+</pre>
+
+<hr>
+
+<h2>2. <code>fornecedores</code>: quem vende para a loja</h2>
+<p>As 6 empresas que abastecem o estoque. A maioria é brasileira, mas há fornecedores de fora do país.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número do fornecedor (1 a 6)</td></tr>
+<tr><td><code>nome</code></td><td>O nome da empresa</td></tr>
+<tr><td><code>cidade</code>, <code>estado</code>, <code>pais</code></td><td>Onde ela fica (<code>estado</code> é a sigla, como <code>PI</code>)</td></tr>
+<tr><td><code>telefone</code></td><td>O telefone, em formato brasileiro ou internacional</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="fornecedores.sql" data-resultado>SELECT * FROM fornecedores;
+</pre>
+
+<p>Repare em duas coisas, que vão render aulas: as empresas de Portugal e da Argentina não têm estado (aparece <em>NULL</em>), e uma das empresas brasileiras tem um <strong>apóstrofo</strong> no nome. Como escrever esse nome entre aspas simples sem confundir o SQLite? Você vai descobrir quando chegar a hora.</p>
+
+<hr>
+
+<h2>3. <code>produtos</code>: o estoque</h2>
+<p>O coração da loja: os 45 produtos à venda, com preço e quantidade na prateleira.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número do produto (1 a 45)</td></tr>
+<tr><td><code>nome</code></td><td>O nome do produto</td></tr>
+<tr><td><code>categoria_id</code></td><td>O id da categoria → tabela <code>categorias</code></td></tr>
+<tr><td><code>fornecedor_id</code></td><td>O id do fornecedor → tabela <code>fornecedores</code></td></tr>
+<tr><td><code>preco</code></td><td>O preço de hoje, em reais, com ponto decimal (<code>12.35</code>)</td></tr>
+<tr><td><code>estoque</code></td><td>Quantas unidades há na prateleira</td></tr>
+<tr><td><code>descontinuado</code></td><td>1 se o produto saiu de linha, 0 se continua à venda</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="produtos.sql" data-resultado>SELECT * FROM produtos LIMIT 5;
+</pre>
+
+<p>O <code>LIMIT 5</code> mostra só os 5 primeiros (aula <a href="limit.html">LIMIT e OFFSET</a>). Leia a linha do lápis: <code>categoria_id</code> 1 (Papelaria) e <code>fornecedor_id</code> 6 (Norte Suprimentos, de Teresina). O <code>descontinuado</code> usa 0 e 1 no lugar de "não" e "sim": o SQLite não tem um tipo próprio para verdadeiro/falso, e esse é o costume (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+
+<hr>
+
+<h2>4. <code>clientes</code>: quem compra</h2>
+<p>Os 30 clientes cadastrados, do Piauí, do Ceará, de Pernambuco e de São Paulo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número do cliente (1 a 30)</td></tr>
+<tr><td><code>nome</code></td><td>O nome completo</td></tr>
+<tr><td><code>email</code></td><td>O email (todos fictícios, em <code>@exemplo.com.br</code>)</td></tr>
+<tr><td><code>cidade</code>, <code>estado</code></td><td>Onde mora</td></tr>
+<tr><td><code>nascimento</code></td><td>A data de nascimento, no formato <code>ano-mês-dia</code></td></tr>
+<tr><td><code>vip</code></td><td>1 se é cliente VIP, 0 se não</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="clientes.sql" data-resultado>SELECT * FROM clientes LIMIT 5;
+</pre>
+
+<p>A data de nascimento do primeiro cliente está como <code>1985-03-12</code>, e não "12/03/1985". É o padrão internacional (ISO), e é o que todo banco entende melhor: em ordem alfabética, as datas ficam também em ordem cronológica. As datas têm aulas próprias: <a href="datas.html">Datas e Horas</a> e <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<hr>
+
+<h2>5. <code>funcionarios</code>: a equipe</h2>
+<p>As 8 pessoas que trabalham na loja, com cargo, salário e chefe.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número do funcionário (1 a 8)</td></tr>
+<tr><td><code>nome</code></td><td>O nome</td></tr>
+<tr><td><code>cargo</code></td><td>Gerente, Supervisora, Vendedor(a) ou Estoquista</td></tr>
+<tr><td><code>salario</code></td><td>O salário, em reais</td></tr>
+<tr><td><code>chefe_id</code></td><td>O id do chefe → a <strong>própria</strong> tabela <code>funcionarios</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="funcionarios.sql" data-resultado>SELECT * FROM funcionarios;
+</pre>
+
+<p>O <code>chefe_id</code> é a ligação mais curiosa do banco: ele aponta para outra linha da <strong>mesma</strong> tabela. O chefe do Igor (id 6) é a funcionária de id 5, a Luana Castelo, supervisora; e o chefe da Luana é a de id 1, a gerente Marta Lustosa. E a Marta? Ela não tem chefe, e o seu <code>chefe_id</code> é <em>NULL</em>. Montar esse "organograma" com uma consulta só é a aula <a href="self-join.html">Self Join</a>.</p>
+
+<hr>
+
+<h2>6. <code>pedidos</code>: o talão de vendas</h2>
+<p>Os 90 pedidos feitos de janeiro de 2024 a outubro de 2026. Cada linha é uma venda: quem comprou, quem atendeu, quando, quando chegou e quanto custou o frete.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>id</code></td><td>O número do pedido (1 a 90)</td></tr>
+<tr><td><code>cliente_id</code></td><td>Quem comprou → tabela <code>clientes</code></td></tr>
+<tr><td><code>funcionario_id</code></td><td>Quem atendeu → tabela <code>funcionarios</code></td></tr>
+<tr><td><code>data</code></td><td>A data do pedido (<code>ano-mês-dia</code>)</td></tr>
+<tr><td><code>entregue_em</code></td><td>A data da entrega</td></tr>
+<tr><td><code>frete</code></td><td>O valor do frete, em reais</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="pedidos.sql" data-resultado>SELECT * FROM pedidos LIMIT 5;
+</pre>
+
+<p>Repare: o pedido <strong>não</strong> guarda o que foi comprado, nem o valor total. Um pedido pode ter vários produtos, e uma linha não tem lugar para "vários". Para isso existe a última tabela.</p>
+
+<hr>
+
+<h2>7. <code>itens_pedido</code>: o que foi comprado</h2>
+<p>Cada linha é um produto dentro de um pedido: "no pedido 1, foram 2 unidades do produto 1, a R$ 12,35 cada". São 220 itens no total.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>O que guarda</th></tr>
+<tr><td><code>pedido_id</code></td><td>De que pedido é este item → tabela <code>pedidos</code></td></tr>
+<tr><td><code>produto_id</code></td><td>Que produto foi vendido → tabela <code>produtos</code></td></tr>
+<tr><td><code>quantidade</code></td><td>Quantas unidades</td></tr>
+<tr><td><code>preco_unitario</code></td><td>O preço de <strong>cada</strong> unidade, no dia da venda</td></tr>
+</table>
+</div>
+
+<p>Esta tabela não tem uma coluna <code>id</code> própria. Quem identifica cada linha é o <strong>par</strong> <code>pedido_id</code> + <code>produto_id</code>: o mesmo produto não aparece duas vezes no mesmo pedido (se a cliente levou três lápis, é uma linha com <code>quantidade</code> 3). Isso se chama <strong>chave primária composta</strong>, e você a verá em <a href="primary-key.html">PRIMARY KEY</a>. Uma tabela assim, que liga duas outras (pedidos e produtos), é o assunto de <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>.</p>
+
+<p>E por que guardar o preço de novo, se o produto já tem <code>preco</code>? Porque preços mudam. O <code>preco</code> da tabela de produtos é o de <strong>hoje</strong>; o <code>preco_unitario</code> é o que o cliente <strong>pagou</strong> naquele dia. Uma nota fiscal antiga não pode mudar quando a loja reajusta a tabela de preços.</p>
+
+<hr>
+
+<h2>8. Seguindo um pedido de ponta a ponta</h2>
+<p>Agora junte tudo. Vamos descobrir, só com o que você já viu, a história completa do <strong>pedido 1</strong>. É um trabalho de detetive: cada resposta dá a pista para a próxima pergunta.</p>
+
+<p><strong>Passo 1: o pedido.</strong></p>
+<pre class="file" data-file="passo1.sql" data-resultado>SELECT * FROM pedidos WHERE id = 1;
+</pre>
+<p>Foi feito em 5 de janeiro de 2024 e entregue no dia 10, com frete de R$ 9,90. Quem comprou foi o cliente 1, e quem atendeu foi o funcionário 2.</p>
+
+<p><strong>Passo 2: quem comprou e quem atendeu.</strong></p>
+<pre class="file" data-file="passo2.sql" data-resultado>SELECT id, nome FROM clientes WHERE id = 1;
+SELECT id, nome, cargo FROM funcionarios WHERE id = 2;
+</pre>
+<p>O José Ribamar Silva foi atendido pelo vendedor Caio Teles.</p>
+
+<p><strong>Passo 3: o que foi comprado.</strong></p>
+<pre class="file" data-file="passo3.sql" data-resultado>SELECT * FROM itens_pedido WHERE pedido_id = 1;
+</pre>
+<p>Três itens: produtos 1, 2 e 3. Que produtos são esses?</p>
+
+<pre class="file" data-file="passo3b.sql" data-resultado>SELECT id, nome, preco FROM produtos WHERE id IN (1, 2, 3);
+</pre>
+<p>2 cadernos, 1 caneta azul e 3 lápis: material escolar, bem a tempo da volta às aulas. (O <code>IN (1, 2, 3)</code> quer dizer "o id é 1, 2 ou 3"; aula <a href="in.html">IN</a>.)</p>
+
+<p><strong>Passo 4: quanto custou.</strong> Cada item vale <code>quantidade × preco_unitario</code>: 2 × 12,35 + 1 × 2,79 + 3 × 1,15. O banco faz a conta:</p>
+<pre class="file" data-file="passo4.sql" data-resultado>SELECT SUM(quantidade * preco_unitario)
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+<p>Os produtos somam R$ 30,94. Com o frete de R$ 9,90, o José pagou R$ 40,84. O <code>SUM</code> ("soma") tem aula própria: <a href="sum.html">SUM()</a>.</p>
+
+<p>Foram cinco consultas para uma história. No Nível 2 você vai aprender o <a href="joins.html">JOIN</a>, que junta as tabelas e conta a mesma história numa consulta só. Mas a ideia é exatamente esta: <strong>seguir os ids de uma tabela para outra</strong>.</p>
+
+<div class="trysql" data-goal="contem:Renata Borges">
+<p class="try-task"><strong>Experimente:</strong> faça o mesmo trabalho de detetive com o <strong>pedido 2</strong>. A consulta abaixo mostra o pedido. Rode, veja qual é o <code>funcionario_id</code> e, depois, troque a consulta (ou acrescente outra) para mostrar o <strong>nome</strong> do funcionário que atendeu.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM pedidos WHERE id = 2;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM pedidos WHERE id = 2;
+SELECT id, nome, cargo FROM funcionarios WHERE id = 3;
+</pre>
+</div>
+
+<hr>
+
+<h2>9. Os casos especiais (de propósito)</h2>
+<p>Um banco de verdade nunca é perfeitinho: falta o email de um cliente, um produto encalha, um pedido atrasa. A Loja Aurora foi montada com esses "defeitos" <strong>de propósito</strong>, para cada aula ter um caso real a resolver. Sem estragar a surpresa, aqui está o que espera por você:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caso escondido no banco</th><th>Em que tabela</th><th>A aula que o encontra</th></tr>
+<tr><td>Clientes que não informaram o email ou o nascimento</td><td><code>clientes</code></td><td><a href="null.html">O Valor NULL</a>, <a href="is-null.html">IS NULL</a></td></tr>
+<tr><td>Cidades que se repetem muito</td><td><code>clientes</code></td><td><a href="select-distinct.html">SELECT DISTINCT</a>, <a href="group-by.html">GROUP BY</a></td></tr>
+<tr><td>Duas clientes com o primeiro nome igual</td><td><code>clientes</code></td><td><a href="like.html">LIKE</a></td></tr>
+<tr><td>Nomes com acento e um nome com apóstrofo</td><td><code>clientes</code>, <code>fornecedores</code></td><td><a href="like.html">LIKE</a>, <a href="funcoes-texto.html">Funções de Texto</a></td></tr>
+<tr><td>Clientes cadastrados que <strong>nunca</strong> compraram</td><td><code>clientes</code> × <code>pedidos</code></td><td><a href="left-join.html">LEFT JOIN</a></td></tr>
+<tr><td>Produtos que <strong>nunca</strong> foram vendidos</td><td><code>produtos</code> × <code>itens_pedido</code></td><td><a href="left-join.html">LEFT JOIN</a>, <a href="subconsultas.html">Subconsultas</a></td></tr>
+<tr><td>Produtos que saíram de linha</td><td><code>produtos</code></td><td><a href="where.html">WHERE</a></td></tr>
+<tr><td>Pedidos que ainda não chegaram</td><td><code>pedidos</code></td><td><a href="is-null.html">IS NULL</a></td></tr>
+<tr><td>Pedidos com frete grátis</td><td><code>pedidos</code></td><td><a href="where.html">WHERE</a></td></tr>
+<tr><td>Vendas feitas em promoção, por um preço diferente do de hoje</td><td><code>itens_pedido</code> × <code>produtos</code></td><td><a href="joins.html">JOIN</a></td></tr>
+<tr><td>Contas com centavos "quebrados"</td><td><code>itens_pedido</code></td><td><a href="funcoes-numericas.html">Funções Numéricas</a> (ROUND)</td></tr>
+<tr><td>Fornecedores de fora do Brasil, sem estado</td><td><code>fornecedores</code></td><td><a href="operadores-comparacao.html">Comparações</a>, <a href="is-null.html">IS NULL</a></td></tr>
+<tr><td>A gerente, que não tem chefe</td><td><code>funcionarios</code></td><td><a href="self-join.html">Self Join</a></td></tr>
+<tr><td>Funcionários que nunca atenderam um pedido</td><td><code>funcionarios</code> × <code>pedidos</code></td><td><a href="left-join.html">LEFT JOIN</a></td></tr>
+</table>
+</div>
+
+<p>Quem são esses clientes, quais são esses produtos e quantos são os pedidos atrasados? Essas são exatamente as perguntas que você vai aprender a fazer ao banco. Não vale espiar.</p>
+
+<hr>
+
+<h2>10. Formas de explorar o banco</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Como ver as tabelas</th><th>Como ver as colunas</th><th>Quando usar</th></tr>
+<tr><td>Esta página</td><td>O mapa e as seções 1 a 7</td><td>As tabelas de colunas</td><td>Consulta rápida enquanto estuda (volte aqui sempre que precisar)</td></tr>
+<tr><td>Editor do guia</td><td><code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td><td><code>PRAGMA table_info(produtos);</code></td><td>Durante as aulas</td></tr>
+<tr><td>Terminal <code>sqlite3</code> com o <code>loja.db</code></td><td><code>.tables</code></td><td><code>.schema produtos</code></td><td>No seu computador (aula <a href="comandos-ponto.html">Comandos de Ponto</a>)</td></tr>
+<tr><td>O arquivo <a href="assets/sql/aurora.sql"><code>aurora.sql</code></a></td><td>Os <code>CREATE TABLE</code> no começo</td><td>Dentro de cada <code>CREATE TABLE</code></td><td>Para ver todos os dados de uma vez, num editor de texto</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A coluna está em outra tabela</strong>
+<pre class="file" data-file="coluna-errada.sql" data-resultado data-erro>SELECT nome, email FROM pedidos;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: nome</code>. A Ana queria o nome e o email de quem fez os pedidos, mas a tabela <code>pedidos</code> só guarda o <strong>número</strong> do cliente (<code>cliente_id</code>). O nome e o email estão em <code>clientes</code>.</p>
+<p><strong>Como consertar:</strong> procure a coluna na tabela certa (as seções 1 a 7 desta página, ou o <code>.schema</code>). Para juntar dados de duas tabelas numa resposta só, siga o id, como na seção 8, ou espere o <a href="joins.html">JOIN</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome de tabela "quase certo"</strong>
+<pre class="file" data-file="tabela-errada.sql" data-resultado data-erro>SELECT * FROM itens_pedidos;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such table: itens_pedidos</code>. A tabela é <code>itens_pedido</code>: "itens" no plural, "pedido" no singular (os itens <em>de um</em> pedido). Os outros nomes do banco são todos no plural.</p>
+<p><strong>Como consertar:</strong> <code>SELECT * FROM itens_pedido;</code>. Na dúvida, o mapa do começo da página tem os sete nomes exatos.</p>
+</div>
+
+<div class="cenario">
+<strong>Data no formato brasileiro (sem mensagem de erro!)</strong>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT id, data FROM pedidos WHERE data = '05/01/2024';
+</pre>
+<p><strong>O que aconteceu:</strong> zero linhas, e nenhum erro. O pedido 1 é de 5 de janeiro de 2024, mas a data está guardada como <code>'2024-01-05'</code>. Para o SQLite, <code>'05/01/2024'</code> é só um texto diferente, que não bate com nenhuma linha.</p>
+<p><strong>Como consertar:</strong> escreva a data como ela está no banco, <code>ano-mês-dia</code>:</p>
+<pre class="file" data-file="data-iso.sql" data-resultado>SELECT id, data FROM pedidos WHERE data = '2024-01-05';
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Vírgula no lugar do ponto decimal</strong>
+<pre class="file" data-file="virgula.sql" data-resultado data-erro>SELECT nome FROM produtos WHERE preco = 2,79;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near ",": syntax error</code>. No SQL, a vírgula separa coisas (colunas, valores); ela nunca é a vírgula dos centavos. O SQLite leu <code>2</code>, depois uma vírgula fora de lugar, e se perdeu.</p>
+<p><strong>Como consertar:</strong> ponto decimal, como em <code>2.79</code>. Os preços da loja estão todos guardados assim.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>Linhas</th><th>Colunas</th><th>Liga com</th></tr>
+<tr><td><code>categorias</code></td><td>8</td><td><code>id</code>, <code>nome</code>, <code>descricao</code></td><td>(é apontada por <code>produtos</code>)</td></tr>
+<tr><td><code>fornecedores</code></td><td>6</td><td><code>id</code>, <code>nome</code>, <code>cidade</code>, <code>estado</code>, <code>pais</code>, <code>telefone</code></td><td>(é apontada por <code>produtos</code>)</td></tr>
+<tr><td><code>produtos</code></td><td>45</td><td><code>id</code>, <code>nome</code>, <code>categoria_id</code>, <code>fornecedor_id</code>, <code>preco</code>, <code>estoque</code>, <code>descontinuado</code></td><td><code>categorias</code>, <code>fornecedores</code></td></tr>
+<tr><td><code>clientes</code></td><td>30</td><td><code>id</code>, <code>nome</code>, <code>email</code>, <code>cidade</code>, <code>estado</code>, <code>nascimento</code>, <code>vip</code></td><td>(é apontada por <code>pedidos</code>)</td></tr>
+<tr><td><code>funcionarios</code></td><td>8</td><td><code>id</code>, <code>nome</code>, <code>cargo</code>, <code>salario</code>, <code>chefe_id</code></td><td><code>funcionarios</code> (o chefe)</td></tr>
+<tr><td><code>pedidos</code></td><td>90</td><td><code>id</code>, <code>cliente_id</code>, <code>funcionario_id</code>, <code>data</code>, <code>entregue_em</code>, <code>frete</code></td><td><code>clientes</code>, <code>funcionarios</code></td></tr>
+<tr><td><code>itens_pedido</code></td><td>220</td><td><code>pedido_id</code>, <code>produto_id</code>, <code>quantidade</code>, <code>preco_unitario</code></td><td><code>pedidos</code>, <code>produtos</code></td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para saber…</th><th>Faça</th></tr>
+<tr><td>O valor de um item</td><td><code>quantidade * preco_unitario</code></td></tr>
+<tr><td>O total de um pedido</td><td>A soma dos itens + o <code>frete</code> do pedido</td></tr>
+<tr><td>Datas</td><td>Sempre <code>'ano-mês-dia'</code>, entre aspas simples: <code>'2024-01-05'</code></td></tr>
+<tr><td>Dinheiro</td><td>Ponto decimal: <code>2.79</code></td></tr>
+<tr><td>Sim/não</td><td><code>1</code> e <code>0</code> (<code>vip</code>, <code>descontinuado</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O talão</h3>
+<p>Complete com o nome da tabela que guarda cada venda (quem comprou, quando, o frete):</p>
+<div class="ex-code">SELECT * FROM <input data-answer="pedidos" aria-label="nome da tabela">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A ligação com a categoria</h3>
+<p>Complete com a coluna da tabela <code>produtos</code> que diz a categoria de cada produto:</p>
+<div class="ex-code">SELECT nome, <input data-answer="categoria_id" aria-label="nome da coluna"> FROM produtos;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Onde fica guardado o que foi comprado em cada pedido?</p>
+<label><input type="radio" name="q3"> Na tabela <code>pedidos</code></label>
+<label><input type="radio" name="q3"> Na tabela <code>produtos</code></label>
+<label><input type="radio" name="q3"> Na tabela <code>itens_pedido</code></label>
+<label><input type="radio" name="q3"> Na tabela <code>clientes</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>itens_pedido</code> tem <code>preco_unitario</code>, se o produto já tem <code>preco</code>?</p>
+<label><input type="radio" name="q4"> Por engano: é a mesma informação duas vezes</label>
+<label><input type="radio" name="q4"> Porque o preço muda com o tempo, e o item guarda quanto o cliente pagou naquele dia</label>
+<label><input type="radio" name="q4"> Porque <code>preco</code> é em dólares</label>
+<label><input type="radio" name="q4"> Para o banco ficar maior</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Para que serve a coluna <code>chefe_id</code>?</p>
+<label><input type="radio" name="q5"> Guarda o salário do chefe</label>
+<label><input type="radio" name="q5"> Aponta para a tabela <code>clientes</code></label>
+<label><input type="radio" name="q5"> É o número do pedido que o chefe aprovou</label>
+<label><input type="radio" name="q5"> Aponta para outro funcionário da mesma tabela: o chefe</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana procurou os pedidos de <code>'14/01/2024'</code> e não veio nada, sem erro. Por quê?</p>
+<label><input type="radio" name="q6"> As datas estão guardadas como <code>'2024-01-14'</code> (ano-mês-dia)</label>
+<label><input type="radio" name="q6"> Não houve pedido nesse dia</label>
+<label><input type="radio" name="q6"> Datas precisam de aspas duplas</label>
+<label><input type="radio" name="q6"> A coluna <code>data</code> não existe</label>
+</div>
+
+<h3>Missão final: o chefe da Sofia</h3>
+
+<div class="trysql" data-goal="contem:Luana Castelo">
+<p class="try-task"><strong>Missão:</strong> a vendedora Sofia Rocha precisa pedir férias ao chefe dela. Quem é? A consulta abaixo mostra a linha da Sofia, com o <code>chefe_id</code>. Rode, anote o número e acrescente uma segunda consulta que mostre o <strong>nome</strong> do funcionário com esse id.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, nome, cargo, chefe_id
+FROM funcionarios
+WHERE nome = 'Sofia Rocha';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, nome, cargo, chefe_id
+FROM funcionarios
+WHERE nome = 'Sofia Rocha';
+
+SELECT id, nome, cargo
+FROM funcionarios
+WHERE id = 5;
+</pre>
+</div>
+
+<p>Agora você conhece a casa. A partir da próxima aula, <a href="select.html">SELECT</a>, você começa a fazer as suas próprias perguntas a ela.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todas as aulas usam o banco da <strong>Loja Aurora</strong>: dados fictícios e fixos, iguais no editor e no seu <code>loja.db</code>.</li>
+  <li>São 7 tabelas: <code>categorias</code> (8), <code>fornecedores</code> (6), <code>produtos</code> (45), <code>clientes</code> (30), <code>funcionarios</code> (8), <code>pedidos</code> (90) e <code>itens_pedido</code> (220).</li>
+  <li>Elas se ligam pelos ids: o produto aponta para a categoria e o fornecedor; o pedido, para o cliente e o funcionário; o item, para o pedido e o produto; o funcionário, para o chefe.</li>
+  <li>O pedido não guarda o que foi comprado: isso fica em <code>itens_pedido</code>, com a quantidade e o preço pago. Total = soma de <code>quantidade * preco_unitario</code> + <code>frete</code>.</li>
+  <li>Datas em <code>'ano-mês-dia'</code>, dinheiro com ponto decimal, sim/não como 1 e 0.</li>
+  <li>O banco tem casos especiais de propósito (dados faltando, clientes sem pedidos, produtos encalhados, pedidos a caminho…), que as próximas aulas vão encontrar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
