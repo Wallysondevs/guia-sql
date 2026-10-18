@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Diagramas (DER) — entidades, atributos e pé de galinha | Guia SQL</title>
+<meta name="description" content="Diagramas de entidade-relacionamento (DER) para quem está começando: entidades (caixas), atributos (colunas), chaves PK e FK, cardinalidade (um, muitos, zero), a notação pé de galinha, como ler um muitos-para-muitos pela tabela de ligação e o DER completo da Loja Aurora em SVG legível nos temas claro e escuro, mais como ler o diagrama direto do banco com pragma_foreign_key_list.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Diagramas <span class="hl">(DER)</span></h1>
+
+<p class="intro">Antes de criar as tabelas, ajuda muito <strong>desenhar</strong> o banco: quais são as tabelas, que colunas cada uma tem e como elas se ligam. Esse desenho se chama <strong>diagrama de entidade-relacionamento</strong>, ou <strong>DER</strong>. Um DER bem feito cabe numa folha e conta, de relance, a história que você levaria parágrafos para explicar: "um cliente faz vários pedidos", "cada produto tem uma categoria". Nesta aula você aprende a ler e desenhar um DER, com a notação mais usada hoje — o <strong>pé de galinha</strong> — e vê o DER completo da Loja Aurora.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que são <strong>entidades</strong> (as caixas) e <strong>atributos</strong> (as colunas), e como marcar a <strong>PK</strong> e a <strong>FK</strong>.</li>
+  <li>O que é <strong>cardinalidade</strong>: um, muitos, zero-ou-um, um-ou-muitos.</li>
+  <li>A notação <strong>pé de galinha</strong> (os three risquinhos que parecem um pé de ave).</li>
+  <li>Como o muitos-para-muitos aparece no diagrama, com a tabela de ligação no meio.</li>
+  <li>O <strong>DER completo</strong> da Loja Aurora.</li>
+  <li>Como "ler o diagrama" direto do banco, com <code>pragma_foreign_key_list</code>.</li>
+</ul>
+</div>
+
+<p>Os desenhos desta aula são <strong>SVG</strong> (um formato de imagem feito de linhas e texto), pensados para ficarem nítidos no tema claro e no escuro. As consultas rodam de verdade no editor, contra a Loja Aurora.</p>
+
+<hr>
+
+<h2>A ideia: a planta da casa</h2>
+<p>Ninguém constrói uma casa sem a planta: ela mostra os cômodos e as portas entre eles antes de assentar o primeiro tijolo. O DER é a planta do banco. As <strong>entidades</strong> são os cômodos (as tabelas); os <strong>relacionamentos</strong> são as portas (as ligações por chave estrangeira). Desenhar primeiro evita descobrir tarde demais que faltou uma parede — ou uma tabela.</p>
+
+<hr>
+
+<h2>1. A entidade: uma caixa com atributos</h2>
+<p>Cada <strong>entidade</strong> é uma tabela, desenhada como uma caixa: o <strong>nome</strong> no topo e os <strong>atributos</strong> (as colunas) listados embaixo. A chave primária (aula <a href="primary-key.html">PRIMARY KEY</a>) vem marcada com <strong>PK</strong>; uma chave estrangeira (aula <a href="foreign-key.html">FOREIGN KEY</a>), com <strong>FK</strong>.</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 260 170" role="img" aria-labelledby="ent-titulo" style="width:260px;max-width:100%;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="ent-titulo">A entidade clientes como uma caixa: nome no topo, e os atributos id (PK), nome, email, cidade e vip embaixo.</title>
+<rect x="10" y="12" width="180" height="146" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="11" y="13" width="178" height="24" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="22" y="30" style="fill:currentColor;font-weight:700">clientes</text>
+<g style="fill:currentColor">
+<text x="22" y="56">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="22" y="78">nome</text>
+<text x="22" y="100">email</text>
+<text x="22" y="122">cidade</text>
+<text x="22" y="144">vip</text>
+</g>
+<text x="210" y="56" style="fill:var(--muted)">chave</text>
+<text x="210" y="78" style="fill:var(--muted)">colunas</text>
+</svg>
+</div>
+
+<dl class="anatomy">
+  <dt>O topo</dt><dd>O nome da tabela, <code>clientes</code>, em destaque.</dd>
+  <dt>id <strong>PK</strong></dt><dd>A chave primária: o número único de cada linha.</dd>
+  <dt>nome, email, cidade, vip</dt><dd>Os demais atributos. Num DER enxuto, você lista só os principais e põe "…" no resto.</dd>
+</dl>
+
+<hr>
+
+<h2>2. O relacionamento e a cardinalidade</h2>
+<p>Uma linha entre duas caixas diz que elas se ligam. Mas "quantos de cada lado"? Isso é a <strong>cardinalidade</strong>. As três perguntas que ela responde, nas pontas da linha: <strong>no mínimo zero ou no mínimo um?</strong> e <strong>no máximo um ou no máximo muitos?</strong></p>
+
+<h3>A notação pé de galinha</h3>
+<p>Os símbolos ficam na ponta da linha, perto de cada caixa. O nome "pé de galinha" vem do símbolo de "muitos", que se abre em três riscos, como a pegada de uma ave:</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 560 190" role="img" aria-labelledby="simb-titulo" style="width:560px;max-width:100%;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="simb-titulo">Os quatro símbolos de ponta: um e só um (dois riscos), muitos (pé de galinha), zero ou um (círculo e risco), um ou muitos (risco e pé de galinha).</title>
+<g style="stroke:var(--accent);stroke-width:1.8;fill:none">
+  <!-- um e só um -->
+  <line x1="20" y1="40" x2="110" y2="40"/>
+  <line x1="78" y1="28" x2="78" y2="52"/>
+  <line x1="90" y1="28" x2="90" y2="52"/>
+  <!-- muitos -->
+  <line x1="20" y1="110" x2="78" y2="110"/>
+  <line x1="110" y1="110" x2="78" y2="96"/>
+  <line x1="110" y1="110" x2="78" y2="110"/>
+  <line x1="110" y1="110" x2="78" y2="124"/>
+  <!-- zero ou um -->
+  <line x1="300" y1="40" x2="400" y2="40"/>
+  <circle cx="372" cy="40" r="9"/>
+  <line x1="388" y1="28" x2="388" y2="52"/>
+  <!-- um ou muitos -->
+  <line x1="300" y1="110" x2="360" y2="110"/>
+  <line x1="360" y1="96" x2="360" y2="124"/>
+  <line x1="400" y1="110" x2="360" y2="96"/>
+  <line x1="400" y1="110" x2="360" y2="110"/>
+  <line x1="400" y1="110" x2="360" y2="124"/>
+</g>
+<g style="fill:currentColor">
+  <text x="120" y="44">um e só um (1)</text>
+  <text x="120" y="114">muitos (N)</text>
+  <text x="410" y="44">zero ou um (0..1)</text>
+  <text x="410" y="114">um ou muitos (1..N)</text>
+</g>
+<g style="fill:var(--muted);font-size:12px">
+  <text x="20" y="165">Os dois riscos = "um". O círculo = "zero". O pé de galinha = "muitos".</text>
+</g>
+</svg>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Símbolo na ponta</th><th>Quer dizer</th></tr>
+<tr><td>dois riscos <code>||</code></td><td>um, e exatamente um</td></tr>
+<tr><td>pé de galinha <code>&lt;</code></td><td>muitos</td></tr>
+<tr><td>círculo + risco <code>o|</code></td><td>zero ou um (opcional)</td></tr>
+<tr><td>risco + pé de galinha <code>|&lt;</code></td><td>um ou muitos (pelo menos um)</td></tr>
+</table>
+</div>
+
+<h3>Um-para-muitos: cliente e pedidos</h3>
+<p>Na Loja Aurora, um cliente faz vários pedidos, e cada pedido é de um cliente só. No diagrama, o lado de <code>pedidos</code> ganha o pé de galinha (muitos) e o lado de <code>clientes</code>, os dois riscos (um):</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="umpm-titulo" style="width:520px;max-width:100%;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="umpm-titulo">clientes um-para-muitos pedidos: a linha sai de clientes com o símbolo de um e chega em pedidos com o pé de galinha de muitos.</title>
+<rect x="10" y="34" width="150" height="52" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="11" y="35" width="148" height="22" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="22" y="51" style="fill:currentColor;font-weight:700">clientes</text>
+<text x="22" y="76" style="fill:currentColor">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<rect x="360" y="34" width="150" height="52" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="361" y="35" width="148" height="22" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="372" y="51" style="fill:currentColor;font-weight:700">pedidos</text>
+<text x="372" y="76" style="fill:currentColor">cliente_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<g style="stroke:var(--accent);stroke-width:1.8;fill:none">
+  <line x1="160" y1="60" x2="360" y2="60"/>
+  <!-- lado um (perto de clientes) -->
+  <line x1="188" y1="48" x2="188" y2="72"/>
+  <line x1="200" y1="48" x2="200" y2="72"/>
+  <!-- lado muitos (perto de pedidos) -->
+  <line x1="332" y1="48" x2="360" y2="60"/>
+  <line x1="332" y1="60" x2="360" y2="60"/>
+  <line x1="332" y1="72" x2="360" y2="60"/>
+</g>
+<text x="228" y="52" style="fill:var(--muted);font-size:12px">um cliente … muitos pedidos</text>
+</svg>
+</div>
+
+<p>Leia a linha nos dois sentidos: da esquerda, "um cliente tem muitos pedidos"; da direita, "um pedido pertence a um cliente". A chave estrangeira <code>pedidos.cliente_id</code> é o que faz a ligação.</p>
+
+<hr>
+
+<h2>3. O muitos-para-muitos no diagrama</h2>
+<p>Um pedido tem vários produtos, e um produto está em vários pedidos (aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>). No DER, isso <strong>não</strong> é uma linha direta entre <code>pedidos</code> e <code>produtos</code> com pé de galinha dos dois lados — é uma caixa no meio, a <strong>tabela de ligação</strong> <code>itens_pedido</code>, com um-para-muitos para cada lado:</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 620 130" role="img" aria-labelledby="nn-titulo" style="width:620px;max-width:100%;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="nn-titulo">pedidos e produtos ligados pela tabela de ligação itens_pedido, no meio, com pé de galinha dos dois lados apontando para itens_pedido.</title>
+<rect x="10" y="40" width="130" height="52" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="11" y="41" width="128" height="22" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="22" y="57" style="fill:currentColor;font-weight:700">pedidos</text>
+<text x="22" y="82" style="fill:currentColor">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<rect x="245" y="34" width="150" height="64" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="246" y="35" width="148" height="22" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="256" y="51" style="fill:currentColor;font-weight:700">itens_pedido</text>
+<text x="256" y="73" style="fill:currentColor">pedido_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="256" y="91" style="fill:currentColor">produto_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<rect x="490" y="40" width="120" height="52" rx="6" style="fill:var(--code-bg);stroke:var(--border);stroke-width:1.2"/>
+<rect x="491" y="41" width="118" height="22" rx="5" style="fill:var(--sidebar-bg)"/>
+<text x="502" y="57" style="fill:currentColor;font-weight:700">produtos</text>
+<text x="502" y="82" style="fill:currentColor">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<g style="stroke:var(--accent);stroke-width:1.8;fill:none">
+  <line x1="140" y1="66" x2="245" y2="66"/>
+  <line x1="168" y1="54" x2="168" y2="78"/>
+  <line x1="180" y1="54" x2="180" y2="78"/>
+  <line x1="217" y1="54" x2="245" y2="66"/>
+  <line x1="217" y1="66" x2="245" y2="66"/>
+  <line x1="217" y1="78" x2="245" y2="66"/>
+  <line x1="395" y1="66" x2="490" y2="66"/>
+  <line x1="462" y1="54" x2="462" y2="78"/>
+  <line x1="474" y1="54" x2="474" y2="78"/>
+  <line x1="423" y1="54" x2="395" y2="66"/>
+  <line x1="423" y1="66" x2="395" y2="66"/>
+  <line x1="423" y1="78" x2="395" y2="66"/>
+</g>
+</svg>
+</div>
+
+<p>A caixa do meio tem as duas chaves estrangeiras (<code>pedido_id</code> e <code>produto_id</code>) e, em geral, a chave primária é o <strong>par</strong> das duas (aula <a href="primary-key.html">PRIMARY KEY</a>): cada combinação pedido+produto aparece uma vez só. Sempre que você vir uma caixa pequena no meio, com duas FKs e pé de galinha dos dois lados, é um muitos-para-muitos.</p>
+
+<hr>
+
+<h2>4. O DER completo da Loja Aurora</h2>
+<p>Juntando tudo, este é o banco inteiro. Cada caixa é uma tabela; cada linha liga uma chave estrangeira (ponta com pé de galinha, do lado "muitos") à chave primária que ela referencia (ponta com os dois riscos, do lado "um"). Repare na seta de <code>funcionarios</code> para ela mesma: é o <a href="self-join.html">self-join</a> do <code>chefe_id</code>.</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 820 440" role="img" aria-labelledby="der-titulo" style="width:100%;min-width:680px;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="der-titulo">DER da Loja Aurora: produtos liga-se a categorias e fornecedores; itens_pedido (tabela de ligação) liga-se a produtos e pedidos; pedidos liga-se a clientes e funcionarios; funcionarios liga-se a ela mesma pelo chefe_id. O lado de muitos tem o pé de galinha.</title>
+<!-- pé de galinha reutilizável: um grupo por ponta desenhado nas linhas abaixo -->
+<g style="stroke:var(--accent);stroke-width:1.5;fill:none">
+<!-- produtos -> categorias (categorias é "um") -->
+<path d="M200,168 H184 V54"/>
+<g><line x1="178" y1="42" x2="178" y2="66"/><line x1="190" y1="42" x2="190" y2="66"/></g>
+<g><line x1="200" y1="156" x2="184" y2="168"/><line x1="200" y1="168" x2="184" y2="168"/><line x1="200" y1="180" x2="184" y2="168"/></g>
+<!-- produtos -> fornecedores -->
+<path d="M200,192 H160 V300 H176"/>
+<g><line x1="160" y1="288" x2="160" y2="312"/><line x1="172" y1="288" x2="172" y2="312"/></g>
+<g><line x1="200" y1="180" x2="216" y2="192"/><line x1="200" y1="192" x2="216" y2="192"/><line x1="200" y1="204" x2="216" y2="192"/></g>
+<!-- itens_pedido -> produtos (produtos é "um") -->
+<path d="M390,168 H375"/>
+<g><line x1="360" y1="156" x2="360" y2="180"/><line x1="372" y1="156" x2="372" y2="180"/></g>
+<g><line x1="390" y1="156" x2="375" y2="168"/><line x1="390" y1="168" x2="375" y2="168"/><line x1="390" y1="180" x2="375" y2="168"/></g>
+<!-- itens_pedido -> pedidos (pedidos é "um") -->
+<path d="M550,150 H565 V130 H578"/>
+<g><line x1="590" y1="118" x2="590" y2="142"/><line x1="602" y1="118" x2="602" y2="142"/></g>
+<g><line x1="550" y1="138" x2="565" y2="150"/><line x1="550" y1="150" x2="565" y2="150"/><line x1="550" y1="162" x2="565" y2="150"/></g>
+<!-- pedidos -> clientes (clientes é "um") -->
+<path d="M740,168 H758 V340 H742"/>
+<g><line x1="758" y1="328" x2="758" y2="352"/></g>
+<g><line x1="740" y1="156" x2="756" y2="168"/><line x1="740" y1="168" x2="756" y2="168"/><line x1="740" y1="180" x2="756" y2="168"/></g>
+<!-- pedidos -> funcionarios (funcionarios é "um") -->
+<path d="M580,192 H565 V340 H552"/>
+<g><line x1="540" y1="328" x2="540" y2="352"/><line x1="528" y1="328" x2="528" y2="352"/></g>
+<g><line x1="580" y1="180" x2="596" y2="192"/><line x1="580" y1="192" x2="596" y2="192"/><line x1="580" y1="204" x2="596" y2="192"/></g>
+<!-- funcionarios -> funcionarios (self) -->
+<path d="M390,372 H360 V400 H470 V372"/>
+<g><line x1="458" y1="372" x2="458" y2="388"/></g>
+<g><line x1="390" y1="360" x2="374" y2="372"/><line x1="390" y1="372" x2="374" y2="372"/><line x1="390" y1="384" x2="374" y2="372"/></g>
+</g>
+<!-- caixas -->
+<g style="stroke:var(--border);stroke-width:1.2">
+<rect x="20" y="24" width="160" height="60" rx="6" style="fill:var(--code-bg)"/>
+<rect x="20" y="270" width="160" height="80" rx="6" style="fill:var(--code-bg)"/>
+<rect x="200" y="110" width="190" height="124" rx="6" style="fill:var(--code-bg)"/>
+<rect x="390" y="100" width="160" height="104" rx="6" style="fill:var(--code-bg)"/>
+<rect x="580" y="100" width="160" height="104" rx="6" style="fill:var(--code-bg)"/>
+<rect x="390" y="330" width="160" height="80" rx="6" style="fill:var(--code-bg)"/>
+<rect x="580" y="330" width="160" height="80" rx="6" style="fill:var(--code-bg)"/>
+</g>
+<g style="fill:var(--sidebar-bg)">
+<rect x="21" y="25" width="158" height="22" rx="5"/>
+<rect x="21" y="271" width="158" height="22" rx="5"/>
+<rect x="201" y="111" width="188" height="22" rx="5"/>
+<rect x="391" y="101" width="158" height="22" rx="5"/>
+<rect x="581" y="101" width="158" height="22" rx="5"/>
+<rect x="391" y="331" width="158" height="22" rx="5"/>
+<rect x="581" y="331" width="158" height="22" rx="5"/>
+</g>
+<g style="fill:currentColor;font-weight:700">
+<text x="30" y="41">categorias</text>
+<text x="30" y="287">fornecedores</text>
+<text x="210" y="127">itens_pedido</text>
+<text x="400" y="117">produtos</text>
+<text x="590" y="117">pedidos</text>
+<text x="400" y="347">funcionarios</text>
+<text x="590" y="347">clientes</text>
+</g>
+<g style="fill:currentColor">
+<text x="30" y="63">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="30" y="79" style="fill:var(--muted)">nome</text>
+<text x="30" y="309">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="30" y="325" style="fill:var(--muted)">nome, cidade…</text>
+<text x="210" y="153">pedido_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="210" y="173">produto_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="210" y="193">quantidade</text>
+<text x="210" y="213" style="fill:var(--muted)">preco_unitario</text>
+<text x="400" y="143">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="400" y="163">categoria_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="400" y="183">fornecedor_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="400" y="200" style="fill:var(--muted)">nome, preco…</text>
+<text x="590" y="143">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="590" y="163">cliente_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="590" y="183">funcionario_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="590" y="200" style="fill:var(--muted)">data, frete…</text>
+<text x="400" y="373">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="400" y="393">chefe_id <tspan style="fill:var(--accent);font-weight:700">FK</tspan></text>
+<text x="590" y="373">id <tspan style="fill:var(--accent);font-weight:700">PK</tspan></text>
+<text x="590" y="393" style="fill:var(--muted)">nome, email…</text>
+</g>
+</svg>
+</div>
+
+<p>Esse único desenho resume o que você estudou em várias aulas: as sete tabelas, as sete chaves estrangeiras e a tabela de ligação <code>itens_pedido</code> no coração do banco. Guarde-o como mapa quando for montar as suas consultas com <a href="joins.html">JOIN</a>.</p>
+
+<div class="note">
+<strong>Chaves que podem ser nulas</strong>
+<p>No DER, a ponta "zero ou um" (com o círculo) marca uma ligação <strong>opcional</strong>. No Aurora, <code>funcionarios.chefe_id</code> é assim: a gerente não tem chefe, então o valor é <code>NULL</code>. Já <code>pedidos.cliente_id</code> é <code>NOT NULL</code>: todo pedido tem dono. A aula <a href="not-null.html">NOT NULL</a> cuida dessa diferença.</p>
+</div>
+
+<hr>
+
+<h2>5. Lendo o diagrama direto do banco</h2>
+<p>Você não precisa ter o desenho à mão: o próprio banco sabe as suas ligações, e dá para "ler o DER" com uma consulta. A função <code>pragma_foreign_key_list</code> lista as chaves estrangeiras de uma tabela; juntando-a com a lista de tabelas, saem <strong>todas as setas</strong> do diagrama:</p>
+
+<pre class="file" data-file="todas-as-setas.sql" data-resultado>SELECT m.name AS tabela, f."table" AS aponta_para
+FROM sqlite_schema AS m
+JOIN pragma_foreign_key_list(m.name) AS f
+WHERE m.type = 'table'
+ORDER BY m.name, f."table";
+</pre>
+
+<p>São as sete setas do desenho, em texto: de <code>itens_pedido</code> saem duas (para <code>pedidos</code> e <code>produtos</code>), de <code>pedidos</code> duas, de <code>produtos</code> duas, e a de <code>funcionarios</code> para ela mesma. É o DER contado pelo banco.</p>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No diagrama</th><th>Quer dizer</th></tr>
+<tr><td>Caixa</td><td>Uma entidade (tabela)</td></tr>
+<tr><td>Linha dentro da caixa</td><td>Um atributo (coluna)</td></tr>
+<tr><td><strong>PK</strong></td><td>Chave primária</td></tr>
+<tr><td><strong>FK</strong></td><td>Chave estrangeira</td></tr>
+<tr><td>Dois riscos na ponta</td><td>Um (e exatamente um)</td></tr>
+<tr><td>Pé de galinha na ponta</td><td>Muitos</td></tr>
+<tr><td>Círculo na ponta</td><td>Zero (opcional)</td></tr>
+<tr><td>Caixa no meio com duas FKs</td><td>Tabela de ligação (muitos-para-muitos)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. No DER, o que é uma "entidade"?</p>
+<label><input type="radio" name="q1"> Uma coluna</label>
+<label><input type="radio" name="q1"> Uma tabela, desenhada como uma caixa</label>
+<label><input type="radio" name="q1"> Uma chave estrangeira</label>
+<label><input type="radio" name="q1"> Uma consulta salva</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. O símbolo "pé de galinha" na ponta de uma linha quer dizer:</p>
+<label><input type="radio" name="q2"> Zero</label>
+<label><input type="radio" name="q2"> Um, e só um</label>
+<label><input type="radio" name="q2"> Muitos</label>
+<label><input type="radio" name="q2"> Opcional</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Você vê, no DER, uma caixa pequena no meio com duas FKs e pé de galinha dos dois lados. É sinal de:</p>
+<label><input type="radio" name="q3"> Um erro no diagrama</label>
+<label><input type="radio" name="q3"> Uma relação um-para-um</label>
+<label><input type="radio" name="q3"> Uma tabela sem chave primária</label>
+<label><input type="radio" name="q3"> Uma relação muitos-para-muitos, com a tabela de ligação no meio</label>
+</div>
+
+<div class="exercise">
+<h3>4. A ponta certa</h3>
+<p>Um cliente tem muitos pedidos. Do lado da tabela <code>pedidos</code>, qual símbolo vai na ponta da linha? Escreva <code>muitos</code> ou <code>um</code>:</p>
+<div class="ex-code">lado de pedidos: <input data-answer="muitos" aria-label="cardinalidade do lado pedidos"></div>
+</div>
+
+<h3>Experimente: leia as setas do diagrama</h3>
+<div class="trysql" data-goal="colunas:tabela,aponta_para;;linhas:7">
+<p class="try-task"><strong>Missão:</strong> liste <strong>todas as setas</strong> do DER do Aurora: uma linha por chave estrangeira, com a tabela de origem e a tabela para onde ela aponta. Use <code>pragma_foreign_key_list</code> juntado com <code>sqlite_schema</code>. Devem vir 7 linhas.</p>
+<pre class="script" data-file="consulta.sql">SELECT name FROM sqlite_schema WHERE type = 'table';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT m.name AS tabela, f."table" AS aponta_para
+FROM sqlite_schema AS m
+JOIN pragma_foreign_key_list(m.name) AS f
+WHERE m.type = 'table'
+ORDER BY m.name, f."table";
+</pre>
+</div>
+
+<h3>Missão final: desenhe (em tabelas) um muitos-para-muitos</h3>
+<div class="trysql" data-goal="contem:alunos;;contem:cursos;;linhas:2">
+<p class="try-task"><strong>Missão:</strong> um aluno faz vários cursos e um curso tem vários alunos. Crie as três tabelas desse DER — <code>alunos</code>, <code>cursos</code> e a tabela de ligação <code>matriculas</code> (com as duas chaves estrangeiras) — e, no fim, liste as tabelas para onde <code>matriculas</code> aponta (devem ser duas: <code>alunos</code> e <code>cursos</code>).</p>
+<pre class="script" data-file="consulta.sql">-- crie alunos, cursos e matriculas (com 2 FKs)
+-- depois: SELECT "table" FROM pragma_foreign_key_list('matriculas');
+
+SELECT 'monte as três tabelas acima';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT);
+CREATE TABLE cursos (id INTEGER PRIMARY KEY, titulo TEXT);
+CREATE TABLE matriculas (
+  aluno_id INTEGER REFERENCES alunos(id),
+  curso_id INTEGER REFERENCES cursos(id),
+  PRIMARY KEY (aluno_id, curso_id)
+);
+SELECT "table" AS aponta_para
+FROM pragma_foreign_key_list('matriculas')
+ORDER BY "table";
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>DER</strong> é a planta do banco: <strong>entidades</strong> (caixas = tabelas) e <strong>relacionamentos</strong> (linhas = ligações por chave estrangeira).</li>
+  <li>Dentro da caixa vão os <strong>atributos</strong>, com a <strong>PK</strong> e as <strong>FK</strong> marcadas.</li>
+  <li>A <strong>cardinalidade</strong> está nas pontas, na notação <strong>pé de galinha</strong>: dois riscos = um, pé de galinha = muitos, círculo = zero (opcional).</li>
+  <li>Um <strong>muitos-para-muitos</strong> aparece como uma caixa de ligação no meio, com duas FKs e pé de galinha dos dois lados — no Aurora, a <code>itens_pedido</code>.</li>
+  <li>Dá para "ler o DER" direto do banco com <code>pragma_foreign_key_list</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
