@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL INNER JOIN — só as linhas que combinam, com 2, 3 ou 4 tabelas | Guia SQL</title>
+<meta name="description" content="INNER JOIN para quem está começando: só os pares que combinam, JOIN com três e quatro tabelas, JOIN com GROUP BY para somar o que cada cliente gastou, filtro no ON ou no WHERE, os atalhos USING e NATURAL JOIN (e por que evitar o NATURAL) e os erros reais ambiguous column name e cannot join using column.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">INNER JOIN</span></h1>
+
+<p class="intro">Na aula <a href="joins.html">O que é um JOIN</a>, a Ana juntou cada pedido com o seu cliente. Aquele <code>JOIN</code> tem nome completo: <code>INNER JOIN</code>, a "junção interna", que guarda <strong>só os pares que combinam</strong>. É o tipo de JOIN mais usado no dia a dia. Nesta aula a Ana vai mais longe: junta três e quatro tabelas para saber quem comprou o quê e de quem, soma quanto cada cliente gastou e conhece dois atalhos, o <code>USING</code> e o <code>NATURAL JOIN</code>. Um deles é útil; o outro parece uma mão na roda e esconde uma armadilha.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>INNER JOIN</code> guarda e o que ele descarta.</li>
+  <li>Como juntar <strong>três ou mais tabelas</strong>, um <code>JOIN … ON</code> de cada vez.</li>
+  <li>Como usar <code>JOIN</code> com <code>GROUP BY</code> para somar e contar por nome, e não por número.</li>
+  <li>A diferença (ou a falta dela) entre pôr um filtro no <code>ON</code> ou no <code>WHERE</code>.</li>
+  <li>O atalho <code>USING</code> e o <code>NATURAL JOIN</code>, e por que este último é perigoso.</li>
+  <li>Os erros reais: <code>ambiguous column name</code> com três tabelas, <code>cannot join using column</code> e <code>a NATURAL join may not have an ON or USING clause</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: o encontro dos dois lados</h2>
+<p>Pense numa festa em que cada convidado chega com uma pulseira numerada, e cada mesa tem um número. Para o fotógrafo, "INNER JOIN" é fotografar cada pessoa <strong>na mesa do seu número</strong>. Quem não tem mesa não sai em foto nenhuma. Mesa vazia também não. Só entram na foto os encontros que aconteceram.</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 200 120" role="img" aria-label="INNER JOIN: só a parte comum aos dois círculos está pintada" style="width:200px;height:auto;display:block;margin:0 auto">
+<defs><clipPath id="venn-inner-ij"><circle cx="75" cy="60" r="48"/></clipPath></defs>
+<circle cx="125" cy="60" r="48" clip-path="url(#venn-inner-ij)" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+<text x="152" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">pedidos</text>
+</svg>
+</div>
+
+<p>Na Loja Aurora: um <code>INNER JOIN</code> entre clientes e pedidos mostra cada pedido com o seu cliente. Os 4 clientes que nunca compraram (27 a 30) ficam de fora, porque não têm par.</p>
+
+<hr>
+
+<h2>1. INNER JOIN com filtro</h2>
+<p>Os pedidos que ainda não foram entregues, com o nome do cliente para a Ana poder ligar para ele:</p>
+
+<pre class="file" data-file="nao-entregues.sql" data-resultado>SELECT p.id, p.data, c.nome
+FROM pedidos p
+INNER JOIN clientes c ON p.cliente_id = c.id
+WHERE p.entregue_em IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM pedidos p</dt><dd>A tabela da esquerda, com o apelido <code>p</code>.</dd>
+  <dt>INNER JOIN clientes c</dt><dd><em>Inner join</em> = "junção interna": junta <code>clientes</code> (apelido <code>c</code>) guardando só os pares que combinam. Escrever só <code>JOIN</code> dá no mesmo.</dd>
+  <dt>ON p.cliente_id = c.id</dt><dd>A regra do par: a chave estrangeira do pedido igual à chave primária do cliente.</dd>
+  <dt>WHERE p.entregue_em IS NULL</dt><dd>Depois de formar os pares, fica só quem ainda não tem data de entrega (aula <a href="is-null.html">IS NULL</a>).</dd>
+</dl>
+
+<p>Cinco pedidos pendentes, do 86 ao 90. A ordem das partes é a de sempre: <code>SELECT</code>, <code>FROM</code> com os seus <code>JOIN</code>s, <code>WHERE</code>, <code>GROUP BY</code>, <code>HAVING</code>, <code>ORDER BY</code>, <code>LIMIT</code>. Os JOINs fazem parte do <code>FROM</code>: eles dizem <strong>de onde</strong> vêm as linhas.</p>
+
+<hr>
+
+<h2>2. Três tabelas: quem comprou e quem vendeu</h2>
+<p>O pedido tem duas chaves estrangeiras: <code>cliente_id</code> e <code>funcionario_id</code>. Para mostrar o nome do cliente <strong>e</strong> o nome do vendedor, a Ana encadeia um segundo <code>JOIN</code>:</p>
+
+<pre class="file" data-file="tres-tabelas.sql" data-resultado>SELECT p.id, c.nome AS cliente, f.nome AS vendedor
+FROM pedidos p
+JOIN clientes c     ON p.cliente_id = c.id
+JOIN funcionarios f ON p.funcionario_id = f.id
+WHERE p.entregue_em IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM pedidos p</dt><dd>O ponto de partida: os pedidos.</dd>
+  <dt>JOIN clientes c ON p.cliente_id = c.id</dt><dd>Primeira junção: cada pedido ganha as colunas do seu cliente.</dd>
+  <dt>JOIN funcionarios f ON p.funcionario_id = f.id</dt><dd>Segunda junção: o resultado da primeira ganha as colunas do funcionário. Cada <code>JOIN</code> leva o <strong>seu próprio</strong> <code>ON</code>.</dd>
+  <dt>c.nome AS cliente, f.nome AS vendedor</dt><dd>As duas tabelas têm uma coluna <code>nome</code>. Os apelidos de coluna deixam claro qual é qual no resultado.</dd>
+</dl>
+
+<p>O SQLite processa os JOINs <strong>da esquerda para a direita</strong>: primeiro junta <code>pedidos</code> com <code>clientes</code>, depois junta esse resultado com <code>funcionarios</code>. Com <code>INNER JOIN</code>, a ordem em que você escreve as tabelas não muda quais linhas saem (a ordem <strong>delas</strong> no resultado, só o <code>ORDER BY</code> garante); escolha a que for mais fácil de ler. Um bom costume é começar pela tabela "do meio", a que tem as chaves estrangeiras (aqui, <code>pedidos</code>), e ir pendurando as outras nela.</p>
+
+<div class="trysql" data-goal="colunas:pedido,cliente,vendedor;;linhas:90;;contem:Caio Teles">
+<p class="try-task"><strong>Experimente:</strong> esta consulta lista todos os pedidos com o cliente. Acrescente um segundo <code>JOIN</code> com <code>funcionarios</code> para mostrar também o nome de quem vendeu, numa coluna chamada <code>vendedor</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT p.id AS pedido, c.nome AS cliente
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT p.id AS pedido, c.nome AS cliente, f.nome AS vendedor
+FROM pedidos p
+JOIN clientes c     ON p.cliente_id = c.id
+JOIN funcionarios f ON p.funcionario_id = f.id;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Quatro tabelas: o que cada um comprou</h2>
+<p>Os produtos de um pedido ficam em <code>itens_pedido</code>, a tabela do meio da relação muitos-para-muitos (aula <a href="relacionamentos.html">Tabelas que se Relacionam</a>). Para ler o pedido 1 "em português", com o nome do cliente e o nome de cada produto, são quatro tabelas:</p>
+
+<pre class="file" data-file="quatro-tabelas.sql" data-resultado>SELECT p.id AS pedido, c.nome AS cliente,
+       pr.nome AS produto, i.quantidade
+FROM itens_pedido i
+JOIN pedidos p   ON i.pedido_id = p.id
+JOIN clientes c  ON p.cliente_id = c.id
+JOIN produtos pr ON i.produto_id = pr.id
+WHERE p.id = 1;
+</pre>
+
+<p>Siga o caminho no mapa do banco: o item aponta para o pedido, o pedido aponta para o cliente, e o item também aponta para o produto. Cada seta do mapa vira um <code>JOIN … ON</code>. Repare no apelido <code>pr</code> para <code>produtos</code>: o <code>p</code> já estava em uso por <code>pedidos</code>, e dois apelidos iguais na mesma consulta não podem.</p>
+
+<div class="tip">
+<strong>Quantas linhas esperar?</strong>
+<p>Num JOIN que segue as setas a partir da tabela "mais detalhada", sai <strong>uma linha por linha dessa tabela</strong>. Começando por <code>itens_pedido</code> (220 itens), cada item tem exatamente um pedido, um cliente e um produto, então saem 220 linhas sem o <code>WHERE</code>. Se sair muito mais que isso, algum <code>ON</code> está faltando ou errado.</p>
+</div>
+
+<hr>
+
+<h2>4. JOIN com GROUP BY: somando por nome</h2>
+<p>Na aula <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>, os resultados vinham com números (<code>categoria_id</code> 1, 2…). Com um JOIN, o agrupamento pode mostrar nomes. Quanto cada cliente já gastou em produtos (sem contar o frete)? Os 5 maiores:</p>
+
+<pre class="file" data-file="gasto-por-cliente.sql" data-resultado>SELECT c.nome AS cliente,
+       SUM(i.quantidade * i.preco_unitario) AS gasto
+FROM clientes c
+JOIN pedidos p      ON p.cliente_id = c.id
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY c.id, c.nome
+ORDER BY gasto DESC
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM clientes c JOIN pedidos p … JOIN itens_pedido i …</dt><dd>Cada linha do JOIN é um <strong>item</strong> comprado, com o cliente que o comprou ao lado.</dd>
+  <dt>SUM(i.quantidade * i.preco_unitario)</dt><dd>Em cada item, quantidade vezes preço; a soma de todos os itens do grupo (aula <a href="sum.html">SUM()</a>).</dd>
+  <dt>GROUP BY c.id, c.nome</dt><dd>Um grupo por cliente. O <code>c.id</code> garante que dois clientes com o mesmo nome não se misturem; o <code>c.nome</code> está lá porque aparece no <code>SELECT</code> (a regra da coluna esquecida, da aula anterior).</dd>
+</dl>
+
+<p>A Conceição Prado lidera, com 1.345,73 em produtos. E o faturamento <strong>por categoria</strong>? Três tabelas de novo, outro caminho no mapa:</p>
+
+<pre class="file" data-file="unidades-por-categoria.sql" data-resultado>SELECT c.nome AS categoria, SUM(i.quantidade) AS unidades
+FROM itens_pedido i
+JOIN produtos p   ON i.produto_id = p.id
+JOIN categorias c ON p.categoria_id = c.id
+GROUP BY c.id, c.nome
+ORDER BY unidades DESC;
+</pre>
+
+<p>Os eletrônicos venderam 72 unidades; a jardinagem, só 13. (Repare que aqui o apelido <code>p</code> é de <code>produtos</code>: apelidos valem só dentro de cada consulta, e cada consulta escolhe os seus.)</p>
+
+<hr>
+
+<h2>5. O filtro no ON ou no WHERE?</h2>
+<p>Num <code>INNER JOIN</code>, uma condição extra pode ir no <code>ON</code> ou no <code>WHERE</code>, e o resultado é o mesmo. Os pedidos de clientes de Pernambuco, das duas formas:</p>
+
+<pre class="file" data-file="filtro-no-on.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id AND c.estado = 'PE';
+</pre>
+
+<pre class="file" data-file="filtro-no-where.sql" data-resultado>SELECT p.id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id
+WHERE c.estado = 'PE';
+</pre>
+
+<p>Os mesmos 7 pedidos, da Juliana e do Bruno. Mesmo assim, o costume é: <strong>no <code>ON</code>, só a ligação entre as tabelas; no <code>WHERE</code>, os filtros</strong>. A consulta fica mais fácil de ler, e você evita uma surpresa: no <a href="left-join.html">LEFT JOIN</a>, mudar um filtro do <code>WHERE</code> para o <code>ON</code> <strong>muda o resultado</strong>. A aula dele mostra por quê.</p>
+
+<hr>
+
+<h2>6. O atalho USING</h2>
+<p>Quando a coluna da ligação tem <strong>o mesmo nome</strong> nas duas tabelas, dá para trocar o <code>ON a.x = b.x</code> por <code>USING (x)</code> ("usando x"). Na Loja Aurora, as chaves estrangeiras têm nomes diferentes das primárias (<code>cliente_id</code> × <code>id</code>), então o <code>USING</code> não serve para elas. Mas clientes e fornecedores têm, os dois, a coluna <code>cidade</code>. Quais fornecedores ficam na mesma cidade de cada cliente VIP?</p>
+
+<pre class="file" data-file="using.sql" data-resultado>SELECT c.nome AS cliente, cidade, f.nome AS fornecedor
+FROM clientes c
+JOIN fornecedores f USING (cidade)
+WHERE c.vip = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>JOIN fornecedores f USING (cidade)</dt><dd>O mesmo que <code>ON c.cidade = f.cidade</code>. Os parênteses são obrigatórios, e dentro deles pode ir mais de uma coluna, separadas por vírgula.</dd>
+  <dt>cidade (sem apelido)</dt><dd>Com <code>USING</code>, a coluna da ligação vira uma só, e pode ser citada sem a tabela na frente: não há ambiguidade, porque os dois lados têm o mesmo valor.</dd>
+</dl>
+
+<p>O José Ribamar aparece duas vezes porque Teresina tem dois fornecedores. Com <code>SELECT *</code>, o <code>USING</code> também mostra a coluna <code>cidade</code> uma vez só, em vez de duas:</p>
+
+<pre class="file" data-file="using-asterisco.sql" data-resultado>SELECT *
+FROM clientes c
+JOIN fornecedores f USING (cidade)
+WHERE c.id = 1;
+</pre>
+
+<p>Conte as colunas: são 12, e só há uma <code>cidade</code>. (Já <code>id</code>, <code>nome</code> e <code>estado</code> aparecem duas vezes, porque não estão no <code>USING</code>.)</p>
+
+<div class="tip">
+<strong>Por que alguns bancos chamam a chave primária de <code>cliente_id</code></strong>
+<p>Há quem dê à chave primária o mesmo nome da chave estrangeira: <code>clientes.cliente_id</code> e <code>pedidos.cliente_id</code>. Aí todo JOIN pode ser escrito com <code>USING (cliente_id)</code>. A Loja Aurora segue o outro costume, também muito comum: <code>id</code> em toda tabela e <code>tabela_id</code> na chave estrangeira. Os dois funcionam; o importante é escolher um e manter.</p>
+</div>
+
+<hr>
+
+<h2>7. NATURAL JOIN: o atalho que dá errado</h2>
+<p>O <code>NATURAL JOIN</code> ("junção natural") vai além do <code>USING</code>: ele mesmo procura as colunas que têm o mesmo nome nas duas tabelas e liga por <strong>todas</strong> elas, sem você escrever condição nenhuma. Parece cômodo. Veja o que acontece com pedidos e clientes:</p>
+
+<pre class="file" data-file="natural.sql" data-resultado>SELECT *
+FROM pedidos
+NATURAL JOIN clientes
+WHERE id IN (27, 28);
+</pre>
+
+<p>O único nome em comum entre <code>pedidos</code> e <code>clientes</code> é <code>id</code>. Então o <code>NATURAL JOIN</code> ligou <code>pedidos.id = clientes.id</code>: o pedido 27 com o cliente 27, o Paulo Sérgio Andrade, que <strong>nunca fez pedido</strong>! É o mesmo erro do "ON nas colunas erradas" da aula <a href="joins.html">O que é um JOIN</a>, só que agora sem você ter escrito o <code>ON</code> errado. A coluna <code>cliente_id</code> do resultado mostra a verdade: o pedido 27 é do cliente 1. E com outras tabelas é pior:</p>
+
+<pre class="file" data-file="natural-zero.sql" data-resultado>SELECT COUNT(*) FROM produtos NATURAL JOIN categorias;
+SELECT COUNT(*) FROM clientes NATURAL JOIN fornecedores;
+</pre>
+
+<p>Zero e zero. <code>produtos</code> e <code>categorias</code> têm em comum <code>id</code> <strong>e</strong> <code>nome</code>; o <code>NATURAL JOIN</code> exigiu que um produto tivesse o mesmo número <strong>e</strong> o mesmo nome de uma categoria, e nenhum tem. Clientes e fornecedores têm em comum <code>id</code>, <code>nome</code>, <code>cidade</code> e <code>estado</code>.</p>
+
+<p>O maior perigo é o futuro: uma consulta com <code>NATURAL JOIN</code> que funciona hoje pode passar a dar outro resultado amanhã, se alguém acrescentar a uma das tabelas uma coluna com nome igual a uma da outra (uma <code>data</code>, um <code>status</code>, uma <code>observacao</code>). Ninguém mexeu na consulta, e ela mudou. A documentação do PostgreSQL faz o mesmo alerta: o <code>USING</code> é razoavelmente seguro, porque só junta as colunas que você listou; o <code>NATURAL</code> é bem mais arriscado, porque qualquer coluna nova com nome repetido entra na ligação. <strong>Saiba reconhecer o <code>NATURAL JOIN</code>, mas não use.</strong></p>
+
+<hr>
+
+<h2>Formas diferentes de escrever a ligação</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td><code>ON</code></td><td><code>JOIN clientes c ON p.cliente_id = c.id</code></td><td><strong>Sempre que puder.</strong> Funciona com quaisquer nomes de coluna, e a ligação fica escrita, à vista.</td></tr>
+<tr><td><code>USING</code></td><td><code>JOIN fornecedores f USING (cidade)</code></td><td>Quando as colunas têm o mesmo nome nos dois lados. Não existe no SQL Server.</td></tr>
+<tr><td><code>NATURAL JOIN</code></td><td><code>pedidos NATURAL JOIN clientes</code></td><td><strong>Evite.</strong> Liga por todos os nomes repetidos, inclusive os que não têm nada a ver (como <code>id</code>).</td></tr>
+<tr><td>Vírgula + <code>WHERE</code></td><td><code>FROM pedidos p, clientes c WHERE p.cliente_id = c.id</code></td><td>Saiba ler (código antigo), mas escreva com <code>JOIN … ON</code>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>ambiguous column name: nome</code> com três tabelas</strong>
+<pre class="file" data-file="ambigua-nome.sql" data-resultado data-erro>SELECT p.id, nome
+FROM pedidos p
+JOIN clientes c     ON p.cliente_id = c.id
+JOIN funcionarios f ON p.funcionario_id = f.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>ambiguous column name: nome</code>. Com só <code>pedidos</code> e <code>clientes</code>, um <code>nome</code> sem apelido funcionaria, porque só <code>clientes</code> tem essa coluna. Ao entrar <code>funcionarios</code>, que também tem <code>nome</code>, a mesma consulta passou a dar erro. Quanto mais tabelas, mais nomes se repetem.</p>
+<p><strong>Como consertar:</strong> apelido na frente de toda coluna: <code>c.nome</code> ou <code>f.nome</code>. Se precisar dos dois, dê nomes diferentes: <code>c.nome AS cliente, f.nome AS vendedor</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>USING</code> com uma coluna que só existe de um lado</strong>
+<pre class="file" data-file="using-errado.sql" data-resultado data-erro>SELECT *
+FROM pedidos
+JOIN clientes USING (cliente_id);
+</pre>
+<p><strong>A mensagem:</strong> <code>cannot join using column cliente_id - column not present in both tables</code>, "não dá para juntar usando a coluna cliente_id: a coluna não está presente nas duas tabelas". <code>pedidos</code> tem <code>cliente_id</code>, mas em <code>clientes</code> a coluna se chama <code>id</code>.</p>
+<p><strong>Como consertar:</strong> quando os nomes são diferentes, use <code>ON</code>: <code>JOIN clientes ON pedidos.cliente_id = clientes.id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>USING</code> sem parênteses</strong>
+<pre class="file" data-file="using-sem-parenteses.sql" data-resultado data-erro>SELECT *
+FROM clientes
+JOIN fornecedores USING cidade;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "cidade": syntax error</code>. Os parênteses do <code>USING</code> são obrigatórios, mesmo com uma coluna só.</p>
+<p><strong>Como consertar:</strong> <code>USING (cidade)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>NATURAL JOIN</code> com <code>ON</code></strong>
+<pre class="file" data-file="natural-on.sql" data-resultado data-erro>SELECT *
+FROM pedidos
+NATURAL JOIN clientes ON pedidos.cliente_id = clientes.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>a NATURAL join may not have an ON or USING clause</code>, "um NATURAL join não pode ter ON nem USING". O <code>NATURAL</code> já escolhe a condição sozinho, então não aceita outra.</p>
+<p><strong>Como consertar:</strong> tire o <code>NATURAL</code> e fique com o <code>JOIN … ON</code>, que é o que você queria.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>ON</code> de um dos JOINs</strong>
+<pre class="file" data-file="faltou-um-on.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id
+JOIN funcionarios f;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro e 720 linhas. Os 90 pares pedido-cliente foram combinados com <strong>cada um</strong> dos 8 funcionários (90 × 8 = 720), como num <code>CROSS JOIN</code>. Cada pedido aparece 8 vezes, uma com cada funcionário, inclusive com quem não o vendeu.</p>
+<p><strong>Como consertar:</strong> todo <code>JOIN</code> precisa do seu <code>ON</code>: <code>JOIN funcionarios f ON p.funcionario_id = f.id</code>. Conte as tabelas e conte os <code>ON</code>: com 3 tabelas, são 2 ligações.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><code>INNER JOIN … ON</code> é igual em todos os bancos.</li>
+  <li><code>USING</code> e <code>NATURAL JOIN</code> existem no MySQL e no PostgreSQL. O <strong>SQL Server não tem nenhum dos dois</strong>: a gramática do <code>JOIN</code> dele só aceita <code>ON</code>. Mais um motivo para preferir o <code>ON</code>, que funciona em todo lugar.</li>
+  <li>Com <code>SELECT *</code> e <code>USING</code>, o PostgreSQL e o MySQL também mostram a coluna da ligação uma vez só, mas a põem em <strong>primeiro lugar</strong>, antes de todas as outras. O SQLite, como você viu, a deixa na posição que ela tem na primeira tabela.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>a INNER JOIN b ON a.x = b.y</code></td><td>Só os pares de linhas que obedecem à condição</td></tr>
+<tr><td><code>a JOIN b ON …</code></td><td>O mesmo que <code>INNER JOIN</code></td></tr>
+<tr><td><code>a JOIN b ON … JOIN c ON …</code></td><td>Três tabelas: cada <code>JOIN</code> com o seu <code>ON</code>, processados da esquerda para a direita</td></tr>
+<tr><td><code>a JOIN b USING (x)</code></td><td>O mesmo que <code>ON a.x = b.x</code>; a coluna <code>x</code> aparece uma vez só</td></tr>
+<tr><td><code>a NATURAL JOIN b</code></td><td>Liga por todas as colunas de mesmo nome (evite)</td></tr>
+<tr><td><code>JOIN … GROUP BY c.id, c.nome</code></td><td>Agrupa e mostra nomes vindos da outra tabela</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>ambiguous column name: nome</code></td><td>Mais de uma tabela do JOIN tem essa coluna</td></tr>
+<tr><td><code>cannot join using column X - column not present in both tables</code></td><td>O <code>USING</code> pede uma coluna com o mesmo nome dos dois lados</td></tr>
+<tr><td><code>near "cidade": syntax error</code> (no <code>USING</code>)</td><td>Faltaram os parênteses: <code>USING (cidade)</code></td></tr>
+<tr><td><code>a NATURAL join may not have an ON or USING clause</code></td><td><code>NATURAL</code> não aceita condição</td></tr>
+<tr><td>(nenhuma, mas linhas multiplicadas)</td><td>Um dos JOINs ficou sem <code>ON</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A segunda ligação</h3>
+<p>Complete a consulta que mostra o cliente e o vendedor de cada pedido:</p>
+<div class="ex-code">SELECT c.nome, f.nome FROM pedidos p JOIN clientes c ON p.cliente_id = c.id JOIN funcionarios f ON p.<input data-answer="funcionario_id" aria-label="coluna"> = f.<input data-answer="id" aria-label="coluna">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O atalho</h3>
+<p>Reescreva <code>ON c.cidade = f.cidade</code> com o atalho:</p>
+<div class="ex-code">JOIN fornecedores f <input data-answer="USING (cidade)|USING(cidade)|using (cidade)|using(cidade)" aria-label="atalho"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Uma consulta junta 4 tabelas com <code>INNER JOIN</code>. Quantos <code>ON</code> ela precisa ter?</p>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> 2</label>
+<label><input type="radio" name="q3"> 3</label>
+<label><input type="radio" name="q3"> 4</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Por que <code>SELECT * FROM pedidos NATURAL JOIN clientes</code> dá um resultado errado na Loja Aurora?</p>
+<label><input type="radio" name="q4"> Porque a única coluna de mesmo nome é <code>id</code>, e ele liga o pedido 27 ao cliente 27, que não tem nada a ver</label>
+<label><input type="radio" name="q4"> Porque o <code>NATURAL JOIN</code> não existe no SQLite</label>
+<label><input type="radio" name="q4"> Porque ele liga por <code>cliente_id</code>, que é NULL</label>
+<label><input type="radio" name="q4"> Porque faltou o <code>ON</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. Num <code>INNER JOIN</code>, mover <code>c.estado = 'PE'</code> do <code>WHERE</code> para o <code>ON</code>…</p>
+<label><input type="radio" name="q5"> dá erro de sintaxe</label>
+<label><input type="radio" name="q5"> dá o mesmo resultado</label>
+<label><input type="radio" name="q5"> traz também os clientes de outros estados</label>
+<label><input type="radio" name="q5"> traz os clientes sem pedido</label>
+</div>
+
+<h3>Missão final: os pedidos de cada vendedor</h3>
+
+<div class="trysql" data-goal="colunas:vendedor,pedidos;;linhas:6;;contem:Caio Teles|15">
+<p class="try-task"><strong>Missão:</strong> a gerente quer ver quantos pedidos cada vendedor atendeu, com o <strong>nome</strong> do vendedor (coluna <code>vendedor</code>) e a contagem (coluna <code>pedidos</code>). A consulta atual só tem o número do funcionário. Junte com <code>funcionarios</code> e agrupe pelo vendedor.</p>
+<pre class="script" data-file="consulta.sql">SELECT funcionario_id, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY funcionario_id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome AS vendedor, COUNT(*) AS pedidos
+FROM pedidos p
+JOIN funcionarios f ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+</pre>
+</div>
+
+<p>Saíram 6 vendedores, com 15 pedidos cada. A loja tem 8 funcionários: a gerente Marta e o estoquista Davi não atendem pedidos, e por isso o <code>INNER JOIN</code> os deixou de fora. Para que eles aparecessem com 0, seria preciso um <a href="left-join.html">LEFT JOIN</a>, o assunto da próxima aula.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>INNER JOIN</code> (ou só <code>JOIN</code>) guarda <strong>só os pares que combinam</strong>; quem não tem par fica de fora.</li>
+  <li>Para três ou mais tabelas, encadeie <code>JOIN … ON</code>, um por ligação. Com N tabelas, são N − 1 condições <code>ON</code>.</li>
+  <li><code>JOIN</code> com <code>GROUP BY</code> permite somar e contar mostrando nomes. Agrupe pelo <code>id</code> e pelo nome.</li>
+  <li>No <code>INNER JOIN</code>, um filtro no <code>ON</code> ou no <code>WHERE</code> dá o mesmo resultado; por costume, a ligação vai no <code>ON</code> e os filtros no <code>WHERE</code>.</li>
+  <li><code>USING (x)</code> é um atalho para <code>ON a.x = b.x</code> quando os nomes são iguais. <code>NATURAL JOIN</code> liga por todos os nomes repetidos: evite.</li>
+  <li>Num JOIN, ponha a tabela ou o apelido na frente de toda coluna, para não cair no <code>ambiguous column name</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
