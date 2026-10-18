@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Muitos-para-Muitos — a tabela de ligação | Guia SQL</title>
+<meta name="description" content="Relação muitos-para-muitos para quem está começando: por que uma coluna a mais ou uma lista em texto não resolvem, a tabela de ligação com duas chaves estrangeiras e chave primária composta, itens_pedido da Loja Aurora como exemplo real, um banco de alunos e cursos montado do zero, consultas nos dois sentidos com JOIN, contagem com LEFT JOIN e os erros reais de UNIQUE e FOREIGN KEY.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Relação <span class="hl">Muitos-para-Muitos</span></h1>
+
+<p class="intro">Um pedido da Loja Aurora pode ter vários produtos. E um produto, a Caneta Esferográfica Azul por exemplo, aparece em vários pedidos. Os dois lados são "muitos". Esse tipo de relação se chama <strong>muitos-para-muitos</strong> (escrito também <strong>N:N</strong>) e não cabe numa chave estrangeira comum: precisa de uma <strong>terceira tabela</strong> no meio, a <strong>tabela de ligação</strong>. Na aula <a href="relacionamentos.html">Tabelas que se Relacionam</a> você viu essa ideia de passagem. Aqui você vai a fundo: por que as soluções "óbvias" falham, como montar a tabela de ligação do zero e como consultar nos dois sentidos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Reconhecer uma relação muitos-para-muitos.</li>
+  <li>Por que uma coluna a mais, ou uma lista em texto, não resolve.</li>
+  <li>A <strong>tabela de ligação</strong>: duas chaves estrangeiras e uma chave primária composta.</li>
+  <li>O exemplo real do Aurora: <code>itens_pedido</code>, entre <code>pedidos</code> e <code>produtos</code>.</li>
+  <li>Montar do zero um banco de <strong>alunos × cursos</strong>.</li>
+  <li>Consultar nos dois sentidos com <code>JOIN</code> e os erros reais de <code>UNIQUE</code> e <code>FOREIGN KEY</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a lista de chamada da escola</h2>
+<p>Pense numa escola de cursos livres. Cada aluno faz vários cursos, e cada curso tem vários alunos. Onde a secretária anota quem faz o quê? Não na ficha do aluno (não cabem todos os cursos) nem na ficha do curso (não cabem todos os alunos). Ela usa um terceiro papel, a <strong>lista de matrículas</strong>, com uma linha para cada par:</p>
+
+<pre class="file" data-file="lista de matrículas">Ana    — SQL Básico
+Ana    — Python
+Bruno  — SQL Básico
+Carla  — SQL Básico
+Carla  — Python
+Carla  — Excel</pre>
+
+<p>Cada linha diz uma coisa só: "este aluno está neste curso". Para saber os cursos da Carla, ela corre a lista procurando "Carla"; para saber quem faz SQL Básico, procura "SQL Básico". Essa lista é a <strong>tabela de ligação</strong>, e é assim que um banco guarda uma relação muitos-para-muitos.</p>
+
+<hr>
+
+<h2>1. Reconhecendo um muitos-para-muitos</h2>
+<p>Faça a pergunta nos dois sentidos. Se as duas respostas forem "vários", é muitos-para-muitos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Par de tabelas</th><th>Um A tem vários B?</th><th>Um B tem vários A?</th><th>Relação</th></tr>
+<tr><td>clientes × pedidos</td><td>Sim (um cliente, vários pedidos)</td><td>Não (cada pedido é de um cliente)</td><td>um-para-muitos</td></tr>
+<tr><td>pedidos × produtos</td><td>Sim</td><td>Sim</td><td><strong>muitos-para-muitos</strong></td></tr>
+<tr><td>alunos × cursos</td><td>Sim</td><td>Sim</td><td><strong>muitos-para-muitos</strong></td></tr>
+<tr><td>livros × autores</td><td>Sim (livro com dois autores)</td><td>Sim (autor com vários livros)</td><td><strong>muitos-para-muitos</strong></td></tr>
+</table>
+</div>
+
+<p>No um-para-muitos, a chave estrangeira fica do lado "muitos" (<code>pedidos.cliente_id</code>, aula <a href="foreign-key.html">FOREIGN KEY</a>). No muitos-para-muitos não há um lado "um" para receber a chave — daí a terceira tabela.</p>
+
+<hr>
+
+<h2>2. As soluções "óbvias" e por que falham</h2>
+
+<h3>Uma coluna para cada item</h3>
+<p>A primeira ideia costuma ser pôr colunas <code>curso1</code>, <code>curso2</code>, <code>curso3</code> na tabela de alunos. E quando um aluno fizer quatro cursos? Você teria de mudar a tabela. Para achar quem faz Python, olharia as três colunas, uma a uma. E, para a maioria, sobrariam colunas vazias. Não acompanha o crescimento.</p>
+
+<h3>Uma lista em texto</h3>
+<p>A segunda ideia é guardar os cursos numa coluna de texto, separados por vírgula. Parece prático, até a primeira busca:</p>
+
+<pre class="file" data-file="lista-em-texto.sql" data-resultado>CREATE TABLE alunos2 (id INTEGER PRIMARY KEY, nome TEXT, cursos TEXT);
+INSERT INTO alunos2 VALUES
+  (1, 'Ana',   'SQL Básico, Python'),
+  (2, 'Bruno', 'SQL Básico'),
+  (3, 'Carla', 'Python, Excel, SQL Básico');
+
+SELECT nome FROM alunos2 WHERE cursos = 'Python';
+</pre>
+
+<p>A busca não achou <strong>ninguém</strong>, embora Ana e Carla façam Python: o texto inteiro da célula nunca é só <code>'Python'</code>. Daria para tentar um <code>LIKE '%Python%'</code>, mas aí outro problema aparece: <code>LIKE '%SQL%'</code> pegaria tanto "SQL Básico" quanto um eventual "SQL Avançado". Além disso, nada liga o nome do curso a uma tabela de cursos com <a href="foreign-key.html">FOREIGN KEY</a>, nada impede um "Pyton" escrito errado, e contar alunos por curso vira um quebra-cabeça. Guardar vários valores numa célula é uma armadilha; o certo é uma linha por par.</p>
+
+<hr>
+
+<h2>3. A tabela de ligação (o jeito certo)</h2>
+<p>A solução é uma <strong>terceira tabela</strong>, com uma linha para cada par e <strong>duas chaves estrangeiras</strong>, uma para cada lado. Na Loja Aurora, essa tabela já existe: é a <code>itens_pedido</code>, entre <code>pedidos</code> e <code>produtos</code>. Veja os itens do pedido 1:</p>
+
+<pre class="file" data-file="itens-do-pedido-1.sql" data-resultado>SELECT * FROM itens_pedido WHERE pedido_id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>pedido_id</dt><dd>Chave estrangeira para <code>pedidos.id</code>: a que pedido o item pertence.</dd>
+  <dt>produto_id</dt><dd>Chave estrangeira para <code>produtos.id</code>: qual produto foi comprado.</dd>
+  <dt>quantidade, preco_unitario</dt><dd>Dados que não são nem só do pedido nem só do produto, mas <strong>do par</strong>: quantas unidades daquele produto entraram naquele pedido, e por quanto cada uma. É o lugar natural para eles.</dd>
+</dl>
+
+<p>Repare: o par <code>(pedido_id, produto_id)</code> é a <strong>chave primária composta</strong> da tabela — duas colunas formando a chave (aula <a href="primary-key.html">PRIMARY KEY</a>). Assim, o mesmo produto não entra duas vezes no mesmo pedido por engano; se for preciso mais, aumenta-se a <code>quantidade</code>.</p>
+
+<div class="trysql" data-goal="colunas:nome,quantidade;;linhas:3">
+<p class="try-task"><strong>Experimente:</strong> a tabela de ligação guarda só números (<code>produto_id</code>). Junte-a com <code>produtos</code> para ver o <strong>nome</strong> de cada produto do pedido 1, ao lado da <code>quantidade</code>. Devem vir 3 linhas, com as colunas <code>nome</code> e <code>quantidade</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM itens_pedido WHERE pedido_id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT p.nome, i.quantidade
+FROM itens_pedido i
+JOIN produtos p ON p.id = i.produto_id
+WHERE i.pedido_id = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Consultando nos dois sentidos</h2>
+<p>A graça da tabela de ligação é poder ir e voltar. De um pedido para os seus produtos, você acabou de ver. Agora o caminho inverso: em quais pedidos a <strong>Caneta Esferográfica Azul</strong> (produto 2) foi vendida, e para quem:</p>
+
+<pre class="file" data-file="pedidos-da-caneta.sql" data-resultado>SELECT pe.id AS pedido, c.nome AS cliente, i.quantidade
+FROM itens_pedido i
+JOIN pedidos pe ON pe.id = i.pedido_id
+JOIN clientes c ON c.id = pe.cliente_id
+WHERE i.produto_id = 2
+ORDER BY pe.id;
+</pre>
+
+<p>A caneta saiu em 6 pedidos. Repare que esta consulta passou por <strong>três</strong> tabelas (<code>itens_pedido</code> → <code>pedidos</code> → <code>clientes</code>): a tabela de ligação é a ponte que permite isso. Um muitos-para-muitos é, no fundo, <strong>duas</strong> relações um-para-muitos encostadas — um pedido tem muitos itens, e um produto aparece em muitos itens.</p>
+
+<h3>Contando os dois lados</h3>
+<p>Com a tabela de ligação, perguntas como "quantas vezes cada produto foi vendido" saem com um <a href="group-by.html">GROUP BY</a>. E, para não esquecer os produtos que <strong>nunca</strong> venderam, um <a href="left-join.html">LEFT JOIN</a>:</p>
+
+<pre class="file" data-file="vezes-por-produto.sql" data-resultado>SELECT p.nome, COUNT(i.pedido_id) AS vezes
+FROM produtos p
+LEFT JOIN itens_pedido i ON i.produto_id = p.id
+GROUP BY p.id
+ORDER BY vezes
+LIMIT 5;
+</pre>
+
+<p>Os três primeiros, com <code>vezes</code> igual a 0, são os produtos 43, 44 e 45 (Vaso de Cerâmica Médio, Tesoura de Poda e Luvas de Jardinagem): estão no catálogo, mas nenhuma linha da tabela de ligação aponta para eles. Sem o <code>LEFT JOIN</code>, eles sumiriam da conta.</p>
+
+<hr>
+
+<h2>5. Montando um do zero: alunos × cursos</h2>
+<p>Agora o exemplo da escola, criado do começo. São três <code>CREATE TABLE</code>: as duas pontas e a ligação. Os dados são inventados (não são do Aurora), só para esta demonstração:</p>
+
+<pre class="file" data-file="escola.sql" data-resultado>CREATE TABLE alunos (
+  id   INTEGER PRIMARY KEY,
+  nome TEXT NOT NULL
+);
+
+CREATE TABLE cursos (
+  id     INTEGER PRIMARY KEY,
+  titulo TEXT NOT NULL
+);
+
+CREATE TABLE matriculas (
+  aluno_id INTEGER NOT NULL REFERENCES alunos(id),
+  curso_id INTEGER NOT NULL REFERENCES cursos(id),
+  PRIMARY KEY (aluno_id, curso_id)
+);
+
+INSERT INTO alunos VALUES (1,'Ana'), (2,'Bruno'), (3,'Carla'), (4,'Davi');
+INSERT INTO cursos VALUES (1,'SQL Básico'), (2,'Python'), (3,'Excel'), (4,'Redes');
+INSERT INTO matriculas VALUES (1,1), (1,2), (2,1), (3,1), (3,2), (3,3);
+
+SELECT a.nome, c.titulo
+FROM alunos a
+JOIN matriculas m ON m.aluno_id = a.id
+JOIN cursos c ON c.id = m.curso_id
+ORDER BY a.nome, c.titulo;
+</pre>
+
+<dl class="anatomy">
+  <dt>alunos e cursos</dt><dd>As duas pontas, cada uma com a sua chave primária.</dd>
+  <dt>matriculas</dt><dd>A tabela de ligação. As duas FKs (<code>aluno_id</code>, <code>curso_id</code>) e a PK composta <code>(aluno_id, curso_id)</code>.</dd>
+  <dt>o SELECT com dois JOIN</dt><dd>Liga aluno → matrícula → curso, montando a lista de chamada "aluno, curso".</dd>
+</dl>
+
+<p>O resultado é a própria lista de matrículas do começo da aula, agora saindo do banco: Ana em dois cursos, Bruno em um, Carla em três. Davi não aparece — ele não tem matrícula (é o nosso "produto nunca vendido" do lado da escola; um <code>LEFT JOIN</code> a partir de <code>alunos</code> o traria).</p>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O mesmo par duas vezes</strong>
+<p>A chave primária composta não deixa repetir um par. Se alguém tentar matricular a Ana (1) em SQL Básico (1) de novo, o banco recusa:</p>
+<pre class="file" data-file="par-repetido.sql" data-resultado data-erro>CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+CREATE TABLE cursos (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL);
+CREATE TABLE matriculas (
+  aluno_id INTEGER NOT NULL REFERENCES alunos(id),
+  curso_id INTEGER NOT NULL REFERENCES cursos(id),
+  PRIMARY KEY (aluno_id, curso_id)
+);
+INSERT INTO alunos VALUES (1,'Ana');
+INSERT INTO cursos VALUES (1,'SQL Básico');
+INSERT INTO matriculas VALUES (1,1);
+INSERT INTO matriculas VALUES (1,1);
+</pre>
+<p>A mensagem <code>UNIQUE constraint failed: matriculas.aluno_id, matriculas.curso_id</code> ("a restrição de unicidade falhou") é a chave composta cumprindo o seu papel: cada par, uma vez só.</p>
+</div>
+
+<div class="cenario">
+<strong>Apontar para quem não existe</strong>
+<p>No Aurora, com as chaves estrangeiras ligadas, não dá para pôr na tabela de ligação um item de um pedido que não existe. Tente vender o produto 2 no pedido 999:</p>
+<pre class="file" data-file="pedido-inexistente.sql" data-resultado data-erro>INSERT INTO itens_pedido VALUES (999, 2, 1, 2.79);
+</pre>
+<p>O erro <code>FOREIGN KEY constraint failed</code> ("a restrição de chave estrangeira falhou") barra a linha: <code>pedido_id = 999</code> não existe em <code>pedidos</code>. A tabela de ligação só aceita pares que existem dos dois lados — é isso que mantém os dados certos. (Lembre que, no SQLite, isso depende de <code>PRAGMA foreign_keys = ON</code>, que o banco do guia já liga; veja a aula <a href="foreign-key.html">FOREIGN KEY</a>.)</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ideia</th><th>Como fica</th></tr>
+<tr><td>Muitos-para-muitos</td><td>Os dois lados têm "muitos"; precisa de tabela de ligação</td></tr>
+<tr><td>Tabela de ligação</td><td>Uma linha por par, com duas chaves estrangeiras</td></tr>
+<tr><td>Chave primária</td><td>O par das duas FKs (<code>PRIMARY KEY (a_id, b_id)</code>)</td></tr>
+<tr><td>Dados do par</td><td>Colunas extras na ligação (ex.: <code>quantidade</code>)</td></tr>
+<tr><td>Consultar</td><td>Dois <code>JOIN</code>, um para cada lado</td></tr>
+<tr><td>No Aurora</td><td><code>itens_pedido</code>, entre <code>pedidos</code> e <code>produtos</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. Como se guarda uma relação muitos-para-muitos num banco?</p>
+<label><input type="radio" name="q1"> Com uma coluna a mais em uma das tabelas</label>
+<label><input type="radio" name="q1"> Com uma lista de valores separados por vírgula numa célula</label>
+<label><input type="radio" name="q1"> Com uma terceira tabela (de ligação), uma linha por par</label>
+<label><input type="radio" name="q1"> Não é possível guardar</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Quantas chaves estrangeiras tem uma tabela de ligação?</p>
+<label><input type="radio" name="q2"> Uma</label>
+<label><input type="radio" name="q2"> Duas, uma para cada lado</label>
+<label><input type="radio" name="q2"> Nenhuma</label>
+<label><input type="radio" name="q2"> Três ou mais, sempre</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Na Loja Aurora, qual é a tabela de ligação entre pedidos e produtos?</p>
+<label><input type="radio" name="q3"> <code>clientes</code></label>
+<label><input type="radio" name="q3"> <code>categorias</code></label>
+<label><input type="radio" name="q3"> <code>fornecedores</code></label>
+<label><input type="radio" name="q3"> <code>itens_pedido</code></label>
+</div>
+
+<div class="exercise">
+<h3>4. A chave primária composta</h3>
+<p>Complete a chave primária da tabela de ligação <code>matriculas</code>, formada pelas duas colunas:</p>
+<div class="ex-code">PRIMARY KEY (<input data-answer="aluno_id" aria-label="primeira coluna da chave">, <input data-answer="curso_id" aria-label="segunda coluna da chave">)</div>
+</div>
+
+<h3>Missão final: monte a escola</h3>
+<div class="trysql" data-goal="tabela:matriculas;;mudou:matriculas=6">
+<p class="try-task"><strong>Missão:</strong> crie as três tabelas — <code>alunos</code>, <code>cursos</code> e a ligação <code>matriculas</code> (com as duas FKs e a PK composta) — e matricule os alunos assim: Ana (1) em SQL Básico (1) e Python (2); Bruno (2) em SQL Básico (1); Carla (3) em SQL Básico (1), Python (2) e Excel (3). No fim, a tabela <code>matriculas</code> deve ter 6 linhas.</p>
+<pre class="script" data-file="consulta.sql">-- 1. CREATE TABLE alunos / cursos
+-- 2. CREATE TABLE matriculas (2 FKs, PRIMARY KEY composta)
+-- 3. INSERT dos alunos, dos cursos e das 6 matrículas
+
+SELECT 'monte as tabelas acima';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL);
+CREATE TABLE cursos (id INTEGER PRIMARY KEY, titulo TEXT NOT NULL);
+CREATE TABLE matriculas (
+  aluno_id INTEGER NOT NULL REFERENCES alunos(id),
+  curso_id INTEGER NOT NULL REFERENCES cursos(id),
+  PRIMARY KEY (aluno_id, curso_id)
+);
+INSERT INTO alunos VALUES (1,'Ana'), (2,'Bruno'), (3,'Carla');
+INSERT INTO cursos VALUES (1,'SQL Básico'), (2,'Python'), (3,'Excel');
+INSERT INTO matriculas VALUES (1,1), (1,2), (2,1), (3,1), (3,2), (3,3);
+
+SELECT COUNT(*) FROM matriculas;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Quando os <strong>dois lados</strong> de uma relação são "muitos" (pedidos × produtos, alunos × cursos), é um <strong>muitos-para-muitos</strong>.</li>
+  <li>Não se resolve com coluna a mais nem com lista em texto: usa-se uma <strong>tabela de ligação</strong>, com uma linha por par e <strong>duas chaves estrangeiras</strong>.</li>
+  <li>A chave primária da ligação costuma ser o <strong>par</strong> das duas FKs, o que impede pares repetidos.</li>
+  <li>Dados que pertencem ao par (como <code>quantidade</code>) ficam na própria tabela de ligação.</li>
+  <li>Consulta-se nos dois sentidos com <code>JOIN</code>; no Aurora, a ligação é a <code>itens_pedido</code>, entre <code>pedidos</code> e <code>produtos</code>.</li>
+  <li>O banco protege os dados: <code>UNIQUE</code> barra o par repetido e <code>FOREIGN KEY</code> barra o par que aponta para quem não existe.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
