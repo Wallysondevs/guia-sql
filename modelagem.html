@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Modelagem — modelando um banco do zero | Guia SQL</title>
+<meta name="description" content="Modelagem de banco de dados para quem está começando: do caderno da recepção de uma clínica veterinária às tabelas, passo a passo. Entidades, atributos, chaves, relacionamentos 1 para N, regras com NOT NULL, CHECK e UNIQUE, os CREATE TABLE, dados de teste, as perguntas que o banco tem de responder e as mensagens reais de erro, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Modelando um Banco do Zero</span></h1>
+
+<p class="intro">Até aqui você usou o banco da Loja Aurora, que já veio pronto. Mas alguém teve de decidir que existiriam as tabelas <code>clientes</code>, <code>pedidos</code> e <code>itens_pedido</code>, e quais colunas cada uma teria. Esse trabalho se chama <strong>modelagem</strong>. Nesta aula você acompanha a Ana modelando, do zero, o banco da clínica veterinária da prima dela, que hoje anota tudo num caderno. São sete passos, sempre os mesmos, que servem para qualquer banco: uma escola, uma biblioteca, as suas finanças.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que "uma planilha só" vira problema, com um exemplo real.</li>
+  <li>Achar as <strong>entidades</strong> (as coisas que viram tabelas) e os <strong>atributos</strong> (as colunas).</li>
+  <li>Escolher a <strong>chave primária</strong> de cada tabela.</li>
+  <li>Ligar as tabelas: relacionamentos <strong>1 para N</strong>, e em que lado vai a chave estrangeira.</li>
+  <li>Transformar as regras do negócio em <code>NOT NULL</code>, <code>CHECK</code>, <code>UNIQUE</code> e <code>REFERENCES</code>.</li>
+  <li>Escrever os <code>CREATE TABLE</code>, pôr dados de teste e conferir se o banco responde às perguntas do dia a dia.</li>
+  <li>As mensagens reais de erro, e a armadilha das chaves estrangeiras desligadas no terminal.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no SQLite 3.50. O banco da clínica não existe no editor: cada exemplo cria as tabelas e põe os dados antes de consultar, porque cada Rodar parte do banco limpo (aula <a href="simulador.html">O Editor do Guia</a>). Os nomes, telefones e registros da clínica são todos inventados.</p>
+
+<hr>
+
+<h2>A ideia: do caderno às fichas</h2>
+<p>Na recepção da clínica tem um caderno. Cada consulta marcada vira uma linha:</p>
+
+<pre class="file" data-file="caderno da recepção">06/10 09:00  Rex (cachorro, nasc. 10/04/2019) — João Pereira, (86) 90000-0001 — Dr. Paulo — vacina antirrábica — R$ 80
+06/10 10:30  Mingau (gato) — Ana Lima, (86) 90000-0002 — Dra. Lúcia — check-up anual — R$ 120
+13/10 14:00  Rex (cachorro) — João Pereira, (86) 90000-0001 — Dra. Lúcia — dor na pata — R$ 150
+20/10 08:30  Pipoca (ave) — Rita Sales, (86) 90000-0003 — Dr. Paulo — corte de unhas — R$ 40
+20/10 09:00  Thor (cachorro, nasc. 22/01/2023) — João Pereira, (86) 90000-0001 — Dr. Paulo — vacina V10 — R$ 90
+</pre>
+
+<p>Repare: o telefone do João está escrito três vezes. O Rex aparece duas. Cada linha mistura quatro assuntos: <strong>quando</strong> foi a consulta, <strong>qual animal</strong>, <strong>de quem</strong> ele é e <strong>quem atendeu</strong>. Modelar é separar esses assuntos em <strong>fichas</strong> diferentes (uma pasta de fichas de tutores, uma de animais, uma de veterinários, uma de consultas) e ligar as fichas pelo número de cada uma. Cada pasta vira uma tabela.</p>
+
+<hr>
+
+<h2>Passo 0: o que dá errado com uma tabela só</h2>
+<p>A primeira ideia de quem sai do caderno é copiar o caderno numa tabela só, com uma coluna para cada pedaço da linha:</p>
+
+<pre class="file" data-file="v0-uma-tabela.sql" data-resultado>CREATE TABLE caderno (
+  data_hora  TEXT,
+  animal     TEXT,
+  especie    TEXT,
+  tutor      TEXT,
+  telefone   TEXT,
+  veterinario TEXT,
+  motivo     TEXT,
+  valor      REAL
+);
+INSERT INTO caderno VALUES
+  ('2026-10-06 09:00', 'Rex',    'cachorro', 'João Pereira', '(86) 90000-0001', 'Paulo Viana', 'Vacina antirrábica', 80),
+  ('2026-10-06 10:30', 'Mingau', 'gato',     'Ana Lima',     '(86) 90000-0002', 'Lúcia Rocha', 'Check-up anual',    120),
+  ('2026-10-13 14:00', 'Rex',    'cachorro', 'João Pereira', '(86) 90000-0001', 'Lúcia Rocha', 'Dor na pata',       150),
+  ('2026-10-20 08:30', 'Pipoca', 'ave',      'Rita Sales',   '(86) 90000-0003', 'Paulo Viana', 'Corte de unhas',     40),
+  ('2026-10-20 09:00', 'Thor',   'cachorro', 'João Pereira', '(86) 90000-0001', 'Paulo Viana', 'Vacina V10',         90);
+
+-- o João trocou de telefone; a recepcionista corrigiu só a consulta de hoje
+UPDATE caderno SET telefone = '(86) 90000-0009'
+WHERE tutor = 'João Pereira' AND data_hora LIKE '2026-10-20%';
+
+SELECT DISTINCT tutor, telefone FROM caderno ORDER BY tutor;
+</pre>
+
+<p>Agora o banco diz que o João tem <strong>dois</strong> telefones, e ninguém sabe qual é o certo. Isso acontece porque a mesma informação (o telefone do João) está guardada em várias linhas. E há outros problemas escondidos:</p>
+<ul>
+  <li>Para cadastrar um animal novo, que ainda não teve consulta, não há onde: toda linha é uma consulta.</li>
+  <li>Se a consulta da Pipoca for desmarcada e apagada, a clínica perde o telefone da Rita, que só estava ali.</li>
+  <li>Nada impede alguém de escrever "cachoro" ou "Joao Pereira", e aí o "mesmo" tutor vira dois.</li>
+</ul>
+<p>Esses defeitos têm nome e regra para evitar, e são o assunto da aula <a href="normalizacao.html">Normalização</a>. Aqui, a solução vem pelos passos.</p>
+
+<hr>
+
+<h2>Passo 1: as coisas (entidades)</h2>
+<p>Leia o caderno e sublinhe os <strong>substantivos</strong>, as "coisas" de que a clínica precisa lembrar. Cada coisa que tem <strong>vida própria</strong> (existe e tem dados mesmo sem as outras) é uma <strong>entidade</strong>, e cada entidade vira uma tabela:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coisa</th><th>Tem vida própria?</th><th>Vira</th></tr>
+<tr><td>Tutor (o dono do animal)</td><td>Sim: tem nome e telefone, mesmo sem consulta marcada</td><td>tabela <code>tutores</code></td></tr>
+<tr><td>Animal</td><td>Sim: tem nome, espécie, nascimento</td><td>tabela <code>animais</code></td></tr>
+<tr><td>Veterinário</td><td>Sim: tem nome e registro profissional</td><td>tabela <code>veterinarios</code></td></tr>
+<tr><td>Consulta</td><td>Sim: um acontecimento, com data, motivo e valor</td><td>tabela <code>consultas</code></td></tr>
+<tr><td>Telefone, espécie, valor…</td><td>Não: são <strong>detalhes</strong> de uma das coisas acima</td><td>colunas (passo 2)</td></tr>
+</table>
+</div>
+
+<p>Um truque para não errar: se você consegue dizer "<strong>um</strong> tutor", "<strong>dois</strong> animais", "<strong>cinco</strong> consultas", é uma entidade. Ninguém diz "dois telefones do caderno" como coisa separada; é o telefone <strong>de alguém</strong>.</p>
+
+<hr>
+
+<h2>Passo 2: os detalhes (atributos)</h2>
+<p>Para cada entidade, a Ana pergunta à prima: "o que você precisa saber sobre um tutor? E sobre um animal?". Cada resposta é um <strong>atributo</strong>, que vira uma coluna:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela</th><th>Colunas</th></tr>
+<tr><td><code>tutores</code></td><td>nome, telefone, email</td></tr>
+<tr><td><code>animais</code></td><td>nome, espécie, nascimento</td></tr>
+<tr><td><code>veterinarios</code></td><td>nome, CRMV (o registro no conselho de veterinária)</td></tr>
+<tr><td><code>consultas</code></td><td>data e hora, motivo, valor</td></tr>
+</table>
+</div>
+
+<p>Três cuidados nesta hora:</p>
+<ul>
+  <li><strong>Um valor por coluna.</strong> Nada de uma coluna "telefones" com <code>'(86) 90000-0001, (86) 90000-0005'</code>: você não conseguiria buscar por um deles. Se o tutor pode ter vários telefones, telefone vira uma tabela própria.</li>
+  <li><strong>Não guarde o que se calcula.</strong> A idade do animal muda todo ano; guarde o <strong>nascimento</strong> e calcule a idade na consulta (aula <a href="funcoes-data.html">Funções de Data</a>).</li>
+  <li><strong>Cada detalhe na tabela da coisa a que ele pertence.</strong> O telefone é do tutor, não da consulta. Por isso ele fica em <code>tutores</code>, uma vez só.</li>
+</ul>
+
+<hr>
+
+<h2>Passo 3: a chave de cada tabela</h2>
+<p>Cada linha precisa de um jeito único e que nunca muda de ser apontada: a <strong>chave primária</strong> (aula <a href="primary-key.html">PRIMARY KEY</a>). Qual coluna usar?</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Candidata</th><th>Serve?</th><th>Por quê</th></tr>
+<tr><td>O nome do tutor</td><td>Não</td><td>Pode haver dois "João Pereira"; e se ele corrigir a grafia, todas as ligações quebram</td></tr>
+<tr><td>O telefone</td><td>Não</td><td>Muda (o João acabou de mudar o dele)</td></tr>
+<tr><td>O CRMV do veterinário</td><td>Quase</td><td>É único, mas é um texto comprido para repetir em cada consulta, e tem gente que ainda não tem</td></tr>
+<tr><td>Um número inventado: <code>id INTEGER PRIMARY KEY</code></td><td>Sim</td><td>Único, curto, nunca muda e o SQLite gera sozinho (aula <a href="auto-increment.html">AUTOINCREMENT</a>)</td></tr>
+</table>
+</div>
+
+<p>A Ana segue o mesmo padrão da Loja Aurora: toda tabela começa com <code>id INTEGER PRIMARY KEY</code>. O CRMV continua guardado, como coluna <code>UNIQUE</code> (passo 5): único, mas não é ele que liga as tabelas.</p>
+
+<hr>
+
+<h2>Passo 4: as ligações (relacionamentos)</h2>
+<p>Agora, como as fichas se ligam. Para cada par de entidades, faça a mesma pergunta nos dois sentidos:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Resposta</th><th>Tipo</th></tr>
+<tr><td>Um tutor tem quantos animais? E um animal tem quantos tutores?</td><td>Um tutor, <strong>vários</strong> animais (o João tem o Rex e o Thor). Um animal, <strong>um</strong> tutor.</td><td>1 para N</td></tr>
+<tr><td>Um animal tem quantas consultas? E uma consulta é de quantos animais?</td><td>Um animal, <strong>várias</strong> consultas. Uma consulta, <strong>um</strong> animal.</td><td>1 para N</td></tr>
+<tr><td>Um veterinário faz quantas consultas? E uma consulta é feita por quantos?</td><td>Um veterinário, <strong>várias</strong>. Uma consulta, <strong>um</strong> veterinário.</td><td>1 para N</td></tr>
+</table>
+</div>
+
+<p>A regra do <strong>1 para N</strong> (lê-se "um para ene", ou "um para muitos") é sempre a mesma: a chave estrangeira vai no lado do <strong>N</strong>, o lado "dos muitos". Cada animal guarda o <code>tutor_id</code> do seu tutor; cada consulta guarda o <code>animal_id</code> e o <code>veterinario_id</code>. É como em cada ficha de animal escrever "tutor: ficha nº 1".</p>
+
+<pre class="file" data-file="o modelo (resumo)">tutores (1) ──────&lt; (N) animais (1) ──────&lt; (N) consultas (N) &gt;────── (1) veterinarios
+   id                  id                       id                         id
+   nome                tutor_id → tutores       animal_id → animais        nome
+   telefone            nome                     veterinario_id → veterin.  crmv
+   email               especie                  data_hora
+                       nascimento               motivo
+                                                valor
+</pre>
+
+<p>O <code>&lt;</code> na ponta da linha marca o lado "dos muitos". Esse desenho, com as tabelas e as ligações, é um <strong>diagrama</strong> do banco, e tem um jeito padrão de desenhar, com o "pé de galinha" no lado N: é a aula <a href="diagramas.html">Diagramas (DER)</a>.</p>
+
+<div class="tip">
+<strong>E se os dois lados forem "vários"?</strong>
+<p>Se uma consulta pudesse ter <strong>vários</strong> veterinários (uma cirurgia com dois), e cada veterinário várias consultas, seria uma relação <strong>N para N</strong>. Aí a chave estrangeira não cabe em nenhum dos dois lados, e entra uma terceira tabela, de ligação, como a <code>itens_pedido</code> da Loja Aurora, que liga pedidos e produtos. Esse caso tem aula própria: <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a>. Na clínica da prima da Ana, por enquanto, cada consulta tem um veterinário só.</p>
+</div>
+
+<hr>
+
+<h2>Passo 5: as regras</h2>
+<p>Cada frase da prima do tipo "tem de", "não pode" ou "só pode" vira uma <strong>regra</strong> que o próprio banco garante. Assim, um erro de digitação é barrado na entrada, e não descoberto meses depois:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A prima disse…</th><th>No banco</th></tr>
+<tr><td>"Todo tutor tem de deixar um telefone."</td><td><code>telefone TEXT NOT NULL</code> (aula <a href="not-null.html">NOT NULL</a>)</td></tr>
+<tr><td>"Email, só se a pessoa quiser."</td><td><code>email TEXT</code>, sem <code>NOT NULL</code>: aceita <code>NULL</code></td></tr>
+<tr><td>"Atendemos cachorro, gato e ave; o resto é 'outro'."</td><td><code>CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro'))</code> (aula <a href="check.html">CHECK</a>)</td></tr>
+<tr><td>"Não existem dois veterinários com o mesmo CRMV."</td><td><code>crmv TEXT NOT NULL UNIQUE</code> (aula <a href="unique.html">UNIQUE</a>)</td></tr>
+<tr><td>"Todo animal tem um tutor cadastrado."</td><td><code>tutor_id INTEGER NOT NULL REFERENCES tutores(id)</code> (aula <a href="foreign-key.html">FOREIGN KEY</a>)</td></tr>
+<tr><td>"Valor de consulta não pode ser negativo."</td><td><code>CHECK (valor &gt;= 0)</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Passo 6: os <code>CREATE TABLE</code></h2>
+<p>Com tudo decidido, escrever as tabelas é quase copiar os passos. A ordem importa: uma tabela só pode apontar para outra que já existe, então primeiro as que não dependem de ninguém (<code>tutores</code>, <code>veterinarios</code>), depois <code>animais</code>, por último <code>consultas</code>.</p>
+
+<pre class="file" data-file="clinica.sql" data-resultado>CREATE TABLE tutores (
+  id       INTEGER PRIMARY KEY,
+  nome     TEXT NOT NULL,
+  telefone TEXT NOT NULL,
+  email    TEXT
+);
+
+CREATE TABLE veterinarios (
+  id    INTEGER PRIMARY KEY,
+  nome  TEXT NOT NULL,
+  crmv  TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE animais (
+  id         INTEGER PRIMARY KEY,
+  tutor_id   INTEGER NOT NULL REFERENCES tutores(id),
+  nome       TEXT NOT NULL,
+  especie    TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')),
+  nascimento TEXT
+);
+
+CREATE TABLE consultas (
+  id             INTEGER PRIMARY KEY,
+  animal_id      INTEGER NOT NULL REFERENCES animais(id),
+  veterinario_id INTEGER NOT NULL REFERENCES veterinarios(id),
+  data_hora      TEXT NOT NULL,
+  motivo         TEXT NOT NULL,
+  valor          REAL NOT NULL CHECK (valor &gt;= 0)
+);
+
+SELECT name FROM sqlite_schema WHERE type = 'table' AND name IN ('tutores', 'veterinarios', 'animais', 'consultas');
+</pre>
+
+<dl class="anatomy">
+  <dt>nomes no plural e em minúsculas</dt><dd><code>tutores</code>, <code>animais</code>: uma tabela guarda <strong>vários</strong>. Sem acento e sem espaço (<code>veterinarios</code>, não <code>veterinários</code>), para não precisar de aspas em todo comando.</dd>
+  <dt>id INTEGER PRIMARY KEY</dt><dd>A chave do passo 3, sempre a primeira coluna.</dd>
+  <dt>tutor_id, animal_id, veterinario_id</dt><dd>As chaves estrangeiras do passo 4, com o nome da tabela apontada no singular mais <code>_id</code>. Quem lê <code>animal_id</code> sabe na hora para onde ela aponta.</dd>
+  <dt>data_hora TEXT</dt><dd>O SQLite não tem um tipo de data: datas vão como texto no formato <code>'2026-10-20 09:00'</code>, que se ordena certo e funciona com as funções de data (aula <a href="datas.html">Datas e Horas</a>).</dd>
+  <dt>NOT NULL, CHECK, UNIQUE, REFERENCES</dt><dd>As regras do passo 5.</dd>
+  <dt>SELECT name FROM sqlite_schema …</dt><dd>Confere que as quatro tabelas foram criadas. A <code>sqlite_schema</code> é a tabela onde o SQLite guarda a lista de tudo o que existe no banco.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:4;;contem:Mingau|Ana Lima">
+<p class="try-task"><strong>Missão:</strong> nesta versão, alguém guardou o <strong>nome</strong> do tutor dentro de <code>animais</code>, numa coluna <code>tutor</code>, e a consulta de baixo dá erro. Conserte o modelo: troque a coluna <code>tutor</code> por <code>tutor_id</code> apontando para <code>tutores(id)</code> e cadastre os animais com o <strong>número</strong> do tutor (João é o 1, Ana é a 2, Rita é a 3).</p>
+<pre class="script" data-file="animais.sql">CREATE TABLE tutores (
+  id       INTEGER PRIMARY KEY,
+  nome     TEXT NOT NULL,
+  telefone TEXT NOT NULL,
+  email    TEXT
+);
+INSERT INTO tutores (id, nome, telefone, email) VALUES
+  (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br'),
+  (2, 'Ana Lima',     '(86) 90000-0002', NULL),
+  (3, 'Rita Sales',   '(86) 90000-0003', 'rita.sales@exemplo.com.br');
+
+CREATE TABLE animais (
+  id      INTEGER PRIMARY KEY,
+  tutor   TEXT,
+  nome    TEXT NOT NULL,
+  especie TEXT NOT NULL
+);
+INSERT INTO animais (id, tutor, nome, especie) VALUES
+  (1, 'João Pereira', 'Rex',    'cachorro'),
+  (2, 'João Pereira', 'Thor',   'cachorro'),
+  (3, 'Ana Lima',     'Mingau', 'gato'),
+  (4, 'Rita Sales',   'Pipoca', 'ave');
+
+SELECT a.nome AS animal, t.nome AS tutor
+FROM animais a
+JOIN tutores t ON t.id = a.tutor_id
+ORDER BY a.id;
+</pre>
+<pre class="solucao" data-file="animais.sql">CREATE TABLE tutores (
+  id       INTEGER PRIMARY KEY,
+  nome     TEXT NOT NULL,
+  telefone TEXT NOT NULL,
+  email    TEXT
+);
+INSERT INTO tutores (id, nome, telefone, email) VALUES
+  (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br'),
+  (2, 'Ana Lima',     '(86) 90000-0002', NULL),
+  (3, 'Rita Sales',   '(86) 90000-0003', 'rita.sales@exemplo.com.br');
+
+CREATE TABLE animais (
+  id       INTEGER PRIMARY KEY,
+  tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome     TEXT NOT NULL,
+  especie  TEXT NOT NULL
+);
+INSERT INTO animais (id, tutor_id, nome, especie) VALUES
+  (1, 1, 'Rex',    'cachorro'),
+  (2, 1, 'Thor',   'cachorro'),
+  (3, 2, 'Mingau', 'gato'),
+  (4, 3, 'Pipoca', 'ave');
+
+SELECT a.nome AS animal, t.nome AS tutor
+FROM animais a
+JOIN tutores t ON t.id = a.tutor_id
+ORDER BY a.id;
+</pre>
+</div>
+
+<hr>
+
+<h2>Passo 7: dados de teste e as perguntas</h2>
+<p>Um modelo só está pronto quando responde às perguntas de quem vai usá-lo. A Ana pediu à prima três perguntas que ela faz toda semana, cadastrou as linhas do caderno e escreveu uma consulta para cada pergunta:</p>
+
+<pre class="file" data-file="perguntas.sql" data-resultado>CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE veterinarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, crmv TEXT NOT NULL UNIQUE);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+CREATE TABLE consultas (id INTEGER PRIMARY KEY, animal_id INTEGER NOT NULL REFERENCES animais(id),
+  veterinario_id INTEGER NOT NULL REFERENCES veterinarios(id), data_hora TEXT NOT NULL,
+  motivo TEXT NOT NULL, valor REAL NOT NULL CHECK (valor &gt;= 0));
+
+INSERT INTO tutores VALUES
+  (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br'),
+  (2, 'Ana Lima',     '(86) 90000-0002', NULL),
+  (3, 'Rita Sales',   '(86) 90000-0003', 'rita.sales@exemplo.com.br');
+INSERT INTO veterinarios VALUES (1, 'Paulo Viana', 'CRMV-PI 1001'), (2, 'Lúcia Rocha', 'CRMV-PI 1002');
+INSERT INTO animais VALUES
+  (1, 1, 'Rex', 'cachorro', '2019-04-10'), (2, 1, 'Thor', 'cachorro', '2023-01-22'),
+  (3, 2, 'Mingau', 'gato', '2021-08-03'),  (4, 3, 'Pipoca', 'ave', NULL);
+INSERT INTO consultas VALUES
+  (1, 1, 1, '2026-10-06 09:00', 'Vacina antirrábica', 80.0),
+  (2, 3, 2, '2026-10-06 10:30', 'Check-up anual',    120.0),
+  (3, 1, 2, '2026-10-13 14:00', 'Dor na pata',       150.0),
+  (4, 4, 1, '2026-10-20 08:30', 'Corte de unhas',     40.0),
+  (5, 2, 1, '2026-10-20 09:00', 'Vacina V10',         90.0);
+
+-- 1. Qual é a agenda do dia 20/10?
+SELECT c.data_hora, a.nome AS animal, t.nome AS tutor, t.telefone, v.nome AS veterinario, c.motivo
+FROM consultas c
+JOIN animais a      ON a.id = c.animal_id
+JOIN tutores t      ON t.id = a.tutor_id
+JOIN veterinarios v ON v.id = c.veterinario_id
+WHERE c.data_hora &gt;= '2026-10-20' AND c.data_hora &lt; '2026-10-21'
+ORDER BY c.data_hora;
+
+-- 2. Qual é o histórico do Rex?
+SELECT c.data_hora, c.motivo, v.nome AS veterinario, c.valor
+FROM consultas c
+JOIN veterinarios v ON v.id = c.veterinario_id
+WHERE c.animal_id = 1
+ORDER BY c.data_hora;
+
+-- 3. Quanto cada tutor já gastou?
+SELECT t.nome, COUNT(c.id) AS consultas, SUM(c.valor) AS total
+FROM tutores t
+JOIN animais a        ON a.tutor_id = t.id
+LEFT JOIN consultas c ON c.animal_id = a.id
+GROUP BY t.id
+ORDER BY total DESC;
+</pre>
+
+<p>As três perguntas foram respondidas, e o telefone do João aparece certinho na agenda, guardado uma vez só. Se ele trocar de número, um <code>UPDATE tutores SET telefone = … WHERE id = 1</code> muda <strong>uma</strong> linha, e todas as consultas passam a mostrar o número novo. O problema do passo 0 sumiu.</p>
+
+<p>Se uma pergunta da prima não tivesse resposta ("quais animais estão com a vacina atrasada?"), seria sinal de que falta alguma coisa no modelo. É assim que se descobre, por exemplo, que a clínica precisa de uma tabela de vacinas: é a missão do fim da aula.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> faça outras perguntas ao modelo da clínica: quantas consultas cada veterinário atendeu, quais animais nunca vieram (pista: <code>LEFT JOIN</code> com <code>IS NULL</code>), qual a idade de cada animal hoje.</p>
+<pre class="script" data-file="pergunte.sql">CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE veterinarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, crmv TEXT NOT NULL UNIQUE);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+CREATE TABLE consultas (id INTEGER PRIMARY KEY, animal_id INTEGER NOT NULL REFERENCES animais(id),
+  veterinario_id INTEGER NOT NULL REFERENCES veterinarios(id), data_hora TEXT NOT NULL,
+  motivo TEXT NOT NULL, valor REAL NOT NULL CHECK (valor &gt;= 0));
+INSERT INTO tutores VALUES
+  (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br'),
+  (2, 'Ana Lima',     '(86) 90000-0002', NULL),
+  (3, 'Rita Sales',   '(86) 90000-0003', 'rita.sales@exemplo.com.br');
+INSERT INTO veterinarios VALUES (1, 'Paulo Viana', 'CRMV-PI 1001'), (2, 'Lúcia Rocha', 'CRMV-PI 1002');
+INSERT INTO animais VALUES
+  (1, 1, 'Rex', 'cachorro', '2019-04-10'), (2, 1, 'Thor', 'cachorro', '2023-01-22'),
+  (3, 2, 'Mingau', 'gato', '2021-08-03'),  (4, 3, 'Pipoca', 'ave', NULL);
+INSERT INTO consultas VALUES
+  (1, 1, 1, '2026-10-06 09:00', 'Vacina antirrábica', 80.0),
+  (2, 3, 2, '2026-10-06 10:30', 'Check-up anual',    120.0),
+  (3, 1, 2, '2026-10-13 14:00', 'Dor na pata',       150.0),
+  (4, 4, 1, '2026-10-20 08:30', 'Corte de unhas',     40.0),
+  (5, 2, 1, '2026-10-20 09:00', 'Vacina V10',         90.0);
+
+SELECT v.nome, COUNT(*) AS consultas
+FROM consultas c
+JOIN veterinarios v ON v.id = c.veterinario_id
+GROUP BY v.id;
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Modelar é escolher. Algumas escolhas que aparecem em todo projeto:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Decisão</th><th>Opção A</th><th>Opção B</th><th>O que a Ana escolheu, e por quê</th></tr>
+<tr><td>Chave primária</td><td>Um número inventado (<code>id</code>), a chamada chave <strong>substituta</strong></td><td>Um dado do mundo real (CPF, CRMV), a chave <strong>natural</strong></td><td><code>id</code>: nunca muda e é curto. O dado real fica numa coluna <code>UNIQUE</code></td></tr>
+<tr><td>Data e hora</td><td>Uma coluna <code>data_hora</code>: <code>'2026-10-20 09:00'</code></td><td>Duas colunas, <code>data</code> e <code>hora</code></td><td>Uma só: ordena e compara faixas com um só <code>WHERE</code></td></tr>
+<tr><td>Dinheiro</td><td><code>REAL</code> (80.0)</td><td><code>INTEGER</code> em centavos (8000)</td><td><code>REAL</code>, como na Aurora. Em sistemas com muitas contas, centavos inteiros evitam as "caudas" de ponto flutuante (aula <a href="funcoes-numericas.html">Funções Numéricas</a>)</td></tr>
+<tr><td>Espécie</td><td>Texto com <code>CHECK (… IN …)</code></td><td>Uma tabela <code>especies</code> e um <code>especie_id</code></td><td><code>CHECK</code>: são quatro valores que quase nunca mudam. Se a lista crescer muito ou ganhar detalhes, vira tabela</td></tr>
+<tr><td>Nomes</td><td><code>tutores</code>, <code>tutor_id</code></td><td><code>Tutor</code>, <code>TutorID</code></td><td>Minúsculas com <code>_</code>, como no resto do guia. O importante é escolher <strong>um</strong> padrão e seguir em todas as tabelas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Os erros abaixo são as regras do passo 5 fazendo o trabalho delas. Em todos, o banco já tinha as quatro tabelas e os dados do passo 7.</p>
+
+<div class="cenario">
+<strong>Consulta de um animal que não existe</strong>
+<pre class="file" data-file="fk.sql" data-resultado data-erro>CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE veterinarios (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, crmv TEXT NOT NULL UNIQUE);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+CREATE TABLE consultas (id INTEGER PRIMARY KEY, animal_id INTEGER NOT NULL REFERENCES animais(id),
+  veterinario_id INTEGER NOT NULL REFERENCES veterinarios(id), data_hora TEXT NOT NULL,
+  motivo TEXT NOT NULL, valor REAL NOT NULL CHECK (valor &gt;= 0));
+INSERT INTO tutores VALUES (1, 'João Pereira', '(86) 90000-0001', NULL);
+INSERT INTO veterinarios VALUES (1, 'Paulo Viana', 'CRMV-PI 1001');
+INSERT INTO animais VALUES (1, 1, 'Rex', 'cachorro', '2019-04-10');
+
+INSERT INTO consultas (animal_id, veterinario_id, data_hora, motivo, valor)
+VALUES (99, 1, '2026-10-21 10:00', 'Banho', 50);
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>, "a regra da chave estrangeira falhou". Não existe animal 99. O mesmo erro aparece se alguém tentar apagar um tutor que ainda tem animais (<code>DELETE FROM tutores WHERE id = 1</code>): os animais ficariam apontando para ninguém.</p>
+</div>
+
+<div class="cenario">
+<strong>No terminal, a mesma consulta… entrou!</strong>
+<p>A Ana carregou o mesmo modelo, com os dados do passo 7, no <code>sqlite3</code> (com o comando <code>.read</code>, que roda um arquivo <code>.sql</code>) e repetiu o <code>INSERT</code> do animal 99:</p>
+<pre class="term">$ sqlite3 clinica.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> .read clinica.sql
+sqlite> .tables
+animais       consultas     tutores       veterinarios
+sqlite> PRAGMA foreign_keys;
+0
+sqlite> INSERT INTO consultas (animal_id, veterinario_id, data_hora, motivo, valor) VALUES (99, 1, '2026-10-21 10:00', 'Banho', 50);
+sqlite> SELECT id, animal_id, motivo FROM consultas WHERE id = 6;
+6|99|Banho
+sqlite> PRAGMA foreign_key_check;
+consultas|6|animais|1
+sqlite> DELETE FROM consultas WHERE id = 6;
+sqlite> PRAGMA foreign_keys = ON;
+sqlite> INSERT INTO consultas (animal_id, veterinario_id, data_hora, motivo, valor) VALUES (99, 1, '2026-10-21 10:00', 'Banho', 50);
+Runtime error: FOREIGN KEY constraint failed (19)</pre>
+<p><strong>O que aconteceu:</strong> no SQLite, a verificação das chaves estrangeiras vem <strong>desligada</strong> (<code>PRAGMA foreign_keys</code> respondeu <code>0</code>), por compatibilidade com bancos antigos. O <code>REFERENCES</code> estava no modelo, mas ninguém conferia, e a consulta do animal 99 entrou. O <code>PRAGMA foreign_key_check</code> acusou o problema depois do fato: a linha 6 de <code>consultas</code> aponta para um animal que não existe. Com <code>PRAGMA foreign_keys = ON</code>, o erro aparece na hora (o <code>(19)</code> é o número do erro no SQLite).</p>
+<p><strong>Como consertar:</strong> rode <code>PRAGMA foreign_keys = ON;</code> toda vez que abrir o banco (no terminal ou no programa). Ele vale só para aquela conexão, não fica gravado no arquivo. No editor do guia ele já vem ligado, por isso o erro apareceu no exemplo anterior. Mais em <a href="pragma.html">PRAGMAs Úteis</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Espécie fora da lista</strong>
+<pre class="file" data-file="check.sql" data-resultado data-erro>CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+INSERT INTO tutores VALUES (1, 'João Pereira', '(86) 90000-0001', NULL);
+
+INSERT INTO animais (tutor_id, nome, especie) VALUES (1, 'Bidu', 'cão');
+</pre>
+<p><strong>A mensagem:</strong> <code>CHECK constraint failed: especie IN ('cachorro', 'gato', 'ave', 'outro')</code>. A recepcionista escreveu "cão", e a regra só aceita os quatro valores combinados. Sem a regra, "cão" e "cachorro" virariam duas espécies diferentes nos relatórios.</p>
+</div>
+
+<div class="cenario">
+<strong>Animal sem nome, CRMV repetido</strong>
+<pre class="file" data-file="notnull.sql" data-resultado data-erro>CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+INSERT INTO tutores VALUES (1, 'João Pereira', '(86) 90000-0001', NULL);
+
+INSERT INTO animais (tutor_id, nome, especie) VALUES (1, NULL, 'cachorro');
+</pre>
+<p><strong>A mensagem:</strong> <code>NOT NULL constraint failed: animais.nome</code>: a coluna <code>nome</code> de <code>animais</code> não aceita vazio. Do mesmo jeito, cadastrar um segundo veterinário com o CRMV <code>'CRMV-PI 1001'</code> dá <code>UNIQUE constraint failed: veterinarios.crmv</code>, e uma consulta com valor −5 dá <code>CHECK constraint failed: valor &gt;= 0</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Rodou o script duas vezes</strong>
+<pre class="file" data-file="existe.sql" data-resultado data-erro>CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+</pre>
+<p><strong>A mensagem:</strong> <code>table tutores already exists</code>, "a tabela tutores já existe". Acontece quando você roda o arquivo do modelo de novo num banco que já tem as tabelas.</p>
+<p><strong>Como consertar:</strong> <code>CREATE TABLE IF NOT EXISTS tutores (…)</code> cria só se não existir. Para recomeçar do zero de propósito, apague antes com <code>DROP TABLE</code> (aula <a href="drop-table.html">DROP TABLE</a>), começando pelas tabelas que apontam para as outras.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Os passos da modelagem são os mesmos em qualquer banco. O que muda são os tipos e a forma de gerar o <code>id</code>. O trecho é <strong>ilustrativo</strong> (PostgreSQL) e não roda no SQLite:</p>
+<pre class="file" data-file="clinica-postgresql.sql">-- PostgreSQL (ilustrativo)
+CREATE TABLE consultas (
+  id             INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  animal_id      INTEGER NOT NULL REFERENCES animais(id),
+  veterinario_id INTEGER NOT NULL REFERENCES veterinarios(id),
+  data_hora      TIMESTAMP NOT NULL,
+  motivo         VARCHAR(200) NOT NULL,
+  valor          NUMERIC(10, 2) NOT NULL CHECK (valor &gt;= 0)
+);
+</pre>
+<ul>
+  <li>Datas ganham tipos próprios (<code>DATE</code>, <code>TIMESTAMP</code>), e dinheiro, um tipo decimal exato (<code>NUMERIC</code>/<code>DECIMAL</code>). Veja <a href="tipos-de-dados.html">Tipos de Dados</a>.</li>
+  <li>O <code>id</code> automático se escreve <code>GENERATED … AS IDENTITY</code> ou <code>SERIAL</code> no PostgreSQL, <code>AUTO_INCREMENT</code> no MySQL e <code>IDENTITY</code> no SQL Server.</li>
+  <li>Nesses bancos, as chaves estrangeiras são conferidas sem precisar de um <code>PRAGMA</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida: os sete passos</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>Pergunta</th><th>Vira</th></tr>
+<tr><td>0. O problema</td><td>Como é feito hoje? O que se repete?</td><td>A lista de dados e de problemas</td></tr>
+<tr><td>1. Entidades</td><td>De que "coisas" preciso lembrar? Dá para contar "um, dois…"?</td><td>Tabelas (no plural)</td></tr>
+<tr><td>2. Atributos</td><td>O que preciso saber de cada coisa? Um valor por coluna? É calculável?</td><td>Colunas</td></tr>
+<tr><td>3. Chaves</td><td>Como apontar cada linha sem ambiguidade, para sempre?</td><td><code>id INTEGER PRIMARY KEY</code></td></tr>
+<tr><td>4. Relacionamentos</td><td>Um X tem quantos Y? E um Y, quantos X?</td><td>1:N → chave estrangeira no lado N; N:N → tabela de ligação</td></tr>
+<tr><td>5. Regras</td><td>O que "tem de", "não pode", "só pode"?</td><td><code>NOT NULL</code>, <code>CHECK</code>, <code>UNIQUE</code>, <code>REFERENCES</code>, <code>DEFAULT</code></td></tr>
+<tr><td>6. <code>CREATE TABLE</code></td><td>Em que ordem criar?</td><td>Primeiro quem não depende de ninguém</td></tr>
+<tr><td>7. Testar</td><td>O banco responde às perguntas do dia a dia?</td><td>Dados de teste e consultas; o que faltar volta para o passo 1</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Onde vai a chave estrangeira</h3>
+<p>Uma escola: uma turma tem vários alunos; um aluno está em uma turma. Complete a coluna da tabela <code>alunos</code>:</p>
+<div class="ex-code">CREATE TABLE alunos (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, <input data-answer="turma_id" aria-label="coluna"> INTEGER REFERENCES turmas(id));</div>
+</div>
+
+<div class="exercise">
+<h3>2. Ligar a verificação</h3>
+<p>Complete o comando que liga a verificação das chaves estrangeiras no terminal:</p>
+<div class="ex-code">PRAGMA <input data-answer="foreign_keys" aria-label="pragma"> = ON;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Numa biblioteca, qual destes é um <strong>atributo</strong>, e não uma entidade?</p>
+<label><input type="radio" name="q3"> Livro</label>
+<label><input type="radio" name="q3"> O ano de publicação do livro</label>
+<label><input type="radio" name="q3"> Leitor</label>
+<label><input type="radio" name="q3"> Empréstimo</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que a Ana guardou a data de nascimento do animal, e não a idade?</p>
+<label><input type="radio" name="q4"> Porque o SQLite não tem tipo para números</label>
+<label><input type="radio" name="q4"> Porque a idade ocupa mais espaço</label>
+<label><input type="radio" name="q4"> Porque a idade é segredo</label>
+<label><input type="radio" name="q4"> Porque a idade muda sozinha todo ano; o nascimento nunca muda, e a idade se calcula a partir dele</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que o telefone do tutor não fica na tabela <code>consultas</code>?</p>
+<label><input type="radio" name="q5"> Porque ele é do tutor: repetido em cada consulta, uma troca de número teria de ser feita em várias linhas, e uma esquecida deixaria o banco com dois números</label>
+<label><input type="radio" name="q5"> Porque <code>consultas</code> não aceita texto</label>
+<label><input type="radio" name="q5"> Porque telefone não pode ser <code>NOT NULL</code></label>
+<label><input type="radio" name="q5"> Porque a tabela ficaria com colunas demais para o SQLite</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. No terminal, um <code>INSERT</code> com uma chave estrangeira inexistente entrou sem erro. O mais provável é:</p>
+<label><input type="radio" name="q6"> O <code>REFERENCES</code> foi escrito errado</label>
+<label><input type="radio" name="q6"> O terminal não suporta chaves estrangeiras</label>
+<label><input type="radio" name="q6"> A verificação estava desligada: faltou o <code>PRAGMA foreign_keys = ON</code></label>
+<label><input type="radio" name="q6"> O SQLite apagou a linha errada depois</label>
+</div>
+
+<h3>Missão final: as vacinas</h3>
+
+<div class="trysql" data-goal="tabela:vacinas;;mudou:vacinas=2;;linhas:2;;contem:Rex">
+<p class="try-task"><strong>Missão:</strong> a prima da Ana quer saber quais vacinas cada animal tomou. Um animal toma várias vacinas; cada registro de vacina é de um animal. Crie a tabela <code>vacinas</code> (com <code>id</code>, o animal, o nome da vacina e a data, todos obrigatórios), cadastre as duas vacinas do Rex (animal 1): "Antirrábica" em <code>2026-10-06</code> e "V10" em <code>2025-10-02</code>, e termine com uma consulta que mostre o nome do animal, a vacina e a data.</p>
+<pre class="script" data-file="vacinas.sql">CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+INSERT INTO tutores VALUES (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br');
+INSERT INTO animais VALUES (1, 1, 'Rex', 'cachorro', '2019-04-10'), (2, 1, 'Thor', 'cachorro', '2023-01-22');
+
+-- crie aqui a tabela vacinas e cadastre as vacinas do Rex
+
+SELECT a.nome AS animal, v.nome AS vacina, v.data
+FROM vacinas v
+JOIN animais a ON a.id = v.animal_id
+ORDER BY v.data;
+</pre>
+<pre class="solucao" data-file="vacinas.sql">CREATE TABLE tutores (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, telefone TEXT NOT NULL, email TEXT);
+CREATE TABLE animais (id INTEGER PRIMARY KEY, tutor_id INTEGER NOT NULL REFERENCES tutores(id),
+  nome TEXT NOT NULL, especie TEXT NOT NULL CHECK (especie IN ('cachorro', 'gato', 'ave', 'outro')), nascimento TEXT);
+INSERT INTO tutores VALUES (1, 'João Pereira', '(86) 90000-0001', 'joao.pereira@exemplo.com.br');
+INSERT INTO animais VALUES (1, 1, 'Rex', 'cachorro', '2019-04-10'), (2, 1, 'Thor', 'cachorro', '2023-01-22');
+
+CREATE TABLE vacinas (
+  id        INTEGER PRIMARY KEY,
+  animal_id INTEGER NOT NULL REFERENCES animais(id),
+  nome      TEXT NOT NULL,
+  data      TEXT NOT NULL
+);
+INSERT INTO vacinas (animal_id, nome, data) VALUES
+  (1, 'Antirrábica', '2026-10-06'),
+  (1, 'V10',         '2025-10-02');
+
+SELECT a.nome AS animal, v.nome AS vacina, v.data
+FROM vacinas v
+JOIN animais a ON a.id = v.animal_id
+ORDER BY v.data;
+</pre>
+</div>
+
+<p>Repare que você acabou de fazer os sete passos em miniatura: achou uma entidade nova (vacina), os atributos dela, a chave, a ligação 1 para N com <code>animais</code> (a chave estrangeira do lado N), as regras (<code>NOT NULL</code>), o <code>CREATE TABLE</code> e o teste.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Modelar é separar os assuntos misturados num caderno ou numa planilha em tabelas ligadas entre si. Uma tabela só repete dados, e dados repetidos acabam discordando.</li>
+  <li><strong>Entidades</strong> (coisas que se contam: tutor, animal, consulta) viram tabelas; <strong>atributos</strong> (detalhes de cada coisa) viram colunas, um valor por coluna, sem guardar o que se calcula.</li>
+  <li>Cada tabela ganha <code>id INTEGER PRIMARY KEY</code>; dados reais únicos (CRMV, CPF) ficam como <code>UNIQUE</code>.</li>
+  <li>Em <strong>1 para N</strong>, a chave estrangeira vai no lado N (<code>animais.tutor_id</code>). Em N para N, entra uma tabela de ligação.</li>
+  <li>As regras do negócio viram <code>NOT NULL</code>, <code>CHECK</code>, <code>UNIQUE</code> e <code>REFERENCES</code>. No terminal do SQLite, ligue <code>PRAGMA foreign_keys = ON</code>.</li>
+  <li>Crie primeiro as tabelas que não dependem de ninguém, ponha dados de teste e confira se o modelo responde às perguntas reais.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
