@@ -107,7 +107,7 @@ foreach ($stmt as $p) {                           // ler as linhas
 }
 </pre>
 
-<p><em>(Ilustrativo: não roda no editor.)</em> O <code>prepare</code> cria o comando preparado e o <code>execute([5])</code> liga o valor ao <code>?</code>. Para começar em PHP, veja o <strong>Guia PHP</strong> do mesmo autor, nas aulas "Conectar com PDO" e "Prepared Statements e SQL Injection".</p>
+<p><em>(Ilustrativo: não roda no editor.)</em> O <code>prepare</code> cria o comando preparado e o <code>execute([5])</code> liga o valor ao <code>?</code>. Para começar em PHP, veja o Guia PHP do mesmo autor: <a href="https://wallysondevs.github.io/guia-php/pdo.html">Conectar com PDO</a> e <a href="https://wallysondevs.github.io/guia-php/prepared-statements.html">Prepared Statements e SQL Injection</a>.</p>
 
 <hr>
 
@@ -156,7 +156,7 @@ public class Lista {
 }
 </pre>
 
-<p><em>(Ilustrativo.)</em> O <code>try (…)</code> com os recursos entre parênteses fecha a conexão sozinho no fim. Para começar em Java, veja o <strong>Guia Java</strong> do mesmo autor.</p>
+<p><em>(Ilustrativo.)</em> O <code>try (…)</code> com os recursos entre parênteses fecha a conexão sozinho no fim. Para começar em Java, veja o <a href="https://wallysondevs.github.io/guia-java/">Guia Java</a> do mesmo autor.</p>
 
 <hr>
 
@@ -179,11 +179,11 @@ while (reader.Read())
 }
 </pre>
 
-<p><em>(Ilustrativo.)</em> O <code>$preco</code> é um espaço reservado nomeado (o SQLite aceita <code>:nome</code>, <code>@nome</code> e <code>$nome</code>). Para começar em C#, veja o <strong>Guia C#</strong> do mesmo autor.</p>
+<p><em>(Ilustrativo.)</em> O <code>$preco</code> é um espaço reservado nomeado (o SQLite aceita <code>:nome</code>, <code>@nome</code> e <code>$nome</code>). Para começar em C#, veja o <a href="https://wallysondevs.github.io/guia-csharp/">Guia C#</a> do mesmo autor.</p>
 
 <div class="note">
 <strong>E em C puro?</strong>
-<p>O SQLite é escrito em C, e dá para usá-lo direto, sem driver, com funções como <code>sqlite3_open</code>, <code>sqlite3_prepare_v2</code>, <code>sqlite3_bind_*</code> e <code>sqlite3_step</code>. É mais trabalhoso (é a "cozinha" que as outras linguagens escondem), mas é a base de todas elas. O <strong>Guia C</strong> do mesmo autor ajuda com a linguagem.</p>
+<p>O SQLite é escrito em C, e dá para usá-lo direto, sem driver, com funções como <code>sqlite3_open</code>, <code>sqlite3_prepare_v2</code>, <code>sqlite3_bind_*</code> e <code>sqlite3_step</code>. É mais trabalhoso (é a "cozinha" que as outras linguagens escondem), mas é a base de todas elas. O <a href="https://wallysondevs.github.io/guia-c/">Guia C</a> do mesmo autor ajuda com a linguagem.</p>
 </div>
 
 <hr>
@@ -297,7 +297,7 @@ sqlite3.OperationalError: no such table: produto</pre>
   <li>O SQL quase não muda de uma linguagem para outra; muda a "cola" em volta e a marca de espaço reservado (<code>?</code>, <code>:nome</code>, <code>$1</code>…).</li>
   <li>Em todas, os valores entram por <strong>parâmetro</strong> (aula <a href="parametros.html">Consultas com Parâmetros</a>), nunca colados — senão volta o <a href="sql-injection.html">SQL Injection</a>.</li>
   <li>O erro do banco (como <code>no such table</code>) é o mesmo texto em qualquer linguagem, só embrulhado num erro diferente.</li>
-  <li>Para aprofundar em cada linguagem: os guias de <strong>PHP</strong>, <strong>Java</strong>, <strong>C#</strong> e <strong>C</strong> do mesmo autor.</li>
+  <li>Para aprofundar em cada linguagem: os guias de <a href="https://wallysondevs.github.io/guia-php/">PHP</a>, <a href="https://wallysondevs.github.io/guia-java/">Java</a>, <a href="https://wallysondevs.github.io/guia-csharp/">C#</a> e <a href="https://wallysondevs.github.io/guia-c/">C</a> do mesmo autor.</li>
 </ul>
 
 <div class="pager"></div>
