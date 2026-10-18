@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Índices — CREATE INDEX, UNIQUE e DROP INDEX | Guia SQL</title>
+<meta name="description" content="Índices em SQL para quem está começando: a ideia do índice remissivo do livro, CREATE INDEX, índice composto e a ordem das colunas, UNIQUE INDEX, DROP INDEX, como ver os índices do banco, o custo de cada índice e as mensagens reais do SQLite quando algo dá errado, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Índices</span></h1>
+
+<p class="intro">A Ana atende um cliente no balcão da Loja Aurora e quer ver os pedidos dele. O banco responde na hora, porque a loja tem só 90 pedidos. Mas e quando forem 90 mil? Ou 9 milhões? Sem ajuda, o banco precisa ler <strong>todos</strong> os pedidos, um por um, para achar os daquele cliente. A ajuda tem nome: <strong>índice</strong>. Nesta aula você vai criar índices com <code>CREATE INDEX</code>, entender por que a ordem das colunas importa num índice composto, usar o <code>UNIQUE INDEX</code> para proibir valores repetidos e apagar índices com <code>DROP INDEX</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um índice, pela comparação com o índice remissivo de um livro.</li>
+  <li>Criar um índice com <code>CREATE INDEX</code> e ver os índices que o banco já tem.</li>
+  <li>Que um índice <strong>nunca muda o resultado</strong> de uma consulta: só o caminho até ele.</li>
+  <li>O índice composto (várias colunas) e por que a ordem das colunas faz diferença.</li>
+  <li>O <code>UNIQUE INDEX</code>, que impede valores repetidos, e o que ele faz com <code>NULL</code>.</li>
+  <li>Apagar índices com <code>DROP INDEX</code>, os índices que o SQLite cria sozinho e o preço de cada índice.</li>
+  <li>As mensagens reais do SQLite quando um índice dá errado.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, num SQLite com o banco da <a href="banco-do-guia.html">Loja Aurora</a>. Cada exemplo parte do banco limpo: o índice que um exemplo cria não existe no seguinte. As sessões de terminal saíram do <code>sqlite3</code> 3.50.4 no computador fictício da Ana, com o arquivo <code>~/loja.db</code>.</p>
+
+<hr>
+
+<h2>A ideia: o índice remissivo do livro</h2>
+<p>Pegue um livro de receitas grosso e procure "mandioca". Você tem dois jeitos:</p>
+<ol class="passo">
+  <li><strong>Folhear o livro inteiro</strong>, página por página, olhando cada receita. Funciona sempre, mas demora, e demora mais quanto mais grosso o livro.</li>
+  <li><strong>Ir ao índice remissivo</strong>, lá no fim: uma lista em <strong>ordem alfabética</strong> com cada ingrediente e as páginas onde ele aparece. Você acha "mandioca" em segundos (porque a lista está em ordem) e vai direto às páginas 37 e 112.</li>
+</ol>
+
+<pre class="file" data-file="índice remissivo do livro">Macaxeira ......... veja Mandioca
+Maionese .......... 15, 88
+Mandioca .......... 37, 112
+Manga ............. 140
+Maracujá .......... 141, 150
+</pre>
+
+<p>Um <strong>índice</strong> de banco de dados é exatamente isso. É uma lista à parte, <strong>sempre em ordem</strong>, com os valores de uma coluna e, ao lado de cada valor, onde estão as linhas que o têm. Num índice da coluna <code>cliente_id</code> dos pedidos, o banco acha "cliente 3" depressa e pula direto para os pedidos 3, 29, 55 e 81, sem ler os outros 86.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No livro</th><th>No banco</th></tr>
+<tr><td>As páginas do livro</td><td>A tabela, com as linhas na ordem em que foram gravadas</td></tr>
+<tr><td>Folhear o livro inteiro</td><td>Ler a tabela inteira (o SQLite chama isso de <strong>SCAN</strong>, "varredura")</td></tr>
+<tr><td>O índice remissivo, em ordem alfabética</td><td>O índice, em ordem pelos valores da coluna</td></tr>
+<tr><td>"Mandioca ... 37, 112"</td><td>"cliente_id 3 → linhas 3, 29, 55, 81"</td></tr>
+<tr><td>Ir direto à página certa</td><td>Buscar no índice e ler só as linhas certas (<strong>SEARCH</strong>, "busca")</td></tr>
+<tr><td>Quando entra receita nova, o índice tem de ser atualizado</td><td>Cada INSERT, UPDATE ou DELETE também atualiza o índice</td></tr>
+</table>
+</div>
+
+<p>Repare na última linha: o índice não é de graça. Ele ocupa espaço e dá trabalho a cada mudança. Você vai ver isso na seção 7.</p>
+
+<hr>
+
+<h2>1. O primeiro índice: <code>CREATE INDEX</code></h2>
+<p><code>CREATE INDEX</code> quer dizer "crie um índice". Este cria um índice na coluna <code>cliente_id</code> da tabela <code>pedidos</code>:</p>
+
+<pre class="file" data-file="indice.sql" data-resultado>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE INDEX</dt><dd>"Crie um índice". O comando que monta a lista ordenada.</dd>
+  <dt>idx_pedidos_cliente</dt><dd>O <strong>nome</strong> do índice. É obrigatório e não pode repetir o nome de outro índice, tabela ou view do banco. O costume é <code>idx_</code> (de <em>index</em>, "índice") + a tabela + a coluna: quem lê o nome já sabe o que o índice guarda.</dd>
+  <dt>ON pedidos</dt><dd>"Na tabela pedidos". <code>ON</code> = "em", "sobre".</dd>
+  <dt>(cliente_id)</dt><dd>A coluna que o índice vai pôr em ordem, entre parênteses. Pode ser mais de uma, separadas por vírgula (seção 4).</dd>
+</dl>
+
+<p>O resultado é só um "ok": criar um índice não devolve linhas. O banco leu os 90 pedidos uma vez, montou a lista ordenada por <code>cliente_id</code> e a guardou no arquivo, ao lado da tabela.</p>
+
+<h3>Onde o índice fica guardado</h3>
+<p>Todo banco SQLite tem uma tabela especial, a <code>sqlite_schema</code> ("esquema do SQLite"), com uma linha para cada tabela, índice e view que existe nele. Dá para consultá-la como qualquer tabela:</p>
+
+<pre class="file" data-file="ver-indices.sql" data-resultado>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+SELECT type, name, tbl_name, sql
+FROM sqlite_schema
+WHERE type = 'index';
+</pre>
+
+<dl class="anatomy">
+  <dt>type</dt><dd>O tipo do objeto: <code>table</code>, <code>index</code>, <code>view</code> ou <code>trigger</code>. O <code>WHERE type = 'index'</code> deixa só os índices.</dd>
+  <dt>name</dt><dd>O nome do índice.</dd>
+  <dt>tbl_name</dt><dd>A tabela a que ele pertence.</dd>
+  <dt>sql</dt><dd>O comando que o criou, guardado como texto.</dd>
+</dl>
+
+<p>Vieram <strong>dois</strong> índices, e você só criou um. O primeiro, <code>sqlite_autoindex_itens_pedido_1</code>, o SQLite criou sozinho, e a coluna <code>sql</code> dele é <em>NULL</em> porque nenhum <code>CREATE INDEX</code> o criou. Você vai entender de onde ele veio na seção 6.</p>
+
+<div class="trysql" data-goal="out:\|produtos;;linhas:2">
+<p class="try-task"><strong>Experimente:</strong> a Ana vive filtrando produtos por categoria. Na linha vazia, crie um índice chamado <code>idx_produtos_categoria</code> na coluna <code>categoria_id</code> da tabela <code>produtos</code>. Rode e veja o seu índice aparecer na lista, ao lado do que o SQLite criou sozinho.</p>
+<pre class="script" data-file="consulta.sql">-- crie o índice aqui:
+
+
+SELECT name, tbl_name
+FROM sqlite_schema
+WHERE type = 'index';
+</pre>
+<pre class="solucao" data-file="consulta.sql">-- crie o índice aqui:
+CREATE INDEX idx_produtos_categoria ON produtos (categoria_id);
+
+SELECT name, tbl_name
+FROM sqlite_schema
+WHERE type = 'index';
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O índice não muda o resultado</h2>
+<p>Esta é a regra mais importante da aula: um índice <strong>nunca</strong> muda <em>o que</em> a consulta devolve, só <em>como</em> o banco chega lá. Você não precisa citar o índice no <code>SELECT</code>; o próprio banco decide se vale a pena usá-lo. Compare as duas consultas, uma sem e outra com o índice:</p>
+
+<pre class="file" data-file="sem-indice.sql" data-resultado>SELECT id, data, frete
+FROM pedidos
+WHERE cliente_id = 3;
+</pre>
+
+<pre class="file" data-file="com-indice.sql" data-resultado>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+SELECT id, data, frete
+FROM pedidos
+WHERE cliente_id = 3;
+</pre>
+
+<p>As mesmas 4 linhas, na mesma ordem. Com 90 pedidos, a diferença de tempo nem dá para medir. Então como saber se o banco usou o índice? Existe um comando para perguntar ao SQLite qual caminho ele vai seguir: o <code>EXPLAIN QUERY PLAN</code> ("explique o plano da consulta"). Só uma espiada aqui; ele tem aula própria, <a href="explain.html">EXPLAIN QUERY PLAN</a>:</p>
+
+<pre class="file" data-file="plano.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT id, data, frete FROM pedidos WHERE frete = 0;
+
+CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+EXPLAIN QUERY PLAN
+SELECT id, data, frete FROM pedidos WHERE cliente_id = 3;
+</pre>
+
+<p>Olhe só a coluna <code>detail</code> ("detalhe"). Na primeira consulta, o frete não tem índice, e o plano diz <code>SCAN pedidos</code>: vou ler a tabela inteira (folhear o livro). Na segunda, diz <code>SEARCH pedidos USING INDEX idx_pedidos_cliente (cliente_id=?)</code>: vou <strong>buscar</strong> usando o índice, pelo valor de <code>cliente_id</code> (ir ao índice remissivo). As outras colunas são números internos do SQLite e podem ser ignoradas.</p>
+
+<p>No terminal, o programa <code>sqlite3</code> desenha o mesmo plano em forma de árvore, sem os números:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; EXPLAIN QUERY PLAN SELECT id, data, frete FROM pedidos WHERE frete = 0;
+QUERY PLAN
+`--SCAN pedidos
+sqlite&gt; CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+sqlite&gt; EXPLAIN QUERY PLAN SELECT id, data, frete FROM pedidos WHERE cliente_id = 3;
+QUERY PLAN
+`--SEARCH pedidos USING INDEX idx_pedidos_cliente (cliente_id=?)
+sqlite&gt; .quit</pre>
+
+<h3>Medindo num banco grande</h3>
+<p>Para sentir a diferença, a Ana fez um teste no terminal, num arquivo à parte (<code>teste.db</code>, para não mexer na loja): uma tabela com <strong>um milhão</strong> de números. O comando <code>.timer on</code> do <code>sqlite3</code> mostra quanto tempo cada consulta levou:</p>
+
+<pre class="term">$ sqlite3 teste.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE numeros (n INTEGER, dobro INTEGER);
+sqlite&gt; WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x &lt; 1000000) INSERT INTO numeros SELECT x, x * 2 FROM c;
+sqlite&gt; .timer on
+sqlite&gt; SELECT dobro FROM numeros WHERE n = 777777;
+1555554
+Run Time: real 0.030 user 0.029716 sys 0.000144         « sem índice: leu 1 milhão de linhas
+sqlite&gt; CREATE INDEX idx_numeros_n ON numeros (n);
+Run Time: real 0.236 user 0.189177 sys 0.027303         « montar o índice também leva tempo
+sqlite&gt; SELECT dobro FROM numeros WHERE n = 777777;
+1555554
+Run Time: real 0.000 user 0.000060 sys 0.000007         « com índice: menos de 1 milésimo
+sqlite&gt; .quit</pre>
+
+<p>Não se preocupe com o <code>WITH RECURSIVE</code>: é só um jeito de gerar um milhão de linhas, e ele tem aula própria (<a href="cte-recursiva.html">CTE Recursiva</a>). O que importa são os tempos: a mesma consulta, com a mesma resposta (<code>1555554</code>), caiu de 30 milésimos de segundo para menos de 1. Parece pouco, mas um site faz essa consulta milhares de vezes por minuto, e numa tabela de 100 milhões de linhas os 30 milésimos virariam 3 segundos. Repare também que <strong>criar</strong> o índice levou 0,236 s: o banco precisou ler a tabela inteira e pôr tudo em ordem. A aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a> faz essas medições com calma e mostra quando o índice <strong>não</strong> ajuda.</p>
+
+<hr>
+
+<h2>3. Vendo os índices de uma tabela</h2>
+<p>Além da <code>sqlite_schema</code>, o SQLite tem dois comandos <code>PRAGMA</code> ("instrução especial") que respondem perguntas sobre índices. Eles funcionam no editor também:</p>
+
+<pre class="file" data-file="pragmas.sql" data-resultado>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+PRAGMA index_list('pedidos');
+PRAGMA index_info('idx_pedidos_cliente');
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Pergunta que responde</th><th>Colunas que importam</th></tr>
+<tr><td><code>PRAGMA index_list('tabela')</code></td><td>Quais índices esta tabela tem?</td><td><code>name</code> (o nome), <code>unique</code> (1 = não aceita repetidos), <code>origin</code> (<code>c</code> = criado por <code>CREATE INDEX</code>, <code>u</code> = por um <code>UNIQUE</code>, <code>pk</code> = pela chave primária)</td></tr>
+<tr><td><code>PRAGMA index_info('índice')</code></td><td>Quais colunas este índice guarda, e em que ordem?</td><td><code>seqno</code> (a posição no índice: 0, 1, 2…), <code>name</code> (a coluna)</td></tr>
+</table>
+</div>
+
+<p>Os PRAGMAs têm aula própria em <a href="pragma.html">PRAGMAs Úteis</a>. No terminal do <code>sqlite3</code>, existe um atalho ainda mais curto, o comando de ponto <code>.indexes</code> (só do programa <code>sqlite3</code>, não do SQL; veja <a href="comandos-ponto.html">Comandos de Ponto</a>). E o <code>.schema</code> de uma tabela mostra os índices dela embaixo do <code>CREATE TABLE</code>:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .indexes
+sqlite_autoindex_itens_pedido_1
+sqlite&gt; CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+sqlite&gt; .indexes
+idx_pedidos_cliente              sqlite_autoindex_itens_pedido_1
+sqlite&gt; .indexes pedidos                       « só os índices da tabela pedidos
+idx_pedidos_cliente
+sqlite&gt; .schema pedidos
+CREATE TABLE pedidos (
+    id             INTEGER PRIMARY KEY,
+    cliente_id     INTEGER NOT NULL REFERENCES clientes(id),
+    funcionario_id INTEGER NOT NULL REFERENCES funcionarios(id),
+    data           TEXT NOT NULL,
+    entregue_em    TEXT,
+    frete          REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);</pre>
+
+<p>Diferente do editor, no terminal o índice <strong>fica gravado</strong> no arquivo <code>loja.db</code>: na próxima vez que a Ana abrir o banco, ele continua lá. Índice é parte do banco, como as tabelas.</p>
+
+<hr>
+
+<h2>4. Índice composto: várias colunas</h2>
+<p>A Ana quer os pedidos de um cliente <strong>a partir de uma data</strong>: "os pedidos da cliente 3 desde 2025". Um índice pode ter mais de uma coluna. Esse é o <strong>índice composto</strong>:</p>
+
+<pre class="file" data-file="composto.sql" data-resultado>CREATE INDEX idx_pedidos_cliente_data ON pedidos (cliente_id, data);
+
+SELECT id, cliente_id, data
+FROM pedidos
+WHERE cliente_id = 3 AND data &gt;= '2025-01-01';
+</pre>
+
+<dl class="anatomy">
+  <dt>idx_pedidos_cliente_data</dt><dd>O nome, com as duas colunas, na ordem.</dd>
+  <dt>(cliente_id, data)</dt><dd>Primeiro o índice ordena por <code>cliente_id</code>. Entre os pedidos do <strong>mesmo</strong> cliente, ordena por <code>data</code>.</dd>
+</dl>
+
+<h3>A ordem das colunas importa: a lista telefônica</h3>
+<p>Pense numa lista telefônica antiga, ordenada por <strong>sobrenome</strong> e, dentro do mesmo sobrenome, por <strong>nome</strong>. Ela é ótima para achar "Sousa, Ana" e ótima para achar todos os "Sousa". Mas é inútil para achar todas as pessoas chamadas "Ana": as Anas estão espalhadas pela lista inteira, uma em cada sobrenome. Você teria de ler a lista toda.</p>
+
+<p>Um índice composto funciona igual. O <code>(cliente_id, data)</code> ajuda quando a consulta filtra pela <strong>primeira</strong> coluna (com ou sem a segunda), mas não ajuda quem filtra só pela <strong>segunda</strong>. O plano confirma:</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>CREATE INDEX idx_pedidos_cliente_data ON pedidos (cliente_id, data);
+
+EXPLAIN QUERY PLAN
+SELECT id, data, frete FROM pedidos WHERE cliente_id = 3 AND data &gt;= '2025-01-01';
+
+EXPLAIN QUERY PLAN
+SELECT id, data, frete FROM pedidos WHERE cliente_id = 3;
+
+EXPLAIN QUERY PLAN
+SELECT id, data, frete FROM pedidos WHERE data &gt;= '2025-01-01';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>A consulta filtra por…</th><th>Na lista telefônica</th><th>O plano</th></tr>
+<tr><td><code>cliente_id</code> e <code>data</code></td><td>"Sousa, Ana"</td><td><code>SEARCH … (cliente_id=? AND data&gt;?)</code>: usa as duas colunas</td></tr>
+<tr><td>só <code>cliente_id</code></td><td>todos os "Sousa"</td><td><code>SEARCH … (cliente_id=?)</code>: usa a primeira coluna</td></tr>
+<tr><td>só <code>data</code></td><td>todas as "Ana"</td><td><code>SCAN pedidos</code>: lê a tabela inteira</td></tr>
+</table>
+</div>
+
+<p>A regra prática: no índice composto, ponha <strong>primeiro</strong> a coluna que aparece sempre no <code>WHERE</code>, comparada com <code>=</code>. Um índice <code>(cliente_id, data)</code> não é a mesma coisa que um <code>(data, cliente_id)</code>. Por outro lado, ele já faz o trabalho de um índice só de <code>cliente_id</code>, então ter os dois seria desperdício.</p>
+
+<hr>
+
+<h2>5. <code>UNIQUE INDEX</code>: proibido repetir</h2>
+<p>Às vezes o índice tem uma segunda função: garantir que um valor <strong>não se repita</strong>. Dois clientes com o mesmo email são um problema (para qual dos dois vai a nota fiscal?). Com <code>CREATE UNIQUE INDEX</code> ("crie um índice único"), o banco passa a recusar qualquer email repetido:</p>
+
+<pre class="file" data-file="unico.sql" data-resultado data-erro>CREATE UNIQUE INDEX idx_clientes_email ON clientes (email);
+
+INSERT INTO clientes (nome, email)
+VALUES ('Beatriz Sousa', 'ana.beatriz@exemplo.com.br');
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE UNIQUE INDEX</dt><dd>Igual ao <code>CREATE INDEX</code>, com uma promessa a mais: nunca vão existir duas linhas com o mesmo valor nessa coluna.</dd>
+  <dt>idx_clientes_email</dt><dd>O nome do índice.</dd>
+  <dt>ON clientes (email)</dt><dd>A tabela e a coluna que não podem repetir.</dd>
+</dl>
+
+<p>O índice foi criado sem problema, porque hoje nenhum email se repete. Mas o <code>INSERT</code> tentou cadastrar o email <code>ana.beatriz@exemplo.com.br</code>, que já é da cliente 3, e parou com o erro <code>UNIQUE constraint failed: clientes.email</code>: "a restrição de único falhou em clientes.email". Nada foi gravado. O <code>UNIQUE</code> também pode ser escrito direto no <code>CREATE TABLE</code>, como restrição da coluna; isso tem aula própria, <a href="unique.html">UNIQUE</a>. Por baixo, as duas formas dão no mesmo: um índice único.</p>
+
+<h3>E o <code>NULL</code>?</h3>
+<p>Três clientes da loja estão sem email (<code>NULL</code>): os clientes 7, 15 e 23. Mesmo assim, o índice único foi criado. Para o SQLite, um <code>NULL</code> não é igual a outro <code>NULL</code> ("valor desconhecido" não é igual a "valor desconhecido", veja <a href="null.html">O Valor NULL</a>), então vários <code>NULL</code> convivem num índice único. Dá até para cadastrar mais um cliente sem email:</p>
+
+<pre class="file" data-file="unico-null.sql" data-resultado>CREATE UNIQUE INDEX idx_clientes_email ON clientes (email);
+
+INSERT INTO clientes (nome, email) VALUES ('Beatriz Sousa', NULL);
+
+SELECT COUNT(*) AS sem_email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+
+<p>Agora são 4 clientes sem email, e o índice único não reclamou. PostgreSQL e MySQL fazem igual; o SQL Server é diferente (veja a nota "Nos outros bancos", mais abaixo).</p>
+
+<div class="trysql" data-goal="erro:UNIQUE constraint failed: produtos\.nome">
+<p class="try-task"><strong>Missão:</strong> o estoquista cadastrou de novo o <code>Lápis Grafite HB</code>, que já existe (é o produto 3). Hoje o banco aceita, e a loja fica com dois produtos iguais. Antes do <code>INSERT</code>, crie um índice único chamado <code>idx_produtos_nome</code> na coluna <code>nome</code> de <code>produtos</code>, para que o banco <strong>recuse</strong> o cadastro repetido. A missão passa quando o <code>INSERT</code> der o erro de <code>UNIQUE</code>.</p>
+<pre class="script" data-file="consulta.sql">-- o índice único vem aqui:
+
+
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Lápis Grafite HB', 1, 6, 1.20);
+</pre>
+<pre class="solucao" data-file="consulta.sql">-- o índice único vem aqui:
+CREATE UNIQUE INDEX idx_produtos_nome ON produtos (nome);
+
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco)
+VALUES ('Lápis Grafite HB', 1, 6, 1.20);
+</pre>
+</div>
+
+<h3>Índice único composto</h3>
+<p>O <code>UNIQUE</code> também vale para várias colunas juntas: aí o que não pode repetir é a <strong>combinação</strong>. Um índice único em <code>(cidade, nome)</code> de clientes deixaria existir duas "Ana Lima", desde que em cidades diferentes. É o caso da tabela <code>itens_pedido</code>: o mesmo produto aparece em vários pedidos, e cada pedido tem vários produtos, mas o par (pedido, produto) nunca se repete. Como o SQLite garante isso? Com um índice que ele criou sozinho, o assunto da próxima seção.</p>
+
+<hr>
+
+<h2>6. Apagando índices e os índices automáticos</h2>
+<h3><code>DROP INDEX</code></h3>
+<p>Um índice que não ajuda só dá trabalho. Para apagá-lo, use <code>DROP INDEX</code> ("descarte o índice") com o nome dele:</p>
+
+<pre class="file" data-file="apagar.sql" data-resultado>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+DROP INDEX idx_pedidos_cliente;
+
+SELECT name FROM sqlite_schema WHERE type = 'index';
+</pre>
+
+<dl class="anatomy">
+  <dt>DROP INDEX</dt><dd>Apaga o índice. Só o índice: a tabela e os dados continuam intactos. As consultas também continuam funcionando e dando o mesmo resultado, só que sem o atalho.</dd>
+  <dt>idx_pedidos_cliente</dt><dd>O nome do índice. No SQLite, não precisa dizer de que tabela ele é, porque o nome é único no banco inteiro.</dd>
+</dl>
+
+<p>Apagar um índice é uma operação segura: se você se arrepender, basta criar de novo. Bem diferente de <code>DROP TABLE</code>, que leva os dados junto (aula <a href="drop-table.html">DROP TABLE</a>).</p>
+
+<h3><code>IF NOT EXISTS</code> e <code>IF EXISTS</code></h3>
+<p>Criar um índice que já existe é erro; apagar um que não existe também (você vai ver as mensagens em <a href="#errado">Quando dá errado</a>). Em scripts que rodam várias vezes, use as formas "se":</p>
+
+<pre class="file" data-file="se-existir.sql" data-resultado>CREATE INDEX IF NOT EXISTS idx_pedidos_cliente ON pedidos (cliente_id);
+CREATE INDEX IF NOT EXISTS idx_pedidos_cliente ON pedidos (cliente_id);
+
+DROP INDEX IF EXISTS idx_que_nunca_existiu;
+</pre>
+
+<p>Os três comandos deram "ok". O segundo <code>CREATE</code> viu que o índice já existia e não fez nada; o <code>DROP</code> viu que o índice não existia e também não fez nada. Nenhum erro.</p>
+
+<h3>Os índices que o SQLite cria sozinho</h3>
+<p>Lembra do <code>sqlite_autoindex_itens_pedido_1</code>? A tabela <code>itens_pedido</code> foi criada com <code>PRIMARY KEY (pedido_id, produto_id)</code>, uma chave primária de duas colunas. Para garantir que o par não se repita (e achar um item depressa), o SQLite montou um índice único automático. O mesmo acontece com toda coluna marcada como <code>UNIQUE</code> no <code>CREATE TABLE</code>.</p>
+
+<p>E as outras tabelas, que têm <code>id INTEGER PRIMARY KEY</code>? Elas não ganharam índice nenhum, e nem precisam: no SQLite, a coluna <code>INTEGER PRIMARY KEY</code> é a própria ordem em que a tabela é guardada. Buscar <code>WHERE id = 42</code> já é rápido sem índice (veja <a href="primary-key.html">PRIMARY KEY</a>).</p>
+
+<p>Os índices automáticos não podem ser apagados com <code>DROP INDEX</code>, porque a chave primária depende deles:</p>
+
+<pre class="file" data-file="auto.sql" data-resultado data-erro>DROP INDEX sqlite_autoindex_itens_pedido_1;
+</pre>
+
+<p>"Um índice ligado a uma restrição UNIQUE ou PRIMARY KEY não pode ser apagado." Para tirar esse índice, seria preciso tirar a restrição da tabela. Pela mesma razão, você não pode dar a um índice seu um nome começado por <code>sqlite_</code>: esses nomes são reservados para o próprio SQLite.</p>
+
+<hr>
+
+<h2>7. O preço de um índice: quando criar</h2>
+<p>Se o índice deixa as buscas tão rápidas, por que não criar um índice em cada coluna? Porque ele custa:</p>
+<ul>
+  <li><strong>Espaço:</strong> o índice é uma cópia ordenada da coluna (mais o "endereço" de cada linha). Num banco grande, os índices podem ocupar tanto quanto os dados.</li>
+  <li><strong>Escritas mais lentas:</strong> cada <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> precisa atualizar a tabela <strong>e</strong> cada índice dela. É como um livro em que cada receita nova obriga a corrigir o índice remissivo. Uma tabela com dez índices recebe dados bem mais devagar que uma com um.</li>
+  <li><strong>Tempo de criação:</strong> criar o índice lê a tabela inteira (você viu os 0,236 s no teste do milhão).</li>
+</ul>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Vale a pena um índice na coluna que…</th><th>Exemplo na Loja Aurora</th></tr>
+<tr><td>aparece muito no <code>WHERE</code> para achar poucas linhas</td><td><code>WHERE cliente_id = 3</code>, <code>WHERE email = '…'</code></td></tr>
+<tr><td>liga tabelas num JOIN (a chave estrangeira)</td><td><code>pedidos.cliente_id</code>, <code>itens_pedido.produto_id</code> (veja <a href="inner-join.html">INNER JOIN</a>)</td></tr>
+<tr><td>aparece muito no <code>ORDER BY</code> de tabelas grandes</td><td><code>ORDER BY data</code> num histórico de milhões de pedidos</td></tr>
+<tr><td>não pode repetir</td><td>email do cliente, nome do produto (<code>UNIQUE INDEX</code>)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Não vale a pena quando…</th><th>Por quê</th></tr>
+<tr><td>a tabela é pequena (dezenas ou centenas de linhas)</td><td>Ler tudo já é instantâneo; as 8 categorias da loja nunca vão precisar de índice.</td></tr>
+<tr><td>a coluna tem poucos valores diferentes</td><td><code>vip</code> é 0 ou 1: o índice "acharia" metade da tabela, e ler tudo sai quase igual.</td></tr>
+<tr><td>a tabela recebe muito mais escritas que leituras</td><td>Um registro de log, por exemplo: cada índice atrasa cada gravação.</td></tr>
+<tr><td>a coluna já é a primeira de outro índice</td><td><code>(cliente_id)</code> sobra se já existe <code>(cliente_id, data)</code>.</td></tr>
+</table>
+</div>
+
+<p>Não decore essas tabelas: na dúvida, <strong>meça</strong>. A aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a> ensina a usar o <code>EXPLAIN QUERY PLAN</code> e o <code>.timer</code> para decidir com números.</p>
+
+<hr>
+
+<h2>8. Formas diferentes de fazer</h2>
+<p>Há mais de um jeito de conseguir um índice, e o SQLite tem duas variações que valem conhecer de nome:</p>
+
+<pre class="file" data-file="formas.sql" data-resultado>-- 1. no CREATE TABLE, com UNIQUE (o índice vem junto, automático)
+CREATE TABLE cupons (codigo TEXT UNIQUE, desconto REAL);
+
+-- 2. índice parcial: só as linhas que passam no WHERE
+CREATE INDEX idx_pedidos_pendentes ON pedidos (data)
+WHERE entregue_em IS NULL;
+
+-- 3. índice numa expressão: a busca por lower(email) passa a usar o índice
+CREATE INDEX idx_clientes_email_min ON clientes (lower(email));
+
+SELECT name, tbl_name FROM sqlite_schema WHERE type = 'index';
+</pre>
+
+<p>O <code>cupons</code> ganhou o índice <code>sqlite_autoindex_cupons_1</code> sem nenhum <code>CREATE INDEX</code>. O <strong>índice parcial</strong> guarda só os 5 pedidos não entregues: pequeno, e perfeito para a tela "pedidos pendentes". O <strong>índice em expressão</strong> guarda o resultado de <code>lower(email)</code> (o email em minúsculas; veja <a href="funcoes-texto.html">Funções de Texto</a>), para buscas que ignoram maiúsculas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>CREATE INDEX nome ON t (col)</code></td><td>O caso comum: acelerar buscas por uma coluna.</td></tr>
+<tr><td><code>CREATE INDEX nome ON t (col1, col2)</code></td><td>Consultas que filtram sempre pela <code>col1</code> e, às vezes, também pela <code>col2</code>.</td></tr>
+<tr><td><code>CREATE UNIQUE INDEX nome ON t (col)</code></td><td>Proibir valores repetidos numa tabela que já existe.</td></tr>
+<tr><td><code>UNIQUE</code> no <code>CREATE TABLE</code></td><td>Proibir repetidos desde o começo, ao criar a tabela (aula <a href="unique.html">UNIQUE</a>).</td></tr>
+<tr><td><code>CREATE INDEX … WHERE …</code> (parcial)</td><td>Quando você só busca um pedaço pequeno da tabela, como os pedidos pendentes.</td></tr>
+<tr><td><code>CREATE INDEX … (lower(col))</code> (expressão)</td><td>Quando o <code>WHERE</code> sempre aplica a mesma função à coluna.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Os erros de índice são poucos e as mensagens são claras. Em cada quadro abaixo, o SQLite do seu navegador roda o SQL errado e mostra a mensagem real.</p>
+
+<div class="cenario">
+<strong>Criou o mesmo índice duas vezes</strong>
+<pre class="file" data-file="duas-vezes.sql" data-resultado data-erro>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+</pre>
+<p><strong>O que aconteceu:</strong> o primeiro deu "ok"; o segundo parou com <code>index idx_pedidos_cliente already exists</code>, "o índice idx_pedidos_cliente já existe". No terminal, a mesma mensagem vem com o prefixo <code>Parse error:</code>:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+sqlite&gt; CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+Parse error: index idx_pedidos_cliente already exists</pre>
+<p><strong>Como consertar:</strong> se o índice já está lá, não há nada a fazer. Num script que roda mais de uma vez, use <code>CREATE INDEX IF NOT EXISTS</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome de tabela errado</strong>
+<pre class="file" data-file="tabela-errada.sql" data-resultado data-erro>CREATE INDEX idx_pedidos_cliente ON pedido (cliente_id);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such table: main.pedido</code>, "não existe a tabela main.pedido". A tabela se chama <code>pedidos</code>, no plural. O <code>main.</code> é o nome do banco principal: o SQLite diz em qual banco procurou.</p>
+<p><strong>Como consertar:</strong> confira o nome da tabela (no terminal, <code>.tables</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Nome de coluna errado</strong>
+<pre class="file" data-file="coluna-errada.sql" data-resultado data-erro>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: cliente</code>, "não existe a coluna cliente". A coluna é <code>cliente_id</code>.</p>
+<p><strong>Como consertar:</strong> confira as colunas com <code>.schema pedidos</code> no terminal, ou com <code>SELECT * FROM pedidos LIMIT 1</code> no editor.</p>
+</div>
+
+<div class="cenario">
+<strong>Índice único numa coluna que já tem repetidos</strong>
+<pre class="file" data-file="unico-repetido.sql" data-resultado data-erro>CREATE UNIQUE INDEX idx_clientes_cidade ON clientes (cidade);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>UNIQUE constraint failed: clientes.cidade</code>. A loja tem 10 clientes de Teresina; um índice que promete "cidade nunca repete" não pode nascer numa tabela onde ela já repete. O índice não foi criado.</p>
+<p><strong>Como consertar:</strong> se a coluna pode repetir (como cidade), use um <code>CREATE INDEX</code> comum. Se não pode (como email), primeiro ache os repetidos com <code>GROUP BY</code> e <code>HAVING COUNT(*) &gt; 1</code> (aula <a href="having.html">HAVING</a>), corrija os dados e só então crie o índice único.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o nome do índice</strong>
+<pre class="file" data-file="sem-nome.sql" data-resultado data-erro>CREATE INDEX ON pedidos (cliente_id);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "ON": syntax error</code>, "erro de sintaxe perto de ON". O SQLite esperava o nome do índice e encontrou o <code>ON</code>. O PostgreSQL aceita índice sem nome (ele inventa um); o SQLite, não.</p>
+<p><strong>Como consertar:</strong> dê um nome: <code>CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu os parênteses</strong>
+<pre class="file" data-file="sem-parenteses.sql" data-resultado data-erro>CREATE INDEX idx_pedidos_cliente ON pedidos cliente_id;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>near "cliente_id": syntax error</code>. Depois do nome da tabela, o SQLite espera um <code>(</code> com a lista de colunas.</p>
+<p><strong>Como consertar:</strong> as colunas vão sempre entre parênteses, mesmo quando é uma só: <code>ON pedidos (cliente_id)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Deu ao índice o nome de uma tabela</strong>
+<pre class="file" data-file="nome-repetido.sql" data-resultado data-erro>CREATE INDEX pedidos ON pedidos (cliente_id);
+</pre>
+<p><strong>O que aconteceu:</strong> <code>there is already a table named pedidos</code>, "já existe uma tabela chamada pedidos". Tabelas, índices e views dividem a mesma lista de nomes no banco.</p>
+<p><strong>Como consertar:</strong> use o prefixo <code>idx_</code>: além de evitar o choque, deixa claro o que é índice.</p>
+</div>
+
+<div class="cenario">
+<strong>Apagou um índice que não existe</strong>
+<pre class="file" data-file="drop-inexistente.sql" data-resultado data-erro>DROP INDEX idx_pedidos_cliente;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such index: idx_pedidos_cliente</code>, "não existe o índice". Aqui o banco está limpo e o índice nunca foi criado. Acontece também quando o nome foi digitado errado.</p>
+<p><strong>Como consertar:</strong> confira o nome com <code>.indexes</code> (terminal) ou na <code>sqlite_schema</code>. Em scripts, <code>DROP INDEX IF EXISTS</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:2;;out:idx_pedidos_cliente">
+<p class="try-task"><strong>Missão:</strong> este script tem dois erros e para no primeiro. Conserte o nome da tabela e o nome da coluna (a tabela é <code>pedidos</code>, a coluna é <code>cliente_id</code>) para o índice ser criado e aparecer na lista, junto do automático.</p>
+<pre class="script" data-file="consulta.sql">CREATE INDEX idx_pedidos_cliente ON pedido (cliente);
+
+SELECT name FROM sqlite_schema WHERE type = 'index';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE INDEX idx_pedidos_cliente ON pedidos (cliente_id);
+
+SELECT name FROM sqlite_schema WHERE type = 'index';
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>CREATE INDEX nome ON tabela (colunas)</code> e o <code>CREATE UNIQUE INDEX</code> são escritos do mesmo jeito no MySQL, no PostgreSQL e no SQL Server. A diferença maior está no <code>DROP INDEX</code>: no MySQL e no SQL Server, o nome do índice só precisa ser único dentro da tabela, então é preciso dizer de qual tabela ele é. Trechos ilustrativos, que não rodam no SQLite:</p>
+<pre class="file" data-file="outros-bancos.sql (ilustrativo)">-- PostgreSQL: igual ao SQLite
+DROP INDEX idx_pedidos_cliente;
+
+-- MySQL e SQL Server: com ON tabela
+DROP INDEX idx_pedidos_cliente ON pedidos;
+</pre>
+<p>No SQL Server, um índice único deixa entrar só <strong>um</strong> <code>NULL</code> na coluna; para aceitar vários, como o SQLite, é preciso um índice filtrado (<code>WHERE email IS NOT NULL</code>). E os bancos com servidor têm tipos de índice que o SQLite não tem (como os índices <em>clustered</em> do SQL Server e os vários métodos do PostgreSQL). O básico desta aula vale em todos.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>CREATE INDEX nome ON tabela (coluna);</code></td><td>Cria um índice numa coluna</td></tr>
+<tr><td><code>CREATE INDEX nome ON tabela (col1, col2);</code></td><td>Índice composto: ordena por <code>col1</code> e, empatando, por <code>col2</code></td></tr>
+<tr><td><code>CREATE UNIQUE INDEX nome ON tabela (coluna);</code></td><td>Índice que também proíbe valores repetidos (vários <code>NULL</code> são aceitos)</td></tr>
+<tr><td><code>CREATE INDEX IF NOT EXISTS …</code></td><td>Cria só se ainda não existir; sem erro</td></tr>
+<tr><td><code>CREATE INDEX nome ON tabela (col) WHERE …;</code></td><td>Índice parcial: só as linhas do <code>WHERE</code></td></tr>
+<tr><td><code>DROP INDEX nome;</code></td><td>Apaga o índice (os dados ficam)</td></tr>
+<tr><td><code>DROP INDEX IF EXISTS nome;</code></td><td>Apaga só se existir; sem erro</td></tr>
+<tr><td><code>SELECT name, tbl_name FROM sqlite_schema WHERE type = 'index';</code></td><td>Lista os índices do banco</td></tr>
+<tr><td><code>PRAGMA index_list('tabela');</code></td><td>Os índices de uma tabela</td></tr>
+<tr><td><code>PRAGMA index_info('índice');</code></td><td>As colunas de um índice, na ordem</td></tr>
+<tr><td><code>.indexes</code> / <code>.indexes tabela</code></td><td>No terminal do <code>sqlite3</code>: lista os índices</td></tr>
+<tr><td><code>EXPLAIN QUERY PLAN SELECT …</code></td><td>Mostra se a consulta usa índice (<code>SEARCH</code>) ou lê tudo (<code>SCAN</code>)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>index X already exists</code></td><td>Já existe um índice com esse nome</td></tr>
+<tr><td><code>no such table: main.X</code></td><td>A tabela não existe (nome errado?)</td></tr>
+<tr><td><code>no such column: X</code></td><td>A coluna não existe nessa tabela</td></tr>
+<tr><td><code>UNIQUE constraint failed: tabela.coluna</code></td><td>Valor repetido numa coluna com índice único (ou ao criar o índice numa coluna que já repete)</td></tr>
+<tr><td><code>no such index: X</code></td><td>O <code>DROP INDEX</code> não achou o índice</td></tr>
+<tr><td><code>there is already a table named X</code></td><td>O nome do índice é o de uma tabela</td></tr>
+<tr><td><code>index associated with UNIQUE or PRIMARY KEY constraint cannot be dropped</code></td><td>Tentou apagar um índice automático</td></tr>
+<tr><td><code>object name reserved for internal use: sqlite_…</code></td><td>Nomes começados por <code>sqlite_</code> são do próprio SQLite</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<p>Crie um índice chamado <code>idx_clientes_cidade</code> na coluna <code>cidade</code> da tabela <code>clientes</code>:</p>
+<div class="ex-code"><input data-answer="CREATE INDEX|create index" aria-label="comando"> idx_clientes_cidade <input data-answer="ON|on" aria-label="palavra-chave"> clientes (cidade);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Apague o índice</h3>
+<p>Complete para apagar o índice <code>idx_clientes_cidade</code>:</p>
+<div class="ex-code"><input data-answer="DROP INDEX|drop index" aria-label="comando"> idx_clientes_cidade;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana criou um índice em <code>pedidos (cliente_id)</code>. O que acontece com o resultado de <code>SELECT * FROM pedidos WHERE cliente_id = 3</code>?</p>
+<label><input type="radio" name="q3"> Vem ordenado pelo índice, e não mais pelo id</label>
+<label><input type="radio" name="q3"> Só funciona se a consulta citar o nome do índice</label>
+<label><input type="radio" name="q3"> As mesmas linhas de antes; só o caminho até elas pode mudar</label>
+<label><input type="radio" name="q3"> Vem vazio até a Ana rodar um <code>UPDATE</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Existe um índice em <code>pedidos (cliente_id, data)</code>. Qual destas consultas <strong>não</strong> consegue usá-lo para buscar?</p>
+<label><input type="radio" name="q4"> <code>WHERE cliente_id = 5</code></label>
+<label><input type="radio" name="q4"> <code>WHERE data = '2025-03-03'</code></label>
+<label><input type="radio" name="q4"> <code>WHERE cliente_id = 5 AND data &gt; '2025-01-01'</code></label>
+<label><input type="radio" name="q4"> <code>WHERE cliente_id = 5 AND data = '2025-03-03'</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou <code>CREATE UNIQUE INDEX idx_clientes_cidade ON clientes (cidade);</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> O índice é criado e as cidades repetidas são apagadas</label>
+<label><input type="radio" name="q5"> O índice é criado, mas só vale para clientes novos</label>
+<label><input type="radio" name="q5"> O índice é criado como um índice comum, sem <code>UNIQUE</code></label>
+<label><input type="radio" name="q5"> Erro <code>UNIQUE constraint failed: clientes.cidade</code>, porque já há cidades repetidas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Em qual destas colunas um índice <strong>menos</strong> ajudaria?</p>
+<label><input type="radio" name="q6"> <code>clientes.vip</code>, que só tem 0 ou 1</label>
+<label><input type="radio" name="q6"> <code>clientes.email</code>, buscado a cada login</label>
+<label><input type="radio" name="q6"> <code>itens_pedido.produto_id</code>, usado nos JOINs com produtos</label>
+<label><input type="radio" name="q6"> <code>pedidos.cliente_id</code>, buscado a cada atendimento</label>
+</div>
+
+<h3>Missão final: o índice dos vendedores</h3>
+
+<div class="trysql" data-goal="out:^funcionario_id\ndata$">
+<p class="try-task"><strong>Missão:</strong> todo fim de mês, cada vendedor confere os próprios pedidos do período, com <code>WHERE funcionario_id = ? AND data BETWEEN ? AND ?</code>. Crie o índice composto <code>idx_pedidos_func_data</code> na tabela <code>pedidos</code>, com as colunas certas na ordem certa: primeiro a que é comparada com <code>=</code>, depois a do intervalo. O <code>PRAGMA</code> no fim mostra as colunas do índice, na ordem; enquanto o índice não existir, ele não mostra nada.</p>
+<pre class="script" data-file="consulta.sql">-- crie o índice aqui:
+
+
+SELECT name FROM pragma_index_info('idx_pedidos_func_data');
+</pre>
+<pre class="solucao" data-file="consulta.sql">-- crie o índice aqui:
+CREATE INDEX idx_pedidos_func_data ON pedidos (funcionario_id, data);
+
+SELECT name FROM pragma_index_info('idx_pedidos_func_data');
+</pre>
+</div>
+
+<p>Repare na última linha: <code>pragma_index_info(…)</code> é o mesmo <code>PRAGMA index_info</code>, escrito como se fosse uma tabela. Assim dá para escolher só a coluna <code>name</code>. Se você inverteu a ordem das colunas, a saída mostra <code>data</code> em cima, e a missão não passa: apague com <code>DROP INDEX</code> (ou só corrija o <code>CREATE</code>, já que cada Rodar parte do banco limpo).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <strong>índice</strong> é uma lista à parte, sempre em ordem, com os valores de uma ou mais colunas e onde estão as linhas: o índice remissivo do livro. Sem ele, o banco lê a tabela inteira (<code>SCAN</code>); com ele, vai direto às linhas certas (<code>SEARCH</code>).</li>
+  <li><code>CREATE INDEX nome ON tabela (coluna);</code> cria; <code>DROP INDEX nome;</code> apaga (só o índice, nunca os dados). Use <code>IF NOT EXISTS</code> e <code>IF EXISTS</code> em scripts.</li>
+  <li>O índice <strong>nunca muda o resultado</strong>, só a velocidade. O próprio banco decide quando usá-lo.</li>
+  <li>No índice composto, a ordem importa: <code>(cliente_id, data)</code> ajuda quem filtra por <code>cliente_id</code>, mas não quem filtra só por <code>data</code>, como uma lista telefônica ordenada por sobrenome.</li>
+  <li><code>CREATE UNIQUE INDEX</code> proíbe valores repetidos (<code>UNIQUE constraint failed</code>), mas aceita vários <code>NULL</code>.</li>
+  <li>O SQLite cria sozinho índices para <code>UNIQUE</code> e chaves primárias compostas (<code>sqlite_autoindex_…</code>), e não deixa apagá-los.</li>
+  <li>Índice custa espaço e deixa as escritas mais lentas. Crie nas colunas muito buscadas e nas de JOIN, não em todas. Na dúvida, meça: <a href="indices-na-pratica.html">Quando o Índice Ajuda</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
