@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL INSERT INTO SELECT — copiar linhas de uma tabela para outra | Guia SQL</title>
+<meta name="description" content="INSERT INTO ... SELECT para quem nunca mexeu num banco: copiar linhas de uma consulta para uma tabela que já existe, juntar dados de várias tabelas, valores fixos e calculados, a ordem das colunas, as regras que são conferidas (NOT NULL, UNIQUE), evitar duplicatas com INSERT OR IGNORE, restaurar uma cópia e os erros reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">INSERT INTO SELECT</span></h1>
+
+<p class="intro">A Ana quer montar uma agenda de contatos da Loja Aurora, juntando os clientes e os fornecedores. A tabela da agenda já está criada, com as regras certinhas. Digitar 33 <code>INSERT</code> à mão, copiando nome por nome? Não: os dados já estão no banco. Com <code>INSERT INTO … SELECT</code>, o resultado de uma consulta vai direto para dentro de uma tabela que já existe. É o <code>INSERT</code> que você conhece, só que, no lugar do <code>VALUES</code>, entra um <code>SELECT</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como inserir numa tabela as linhas que um <code>SELECT</code> devolve.</li>
+  <li>Juntar dados de várias tabelas numa só, com valores fixos e calculados.</li>
+  <li>Por que as colunas casam pela <strong>posição</strong>, e não pelo nome.</li>
+  <li>Que as regras da tabela de destino (<code>NOT NULL</code>, <code>UNIQUE</code>, chaves) são conferidas, e o que acontece quando uma linha fura a regra.</li>
+  <li>Como não duplicar dados ao rodar duas vezes, com <code>INSERT OR IGNORE</code>.</li>
+  <li>Restaurar uma cópia de segurança, e a diferença para o <code>CREATE TABLE … AS SELECT</code>.</li>
+</ul>
+</div>
+
+<p>Esta aula junta duas: <a href="insert.html">INSERT INTO</a> e <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>. Os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo.</p>
+
+<hr>
+
+<h2>A ideia: passar a limpo para um caderno pronto</h2>
+<p>Na aula anterior, a Ana tirava uma xerox: saía um caderno <strong>novo</strong>, com o texto e sem as regras. Agora é diferente: ela já tem um caderno de contatos <strong>pronto</strong>, com as linhas numeradas e o aviso "nome obrigatório" no topo. O que ela quer é <strong>passar a limpo</strong> para esse caderno as linhas certas dos outros cadernos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>CREATE TABLE nova AS SELECT …</code></th><th><code>INSERT INTO existente SELECT …</code></th></tr>
+<tr><td>A tabela de destino</td><td>É criada pelo comando</td><td>Já tem de existir</td></tr>
+<tr><td>Regras (chave, <code>NOT NULL</code>, <code>UNIQUE</code>…)</td><td>Nenhuma</td><td>As que você escreveu no <code>CREATE TABLE</code>, e são conferidas</td></tr>
+<tr><td>Pode rodar várias vezes</td><td>Não: na segunda, a tabela já existe</td><td>Sim: cada vez acrescenta linhas</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro INSERT INTO SELECT</h2>
+<p>A agenda da Ana:</p>
+
+<pre class="file" data-file="contatos.sql" data-resultado>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente'
+FROM clientes
+WHERE email IS NOT NULL;
+
+SELECT * FROM contatos LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO contatos (nome, email, origem)</dt><dd>Igual a um <code>INSERT</code> comum: a tabela de destino e a lista das colunas que vão receber valores. O <code>id</code> e o <code>telefone</code> ficaram de fora: o <code>id</code> se numera sozinho (aula <a href="auto-increment.html">AUTOINCREMENT</a>) e o telefone fica <em>NULL</em>.</dd>
+  <dt>SELECT nome, email, 'cliente'</dt><dd>No lugar do <code>VALUES</code>, uma consulta. Ela tem de devolver <strong>três colunas</strong>, uma para cada coluna da lista acima, na mesma ordem.</dd>
+  <dt>'cliente'</dt><dd>Um valor fixo: um texto entre aspas simples, igual em todas as linhas. É assim que a Ana marca de onde veio cada contato.</dd>
+  <dt>FROM clientes WHERE email IS NOT NULL</dt><dd>Quais linhas copiar: só os clientes que têm email (aula <a href="is-null.html">IS NULL</a>).</dd>
+</dl>
+
+<p>O quadro diz "27 linhas afetadas": dos 30 clientes, 3 não têm email (os clientes 7, 15 e 23). Repare que <strong>não</strong> há parênteses em volta do <code>SELECT</code> nem a palavra <code>VALUES</code>.</p>
+
+<h3>Mais uma fonte na mesma tabela</h3>
+<p>Como a tabela já existe, dá para rodar outro <code>INSERT INTO … SELECT</code> e acrescentar mais linhas. Agora os fornecedores, que têm telefone em vez de email:</p>
+
+<pre class="file" data-file="duas-fontes.sql" data-resultado>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente'
+FROM clientes
+WHERE email IS NOT NULL;
+
+INSERT INTO contatos (nome, telefone, origem)
+SELECT nome, telefone, 'fornecedor'
+FROM fornecedores;
+
+SELECT origem, COUNT(*) AS contatos
+FROM contatos
+GROUP BY origem;
+</pre>
+
+<p>27 clientes e 6 fornecedores, 33 contatos numa tabela só. Os ids dos fornecedores continuaram de onde os clientes pararam: 28, 29…</p>
+
+<div class="trysql" data-goal="mudou:clientes_vip=5">
+<p class="try-task"><strong>Experimente:</strong> a tabela <code>clientes_vip</code> já está criada, mas vazia. Antes do <code>SELECT</code> do fim, copie para ela o <code>id</code>, o <code>nome</code> e a <code>cidade</code> dos clientes VIP (os que têm <code>vip = 1</code>).</p>
+<pre class="script" data-file="vip.sql">CREATE TABLE clientes_vip (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL,
+    cidade TEXT
+);
+
+SELECT * FROM clientes_vip;
+</pre>
+<pre class="solucao" data-file="vip.sql">CREATE TABLE clientes_vip (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL,
+    cidade TEXT
+);
+
+INSERT INTO clientes_vip (id, nome, cidade)
+SELECT id, nome, cidade
+FROM clientes
+WHERE vip = 1;
+
+SELECT * FROM clientes_vip;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O SELECT pode fazer contas</h2>
+<p>Tudo que um <code>SELECT</code> sabe fazer vale aqui: contas, funções, <code>JOIN</code>, <code>GROUP BY</code>. A Ana vai montar a tabela de preços da promoção de volta às aulas: 10% de desconto em tudo da Papelaria (categoria 1):</p>
+
+<pre class="file" data-file="promocao.sql" data-resultado>CREATE TABLE precos_promocao (
+    produto_id  INTEGER PRIMARY KEY REFERENCES produtos(id),
+    preco_promo REAL NOT NULL
+);
+
+INSERT INTO precos_promocao (produto_id, preco_promo)
+SELECT id, ROUND(preco * 0.9, 2)
+FROM produtos
+WHERE categoria_id = 1;
+
+SELECT p.nome, p.preco, pr.preco_promo
+FROM precos_promocao AS pr
+JOIN produtos AS p ON p.id = pr.produto_id;
+</pre>
+
+<p>O <code>ROUND(preco * 0.9, 2)</code> calcula 90% do preço e arredonda para 2 casas (aula <a href="funcoes-numericas.html">Funções Numéricas</a>). A coluna calculada não precisa de apelido aqui, porque quem dá o nome é a lista de colunas do <code>INSERT</code>: <code>preco_promo</code>.</p>
+
+<hr>
+
+<h2>3. As colunas casam pela posição</h2>
+<p>Este é o detalhe mais importante da aula. O SQLite não olha os <strong>nomes</strong> das colunas do <code>SELECT</code>; ele põe a primeira coluna do <code>SELECT</code> na primeira coluna da lista, a segunda na segunda, e assim por diante. Veja o que acontece quando a Ana troca a ordem sem querer:</p>
+
+<pre class="file" data-file="trocado.sql" data-resultado>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT email, nome, 'cliente'
+FROM clientes
+WHERE email IS NOT NULL;
+
+SELECT nome, email FROM contatos LIMIT 3;
+</pre>
+
+<p>Nenhum erro, 27 linhas gravadas, e todas erradas: o email foi parar em <code>nome</code> e o nome em <code>email</code>. O banco não tem como saber que "jose.ribamar@exemplo.com.br" não é um nome. Por isso:</p>
+
+<ul>
+  <li>Escreva <strong>sempre</strong> a lista de colunas no <code>INSERT</code>, e o <code>SELECT</code> na mesma ordem, uma embaixo da outra se ajudar.</li>
+  <li>Rode o <code>SELECT</code> sozinho antes, para ver se as colunas saem na ordem certa.</li>
+  <li>Depois do <code>INSERT</code>, confira algumas linhas.</li>
+</ul>
+
+<div class="tip">
+<strong>E sem a lista de colunas?</strong>
+<p>Dá para escrever <code>INSERT INTO tabela SELECT …</code> sem a lista. Aí o <code>SELECT</code> tem de devolver <strong>todas</strong> as colunas da tabela, na ordem em que foram criadas, inclusive o <code>id</code>. Funciona bem para tabelas com a mesma estrutura (como uma cópia feita com <code>CREATE TABLE … AS SELECT *</code>), mas quebra no dia em que alguém acrescentar uma coluna (aula <a href="alter-table.html">ALTER TABLE</a>). Prefira a lista.</p>
+</div>
+
+<hr>
+
+<h2>4. As regras do destino são conferidas</h2>
+<p>A grande vantagem sobre o <code>CREATE TABLE … AS SELECT</code>: a tabela de destino tem regras, e cada linha copiada passa por elas. Se <strong>uma</strong> linha furar uma regra, o comando inteiro é recusado e <strong>nenhuma</strong> linha entra.</p>
+
+<h3>NOT NULL</h3>
+<p>Numa agenda em que o email é obrigatório, a Ana esqueceu o <code>WHERE</code>:</p>
+
+<pre class="file" data-file="not-null.sql" data-resultado data-erro>CREATE TABLE emails (
+    id    INTEGER PRIMARY KEY,
+    nome  TEXT NOT NULL,
+    email TEXT NOT NULL
+);
+
+INSERT INTO emails (nome, email)
+SELECT nome, email
+FROM clientes;
+</pre>
+
+<p><code>NOT NULL constraint failed: emails.email</code>: os clientes 7, 15 e 23 não têm email. As outras 27 linhas também não entraram: ou vão todas, ou nenhuma. Com <code>WHERE email IS NOT NULL</code>, passa.</p>
+
+<h3>UNIQUE: rodou duas vezes</h3>
+<p>Um engano muito comum: rodar o mesmo <code>INSERT INTO … SELECT</code> duas vezes. Como a coluna <code>email</code> da agenda é <code>UNIQUE</code>, a segunda vez é barrada:</p>
+
+<pre class="file" data-file="duas-vezes.sql" data-resultado data-erro>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;
+</pre>
+
+<p>O primeiro <code>INSERT</code> gravou 27; o segundo deu <code>UNIQUE constraint failed: contatos.email</code> e não gravou nada. Sem o <code>UNIQUE</code>, a agenda teria ficado com 54 contatos, todos em dobro, sem aviso nenhum. Mais um motivo para pôr regras nas tabelas.</p>
+
+<h3>Pular as repetidas: INSERT OR IGNORE</h3>
+<p>Às vezes você <strong>quer</strong> rodar de novo, para trazer só o que for novo. O SQLite tem uma forma para isso: <code>INSERT OR IGNORE</code> ("insira ou ignore"). A linha que furaria uma regra de <code>UNIQUE</code> ou de chave primária é pulada, em silêncio, e as outras entram:</p>
+
+<pre class="file" data-file="or-ignore.sql" data-resultado>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;
+
+INSERT OR IGNORE INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;
+
+SELECT COUNT(*) AS contatos FROM contatos;
+</pre>
+
+<p>A segunda rodada: "0 linhas afetadas", e a agenda continua com 27. Se amanhã um cliente novo cadastrar o email, só ele entra. Use com consciência: o <code>OR IGNORE</code> também esconde problemas que você talvez quisesse ver.</p>
+
+<hr>
+
+<h2>5. Restaurar uma cópia de segurança</h2>
+<p>Na aula anterior, a Ana guardou uma cópia dos produtos antes de um reajuste. Imagine que o reajuste saiu errado: multiplicou todos os preços por 10. A cópia salva o dia:</p>
+
+<pre class="file" data-file="restaurar.sql" data-resultado>-- a cópia de segurança, tirada antes
+CREATE TABLE produtos_copia AS SELECT * FROM produtos;
+
+-- o reajuste errado
+UPDATE produtos SET preco = preco * 10;
+
+-- a volta: cada produto da cópia substitui o de mesmo id
+INSERT OR REPLACE INTO produtos
+SELECT * FROM produtos_copia;
+
+SELECT id, nome, preco FROM produtos LIMIT 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT OR REPLACE</dt><dd>"Insira ou substitua": se já existe uma linha com a mesma chave primária (o mesmo <code>id</code>), ela é trocada pela nova.</dd>
+  <dt>SELECT * FROM produtos_copia</dt><dd>As 45 linhas da cópia, com todas as colunas na mesma ordem da tabela <code>produtos</code> (a cópia foi feita com <code>SELECT *</code>). Por isso, aqui, a falta da lista de colunas é segura.</dd>
+</dl>
+
+<p>Os preços voltaram: 12.35, 2.79, 1.15. Os itens de pedido continuam apontando para os mesmos ids, e as chaves estrangeiras não reclamaram. Para uma tabela que ninguém referencia, o caminho mais simples também funciona: <code>DELETE FROM t;</code> e depois <code>INSERT INTO t SELECT * FROM t_copia;</code>.</p>
+
+<hr>
+
+<h2>6. Formas de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Escrita</th><th>Quando usar</th></tr>
+<tr><td>Com lista de colunas</td><td><code>INSERT INTO t (a, b) SELECT x, y FROM …;</code></td><td>Sempre que der. A mais segura.</td></tr>
+<tr><td>Sem lista</td><td><code>INSERT INTO t SELECT * FROM t_copia;</code></td><td>Tabelas com a mesma estrutura (cópia e original).</td></tr>
+<tr><td>Pular repetidas</td><td><code>INSERT OR IGNORE INTO t … SELECT …;</code></td><td>Rodar de novo sem duplicar (precisa de <code>UNIQUE</code> ou chave).</td></tr>
+<tr><td>Substituir as que já existem</td><td><code>INSERT OR REPLACE INTO t … SELECT …;</code></td><td>Restaurar uma cópia, atualizar uma tabela inteira de outra.</td></tr>
+<tr><td>Um valor de consulta no meio do <code>VALUES</code></td><td><code>INSERT INTO t (a, b) VALUES ((SELECT x FROM … WHERE id = 3), 'fixo');</code></td><td>Uma linha só, com um valor buscado de outra tabela.</td></tr>
+<tr><td>Criar e encher de uma vez</td><td><code>CREATE TABLE t AS SELECT …;</code></td><td>Cópias e relatórios sem regras (aula <a href="create-table-as.html">anterior</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Número de colunas diferente (com lista)</strong>
+<pre class="file" data-file="erro-lista.sql" data-resultado data-erro>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>2 values for 3 columns</code>, "2 valores para 3 colunas". A lista pede três; o <code>SELECT</code> devolve duas. Faltou o <code>'cliente'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Número de colunas diferente (sem lista)</strong>
+<pre class="file" data-file="erro-sem-lista.sql" data-resultado data-erro>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos
+SELECT nome, email
+FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>table contatos has 5 columns but 2 values were supplied</code>, "a tabela contatos tem 5 colunas, mas foram dados 2 valores". Sem lista, o <code>SELECT</code> precisa trazer as cinco.</p>
+<p><strong>Como consertar:</strong> escreva a lista de colunas: <code>INSERT INTO contatos (nome, email, origem) SELECT nome, email, 'cliente' …</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>VALUES junto com SELECT</strong>
+<pre class="file" data-file="erro-values.sql" data-resultado data-erro>CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL
+);
+
+INSERT INTO contatos (nome, email, origem)
+VALUES (SELECT nome, email, 'cliente' FROM clientes);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. É um ou outro: <code>VALUES (…)</code> para linhas digitadas, ou <code>SELECT</code> para linhas de uma consulta.</p>
+<p><strong>Como consertar:</strong> apague o <code>VALUES (</code> e o <code>)</code> do fim.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma linha fura a regra: nenhuma entra</strong>
+<p><code>NOT NULL constraint failed: …</code> ou <code>UNIQUE constraint failed: …</code> (seção 4). O comando inteiro é desfeito.</p>
+<p><strong>Como consertar:</strong> filtre com <code>WHERE</code> as linhas que não servem (<code>WHERE email IS NOT NULL</code>), ou, para repetidas, use <code>INSERT OR IGNORE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A tabela de destino não existe</strong>
+<pre class="file" data-file="erro-tabela.sql" data-resultado data-erro>INSERT INTO contato (nome)
+SELECT nome FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such table: contato</code>. O <code>INSERT INTO … SELECT</code> não cria a tabela: ela tem de existir antes (ou use <code>CREATE TABLE … AS SELECT</code>). Aqui, também faltou o <strong>s</strong> de <code>contatos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Colunas trocadas</strong>
+<p>Sem mensagem nenhuma: os dados entram nas colunas erradas (seção 3).</p>
+<p><strong>Como consertar:</strong> apague o que entrou errado (com <code>DELETE … WHERE</code>), confira a ordem da lista e do <code>SELECT</code>, e rode de novo.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>INSERT INTO tabela (colunas) SELECT …</code> é do SQL padrão e se escreve igual no MySQL, no PostgreSQL e no SQL Server. O que muda é o "pular as repetidas" (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- MySQL
+INSERT IGNORE INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;
+
+-- PostgreSQL
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL
+ON CONFLICT DO NOTHING;
+</pre>
+<p>Repare que no MySQL é <code>INSERT IGNORE</code>, sem o <code>OR</code>. No SQL Server não há uma forma curta; o costume é filtrar com <code>WHERE NOT EXISTS (…)</code> (aula <a href="exists.html">EXISTS</a>), que também funciona no SQLite. E lembre que o <code>SELECT … INTO</code> do SQL Server <strong>cria</strong> a tabela; para inserir numa que já existe, lá também é <code>INSERT INTO … SELECT</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>INSERT INTO t (a, b) SELECT x, y FROM … WHERE …;</code></td><td>Insere em <code>t</code> as linhas da consulta; <code>x</code> vai para <code>a</code>, <code>y</code> para <code>b</code>.</td></tr>
+<tr><td><code>SELECT nome, 'cliente' …</code></td><td>Valor fixo, igual em todas as linhas.</td></tr>
+<tr><td><code>INSERT INTO t SELECT * FROM t_copia;</code></td><td>Sem lista: o <code>SELECT</code> traz todas as colunas, na ordem da tabela.</td></tr>
+<tr><td><code>INSERT OR IGNORE INTO t … SELECT …;</code></td><td>Pula as linhas que furariam <code>UNIQUE</code> ou a chave primária.</td></tr>
+<tr><td><code>INSERT OR REPLACE INTO t … SELECT …;</code></td><td>Substitui as linhas de mesma chave.</td></tr>
+<tr><td>Regras da tabela de destino</td><td>Conferidas em cada linha; uma linha errada desfaz o comando inteiro.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>2 values for 3 columns</code></td><td>O <code>SELECT</code> devolve menos colunas que a lista do <code>INSERT</code>.</td></tr>
+<tr><td><code>table contatos has 5 columns but 2 values were supplied</code></td><td>Sem lista, o <code>SELECT</code> precisa trazer todas as colunas.</td></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td><code>VALUES</code> e <code>SELECT</code> juntos: use só o <code>SELECT</code>.</td></tr>
+<tr><td><code>NOT NULL constraint failed: emails.email</code></td><td>Alguma linha veio com <em>NULL</em> numa coluna obrigatória.</td></tr>
+<tr><td><code>UNIQUE constraint failed: contatos.email</code></td><td>Alguma linha repete um valor que já existe (rodou duas vezes?).</td></tr>
+<tr><td><code>no such table: contato</code></td><td>A tabela de destino não existe.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. No lugar do VALUES</h3>
+<p>Complete para copiar os nomes dos fornecedores para a tabela <code>contatos</code>:</p>
+<div class="ex-code">INSERT INTO contatos (nome, origem) <input data-answer="SELECT" aria-label="palavra-chave"> nome, 'fornecedor' FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Sem duplicar</h3>
+<p>Complete para que, rodando de novo, as linhas repetidas sejam puladas sem erro:</p>
+<div class="ex-code">INSERT OR <input data-answer="IGNORE" aria-label="ação"> INTO contatos (nome, email, origem) SELECT nome, email, 'cliente' FROM clientes WHERE email IS NOT NULL;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Em <code>INSERT INTO contatos (nome, email) SELECT email, nome FROM clientes;</code>, o que vai parar na coluna <code>nome</code>?</p>
+<label><input type="radio" name="q3"> O nome, porque o SQLite casa as colunas pelo nome</label>
+<label><input type="radio" name="q3"> Nada: o comando dá erro</label>
+<label><input type="radio" name="q3"> O email, porque as colunas casam pela posição</label>
+<label><input type="radio" name="q3"> <em>NULL</em></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A tabela de destino tem <code>email TEXT NOT NULL</code>, e o <code>SELECT</code> devolve 30 clientes, 3 deles sem email. Quantas linhas entram?</p>
+<label><input type="radio" name="q4"> Nenhuma: o comando é recusado com <code>NOT NULL constraint failed</code></label>
+<label><input type="radio" name="q4"> 27</label>
+<label><input type="radio" name="q4"> 30, com os 3 emails vazios</label>
+<label><input type="radio" name="q4"> 3</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual é a diferença principal entre <code>INSERT INTO t SELECT …</code> e <code>CREATE TABLE t AS SELECT …</code>?</p>
+<label><input type="radio" name="q5"> Nenhuma</label>
+<label><input type="radio" name="q5"> O <code>INSERT</code> cria a tabela; o <code>CREATE</code> só insere</label>
+<label><input type="radio" name="q5"> O <code>CREATE TABLE … AS</code> confere as regras; o <code>INSERT</code> não</label>
+<label><input type="radio" name="q5"> O <code>INSERT</code> usa uma tabela que já existe, com as regras dela; o <code>CREATE TABLE … AS</code> cria uma tabela nova, sem regras</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. O que o SQLite responde a <code>INSERT INTO contatos (nome, email, origem) SELECT nome, email FROM clientes;</code>?</p>
+<label><input type="radio" name="q6"> Insere com a origem <em>NULL</em></label>
+<label><input type="radio" name="q6"> <code>2 values for 3 columns</code></label>
+<label><input type="radio" name="q6"> <code>table contatos has 5 columns but 2 values were supplied</code></label>
+<label><input type="radio" name="q6"> <code>near "SELECT": syntax error</code></label>
+</div>
+
+<h3>Missão final: a agenda completa</h3>
+
+<div class="trysql" data-goal="mudou:contatos=33">
+<p class="try-task"><strong>Missão:</strong> o código cria a agenda e tenta copiar os clientes, mas dá erro: a agenda tem uma regra (o <code>CHECK</code> do fim, aula <a href="check.html">CHECK</a>) que não deixa entrar ninguém sem email nem telefone, e três clientes não têm email. Conserte a cópia dos clientes para trazer só os que têm email, e acrescente um segundo <code>INSERT INTO … SELECT</code> com os 6 fornecedores (nome, telefone e a origem <code>'fornecedor'</code>). A agenda deve terminar com 33 contatos.</p>
+<pre class="script" data-file="agenda.sql">CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL,
+    CHECK (email IS NOT NULL OR telefone IS NOT NULL)
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente'
+FROM clientes;
+
+SELECT origem, COUNT(*) AS contatos
+FROM contatos
+GROUP BY origem;
+</pre>
+<pre class="solucao" data-file="agenda.sql">CREATE TABLE contatos (
+    id       INTEGER PRIMARY KEY,
+    nome     TEXT NOT NULL,
+    email    TEXT UNIQUE,
+    telefone TEXT,
+    origem   TEXT NOT NULL,
+    CHECK (email IS NOT NULL OR telefone IS NOT NULL)
+);
+
+INSERT INTO contatos (nome, email, origem)
+SELECT nome, email, 'cliente'
+FROM clientes
+WHERE email IS NOT NULL;
+
+INSERT INTO contatos (nome, telefone, origem)
+SELECT nome, telefone, 'fornecedor'
+FROM fornecedores;
+
+SELECT origem, COUNT(*) AS contatos
+FROM contatos
+GROUP BY origem;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>INSERT INTO t (colunas) SELECT …;</code> insere numa tabela que já existe todas as linhas que a consulta devolve. Sem <code>VALUES</code>, sem parênteses em volta do <code>SELECT</code>.</li>
+  <li>O <code>SELECT</code> pode ter valores fixos (<code>'cliente'</code>), contas, funções, <code>JOIN</code> e <code>GROUP BY</code>.</li>
+  <li>As colunas casam pela <strong>posição</strong>: escreva a lista no <code>INSERT</code> e o <code>SELECT</code> na mesma ordem. Colunas trocadas não dão erro, dão dados errados.</li>
+  <li>As regras da tabela de destino são conferidas; se uma linha furar, nenhuma entra. Filtre com <code>WHERE</code>.</li>
+  <li><code>INSERT OR IGNORE</code> pula as repetidas; <code>INSERT OR REPLACE</code> substitui as de mesma chave, útil para restaurar uma cópia.</li>
+  <li>É a forma padrão nos quatro bancos; muda só o "pular repetidas": <code>INSERT IGNORE</code> no MySQL, <code>ON CONFLICT DO NOTHING</code> no PostgreSQL.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
