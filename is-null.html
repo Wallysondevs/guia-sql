@@ -361,12 +361,12 @@ WHERE ISNULL(email);
 
 <div class="exercise">
 <h3>1. Os clientes sem email</h3>
-<div class="ex-code">SELECT nome FROM clientes WHERE email <input data-answer="IS" aria-label="primeira palavra"> <input data-answer="NULL" aria-label="segunda palavra">;</div>
+<div class="ex-code">SELECT nome FROM clientes WHERE email <input data-answer="IS|is" aria-label="primeira palavra"> <input data-answer="NULL|null" aria-label="segunda palavra">;</div>
 </div>
 
 <div class="exercise">
 <h3>2. Os pedidos já entregues</h3>
-<div class="ex-code">SELECT id FROM pedidos WHERE entregue_em IS <input data-answer="NOT" aria-label="palavra do meio"> NULL;</div>
+<div class="ex-code">SELECT id FROM pedidos WHERE entregue_em IS <input data-answer="NOT|not" aria-label="palavra do meio"> NULL;</div>
 </div>
 
 <div class="mc" data-answer="3">

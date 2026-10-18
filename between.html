@@ -395,13 +395,13 @@ WHERE preco BETWEEN SYMMETRIC 30 AND 20;
 <div class="exercise">
 <h3>1. Complete a faixa</h3>
 <p>Produtos de 10 a 50 reais:</p>
-<div class="ex-code">SELECT nome FROM produtos WHERE preco <input data-answer="BETWEEN" aria-label="palavra-chave"> 10 <input data-answer="AND" aria-label="separador"> 50;</div>
+<div class="ex-code">SELECT nome FROM produtos WHERE preco <input data-answer="BETWEEN|between" aria-label="palavra-chave"> 10 <input data-answer="AND|and" aria-label="separador"> 50;</div>
 </div>
 
 <div class="exercise">
 <h3>2. Fora da faixa</h3>
 <p>Pedidos com frete abaixo de 5 ou acima de 20 reais:</p>
-<div class="ex-code">SELECT id, frete FROM pedidos WHERE frete <input data-answer="NOT" aria-label="palavra que inverte"> BETWEEN 5 AND 20;</div>
+<div class="ex-code">SELECT id, frete FROM pedidos WHERE frete <input data-answer="NOT|not" aria-label="palavra que inverte"> BETWEEN 5 AND 20;</div>
 </div>
 
 <div class="mc" data-answer="2">
