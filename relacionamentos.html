@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Relacionamentos — tabelas que apontam umas para as outras | Guia SQL</title>
+<meta name="description" content="Tabelas que se relacionam, para quem nunca usou um banco: por que dividir os dados em várias tabelas, chave primária e chave estrangeira, seguir a ligação de um pedido até o cliente, relações um-para-muitos, muitos-para-muitos e da tabela com ela mesma, o mapa da Loja Aurora e o erro real FOREIGN KEY constraint failed.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Tabelas que se Relacionam</span></h1>
+
+<p class="intro">Abra a tabela de pedidos da Loja Aurora e olhe o pedido 7: lá está <code>cliente_id = 7</code> e <code>funcionario_id = 2</code>. Não tem nome de cliente, nem de vendedor, só números. Quem é o cliente 7? A resposta está <strong>em outra tabela</strong>, a de clientes, na linha cujo <code>id</code> é 7. Esse jeito de uma tabela "apontar" para outra é o que dá o nome de <strong>banco de dados relacional</strong> ao SQLite, ao MySQL, ao PostgreSQL e aos outros. Nesta aula você vai entender essas ligações antes de aprender, na próxima, o comando que as segue sozinho: o <code>JOIN</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que um banco guarda clientes, produtos e pedidos em tabelas <strong>separadas</strong>, e não numa planilha só.</li>
+  <li>O que é <strong>chave primária</strong> (o "número de identidade" de cada linha) e <strong>chave estrangeira</strong> (a coluna que aponta para outra tabela).</li>
+  <li>Como seguir uma ligação "à mão", com duas consultas.</li>
+  <li>Os tipos de relação: <strong>um-para-muitos</strong>, <strong>muitos-para-muitos</strong> (com tabela no meio), <strong>um-para-um</strong> e a tabela que aponta para <strong>ela mesma</strong>.</li>
+  <li>O mapa completo da Loja Aurora, e como ver as ligações de uma tabela no terminal.</li>
+  <li>O que o SQLite faz quando alguém tenta apontar para uma linha que não existe: o erro <code>FOREIGN KEY constraint failed</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>, e o quadro "Resultado" é o SQLite respondendo.</p>
+
+<hr>
+
+<h2>A ideia: por que não uma tabela só?</h2>
+<p>Imagine que a Ana anotasse os pedidos numa planilha só, com tudo na mesma linha. O cliente José Ribamar Silva fez 4 pedidos, então os dados dele apareceriam 4 vezes:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>pedido</th><th>data</th><th>cliente</th><th>email do cliente</th><th>cidade</th></tr>
+<tr><td>1</td><td>2024-01-05</td><td>José Ribamar Silva</td><td>jose.ribamar@exemplo.com.br</td><td>Teresina</td></tr>
+<tr><td>27</td><td>2024-10-29</td><td>José Ribamar Silva</td><td>jose.ribamar@exemplo.com.br</td><td>Teresina</td></tr>
+<tr><td>53</td><td>2025-09-03</td><td>José Ribamar Silva</td><td>jose.ribamar@exemplo.com.br</td><td>Teresina</td></tr>
+<tr><td>79</td><td>2026-06-29</td><td>José Ribamar Silva</td><td>jose.ribamar@exemplo.com.br</td><td>Teresina</td></tr>
+</table>
+</div>
+
+<p>Parece inofensivo, mas traz três problemas:</p>
+<ol class="passo">
+  <li><strong>Repetição.</strong> O nome, o email e a cidade estão escritos 4 vezes. Com 1.000 pedidos, seriam 1.000 cópias de dados de cliente.</li>
+  <li><strong>Mudar dá trabalho.</strong> Se o José trocar de email, a Ana tem de corrigir 4 linhas. Se esquecer uma, a planilha passa a ter <strong>dois</strong> emails para a mesma pessoa, e ninguém sabe qual é o certo.</li>
+  <li><strong>Quem nunca comprou some.</strong> Um cliente que se cadastrou e ainda não fez pedido não tem linha nenhuma para aparecer.</li>
+</ol>
+
+<p>A solução do banco relacional é guardar <strong>cada coisa num lugar só</strong>: os dados do cliente ficam uma vez só na tabela <code>clientes</code>, e cada pedido guarda apenas o <strong>número</strong> do cliente. Funciona como o prontuário de um posto de saúde: a ficha da paciente fica no arquivo, com um número; cada consulta anotada no caderno diz só "paciente nº 7". Para saber quem é, você vai ao arquivo e procura a ficha 7.</p>
+
+<hr>
+
+<h2>1. A chave primária: o número de cada linha</h2>
+<p>Toda tabela da Loja Aurora tem uma coluna <code>id</code>, um número que <strong>nunca se repete</strong> dentro da tabela. É a <strong>chave primária</strong> (<em>primary key</em>): ela identifica cada linha sem confusão, mesmo que dois clientes tenham o mesmo nome.</p>
+
+<pre class="file" data-file="cliente-7.sql" data-resultado>SELECT id, nome, cidade
+FROM clientes
+WHERE id = 7;
+</pre>
+
+<p>Existe exatamente uma linha com <code>id = 7</code>, e sempre vai existir só uma. Como criar uma chave primária numa tabela nova é assunto da aula <a href="primary-key.html">PRIMARY KEY</a>.</p>
+
+<hr>
+
+<h2>2. A chave estrangeira: a coluna que aponta</h2>
+<p>Agora o pedido 7:</p>
+
+<pre class="file" data-file="pedido-7.sql" data-resultado>SELECT id, cliente_id, funcionario_id, data
+FROM pedidos
+WHERE id = 7;
+</pre>
+
+<p>A coluna <code>cliente_id</code> guarda um número que é o <code>id</code> de alguém na tabela <code>clientes</code>. Uma coluna assim, que guarda a chave primária de <strong>outra</strong> tabela, se chama <strong>chave estrangeira</strong> (<em>foreign key</em>): "estrangeira" porque a chave é de fora, pertence à outra tabela. Veja a ligação lado a lado:</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0">
+<div class="table-wrap" style="flex:1 1 260px;margin:0">
+<table class="ref">
+<tr><th colspan="3">pedidos</th></tr>
+<tr><th>id</th><th>cliente_id</th><th>data</th></tr>
+<tr><td>6</td><td>6</td><td>2024-02-26</td></tr>
+<tr><td><strong>7</strong></td><td style="background:var(--note-bg)"><strong>7</strong></td><td>2024-03-08</td></tr>
+<tr><td>8</td><td>8</td><td>2024-03-15</td></tr>
+</table>
+</div>
+<div aria-hidden="true" style="font-size:28px;color:var(--accent);flex:0 0 auto">&rarr;</div>
+<div class="table-wrap" style="flex:1 1 260px;margin:0">
+<table class="ref">
+<tr><th colspan="3">clientes</th></tr>
+<tr><th>id</th><th>nome</th><th>cidade</th></tr>
+<tr><td>6</td><td>Rafael Monteiro</td><td>São Paulo</td></tr>
+<tr><td style="background:var(--note-bg)"><strong>7</strong></td><td><strong>Luís Otávio Brito</strong></td><td>Parnaíba</td></tr>
+<tr><td>8</td><td>Fernanda Carvalho</td><td>Fortaleza</td></tr>
+</table>
+</div>
+</div>
+
+<dl class="anatomy">
+  <dt>pedidos.id</dt><dd>A chave primária <strong>do pedido</strong>: identifica o pedido 7.</dd>
+  <dt>pedidos.cliente_id</dt><dd>A chave estrangeira: o número 7 aqui quer dizer "o cliente cujo <code>id</code> é 7". O nome segue um costume muito usado: <em>nome da tabela no singular</em> + <code>_id</code>.</dd>
+  <dt>clientes.id</dt><dd>A chave primária <strong>do cliente</strong>, para onde a chave estrangeira aponta.</dd>
+</dl>
+
+<p>Repare que os dois 7 são coincidência: o pedido 7 foi do cliente 7, mas o pedido 27 também é do cliente 1. O que importa é o valor <strong>dentro</strong> de <code>cliente_id</code>. A escrita <code>tabela.coluna</code> (<code>pedidos.cliente_id</code>) é como se diz em SQL "a coluna tal daquela tabela"; você vai usá-la muito nas próximas aulas.</p>
+
+<hr>
+
+<h2>3. Seguindo a ligação à mão</h2>
+<p>Sem nenhum comando novo, dá para descobrir quem fez o pedido 7 e quem o atendeu: basta pegar os números do pedido e procurar nas outras tabelas. A consulta de cima mostrou <code>cliente_id = 7</code> e <code>funcionario_id = 2</code>. Agora as duas fichas:</p>
+
+<pre class="file" data-file="seguindo.sql" data-resultado>SELECT id, nome, cidade FROM clientes WHERE id = 7;
+SELECT id, nome, cargo FROM funcionarios WHERE id = 2;
+</pre>
+
+<p>O pedido 7 foi do <strong>Luís Otávio Brito</strong>, de Parnaíba, e quem atendeu foi o vendedor <strong>Caio Teles</strong>. Funciona, mas foram três consultas para responder uma pergunta, e a Ana teve de copiar os números de uma para a outra. Imagine fazer isso para os 90 pedidos. É exatamente esse trabalho que o <code>JOIN</code> faz sozinho, numa consulta só: a próxima aula, <a href="joins.html">O que é um JOIN</a>, começa daqui.</p>
+
+<div class="trysql" data-goal="contem:Renata Borges">
+<p class="try-task"><strong>Experimente:</strong> descubra o <strong>nome</strong> do funcionário que atendeu o pedido 50. Rode a consulta como está, veja o <code>funcionario_id</code> do pedido e depois troque-a por uma consulta na tabela <code>funcionarios</code> que mostre o nome dele.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, cliente_id, funcionario_id, data
+FROM pedidos
+WHERE id = 50;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, nome, cargo
+FROM funcionarios
+WHERE id = 3;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Um-para-muitos: um cliente, vários pedidos</h2>
+<p>O José Ribamar Silva (cliente 1) aparece em quantos pedidos?</p>
+
+<pre class="file" data-file="pedidos-do-1.sql" data-resultado>SELECT id, cliente_id, data
+FROM pedidos
+WHERE cliente_id = 1;
+</pre>
+
+<p>Quatro. <strong>Um</strong> cliente pode ter <strong>muitos</strong> pedidos, mas cada pedido tem <strong>um</strong> cliente só (a coluna <code>cliente_id</code> guarda um número, não uma lista). Essa é a relação <strong>um-para-muitos</strong>, a mais comum de todas. A chave estrangeira fica sempre do lado "muitos": é o pedido que aponta para o cliente, nunca o contrário.</p>
+
+<p>Na Loja Aurora há várias relações assim:</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Um…</th><th>…tem muitos</th><th>Chave estrangeira</th></tr>
+<tr><td>cliente</td><td>pedidos</td><td><code>pedidos.cliente_id</code> → <code>clientes.id</code></td></tr>
+<tr><td>funcionário</td><td>pedidos atendidos</td><td><code>pedidos.funcionario_id</code> → <code>funcionarios.id</code></td></tr>
+<tr><td>categoria</td><td>produtos</td><td><code>produtos.categoria_id</code> → <code>categorias.id</code></td></tr>
+<tr><td>fornecedor</td><td>produtos</td><td><code>produtos.fornecedor_id</code> → <code>fornecedores.id</code></td></tr>
+</table>
+</div>
+
+<p>Com o que você aprendeu em <a href="group-by.html">GROUP BY</a>, dá para contar os pedidos de cada cliente pela chave estrangeira:</p>
+
+<pre class="file" data-file="pedidos-por-cliente.sql" data-resultado>SELECT cliente_id, COUNT(*) AS pedidos
+FROM pedidos
+GROUP BY cliente_id;
+</pre>
+
+<p>São 26 linhas, mas a loja tem 30 clientes. Quem faltou? Os clientes 27, 28, 29 e 30 (Paulo Sérgio Andrade, Tainá Soares, Elias Furtado e Rosângela Dias) se cadastraram e <strong>nunca fizeram pedido</strong>. Como eles não aparecem em nenhuma linha de <code>pedidos</code>, uma consulta só na tabela de pedidos nunca vai mostrá-los. Mostrar "todos os clientes, inclusive quem nunca comprou" é o trabalho do <a href="left-join.html">LEFT JOIN</a>. Guarde esses quatro nomes: eles vão aparecer de novo.</p>
+
+<hr>
+
+<h2>5. Muitos-para-muitos: pedidos e produtos</h2>
+<p>Um pedido pode ter vários produtos. E um produto pode estar em vários pedidos. Os dois lados são "muitos". Onde fica a chave estrangeira, então? Não dá para pôr um <code>produto_id</code> em <code>pedidos</code> (seria um produto só por pedido), nem um <code>pedido_id</code> em <code>produtos</code> (seria um pedido só por produto).</p>
+
+<p>A solução é uma <strong>terceira tabela</strong>, no meio, com uma linha para cada par "este produto está neste pedido". Na Loja Aurora ela se chama <code>itens_pedido</code>, e tem <strong>duas</strong> chaves estrangeiras:</p>
+
+<pre class="file" data-file="itens-do-pedido-1.sql" data-resultado>SELECT *
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>pedido_id</dt><dd>Chave estrangeira para <code>pedidos.id</code>: o pedido a que o item pertence.</dd>
+  <dt>produto_id</dt><dd>Chave estrangeira para <code>produtos.id</code>: o produto comprado.</dd>
+  <dt>quantidade, preco_unitario</dt><dd>Dados que não são nem do pedido nem do produto, mas <strong>do par</strong>: quantas unidades daquele produto entraram naquele pedido, e por quanto cada uma.</dd>
+</dl>
+
+<p>O pedido 1 tem 3 itens: os produtos 1, 2 e 3 (caderno, caneta e lápis). E o caminho inverso, em quais pedidos o produto 1 aparece:</p>
+
+<pre class="file" data-file="pedidos-do-produto-1.sql" data-resultado>SELECT pedido_id, quantidade
+FROM itens_pedido
+WHERE produto_id = 1;
+</pre>
+
+<p>O Caderno Pautado foi vendido em 6 pedidos. A relação muitos-para-muitos é, na verdade, <strong>duas</strong> relações um-para-muitos: um pedido tem muitos itens, e um produto aparece em muitos itens. A aula <a href="muitos-para-muitos.html">Relação Muitos-para-Muitos</a> mostra como desenhar uma dessas do zero.</p>
+
+<div class="tip">
+<strong>Produtos que nunca saíram</strong>
+<p>A loja tem 45 produtos, mas só 42 aparecem em <code>itens_pedido</code>. Os produtos 43, 44 e 45 (Vaso de Cerâmica Médio, Tesoura de Poda e Luvas de Jardinagem) nunca foram vendidos. É o mesmo caso dos clientes sem pedido, do outro lado do banco, e você vai encontrá-los com o <a href="left-join.html">LEFT JOIN</a>.</p>
+</div>
+
+<hr>
+
+<h2>6. A tabela que aponta para ela mesma</h2>
+<p>Na tabela <code>funcionarios</code>, a coluna <code>chefe_id</code> guarda o <code>id</code> de <strong>outro funcionário</strong>, o chefe:</p>
+
+<pre class="file" data-file="chefes.sql" data-resultado>SELECT id, nome, cargo, chefe_id
+FROM funcionarios;
+</pre>
+
+<p>A gerente Marta Lustosa (1) não tem chefe: o <code>chefe_id</code> dela é <code>NULL</code>, "sem valor" (aula <a href="null.html">O Valor NULL</a>). Ela chefia os funcionários 2, 3, 4 e 5; a supervisora Luana Castelo (5) chefia o 6, o 7 e o 8. A chave estrangeira <code>chefe_id</code> aponta para a chave primária <strong>da própria tabela</strong>. Para juntar cada funcionário com o nome do chefe, existe o <a href="self-join.html">Self Join</a>.</p>
+
+<hr>
+
+<h2>7. Um-para-um</h2>
+<p>Existe ainda a relação <strong>um-para-um</strong>: cada linha de uma tabela corresponde a no máximo uma linha da outra. Por exemplo, se a loja guardasse os dados bancários de cada funcionário numa tabela separada (para pouca gente ter acesso), cada funcionário teria uma linha só lá. A Loja Aurora não tem nenhuma relação assim; ela é bem menos comum que as outras, e costuma existir por motivo de organização ou de segurança.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Exemplo na Loja Aurora</th><th>Onde fica a chave estrangeira</th></tr>
+<tr><td>Um-para-muitos</td><td>um cliente, muitos pedidos</td><td>no lado "muitos" (<code>pedidos.cliente_id</code>)</td></tr>
+<tr><td>Muitos-para-muitos</td><td>pedidos e produtos</td><td>numa tabela no meio, com duas chaves (<code>itens_pedido</code>)</td></tr>
+<tr><td>Com ela mesma</td><td>funcionário e chefe</td><td>na própria tabela (<code>funcionarios.chefe_id</code>)</td></tr>
+<tr><td>Um-para-um</td><td>(não há)</td><td>em qualquer um dos lados, sem repetir</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>8. O mapa da Loja Aurora</h2>
+<p>Juntando tudo, este é o mapa das ligações do banco. Cada caixa é uma tabela (com as colunas principais), e cada seta sai de uma chave estrangeira e aponta para a chave primária que ela referencia. Um desenho assim se chama <strong>diagrama de entidade-relacionamento</strong> (DER); a aula <a href="diagramas.html">Diagramas (DER)</a> ensina a desenhar um.</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 770 400" role="img" aria-labelledby="der-titulo" style="width:100%;min-width:620px;height:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px">
+<title id="der-titulo">Mapa das tabelas da Loja Aurora: produtos aponta para categorias e fornecedores; itens_pedido aponta para produtos e pedidos; pedidos aponta para clientes e funcionarios; funcionarios aponta para ela mesma pelo chefe_id.</title>
+<defs>
+<marker id="seta-der" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker>
+</defs>
+<g style="fill:none;stroke:var(--accent);stroke-width:1.6">
+<path d="M200,174 H185 V54 H172" marker-end="url(#seta-der)"/>
+<path d="M200,194 H185 V284 H172" marker-end="url(#seta-der)"/>
+<path d="M390,164 H375 V144 H362" marker-end="url(#seta-der)"/>
+<path d="M550,144 H578" marker-end="url(#seta-der)"/>
+<path d="M740,164 H756 V324 H742" marker-end="url(#seta-der)"/>
+<path d="M580,184 H565 V324 H552" marker-end="url(#seta-der)"/>
+<path d="M390,364 H372 V324 H388" marker-end="url(#seta-der)"/>
+</g>
+<g style="stroke:var(--border);stroke-width:1.2">
+<rect x="10" y="20" width="160" height="72" rx="6" style="fill:var(--code-bg)"/>
+<rect x="10" y="250" width="160" height="92" rx="6" style="fill:var(--code-bg)"/>
+<rect x="200" y="110" width="160" height="132" rx="6" style="fill:var(--code-bg)"/>
+<rect x="390" y="110" width="160" height="112" rx="6" style="fill:var(--code-bg)"/>
+<rect x="580" y="110" width="160" height="112" rx="6" style="fill:var(--code-bg)"/>
+<rect x="390" y="290" width="160" height="92" rx="6" style="fill:var(--code-bg)"/>
+<rect x="580" y="290" width="160" height="92" rx="6" style="fill:var(--code-bg)"/>
+</g>
+<g style="fill:var(--sidebar-bg)">
+<rect x="11" y="21" width="158" height="22" rx="5"/>
+<rect x="11" y="251" width="158" height="22" rx="5"/>
+<rect x="201" y="111" width="158" height="22" rx="5"/>
+<rect x="391" y="111" width="158" height="22" rx="5"/>
+<rect x="581" y="111" width="158" height="22" rx="5"/>
+<rect x="391" y="291" width="158" height="22" rx="5"/>
+<rect x="581" y="291" width="158" height="22" rx="5"/>
+</g>
+<g style="fill:currentColor;font-weight:700">
+<text x="20" y="37">categorias</text>
+<text x="20" y="267">fornecedores</text>
+<text x="210" y="127">produtos</text>
+<text x="400" y="127">itens_pedido</text>
+<text x="590" y="127">pedidos</text>
+<text x="400" y="307">funcionarios</text>
+<text x="590" y="307">clientes</text>
+</g>
+<g style="fill:currentColor">
+<text x="20" y="59">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="20" y="79">nome</text>
+<text x="20" y="289">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="20" y="309">nome</text>
+<text x="20" y="329">cidade, pais…</text>
+<text x="210" y="159">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="210" y="179">categoria_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="210" y="199">fornecedor_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="210" y="219">nome, preco…</text>
+<text x="210" y="139" style="fill:var(--muted)">(45 linhas)</text>
+<text x="400" y="149">pedido_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="400" y="169">produto_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="400" y="189">quantidade</text>
+<text x="400" y="209">preco_unitario</text>
+<text x="590" y="149">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="590" y="169">cliente_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="590" y="189">funcionario_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="590" y="209">data, frete…</text>
+<text x="400" y="329">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="400" y="349">nome, cargo</text>
+<text x="400" y="369">chefe_id <tspan style="fill:var(--accent)">FK</tspan></text>
+<text x="590" y="329">id <tspan style="fill:var(--accent)">PK</tspan></text>
+<text x="590" y="349">nome, email</text>
+<text x="590" y="369">cidade, estado…</text>
+</g>
+</svg>
+</div>
+
+<p><strong>PK</strong> marca a chave primária (<em>primary key</em>) e <strong>FK</strong>, a chave estrangeira (<em>foreign key</em>). Siga uma seta qualquer: <code>pedidos.cliente_id</code> desce até <code>clientes.id</code>; <code>itens_pedido.produto_id</code> volta até <code>produtos.id</code>; e <code>funcionarios.chefe_id</code> dá a volta e aponta para a própria tabela.</p>
+
+<h3>Vendo as ligações de uma tabela</h3>
+<p>Quem criou a tabela deixou as ligações registradas: a palavra <code>REFERENCES</code> ("faz referência a") na definição de cada chave estrangeira. No terminal do SQLite, o comando de ponto <code>.schema</code> mostra essa definição (aula <a href="comandos-ponto.html">Comandos de Ponto</a>):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .schema pedidos
+CREATE TABLE pedidos (
+    id             INTEGER PRIMARY KEY,
+    cliente_id     INTEGER NOT NULL REFERENCES clientes(id),
+    funcionario_id INTEGER NOT NULL REFERENCES funcionarios(id),
+    data           TEXT NOT NULL,
+    entregue_em    TEXT,
+    frete          REAL NOT NULL DEFAULT 0
+);</pre>
+
+<p>A linha <code>cliente_id INTEGER NOT NULL REFERENCES clientes(id)</code> se lê: "a coluna <code>cliente_id</code> guarda um número inteiro, não pode ficar vazia e faz referência à coluna <code>id</code> da tabela <code>clientes</code>". No editor do guia não existem comandos de ponto, mas o SQLite tem um comando SQL que lista as chaves estrangeiras de uma tabela, o <code>PRAGMA foreign_key_list</code> (os PRAGMAs têm aula própria: <a href="pragma.html">PRAGMAs Úteis</a>):</p>
+
+<pre class="file" data-file="ligacoes.sql" data-resultado>PRAGMA foreign_key_list(pedidos);
+</pre>
+
+<p>Cada linha é uma chave estrangeira: a coluna <code>from</code> ("de") é a coluna de <code>pedidos</code>, e <code>table</code> e <code>to</code> ("para") dizem para qual tabela e coluna ela aponta. As outras colunas tratam do que fazer quando a linha apontada muda ou é apagada, assunto da aula <a href="foreign-key.html">FOREIGN KEY</a>.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:categorias;;contem:fornecedores">
+<p class="try-task"><strong>Experimente:</strong> troque o nome da tabela para ver as chaves estrangeiras de <code>produtos</code>. Para quais tabelas ela aponta?</p>
+<pre class="script" data-file="consulta.sql">PRAGMA foreign_key_list(pedidos);
+</pre>
+<pre class="solucao" data-file="consulta.sql">PRAGMA foreign_key_list(produtos);
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de chegar ao mesmo dado</h2>
+<p>Para responder "qual o nome do cliente do pedido 7?", existem três caminhos. Você já conhece o primeiro; os outros dois são os próximos assuntos do guia:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Como é</th><th>Quando usar</th></tr>
+<tr><td>Seguir à mão</td><td>Uma consulta em <code>pedidos</code>, copiar o <code>cliente_id</code>, outra consulta em <code>clientes</code></td><td>Para entender as ligações, ou conferir um caso só</td></tr>
+<tr><td><a href="joins.html">JOIN</a></td><td>Uma consulta só, que junta as linhas das duas tabelas pela ligação</td><td><strong>O jeito normal</strong>: listas, relatórios, qualquer coisa com mais de um caso</td></tr>
+<tr><td><a href="subconsultas.html">Subconsulta</a></td><td>Uma consulta dentro da outra: <code>WHERE id = (SELECT cliente_id FROM pedidos WHERE id = 7)</code></td><td>Quando você só precisa filtrar por algo da outra tabela</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Um pedido para um cliente que não existe</strong>
+<p>A loja tem clientes de 1 a 30. O que acontece se alguém registrar um pedido para o cliente 99?</p>
+<pre class="file" data-file="cliente-99.sql" data-resultado data-erro>INSERT INTO pedidos (cliente_id, funcionario_id, data, frete)
+VALUES (99, 2, '2026-10-18', 10.0);
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>, "a restrição de chave estrangeira falhou". O SQLite conferiu a ligação, não achou nenhum cliente com <code>id = 99</code> e recusou o pedido. Sem essa conferência, o banco ganharia um pedido <strong>órfão</strong>: um pedido de ninguém, que some de qualquer relatório por cliente.</p>
+<p><strong>Como consertar:</strong> use o <code>id</code> de um cliente que existe ou, se for um cliente novo, cadastre-o antes em <code>clientes</code> (aula <a href="insert.html">INSERT INTO</a>) e só depois o pedido.</p>
+</div>
+
+<div class="cenario">
+<strong>Apagar um cliente que tem pedidos</strong>
+<pre class="file" data-file="apagar-cliente.sql" data-resultado data-erro>DELETE FROM clientes
+WHERE id = 1;
+</pre>
+<p><strong>A mensagem:</strong> a mesma, <code>FOREIGN KEY constraint failed</code>. O José Ribamar Silva tem 4 pedidos apontando para ele. Se a ficha dele sumisse, esses 4 pedidos ficariam órfãos. O SQLite protege a ligação dos dois lados: nem se cria uma seta para o nada, nem se apaga a linha para onde setas apontam.</p>
+<p>No editor, cada Rodar parte do banco limpo, então pode testar sem medo.</p>
+</div>
+
+<div class="cenario">
+<strong>No terminal, a conferência vem desligada</strong>
+<p>No editor do guia, a conferência está ligada (o banco da Loja Aurora começa com <code>PRAGMA foreign_keys = ON</code>). No programa <code>sqlite3</code>, porém, ela vem <strong>desligada</strong> a cada vez que você abre o banco. A documentação do SQLite explica: as chaves estrangeiras são desligadas por padrão, por compatibilidade com programas antigos, e precisam ser ligadas em cada conexão. Veja a Ana tentando o mesmo pedido no terminal:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA foreign_keys;
+0
+sqlite&gt; INSERT INTO pedidos (cliente_id, funcionario_id, data, frete) VALUES (99, 2, '2026-10-18', 10.0);
+sqlite&gt; PRAGMA foreign_key_check;
+pedidos|91|clientes|1
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; INSERT INTO pedidos (cliente_id, funcionario_id, data, frete) VALUES (98, 2, '2026-10-18', 10.0);
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite&gt; .quit</pre>
+<dl class="anatomy">
+  <dt>PRAGMA foreign_keys;</dt><dd>Pergunta se a conferência está ligada: <code>0</code> = desligada.</dd>
+  <dt>INSERT … (99, …)</dt><dd>Sem conferência, o pedido para o cliente 99 entrou <strong>calado</strong>. O banco agora tem um órfão.</dd>
+  <dt>PRAGMA foreign_key_check;</dt><dd>Procura órfãos: a resposta diz que, na tabela <code>pedidos</code>, a linha 91 aponta para um <code>clientes</code> que não existe.</dd>
+  <dt>PRAGMA foreign_keys = ON;</dt><dd>Liga a conferência (só até fechar o <code>sqlite3</code>).</dd>
+  <dt>Runtime error: FOREIGN KEY constraint failed (19)</dt><dd>Com ela ligada, o pedido para o cliente 98 foi recusado. No terminal a mensagem vem com o prefixo <code>Runtime error:</code> ("erro durante a execução") e o código do erro, 19.</dd>
+</dl>
+<p><strong>Como evitar:</strong> rode <code>PRAGMA foreign_keys = ON;</code> logo depois de abrir o banco no terminal. Para limpar o órfão que entrou, apague-o: <code>DELETE FROM pedidos WHERE id = 91;</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>PostgreSQL e SQL Server conferem as chaves estrangeiras sempre, sem precisar ligar nada; no MySQL, o motor de tabelas padrão (InnoDB) também. Essa conferência desligada por padrão é uma particularidade do SQLite. As mensagens de erro mudam de banco para banco, mas a ideia é a mesma: o banco não deixa uma chave estrangeira apontar para o nada.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th><th>Na Loja Aurora</th></tr>
+<tr><td>Chave primária (PK)</td><td>Coluna que identifica cada linha; nunca se repete</td><td><code>clientes.id</code>, <code>pedidos.id</code>…</td></tr>
+<tr><td>Chave estrangeira (FK)</td><td>Coluna que guarda a chave primária de outra tabela</td><td><code>pedidos.cliente_id</code> → <code>clientes.id</code></td></tr>
+<tr><td>Um-para-muitos</td><td>Uma linha de A, várias de B; a FK fica em B</td><td>cliente → pedidos; categoria → produtos</td></tr>
+<tr><td>Muitos-para-muitos</td><td>Tabela no meio com duas FKs</td><td><code>itens_pedido</code> (pedidos ↔ produtos)</td></tr>
+<tr><td>Auto-relacionamento</td><td>A FK aponta para a própria tabela</td><td><code>funcionarios.chefe_id</code></td></tr>
+<tr><td><code>REFERENCES tabela(coluna)</code></td><td>Como a FK aparece na definição da tabela</td><td><code>.schema pedidos</code> no terminal</td></tr>
+<tr><td><code>PRAGMA foreign_key_list(t)</code></td><td>Lista as FKs da tabela <code>t</code></td><td>funciona no editor</td></tr>
+<tr><td><code>PRAGMA foreign_keys = ON</code></td><td>Liga a conferência das FKs (no terminal vem desligada)</td><td>já ligada no editor</td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Tentou criar uma ligação para o nada, ou apagar uma linha que tem ligações</td><td>pedido para o cliente 99</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Qual é a chave estrangeira?</h3>
+<p>Na tabela <code>produtos</code>, qual coluna aponta para a tabela <code>categorias</code>?</p>
+<div class="ex-code">produtos.<input data-answer="categoria_id" aria-label="coluna"> → categorias.id</div>
+</div>
+
+<div class="exercise">
+<h3>2. A tabela do meio</h3>
+<p>Qual tabela da Loja Aurora liga pedidos e produtos numa relação muitos-para-muitos?</p>
+<div class="ex-code"><input data-answer="itens_pedido" aria-label="nome da tabela"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Na relação "um cliente tem muitos pedidos", onde fica a chave estrangeira?</p>
+<label><input type="radio" name="q3"> Na tabela <code>clientes</code>, numa coluna <code>pedido_id</code></label>
+<label><input type="radio" name="q3"> Na tabela <code>pedidos</code>, na coluna <code>cliente_id</code></label>
+<label><input type="radio" name="q3"> Nas duas tabelas ao mesmo tempo</label>
+<label><input type="radio" name="q3"> Numa terceira tabela, obrigatoriamente</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Por que a consulta <code>SELECT cliente_id, COUNT(*) FROM pedidos GROUP BY cliente_id;</code> mostra 26 clientes, se a loja tem 30?</p>
+<label><input type="radio" name="q4"> Porque o <code>COUNT(*)</code> ignora clientes com email NULL</label>
+<label><input type="radio" name="q4"> Porque o <code>GROUP BY</code> junta clientes da mesma cidade</label>
+<label><input type="radio" name="q4"> Porque 4 clientes nunca fizeram pedido e não aparecem em nenhuma linha de <code>pedidos</code></label>
+<label><input type="radio" name="q4"> Porque o editor mostra no máximo 26 linhas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. No editor, o que acontece com <code>DELETE FROM clientes WHERE id = 1;</code>?</p>
+<label><input type="radio" name="q5"> Erro <code>FOREIGN KEY constraint failed</code>, porque há pedidos apontando para o cliente 1</label>
+<label><input type="radio" name="q5"> O cliente e os 4 pedidos dele são apagados juntos</label>
+<label><input type="radio" name="q5"> O cliente é apagado e os pedidos ficam com <code>cliente_id</code> NULL</label>
+<label><input type="radio" name="q5"> Nada: o editor não aceita DELETE</label>
+</div>
+
+<h3>Missão final: os produtos do pedido 3</h3>
+
+<div class="trysql" data-goal="linhas:3;;contem:Mouse Sem Fio">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo mostra os itens do pedido 3, mas só com os números dos produtos. Rode-a, anote os três <code>produto_id</code> e troque-a por uma consulta na tabela <code>produtos</code> que mostre o <strong>nome</strong> e o <strong>preço</strong> desses três produtos (dica: <code>WHERE id IN (…)</code>, da aula <a href="in.html">IN</a>).</p>
+<pre class="script" data-file="consulta.sql">SELECT pedido_id, produto_id, quantidade
+FROM itens_pedido
+WHERE pedido_id = 3;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, nome, preco
+FROM produtos
+WHERE id IN (7, 8, 9);
+</pre>
+</div>
+
+<p>Deu certo, mas você precisou de duas consultas e copiou números de uma para a outra. Na próxima aula, <a href="joins.html">O que é um JOIN</a>, o SQL faz essa ponte sozinho.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um banco relacional guarda cada coisa <strong>num lugar só</strong> (clientes numa tabela, pedidos em outra) e liga as tabelas por números, em vez de repetir dados.</li>
+  <li>A <strong>chave primária</strong> (<code>id</code>) identifica cada linha. A <strong>chave estrangeira</strong> (<code>cliente_id</code>) guarda a chave primária de outra tabela: ela "aponta" para lá.</li>
+  <li><strong>Um-para-muitos</strong>: a chave estrangeira fica no lado "muitos". <strong>Muitos-para-muitos</strong>: uma tabela no meio com duas chaves estrangeiras (<code>itens_pedido</code>). Uma tabela pode apontar para ela mesma (<code>chefe_id</code>).</li>
+  <li>Na Loja Aurora, 4 clientes nunca pediram (27 a 30) e 3 produtos nunca venderam (43 a 45): eles não aparecem quando você olha só a tabela do outro lado.</li>
+  <li>O SQLite recusa ligações para o nada com <code>FOREIGN KEY constraint failed</code>, mas só se a conferência estiver ligada: no editor ela está; no terminal, ligue com <code>PRAGMA foreign_keys = ON;</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
