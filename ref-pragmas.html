@@ -40,12 +40,12 @@
 <tr><th>PRAGMA</th><th>No editor</th><th>No terminal (<code>loja.db</code>)</th><th>Por quê</th></tr>
 <tr><td><code>foreign_keys</code></td><td><code>1</code></td><td><code>0</code></td><td>O editor liga ao carregar o banco; no terminal, toda conexão começa desligada</td></tr>
 <tr><td><code>journal_mode</code></td><td><code>memory</code></td><td><code>delete</code></td><td>Banco em memória não tem arquivo de diário no disco</td></tr>
-<tr><td><code>page_size</code></td><td><code>8192</code></td><td><code>4096</code></td><td>O <code>loja.db</code> foi criado com páginas de 4096 bytes; um banco novo usa o padrão desta compilação, 8192</td></tr>
-<tr><td><code>page_count</code></td><td><code>9</code></td><td><code>12</code></td><td>Os mesmos dados, em páginas de tamanhos diferentes</td></tr>
-<tr><td><code>auto_vacuum</code></td><td><code>0</code></td><td><code>1</code></td><td>Ajuste gravado no arquivo <code>loja.db</code></td></tr>
+<tr><td><code>page_size</code></td><td><code>8192</code></td><td><code>4096</code></td><td>Cada um cria bancos novos com um tamanho padrão diferente: o SQLite do navegador usa 8192 bytes; o <code>sqlite3</code> do terminal, 4096</td></tr>
+<tr><td><code>page_count</code></td><td><code>9</code></td><td><code>11</code></td><td>Os mesmos dados, em páginas de tamanhos diferentes</td></tr>
 <tr><td><code>database_list</code></td><td><code>0|main|</code> (sem arquivo)</td><td><code>0|main|/home/ana/loja.db</code></td><td>Em memória não há caminho de arquivo</td></tr>
-<tr><td><code>recursive_triggers</code></td><td><code>0</code></td><td><code>1</code></td><td>O programa <code>sqlite3</code> começa com outro valor</td></tr>
-<tr><td><code>trusted_schema</code></td><td><code>1</code></td><td><code>0</code></td><td>Idem: o programa <code>sqlite3</code> desliga</td></tr>
+<tr><td><code>cache_size</code></td><td><code>-16384</code></td><td><code>-2000</code></td><td>Os dois foram compilados com padrões diferentes de cache (16 MiB × uns 2 MB)</td></tr>
+<tr><td><code>secure_delete</code></td><td><code>0</code></td><td><code>1</code></td><td>O <code>sqlite3</code> do terminal vem com ele ligado: o que é apagado é sobrescrito com zeros no arquivo</td></tr>
+<tr><td><code>trusted_schema</code></td><td><code>1</code></td><td><code>0</code></td><td>O programa <code>sqlite3</code> desliga</td></tr>
 </table>
 </div>
 
@@ -159,9 +159,9 @@ $ sqlite3 loja.db "PRAGMA foreign_keys;"
 <tr><td><code>journal_mode</code></td><td>Como o SQLite protege as gravações: <code>delete</code> (o padrão), <code>wal</code>, <code>truncate</code>, <code>persist</code>, <code>memory</code>, <code>off</code></td><td><code>PRAGMA journal_mode = WAL;</code></td><td><code>delete</code></td><td><code>wal</code> fica; os outros, não</td></tr>
 <tr><td><code>synchronous</code></td><td>Quanto o SQLite espera o disco confirmar cada gravação: <code>0</code> OFF, <code>1</code> NORMAL, <code>2</code> FULL, <code>3</code> EXTRA</td><td><code>PRAGMA synchronous = NORMAL;</code></td><td><code>2</code></td><td>Não (conexão)</td></tr>
 <tr><td><code>page_size</code></td><td>O tamanho de cada página do arquivo, em bytes. Só muda num banco vazio ou com <code>VACUUM</code></td><td><code>PRAGMA page_size;</code></td><td><code>4096</code></td><td>Sim</td></tr>
-<tr><td><code>page_count</code></td><td>Quantas páginas o arquivo tem</td><td><code>PRAGMA page_count;</code></td><td><code>12</code></td><td>—</td></tr>
+<tr><td><code>page_count</code></td><td>Quantas páginas o arquivo tem</td><td><code>PRAGMA page_count;</code></td><td><code>11</code></td><td>—</td></tr>
 <tr><td><code>freelist_count</code></td><td>Quantas páginas estão vazias, esperando reaproveitamento (aula <a href="vacuum.html">VACUUM e ANALYZE</a>)</td><td><code>PRAGMA freelist_count;</code></td><td><code>0</code></td><td>—</td></tr>
-<tr><td><code>auto_vacuum</code></td><td><code>0</code> NONE, <code>1</code> FULL, <code>2</code> INCREMENTAL: se o arquivo encolhe sozinho quando dados são apagados</td><td><code>PRAGMA auto_vacuum;</code></td><td><code>1</code></td><td>Sim</td></tr>
+<tr><td><code>auto_vacuum</code></td><td><code>0</code> NONE, <code>1</code> FULL, <code>2</code> INCREMENTAL: se o arquivo encolhe sozinho quando dados são apagados</td><td><code>PRAGMA auto_vacuum;</code></td><td><code>0</code></td><td>Sim</td></tr>
 <tr><td><code>incremental_vacuum</code></td><td>Devolve páginas vazias ao disco, no modo <code>auto_vacuum = 2</code></td><td><code>PRAGMA incremental_vacuum;</code></td><td>(sem saída)</td><td>—</td></tr>
 <tr><td><code>user_version</code></td><td>Um número livre, gravado no arquivo, para o <strong>seu</strong> programa saber a versão do banco</td><td><code>PRAGMA user_version = 3;</code></td><td><code>0</code></td><td>Sim</td></tr>
 <tr><td><code>application_id</code></td><td>Outro número livre, para marcar o arquivo como "do seu aplicativo"</td><td><code>PRAGMA application_id;</code></td><td><code>0</code></td><td>Sim</td></tr>
@@ -173,7 +173,7 @@ $ sqlite3 loja.db "PRAGMA foreign_keys;"
 </div>
 
 <h3>Página × tamanho do arquivo</h3>
-<p>O arquivo é feito de páginas do mesmo tamanho. Multiplicando um pelo outro, sai o tamanho do arquivo: 4096 × 12 = 49152 bytes, o mesmo que o <code>ls -l</code> mostra.</p>
+<p>O arquivo é feito de páginas do mesmo tamanho. Multiplicando um pelo outro, sai o tamanho do arquivo: 4096 × 11 = 45056 bytes, o mesmo que o <code>ls -l</code> mostra.</p>
 
 <pre class="term">$ sqlite3 loja.db
 SQLite version 3.50.4 2025-07-30 19:33:53
@@ -183,14 +183,14 @@ sqlite> PRAGMA database_list;
 sqlite> PRAGMA page_size;
 4096
 sqlite> PRAGMA page_count;
-12
+11
 sqlite> PRAGMA freelist_count;
 0
 sqlite> PRAGMA integrity_check;
 ok
 sqlite> .quit
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:14 loja.db</pre>
 
 <h3>O que fica gravado no arquivo</h3>
 <p>O <code>user_version</code> e o <code>journal_mode = WAL</code> continuam valendo depois de fechar e abrir o banco:</p>
@@ -227,11 +227,11 @@ delete</pre>
 <div class="table-wrap">
 <table class="ref">
 <tr><th>PRAGMA</th><th>O que faz</th><th>Exemplo</th><th>Saída real (editor e terminal)</th></tr>
-<tr><td><code>cache_size</code></td><td>Quanta memória usar de cache. Número negativo = em KiB (−16384 = 16 MiB); positivo = em páginas</td><td><code>PRAGMA cache_size;</code></td><td><code>-16384</code></td></tr>
+<tr><td><code>cache_size</code></td><td>Quanta memória usar de cache. Número negativo = em KiB (−16384 = 16 MiB); positivo = em páginas</td><td><code>PRAGMA cache_size;</code></td><td>Editor <code>-16384</code>, terminal <code>-2000</code></td></tr>
 <tr><td><code>busy_timeout</code></td><td>Quantos milissegundos esperar quando outro programa está gravando no mesmo arquivo, antes de dar <code>database is locked</code></td><td><code>PRAGMA busy_timeout = 5000;</code></td><td>Lendo: <code>0</code> (a coluna se chama <code>timeout</code>)</td></tr>
 <tr><td><code>temp_store</code></td><td>Onde guardar tabelas e índices temporários: <code>0</code> padrão, <code>1</code> arquivo, <code>2</code> memória</td><td><code>PRAGMA temp_store = MEMORY;</code></td><td><code>0</code></td></tr>
 <tr><td><code>case_sensitive_like</code></td><td>Faz o <code>LIKE</code> diferenciar maiúsculas de minúsculas (aula <a href="like.html">LIKE</a>). Só se muda; não dá para ler</td><td><code>PRAGMA case_sensitive_like = ON;</code></td><td>(sem saída)</td></tr>
-<tr><td><code>recursive_triggers</code></td><td>Deixa um gatilho disparar outros gatilhos em cadeia</td><td><code>PRAGMA recursive_triggers;</code></td><td>Editor <code>0</code>, terminal <code>1</code></td></tr>
+<tr><td><code>recursive_triggers</code></td><td>Deixa um gatilho disparar outros gatilhos em cadeia</td><td><code>PRAGMA recursive_triggers;</code></td><td><code>0</code></td></tr>
 <tr><td><code>query_only</code></td><td>Com <code>ON</code>, a conexão só lê: qualquer <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> dá <code>attempt to write a readonly database</code></td><td><code>PRAGMA query_only = ON;</code></td><td>Lendo: <code>0</code></td></tr>
 <tr><td><code>ignore_check_constraints</code></td><td>Com <code>ON</code>, ignora os <code>CHECK</code> (aula <a href="check.html">CHECK</a>). Perigoso</td><td><code>PRAGMA ignore_check_constraints;</code></td><td><code>0</code></td></tr>
 <tr><td><code>automatic_index</code></td><td>Deixa o SQLite criar índices temporários sozinho para acelerar uma consulta</td><td><code>PRAGMA automatic_index;</code></td><td><code>1</code></td></tr>
@@ -249,15 +249,15 @@ SELECT COUNT(*) AS anas FROM clientes WHERE nome LIKE 'ana%';
 <hr>
 
 <h2 id="info">Informações sobre o próprio SQLite</h2>
-<p>Estes não mexem em nada; respondem "o que este SQLite sabe fazer". Os números mudam entre o editor e o terminal, porque o programa <code>sqlite3</code> traz extensões a mais (como <code>generate_series</code>, que não existe no editor).</p>
+<p>Estes não mexem em nada; respondem "o que este SQLite sabe fazer". Os números mudam entre o editor e o terminal, porque os dois foram compilados com opções diferentes, e o programa <code>sqlite3</code> traz extensões a mais (como <code>generate_series</code>, que não existe no editor).</p>
 
 <div class="table-wrap">
 <table class="ref">
 <tr><th>PRAGMA</th><th>O que lista</th><th>Editor</th><th>Terminal</th></tr>
-<tr><td><code>compile_options</code></td><td>As opções com que o SQLite foi compilado</td><td>55 linhas</td><td>50 linhas</td></tr>
-<tr><td><code>function_list</code></td><td>Todas as funções disponíveis (<code>s</code> = função comum; <code>w</code> = agregada ou de janela, porque toda agregada também serve como função de janela)</td><td>171 linhas</td><td>223 linhas</td></tr>
-<tr><td><code>pragma_list</code></td><td>Todos os PRAGMAs que existem</td><td>64 linhas</td><td>65 linhas</td></tr>
-<tr><td><code>module_list</code></td><td>Os módulos de tabela virtual</td><td>inclui <code>fts5</code>, <code>rtree</code>, <code>json_each</code></td><td>inclui também <code>generate_series</code>, <code>zipfile</code>, <code>fsdir</code></td></tr>
+<tr><td><code>compile_options</code></td><td>As opções com que o SQLite foi compilado</td><td>55 linhas</td><td>58 linhas</td></tr>
+<tr><td><code>function_list</code></td><td>Todas as funções disponíveis (<code>s</code> = função comum; <code>w</code> = agregada ou de janela, porque toda agregada também serve como função de janela)</td><td>171 linhas</td><td>228 linhas</td></tr>
+<tr><td><code>pragma_list</code></td><td>Todos os PRAGMAs que existem</td><td>64 linhas</td><td>66 linhas</td></tr>
+<tr><td><code>module_list</code></td><td>Os módulos de tabela virtual</td><td>inclui <code>fts5</code>, <code>rtree</code>, <code>json_each</code>, <code>bytecode</code></td><td>21 módulos: também <code>generate_series</code>, <code>zipfile</code>, <code>fsdir</code>, <code>fts3</code>/<code>fts4</code>; sem <code>bytecode</code></td></tr>
 <tr><td><code>collation_list</code></td><td>As regras de ordenação de texto</td><td><code>RTRIM</code>, <code>NOCASE</code>, <code>BINARY</code></td><td>também <code>decimal</code> e <code>uint</code></td></tr>
 </table>
 </div>
