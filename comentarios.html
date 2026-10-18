@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Comentários — anotações com -- e /* */ | Guia SQL</title>
+<meta name="description" content="Comentários em SQL para quem nunca mexeu num banco de dados: comentário de linha com --, comentário de bloco com /* */, como desligar uma parte da consulta para testar, o comentário que engole o ponto e vírgula, comentários dentro de texto, o que muda no MySQL e no PostgreSQL e as mensagens de erro reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Comentários</span></h1>
+
+<p class="intro">Daqui a seis meses, a Ana vai abrir o arquivo do relatório de estoque e se perguntar: "por que eu filtrei <code>estoque = 0</code> aqui?". Um <strong>comentário</strong> é um bilhete que você deixa dentro do SQL para quem vier depois (inclusive você mesmo). O banco <strong>ignora</strong> o comentário por completo: ele não muda o resultado, só ajuda as pessoas a entender a consulta. Nesta aula você vai ver os dois jeitos de comentar, <code>--</code> e <code>/* */</code>, e o truque de "desligar" uma parte da consulta sem apagá-la.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O comentário de linha, que começa com <code>--</code> e vai até o fim da linha.</li>
+  <li>O comentário de bloco, entre <code>/*</code> e <code>*/</code>, que pode ocupar várias linhas.</li>
+  <li>Como <strong>desligar</strong> uma condição ou uma coluna para testar, sem apagar nada.</li>
+  <li>O que escrever num comentário (e o que não vale a pena escrever).</li>
+  <li>As armadilhas: o comentário que engole o <code>;</code>, o <code>--</code> no meio de uma conta e o comentário dentro de outro.</li>
+  <li>As diferenças do MySQL (<code>#</code> e o espaço depois do <code>--</code>) e do PostgreSQL.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: o bilhete na receita</h2>
+<p>Na receita de bolo da avó da Ana, alguém escreveu a lápis, na margem: "usar forma de 24 cm" e "na receita original eram 3 ovos". Quem faz o bolo lê a receita <strong>e</strong> as anotações; mas as anotações não são ingredientes nem passos, não entram no bolo. No SQL é igual: o banco lê a consulta e <strong>pula</strong> os comentários, como se fossem espaços em branco. A documentação do SQLite diz exatamente isso: o comentário é tratado como espaço em branco.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Começa com</th><th>Termina</th><th>Bom para</th></tr>
+<tr><td>Comentário de linha</td><td><code>--</code> (dois hífens)</td><td>No fim da linha</td><td>Anotações curtas, no fim de uma linha ou numa linha sozinha</td></tr>
+<tr><td>Comentário de bloco</td><td><code>/*</code></td><td>No próximo <code>*/</code></td><td>Textos longos, de várias linhas; ou um pedaço no meio da linha</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O comentário de linha: <code>--</code></h2>
+
+<pre class="file" data-file="campanha.sql" data-resultado>-- Clientes do Piauí, para a campanha de outubro
+SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI'; -- 14 clientes
+</pre>
+
+<dl class="anatomy">
+  <dt>-- Clientes do Piauí, para a campanha de outubro</dt><dd>Uma linha inteira de comentário. Tudo do <code>--</code> até o fim da linha é ignorado.</dd>
+  <dt>SELECT … WHERE estado = 'PI';</dt><dd>A consulta de verdade, que o banco executa.</dd>
+  <dt>-- 14 clientes</dt><dd>Um comentário no fim de uma linha de código. O que vem <strong>antes</strong> do <code>--</code> vale; o que vem depois, não.</dd>
+</dl>
+
+<p>O resultado é exatamente o mesmo que sem os comentários: os 14 clientes do Piauí. O banco nem "viu" as anotações.</p>
+
+<p>O comentário de linha pode ficar no fim de qualquer linha, até no meio da consulta:</p>
+
+<pre class="file" data-file="alimentos.sql" data-resultado>SELECT nome, preco -- o preço de catálogo
+FROM produtos
+WHERE categoria_id = 7; -- 7 = Alimentos
+</pre>
+
+<hr>
+
+<h2>2. O comentário de bloco: <code>/* … */</code></h2>
+<p>Para um texto mais longo, como o cabeçalho de um relatório, o comentário de bloco é mais confortável. Ele começa em <code>/*</code> e só termina no <code>*/</code>, passando por quantas linhas forem precisas:</p>
+
+<pre class="file" data-file="parados.sql" data-resultado>/* Relatório: produtos parados
+   Autora: Ana
+   Atualizado em outubro de 2026 */
+SELECT nome, estoque
+FROM produtos
+WHERE estoque = 0;
+</pre>
+
+<p>Como ele tem começo e fim marcados, também pode ficar no <strong>meio</strong> de uma linha, coisa que o <code>--</code> não consegue (o <code>--</code> sempre vai até o fim da linha):</p>
+
+<pre class="file" data-file="no-meio.sql" data-resultado>SELECT nome, /* cidade, */ estado
+FROM clientes
+WHERE vip = 1;
+</pre>
+
+<p>O <code>cidade,</code> ficou dentro do comentário, e o resultado veio só com <code>nome</code> e <code>estado</code>.</p>
+
+<hr>
+
+<h2>3. Desligando parte da consulta para testar</h2>
+<p>Esse é o uso que você mais vai fazer no dia a dia. A Ana está mexendo numa consulta e quer ver o que acontece <strong>sem</strong> o filtro, mas não quer apagá-lo (vai precisar dele de novo daqui a pouco). Ela "comenta" a linha:</p>
+
+<pre class="file" data-file="sem-filtro.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+-- WHERE estado = 'PI'
+;
+</pre>
+
+<p>Vieram os 30 clientes: o <code>WHERE</code> virou comentário. Repare no truque: o <code>;</code> ficou sozinho na linha de baixo. Se ele estivesse no fim da linha comentada, iria junto para dentro do comentário. (No editor do guia isso nem faria falta, porque o último comando pode ficar sem <code>;</code>; mas, com mais de um comando, faz toda a diferença, como você vai ver em <a href="#errado">Quando dá errado</a>.)</p>
+
+<p>Para voltar o filtro, é só apagar os dois hífens. Muitos editores de código fazem isso com um atalho (em geral <kbd>Ctrl</kbd> + <kbd>/</kbd>): ele põe ou tira o <code>--</code> da linha.</p>
+
+<div class="trysql" data-goal="linhas:30">
+<p class="try-task"><strong>Experimente:</strong> sem apagar a linha do <code>WHERE</code>, transforme-a em comentário para a consulta trazer <strong>todos</strong> os 30 clientes. Cuidado com o <code>;</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, cidade, estado
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade, estado
+FROM clientes
+-- WHERE estado = 'PI'
+;
+</pre>
+</div>
+
+<p>O mesmo truque funciona com uma condição só: deixe cada condição numa linha, e comente a que quiser desligar.</p>
+
+<pre class="file" data-file="desliga-condicao.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE estado = 'PI'
+  -- AND vip = 1
+  AND cidade = 'Teresina';
+</pre>
+
+<p>Com o <code>AND vip = 1</code> desligado, vieram os 10 clientes de Teresina, VIP ou não. Por isso muita gente escreve cada <code>AND</code> no começo de uma linha: fica fácil ligar e desligar.</p>
+
+<hr>
+
+<h2>4. O que vale a pena comentar</h2>
+<p>Um bom comentário explica o <strong>porquê</strong>, que o SQL não mostra. O <strong>quê</strong>, o próprio SQL já diz.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comentário</th><th>Ajuda?</th><th>Por quê</th></tr>
+<tr><td><code>-- seleciona nome e cidade</code></td><td>Não</td><td>Repete o que o <code>SELECT nome, cidade</code> já diz.</td></tr>
+<tr><td><code>-- 7 = Alimentos</code></td><td>Sim</td><td>O número 7 sozinho não diz nada; o comentário diz.</td></tr>
+<tr><td><code>-- frete 0 = frete grátis (promoção de 2024)</code></td><td>Sim</td><td>Explica uma regra da loja que não está no banco.</td></tr>
+<tr><td><code>-- estoque 0 inclui os descontinuados (ids 12 e 27)</code></td><td>Sim</td><td>Avisa quem vier depois de um detalhe que pode surpreender.</td></tr>
+<tr><td>Cabeçalho com nome, autora e data</td><td>Sim, em arquivos</td><td>Num arquivo <code>.sql</code> guardado, conta de onde ele veio.</td></tr>
+</table>
+</div>
+
+<h3>Comentários num arquivo .sql</h3>
+<p>Fora do editor do guia, consultas costumam morar em arquivos <code>.sql</code>, e é lá que os comentários mais aparecem. A Ana guardou o relatório de parados num arquivo e rodou com o <code>sqlite3</code> no terminal (você viu o terminal em <a href="shell-sqlite.html">O Terminal do SQLite</a>):</p>
+
+<pre class="term">$ cat parados.sql
+-- parados.sql: produtos sem estoque
+-- Autora: Ana, outubro de 2026
+/* Mostra o nome e o preço de quem
+   precisa de reposição */
+SELECT nome, preco
+FROM produtos
+WHERE estoque = 0;  -- os descontinuados
+$ sqlite3 loja.db &lt; parados.sql
+Pen Drive 32GB|29.9
+Carrinho de Fricção|18.6</pre>
+
+<p>O <code>sqlite3</code> leu o arquivo inteiro, pulou os comentários e mostrou só o resultado da consulta.</p>
+
+<hr>
+
+<h2>5. Formas diferentes de comentar</h2>
+
+<pre class="file" data-file="tres-formas.sql">-- 1) Uma linha inteira de comentário
+SELECT nome FROM produtos;  -- 2) No fim de uma linha
+
+/* 3) Um bloco,
+      de várias linhas */
+SELECT nome /* 4) no meio da linha */ FROM produtos;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Anotação curta, de uma linha</td><td><code>--</code></td></tr>
+<tr><td>Cabeçalho de arquivo, explicação longa</td><td><code>/* … */</code> (ou várias linhas com <code>--</code>, o que é muito comum)</td></tr>
+<tr><td>Desligar uma linha inteira (um <code>WHERE</code>, um <code>AND</code>)</td><td><code>--</code> no começo da linha</td></tr>
+<tr><td>Desligar um pedaço no meio da linha (uma coluna)</td><td><code>/* … */</code></td></tr>
+<tr><td>Desligar várias linhas de uma vez</td><td><code>/* … */</code> em volta delas, se dentro não houver outro <code>/* */</code></td></tr>
+<tr><td>SQL que vai rodar também no MySQL</td><td><code>--</code> <strong>com um espaço</strong> depois (<code>-- assim</code>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O comentário engoliu o ponto e vírgula</strong>
+<p>A Ana anotou "papelaria" no fim da primeira consulta e, logo depois, escreveu a segunda:</p>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>SELECT nome FROM produtos WHERE categoria_id = 1 -- papelaria;
+SELECT nome FROM produtos WHERE categoria_id = 2;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>. O <code>;</code> que encerrava a primeira consulta ficou <strong>depois</strong> do <code>--</code>, ou seja, dentro do comentário. Para o SQLite, a primeira consulta não terminou, e o segundo <code>SELECT</code> chegou no meio dela.</p>
+<p><strong>Como consertar:</strong> o <code>;</code> vem <strong>antes</strong> do comentário: <code>… categoria_id = 1; -- papelaria</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:7">
+<p class="try-task"><strong>Missão:</strong> a caixa abaixo tem duas consultas, mas dá erro por causa de um comentário. Conserte sem apagar o comentário, para que as duas rodem (a segunda mostra os 7 Eletrônicos).</p>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM produtos WHERE categoria_id = 1 -- papelaria;
+SELECT nome FROM produtos WHERE categoria_id = 2;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome FROM produtos WHERE categoria_id = 1; -- papelaria
+SELECT nome FROM produtos WHERE categoria_id = 2;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Dois hífens no meio de uma conta</strong>
+<pre class="file" data-file="conta.sql" data-resultado>SELECT 10 - -2, 10 --2
+;
+</pre>
+<p><strong>O que aconteceu:</strong> nenhum erro, mas as duas contas deram resultados diferentes: 12 e 10. Em <code>10 - -2</code>, com espaço, é "10 menos menos 2" = 12. Em <code>10 --2</code>, os dois hífens juntos começam um comentário, e o <code>2</code> sumiu: sobrou só o <code>10</code>. (Repare também no cabeçalho da segunda coluna, que veio com o comentário dentro, o que leva ao próximo caso.)</p>
+<p><strong>Como evitar:</strong> para subtrair um número negativo, separe os sinais com espaço ou use parênteses: <code>10 - (-2)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O comentário foi parar no cabeçalho</strong>
+<pre class="file" data-file="cabecalho.sql" data-resultado>SELECT nome, preco * estoque -- dinheiro parado
+FROM produtos
+WHERE categoria_id = 8;
+</pre>
+<p><strong>O que aconteceu:</strong> o resultado está certo, mas o cabeçalho da conta saiu "preco * estoque -- dinheiro parado". Uma conta sem apelido ganha como nome o <strong>texto</strong> que você escreveu, e o SQLite pegou o comentário junto.</p>
+<p><strong>Como consertar:</strong> dê um apelido à conta (aula <a href="aliases.html">Apelidos (AS)</a>): <code>preco * estoque AS valor_parado -- dinheiro parado</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Comentário dentro de comentário</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro>/* fora /* dentro */ ainda fora? */ SELECT 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ainda": syntax error</code>. No SQLite, os comentários de bloco <strong>não se aninham</strong>: o comentário termina no <strong>primeiro</strong> <code>*/</code> que aparece. O "ainda fora? */" ficou de fora e foi lido como SQL. Isso acontece quando você tenta desligar, com <code>/* */</code>, um trecho que já tinha um comentário de bloco dentro.</p>
+<p><strong>Como consertar:</strong> para desligar um trecho que já tem <code>/* */</code>, use <code>--</code> em cada linha.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>#</code> do MySQL</strong>
+<pre class="file" data-file="errado.sql" data-resultado data-erro># comentário estilo MySQL
+SELECT 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>unrecognized token: "#"</code>, "símbolo desconhecido: #". O <code>#</code> é comentário só no MySQL (e no MariaDB). No SQLite e no padrão SQL, não.</p>
+<p><strong>Como consertar:</strong> use <code>--</code> ou <code>/* */</code>, que funcionam em todos.</p>
+<p><strong>Curiosidade que confunde:</strong> o <strong>programa</strong> <code>sqlite3</code>, do terminal, ignora sozinho as linhas que <strong>começam</strong> com <code>#</code> quando lê os comandos linha por linha (digitados ou vindos de um arquivo com <code>&lt;</code>). Isso é coisa do programa, não do SQL: o mesmo <code>#</code> num comando passado de outro jeito, no editor do guia ou num programa que use o SQLite, dá o erro de cima. Veja no terminal da Ana:</p>
+<pre class="term">$ printf '# comentário estilo MySQL\nSELECT 1;\n' &gt; cerquilha.sql
+$ sqlite3 loja.db &lt; cerquilha.sql
+1
+$ sqlite3 loja.db "SELECT 1; # no fim"
+1
+Error: in prepare, unrecognized token: "#"
+  # no fim
+  ^--- error here</pre>
+<p>Lido do arquivo, linha por linha, o <code>#</code> no começo da linha passou. Passado como texto do comando, o mesmo <code>#</code> deu erro (o <code>1</code> é da primeira consulta, que rodou antes de o <code>sqlite3</code> chegar no <code>#</code>). Não conte com o <code>#</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Dentro de aspas não é comentário</strong>
+<pre class="file" data-file="texto.sql" data-resultado>SELECT '-- isto é texto', '/* isto também */';
+</pre>
+<p><strong>O que aconteceu:</strong> dentro de aspas simples, <code>--</code> e <code>/*</code> são caracteres comuns de um texto. O SQLite devolveu os dois textos exatamente como foram escritos. Isso é bom: um produto pode ter "--" no nome sem quebrar nada.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>MySQL e MariaDB:</strong> o <code>--</code> só vira comentário se vier seguido de um <strong>espaço</strong> (ou tab, ou fim de linha); a documentação do MySQL diz que isso difere um pouco do padrão. No SQLite, <code>--sem espaço</code> já é comentário. O MySQL também aceita <code>#</code> como comentário de linha, e tem um comentário especial, <code>/*! … */</code>, cujo conteúdo o MySQL <strong>executa</strong> (os outros bancos ignoram).</li>
+  <li><strong>PostgreSQL:</strong> os comentários de bloco <strong>se aninham</strong>, como manda o padrão SQL: <code>/* fora /* dentro */ ainda fora */</code> é um comentário só. Assim dá para desligar um trecho que já tinha comentários. No SQLite (e no MySQL), não.</li>
+</ul>
+<p>Ilustrativo (MySQL; não roda no SQLite):</p>
+<pre class="file" data-file="mysql.sql"># comentário de linha só do MySQL
+SELECT nome FROM produtos; -- comentário com espaço: funciona em todos
+SELECT 10 --2;             -- no MySQL, sem espaço, isto é 10 - (-2) = 12
+</pre>
+<p>A regra que funciona em todos os bancos: <code>--</code> seguido de espaço, ou <code>/* */</code> sem nada aninhado dentro.</p>
+</div>
+
+<div class="tip">
+<strong>Comentários e segurança</strong>
+<p>O <code>--</code> tem um papel famoso num ataque chamado <strong>SQL injection</strong>: um invasor digita, num formulário, um texto terminado em <code>--</code> para "comentar" o resto da consulta do programa. Você vai entender como isso funciona, e como se proteger, em <a href="sql-injection.html">SQL Injection</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>-- texto</code></td><td>Comentário até o fim da linha</td></tr>
+<tr><td><code>SELECT …; -- texto</code></td><td>Comentário depois do código (o <code>;</code> antes do <code>--</code>)</td></tr>
+<tr><td><code>/* texto */</code></td><td>Comentário de bloco, de uma ou várias linhas</td></tr>
+<tr><td><code>SELECT a, /* b, */ c</code></td><td>Desliga um pedaço no meio da linha</td></tr>
+<tr><td><code>-- WHERE …</code></td><td>Desliga uma linha inteira para testar</td></tr>
+<tr><td><code>'-- texto'</code></td><td>Entre aspas, é texto, não comentário</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td>O <code>;</code> ficou dentro de um comentário, e duas consultas se juntaram</td></tr>
+<tr><td><code>near "ainda": syntax error</code></td><td>Comentário de bloco aninhado: ele acabou no primeiro <code>*/</code></td></tr>
+<tr><td><code>unrecognized token: "#"</code></td><td>O <code>#</code> do MySQL não é comentário no SQLite</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O comentário de linha</h3>
+<p>Complete com os dois caracteres que começam um comentário de linha:</p>
+<div class="ex-code">SELECT nome FROM clientes; <input data-answer="--" aria-label="início do comentário"> lista para o cartão de Natal</div>
+</div>
+
+<div class="exercise">
+<h3>2. O fim do bloco</h3>
+<p>Complete o fechamento do comentário de bloco:</p>
+<div class="ex-code">/* Relatório mensal de vendas <input data-answer="*/" aria-label="fim do comentário"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. O que o banco faz com um comentário?</p>
+<label><input type="radio" name="q3"> Mostra o texto do comentário no resultado</label>
+<label><input type="radio" name="q3"> Ignora, como se fosse um espaço em branco</label>
+<label><input type="radio" name="q3"> Guarda o comentário na tabela</label>
+<label><input type="radio" name="q3"> Executa o comentário depois da consulta</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Por que <code>SELECT nome FROM produtos -- todos;</code> seguido, na linha de baixo, de outro <code>SELECT</code> dá erro?</p>
+<label><input type="radio" name="q4"> Porque não pode haver duas consultas na mesma caixa</label>
+<label><input type="radio" name="q4"> Porque comentário não pode ficar no fim da linha</label>
+<label><input type="radio" name="q4"> Porque falta o <code>*/</code></label>
+<label><input type="radio" name="q4"> Porque o <code>;</code> ficou dentro do comentário, e a primeira consulta não terminou</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Quanto o SQLite responde para <code>SELECT 10 --2;</code>?</p>
+<label><input type="radio" name="q5"> 12</label>
+<label><input type="radio" name="q5"> 8</label>
+<label><input type="radio" name="q5"> 10, porque <code>--2;</code> virou comentário</label>
+<label><input type="radio" name="q5"> Erro de sintaxe</label>
+</div>
+
+<h3>Missão final: desligue só uma coluna</h3>
+
+<div class="trysql" data-goal="colunas:nome,preco;;linhas:6">
+<p class="try-task"><strong>Missão:</strong> a Ana quer ver os produtos da Papelaria (categoria 1) só com <code>nome</code> e <code>preco</code>, mas não quer apagar a coluna <code>estoque</code> do código, porque vai precisar dela depois. Desligue <strong>só</strong> a coluna <code>estoque</code> com um comentário de bloco.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, estoque, preco
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, /* estoque, */ preco
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Comentários são anotações para pessoas; o banco os trata como espaço em branco e eles não mudam o resultado.</li>
+  <li><code>--</code> comenta até o fim da linha; <code>/* … */</code> comenta um bloco, de uma ou várias linhas, e pode ficar no meio de uma linha.</li>
+  <li>Use comentários para desligar uma linha ou uma coluna enquanto testa, sem apagar nada.</li>
+  <li>Comente o <strong>porquê</strong> (uma regra da loja, um número mágico), não o que o SQL já diz.</li>
+  <li>O <code>;</code> vem <strong>antes</strong> do <code>--</code>; senão, ele vira comentário e as consultas se juntam (<code>near "SELECT": syntax error</code>).</li>
+  <li>No SQLite, comentários de bloco não se aninham; dentro de aspas, <code>--</code> é texto. Para funcionar em todos os bancos, escreva <code>--</code> seguido de espaço; o <code>#</code> é só do MySQL.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
