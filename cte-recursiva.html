@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL CTE Recursiva — WITH RECURSIVE passo a passo | Guia SQL</title>
+<meta name="description" content="CTE recursiva (WITH RECURSIVE) para quem está começando: contar de 1 a 10, gerar um calendário de datas, percorrer a hierarquia dos funcionários até a gerente, a condição de parada, UNION × UNION ALL, o laço sem fim interrompido no editor e os erros reais do SQLite, com missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">CTE Recursiva</span></h1>
+
+<p class="intro">Na aula <a href="with-cte.html">CTE (WITH)</a>, cada CTE era um rascunho com nome que lia as tabelas do banco. Agora vem uma ideia nova: uma CTE que <strong>lê a si mesma</strong>. Ela começa com uma linha, usa essa linha para fazer a próxima, usa a próxima para fazer outra, e para quando uma regra mandar. Com isso o SQL faz coisas que um <code>SELECT</code> comum não faz: contar de 1 a 10 sem tabela nenhuma, montar um calendário com todos os dias do mês e descer pela hierarquia da Loja Aurora, da gerente Marta até o último funcionário.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>As três partes de uma CTE recursiva: o ponto de partida, a regra do próximo passo e a condição de parada.</li>
+  <li>Como o SQLite executa a recursão, rodada por rodada.</li>
+  <li>A gerar sequências de números e um calendário de datas.</li>
+  <li>A percorrer a hierarquia <code>funcionarios</code> → chefe, para baixo e para cima.</li>
+  <li><code>UNION ALL</code> × <code>UNION</code> e o <code>LIMIT</code> como cinto de segurança.</li>
+  <li>O que acontece com um laço sem fim, e os outros erros reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: a fila de dominós</h2>
+<p>Pense numa fila de dominós em pé. Para todos caírem, você precisa de três coisas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Nos dominós</th><th>Na CTE recursiva</th><th>Nome técnico</th></tr>
+<tr><td>Empurrar a <strong>primeira</strong> peça</td><td>Um <code>SELECT</code> que cria a primeira linha</td><td>âncora (ou <em>initial select</em>)</td></tr>
+<tr><td>A regra: cada peça derruba a <strong>próxima</strong></td><td>Um <code>SELECT</code> que lê a linha anterior e cria a seguinte</td><td>parte recursiva (<em>recursive select</em>)</td></tr>
+<tr><td>A fila <strong>acaba</strong> na beira da mesa</td><td>Um <code>WHERE</code> que deixa de criar linhas</td><td>condição de parada</td></tr>
+</table>
+</div>
+
+<p>Se faltar a beira da mesa, a fila nunca acaba. No SQL é igual: sem a condição de parada, a CTE gera linhas para sempre. Você vai ver isso acontecer (com segurança) em <a href="#errado">Quando dá errado</a>.</p>
+
+<hr>
+
+<h2>1. Contar de 1 a 10</h2>
+<p>O primeiro exemplo não usa tabela nenhuma da loja. Ele <strong>cria</strong> os números:</p>
+
+<pre class="file" data-file="conta.sql" data-resultado>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH RECURSIVE</dt><dd>"Com, recursivamente". A palavra <code>RECURSIVE</code> avisa que a CTE vai ler a si mesma. (O SQLite aceita sem ela, mas escreva sempre: deixa claro para quem lê e é obrigatória em outros bancos.)</dd>
+  <dt>conta(n)</dt><dd>O nome da CTE e o nome da sua coluna, como na <a href="with-cte.html">aula anterior</a>. Aqui ele é quase obrigatório: <code>SELECT 1</code> não tem nome de coluna, e é pela lista que a coluna se chama <code>n</code>.</dd>
+  <dt>SELECT 1</dt><dd>A <strong>âncora</strong>: o primeiro dominó. Roda uma vez só e cria a linha <code>n = 1</code>.</dd>
+  <dt>UNION ALL</dt><dd>"União de tudo". Junta as linhas da âncora com as que a parte recursiva for criando (aula <a href="union-all.html">UNION ALL</a>).</dd>
+  <dt>SELECT n + 1 FROM conta</dt><dd>A <strong>parte recursiva</strong>: a regra do próximo dominó. Ela lê <code>conta</code>, a própria CTE, e para cada linha que chega cria uma nova, com o número seguinte.</dd>
+  <dt>WHERE n &lt; 10</dt><dd>A <strong>condição de parada</strong>. Quando chega a linha <code>n = 10</code>, o <code>WHERE</code> é falso e nenhuma linha nova nasce. Sem linha nova, acabou.</dd>
+  <dt>SELECT n FROM conta;</dt><dd>O comando principal, igual ao de qualquer CTE: lê o resultado pronto.</dd>
+</dl>
+
+<h3>Rodada por rodada</h3>
+<p>O SQLite guarda as linhas novas numa <strong>fila</strong>. Ele tira uma linha da fila, entrega para o resultado e roda a parte recursiva <strong>só com aquela linha</strong>. O que a parte recursiva devolver entra no fim da fila. Quando a fila esvazia, terminou:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Rodada</th><th>Linha tirada da fila</th><th>A parte recursiva faz</th><th>Entra na fila</th></tr>
+<tr><td>âncora</td><td>—</td><td><code>SELECT 1</code></td><td>1</td></tr>
+<tr><td>1</td><td>1</td><td><code>1 &lt; 10</code>? sim: <code>1 + 1</code></td><td>2</td></tr>
+<tr><td>2</td><td>2</td><td><code>2 &lt; 10</code>? sim: <code>2 + 1</code></td><td>3</td></tr>
+<tr><td>…</td><td>…</td><td>…</td><td>…</td></tr>
+<tr><td>9</td><td>9</td><td><code>9 &lt; 10</code>? sim: <code>9 + 1</code></td><td>10</td></tr>
+<tr><td>10</td><td>10</td><td><code>10 &lt; 10</code>? <strong>não</strong></td><td>nada: a fila esvaziou, fim</td></tr>
+</table>
+</div>
+
+<p>Repare que a parte recursiva nunca vê a CTE inteira: em cada rodada, <code>conta</code> é só <strong>a linha da vez</strong>. É por isso que <code>n + 1</code> funciona: <code>n</code> é o número daquela linha.</p>
+
+<hr>
+
+<h2>2. Mudando a regra</h2>
+<p>As três partes são as mesmas; mude o que cada uma faz e você tem outra sequência.</p>
+
+<h3>A soma de 1 a 100</h3>
+<p>O comando principal pode fazer qualquer coisa com o resultado da CTE, inclusive somar (aula <a href="sum.html">SUM()</a>):</p>
+
+<pre class="file" data-file="soma.sql" data-resultado>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 100
+)
+SELECT SUM(n) AS soma FROM conta;
+</pre>
+
+<p>Dá 5050, a conta famosa que dizem que o matemático Gauss fez de cabeça quando criança.</p>
+
+<h3>A tabuada do 7</h3>
+<p>A CTE gera os números de 1 a 10; o comando principal calcula uma coluna a mais com eles:</p>
+
+<pre class="file" data-file="tabuada.sql" data-resultado>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n, n * 7 AS resultado FROM conta;
+</pre>
+
+<div class="trysql" data-goal="contem:10|90;;linhas:10">
+<p class="try-task"><strong>Missão:</strong> a Ana está ajudando o sobrinho com a lição. Troque a tabuada do 7 pela tabuada do <strong>9</strong>: a última linha tem de ser <code>10</code> e <code>90</code>.</p>
+<pre class="script" data-file="consulta.sql">WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n, n * 7 AS resultado FROM conta;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n, n * 9 AS resultado FROM conta;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Um calendário de datas</h2>
+<p>Agora o "número seguinte" vira o "dia seguinte". A função <code>date(dia, '+1 day')</code> soma um dia a uma data (aula <a href="funcoes-data.html">Funções de Data</a>), e as datas da Loja Aurora estão no formato <code>AAAA-MM-DD</code>, que se compara direitinho com <code>&lt;</code>:</p>
+
+<pre class="file" data-file="semana.sql" data-resultado>WITH RECURSIVE dias(dia) AS (
+  SELECT '2026-10-01'
+  UNION ALL
+  SELECT date(dia, '+1 day') FROM dias WHERE dia &lt; '2026-10-07'
+)
+SELECT dia,
+       CASE strftime('%w', dia)
+         WHEN '0' THEN 'domingo'  WHEN '1' THEN 'segunda'
+         WHEN '2' THEN 'terça'    WHEN '3' THEN 'quarta'
+         WHEN '4' THEN 'quinta'   WHEN '5' THEN 'sexta'
+         ELSE 'sábado'
+       END AS dia_da_semana
+FROM dias;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT '2026-10-01'</dt><dd>A âncora: o primeiro dia, como texto no formato ISO.</dd>
+  <dt>date(dia, '+1 day')</dt><dd>A regra: o dia seguinte ao da linha da vez. A função cuida sozinha da virada do mês e dos anos bissextos.</dd>
+  <dt>WHERE dia &lt; '2026-10-07'</dt><dd>A parada: quando a linha da vez é o dia 7, nenhum dia novo nasce.</dd>
+  <dt>strftime('%w', dia)</dt><dd>Devolve o dia da semana como texto, de <code>'0'</code> (domingo) a <code>'6'</code> (sábado). O <code>CASE</code> troca o número pelo nome (aula <a href="case.html">CASE</a>).</dd>
+</dl>
+
+<h3>Para que serve: os dias sem pedido</h3>
+<p>A Ana quer ver os pedidos de cada dia da primeira quinzena de outubro de 2026. Com um <code>GROUP BY</code> direto na tabela <code>pedidos</code>, só aparecem os dias que <strong>tiveram</strong> pedido:</p>
+
+<pre class="file" data-file="so-dias-com-pedido.sql" data-resultado>SELECT data, COUNT(*) AS pedidos
+FROM pedidos
+WHERE data BETWEEN '2026-10-01' AND '2026-10-14'
+GROUP BY data;
+</pre>
+
+<p>Três linhas. Os outros 11 dias sumiram, porque não existe linha nenhuma deles para agrupar. Para um relatório diário, isso engana: parece que a loja só abriu três dias. A solução é gerar o calendário completo e juntar os pedidos nele com <code>LEFT JOIN</code> (aula <a href="left-join.html">LEFT JOIN</a>), que mantém os dias sem par:</p>
+
+<pre class="file" data-file="calendario.sql" data-resultado>WITH RECURSIVE dias(dia) AS (
+  SELECT '2026-10-01'
+  UNION ALL
+  SELECT date(dia, '+1 day') FROM dias WHERE dia &lt; '2026-10-14'
+)
+SELECT d.dia, COUNT(p.id) AS pedidos
+FROM dias AS d
+LEFT JOIN pedidos AS p ON p.data = d.dia
+GROUP BY d.dia
+ORDER BY d.dia;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM dias AS d</dt><dd>O calendário manda: todos os 14 dias entram no resultado.</dd>
+  <dt>LEFT JOIN pedidos AS p ON p.data = d.dia</dt><dd>Pendura em cada dia os pedidos daquela data. Num dia sem pedido, as colunas de <code>p</code> ficam <code>NULL</code>.</dd>
+  <dt>COUNT(p.id)</dt><dd>Conta só os <code>p.id</code> que não são <code>NULL</code>. Por isso os dias vazios dão <code>0</code>. Com <code>COUNT(*)</code>, eles dariam 1, porque a linha do dia existe (aula <a href="count.html">COUNT()</a>).</dd>
+</dl>
+
+<hr>
+
+<h2>4. A hierarquia: da gerente até o último funcionário</h2>
+<p>Na tabela <code>funcionarios</code>, a coluna <code>chefe_id</code> diz quem é o chefe de cada um. A Marta Lustosa, a gerente, tem <code>chefe_id</code> <code>NULL</code>: ninguém manda nela. Na aula <a href="self-join.html">Self Join</a> você juntou a tabela com ela mesma para achar o chefe direto. Mas e o chefe do chefe? E a equipe inteira, em todos os níveis? Com um self-join, você precisaria de um <code>JOIN</code> a mais para cada nível, e teria de saber de antemão quantos níveis existem. A CTE recursiva desce sozinha, quantos níveis houver.</p>
+
+<pre class="file" data-file="equipe.sql" data-resultado>WITH RECURSIVE equipe(id, nome, cargo, nivel) AS (
+  SELECT id, nome, cargo, 0
+  FROM funcionarios
+  WHERE chefe_id IS NULL
+  UNION ALL
+  SELECT f.id, f.nome, f.cargo, e.nivel + 1
+  FROM funcionarios AS f
+  JOIN equipe AS e ON f.chefe_id = e.id
+)
+SELECT id, nome, cargo, nivel
+FROM equipe
+ORDER BY nivel, nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE chefe_id IS NULL</dt><dd>A âncora: quem não tem chefe. Na Aurora, só a Marta. Ela entra com <code>nivel</code> 0.</dd>
+  <dt>FROM funcionarios AS f JOIN equipe AS e</dt><dd>A parte recursiva: para a linha da vez (<code>e</code>, alguém que já está na equipe), procura em <code>funcionarios</code> quem tem essa pessoa como chefe.</dd>
+  <dt>ON f.chefe_id = e.id</dt><dd>A ligação: "o chefe de <code>f</code> é <code>e</code>". Da Marta (id 1) saem os ids 2, 3, 4 e 5; da Luana (id 5) saem 6, 7 e 8.</dd>
+  <dt>e.nivel + 1</dt><dd>Cada degrau para baixo soma 1 ao nível.</dd>
+  <dt>(sem WHERE de parada?)</dt><dd>Aqui a parada vem dos próprios dados: quando a linha da vez é alguém que não chefia ninguém (o Davi, por exemplo), o <code>JOIN</code> não acha nenhum par e nenhuma linha nova nasce. Quando todos os da fila são "folhas", acabou.</dd>
+  <dt>ORDER BY nivel, nome</dt><dd>A ordem em que a recursão entrega as linhas não é garantida. Para um resultado arrumado, ordene sempre no comando principal.</dd>
+</dl>
+
+<h3>O organograma desenhado</h3>
+<p>Dá para ir guardando, em cada rodada, o <strong>caminho</strong> desde a Marta. Ordenar por ele deixa cada pessoa logo abaixo do seu chefe, e alguns espaços na frente do nome desenham o recuo:</p>
+
+<pre class="file" data-file="organograma.sql" data-resultado>WITH RECURSIVE equipe(id, nome, nivel, caminho) AS (
+  SELECT id, nome, 0, nome
+  FROM funcionarios
+  WHERE chefe_id IS NULL
+  UNION ALL
+  SELECT f.id, f.nome, e.nivel + 1, e.caminho || ' &gt; ' || f.nome
+  FROM funcionarios AS f
+  JOIN equipe AS e ON f.chefe_id = e.id
+)
+SELECT substr('            ', 1, nivel * 4) || nome AS organograma,
+       caminho
+FROM equipe
+ORDER BY caminho;
+</pre>
+
+<dl class="anatomy">
+  <dt>nome (na âncora)</dt><dd>O caminho começa só com o nome da Marta.</dd>
+  <dt>e.caminho || ' &gt; ' || f.nome</dt><dd>A cada degrau, o caminho do chefe ganha <code>&gt;</code> e o nome da pessoa. O <code>||</code> junta textos (aula <a href="funcoes-texto.html">Funções de Texto</a>).</dd>
+  <dt>substr('            ', 1, nivel * 4)</dt><dd>Pega 4 espaços por nível de um texto de 12 espaços: 0 espaços para a Marta, 4 para quem está no nível 1, 8 no nível 2.</dd>
+  <dt>ORDER BY caminho</dt><dd>Em ordem alfabética, "Marta Lustosa &gt; Luana Castelo &gt; Davi Nunes" vem logo depois de "Marta Lustosa &gt; Luana Castelo": cada um embaixo do seu chefe.</dd>
+</dl>
+
+<h3>Subindo: do funcionário até a gerente</h3>
+<p>A recursão também anda para cima. A âncora agora é o Davi Nunes, o estoquista, e a regra procura <strong>o chefe</strong> da linha da vez:</p>
+
+<pre class="file" data-file="subindo.sql" data-resultado>WITH RECURSIVE acima(id, nome, chefe_id, passos) AS (
+  SELECT id, nome, chefe_id, 0
+  FROM funcionarios
+  WHERE nome = 'Davi Nunes'
+  UNION ALL
+  SELECT f.id, f.nome, f.chefe_id, a.passos + 1
+  FROM funcionarios AS f
+  JOIN acima AS a ON f.id = a.chefe_id
+)
+SELECT passos, nome FROM acima;
+</pre>
+
+<p>Compare a ligação com a de cima: lá era <code>f.chefe_id = e.id</code> ("quem tem a linha da vez como chefe"); aqui é <code>f.id = a.chefe_id</code> ("quem é o chefe da linha da vez"). Na Marta, <code>chefe_id</code> é <code>NULL</code>, o <code>JOIN</code> não acha ninguém, e a subida para no topo.</p>
+
+<hr>
+
+<h2>5. O cinto de segurança: LIMIT, e UNION × UNION ALL</h2>
+
+<h3>LIMIT dentro da CTE</h3>
+<p>No SQLite, a parte recursiva aceita um <code>LIMIT</code>. Ele conta as linhas da CTE inteira e para tudo quando chega no número, mesmo sem <code>WHERE</code>:</p>
+
+<pre class="file" data-file="limit.sql" data-resultado>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta
+  LIMIT 5
+)
+SELECT n FROM conta;
+</pre>
+
+<p>Um <code>LIMIT</code> no comando principal (<code>SELECT n FROM conta LIMIT 5;</code>) também funciona no SQLite: ele para de pedir linhas depois da quinta, e a recursão para junto. Mesmo assim, a forma mais clara e mais portável é a condição de parada no <code>WHERE</code>. Use o <code>LIMIT</code> como cinto de segurança, não como freio.</p>
+
+<h3>UNION ALL × UNION</h3>
+<p>Com <code>UNION ALL</code>, toda linha nova entra na fila. Com <code>UNION</code>, uma linha <strong>igual a outra que já entrou</strong> é descartada. Veja uma regra "boba", que sempre gera o número 1:</p>
+
+<pre class="file" data-file="union.sql" data-resultado>WITH RECURSIVE sempre_um(n) AS (
+  SELECT 1
+  UNION
+  SELECT 1 FROM sempre_um
+)
+SELECT n FROM sempre_um;
+</pre>
+
+<p>Uma linha só: o segundo <code>1</code> era repetido, foi descartado, a fila esvaziou e acabou. Com <code>UNION ALL</code> no lugar, esse mesmo comando nunca terminaria. O <code>UNION</code> serve para dados que podem andar em círculo (A leva a B, B leva a A); a hierarquia da Aurora não tem círculo, então <code>UNION ALL</code> é o certo, e é mais rápido, porque o SQLite não precisa lembrar de todas as linhas para comparar.</p>
+
+<hr>
+
+<h2>6. Formas diferentes de fazer a mesma coisa</h2>
+<p>Para "os números de 1 a 5" existem outros caminhos:</p>
+
+<h3>a) Digitar os valores</h3>
+<pre class="file" data-file="values.sql" data-resultado>SELECT column1 AS n
+FROM (VALUES (1), (2), (3), (4), (5));
+</pre>
+<p>Funciona para poucos valores. Para os 31 dias de um mês, ou para 1000 números, ninguém quer digitar. <code>column1</code> é o nome que o SQLite dá à primeira coluna de um <code>VALUES</code>.</p>
+
+<h3>b) A função generate_series (só no programa sqlite3)</h3>
+<p>O programa <code>sqlite3</code> traz a função <code>generate_series</code>, que gera a sequência pronta:</p>
+
+<pre class="term">$ sqlite3 :memory: "SELECT value FROM generate_series(1, 3);"
+1
+2
+3</pre>
+
+<p>Ela é uma <strong>extensão</strong>, que vem embutida no programa <code>sqlite3</code>, mas não faz parte do SQLite em si. No editor do guia (e em muitos programas que usam o SQLite por dentro), ela não existe:</p>
+
+<pre class="file" data-file="generate_series.sql" data-resultado data-erro>SELECT value FROM generate_series(1, 3);
+</pre>
+
+<h3>c) A CTE recursiva</h3>
+<p>Funciona em qualquer SQLite e nos outros bancos grandes, para qualquer tamanho, e a regra pode ser qualquer conta: datas, hierarquias, caminhos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Limite</th></tr>
+<tr><td><code>VALUES (1), (2), …</code></td><td>Uma lista curta e fixa</td><td>Você digita tudo</td></tr>
+<tr><td><code>generate_series(1, n)</code></td><td>Sequências rápidas no programa <code>sqlite3</code></td><td>Não existe no editor nem em todo SQLite</td></tr>
+<tr><td>Self-join (<code>JOIN</code> da tabela com ela mesma)</td><td>Só o chefe direto, ou um número fixo de níveis</td><td>Um <code>JOIN</code> por nível</td></tr>
+<tr><td><strong><code>WITH RECURSIVE</code></strong></td><td>Sequências, calendários e hierarquias de qualquer tamanho</td><td>Precisa de uma condição de parada</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O laço sem fim: esqueceu a condição de parada</strong>
+<p>A Ana escreveu a contagem sem o <code>WHERE</code>:</p>
+<pre class="file" data-file="sem-fim.sql">WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>O que acontece:</strong> o SQLite não vê erro nenhum nesse comando. Ele é válido; só nunca termina. Cada linha gera a seguinte, para sempre. O editor do guia tem uma trava: depois de uns 4 segundos ele interrompe o SQL e mostra as primeiras 500 linhas, um aviso de que parou e a mensagem <code>interrupted</code> ("interrompido"). Nesse tempo, o SQLite já tinha gerado muitos milhares de números.</p>
+<p>Fora do editor, no programa <code>sqlite3</code> ou num sistema de verdade, essa trava de 4 segundos não existe: o comando continua gastando processador e memória até alguém interromper.</p>
+<p><strong>Como consertar:</strong> toda parte recursiva precisa de algo que pare: um <code>WHERE</code> (como <code>WHERE n &lt; 10</code>), um <code>JOIN</code> que acabe ficando sem par (como na hierarquia) ou, no mínimo, um <code>LIMIT</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:10">
+<p class="try-task"><strong>Missão:</strong> rode este SQL como está e espere uns 4 segundos: você vai ver o editor interromper o laço com <code>interrupted</code>. Depois conserte a parte recursiva para que ela conte só de 1 a 10.</p>
+<pre class="script" data-file="consulta.sql">WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta
+)
+SELECT n FROM conta;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Uma linha a mais: <code>&lt;=</code> no lugar de <code>&lt;</code></strong>
+<pre class="file" data-file="uma-a-mais.sql" data-resultado>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt;= 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>O que acontece:</strong> sem erro, mas saíram <strong>11</strong> números. Lembre da tabela "rodada por rodada": o <code>WHERE</code> olha a linha <strong>da vez</strong>, antes de somar. Quando a linha da vez é o 10, <code>10 &lt;= 10</code> ainda é verdade, e nasce o 11.</p>
+<p><strong>Como consertar:</strong> para parar no 10, a condição é <code>n &lt; 10</code>: "só crie o próximo se o atual for menor que 10".</p>
+</div>
+
+<div class="cenario">
+<strong>Sem âncora: <code>circular reference</code></strong>
+<pre class="file" data-file="sem-ancora.sql" data-resultado data-erro>WITH RECURSIVE conta(n) AS (
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>A mensagem:</strong> <code>circular reference: conta</code>, "referência circular: conta". A CTE só lê a si mesma, e não há primeiro dominó para começar.</p>
+<p><strong>Como consertar:</strong> comece com a âncora, um <code>SELECT</code> que não lê a CTE, e ligue as duas partes com <code>UNION ALL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Número de colunas diferente nas duas partes</strong>
+<pre class="file" data-file="colunas.sql" data-resultado data-erro>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1, 'mais um' FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>A mensagem:</strong> <code>SELECTs to the left and right of UNION ALL do not have the same number of result columns</code>, "os SELECTs à esquerda e à direita do UNION ALL não têm o mesmo número de colunas". A âncora devolve uma coluna; a parte recursiva, duas.</p>
+<p><strong>Como consertar:</strong> as duas partes devolvem as mesmas colunas, na mesma ordem, e na quantidade da lista <code>conta(n)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Função agregada na parte recursiva</strong>
+<pre class="file" data-file="agregada.sql" data-resultado data-erro>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT MAX(n) + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>A mensagem:</strong> <code>recursive aggregate queries not supported</code>, "consultas recursivas com agregação não são suportadas". Lembre: em cada rodada, a parte recursiva vê só a linha da vez. Um <code>MAX</code>, <code>SUM</code> ou <code>COUNT</code> ali não teria sentido, e o SQLite proíbe.</p>
+<p><strong>Como consertar:</strong> faça a conta com a linha da vez (<code>n + 1</code>) e deixe as agregações para o comando principal, como o <code>SUM(n)</code> da seção 2.</p>
+</div>
+
+<div class="cenario">
+<strong>A CTE lida duas vezes na parte recursiva</strong>
+<pre class="file" data-file="duas-vezes.sql" data-resultado data-erro>WITH RECURSIVE conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT a.n + 1 FROM conta AS a, conta AS b WHERE a.n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>A mensagem:</strong> <code>multiple references to recursive table: conta</code>, "várias referências à tabela recursiva: conta". A parte recursiva só pode citar a própria CTE <strong>uma vez</strong>.</p>
+<p><strong>Como consertar:</strong> leia a CTE uma vez só na parte recursiva; as outras tabelas (como <code>funcionarios</code>) você junta à vontade.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ORDER BY</code> na âncora</strong>
+<pre class="file" data-file="order-ancora.sql" data-resultado data-erro>WITH RECURSIVE conta(n) AS (
+  SELECT 1 ORDER BY 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 10
+)
+SELECT n FROM conta;
+</pre>
+<p><strong>A mensagem:</strong> <code>ORDER BY clause should come after UNION ALL not before</code>, "a cláusula ORDER BY deve vir depois do UNION ALL, não antes".</p>
+<p><strong>Como consertar:</strong> ordene no comando principal: <code>SELECT n FROM conta ORDER BY n DESC;</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>MySQL</strong> (8.0 em diante) e <strong>PostgreSQL</strong>: a palavra <code>RECURSIVE</code> é necessária para a CTE ler a si mesma. O SQLite aceita sem ela, mas escreva sempre. O MySQL ainda tem um limite de profundidade, a variável <code>cte_max_recursion_depth</code>, que vale 1000 por padrão: uma recursão que passa de 1000 níveis é encerrada pelo servidor.</li>
+  <li><strong>SQL Server</strong>: escreve-se só <code>WITH</code>, sem <code>RECURSIVE</code>. O limite padrão é de 100 níveis, e se muda no fim do comando com <code>OPTION (MAXRECURSION n)</code> (0 tira o limite). A parte recursiva não pode ter <code>LEFT JOIN</code>, <code>GROUP BY</code>, <code>TOP</code> nem subconsultas.</li>
+  <li><strong>PostgreSQL</strong> traz <code>generate_series</code> embutida (inclusive para datas) e as cláusulas <code>SEARCH</code> e <code>CYCLE</code>, que ajudam a ordenar a árvore e a detectar círculos.</li>
+</ul>
+<p>Trecho só ilustrativo, do SQL Server (não roda no SQLite):</p>
+<pre class="file" data-file="sql-server.sql">WITH conta(n) AS (
+  SELECT 1
+  UNION ALL
+  SELECT n + 1 FROM conta WHERE n &lt; 500
+)
+SELECT n FROM conta
+OPTION (MAXRECURSION 1000);
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WITH RECURSIVE nome(colunas) AS ( âncora UNION ALL recursiva ) SELECT …</code></td><td>A forma geral</td></tr>
+<tr><td>âncora: <code>SELECT 1</code></td><td>Cria as primeiras linhas; não lê a CTE</td></tr>
+<tr><td>recursiva: <code>SELECT n + 1 FROM nome WHERE n &lt; 10</code></td><td>Lê a linha da vez e cria a próxima; o <code>WHERE</code> é a parada</td></tr>
+<tr><td><code>SELECT date(dia, '+1 day') FROM dias WHERE dia &lt; 'AAAA-MM-DD'</code></td><td>Calendário: o dia seguinte até uma data</td></tr>
+<tr><td><code>JOIN nome AS e ON f.chefe_id = e.id</code></td><td>Hierarquia para baixo (os subordinados)</td></tr>
+<tr><td><code>JOIN nome AS a ON f.id = a.chefe_id</code></td><td>Hierarquia para cima (os chefes)</td></tr>
+<tr><td><code>UNION</code> no lugar de <code>UNION ALL</code></td><td>Descarta linhas repetidas; evita andar em círculo</td></tr>
+<tr><td><code>LIMIT n</code> na parte recursiva</td><td>Cinto de segurança: para depois de n linhas</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>interrupted</code></td><td>O editor parou um SQL que rodou mais de ~4 s (laço sem fim)</td></tr>
+<tr><td><code>circular reference: conta</code></td><td>Faltou a âncora</td></tr>
+<tr><td><code>SELECTs to the left and right of UNION ALL do not have the same number of result columns</code></td><td>Âncora e parte recursiva com quantidades de colunas diferentes</td></tr>
+<tr><td><code>recursive aggregate queries not supported</code></td><td><code>MAX</code>, <code>SUM</code>, <code>COUNT</code>… na parte recursiva</td></tr>
+<tr><td><code>multiple references to recursive table: conta</code></td><td>A parte recursiva citou a CTE mais de uma vez</td></tr>
+<tr><td><code>ORDER BY clause should come after UNION ALL not before</code></td><td><code>ORDER BY</code> na âncora</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra da recursão</h3>
+<p>Complete a palavra que avisa que a CTE vai ler a si mesma:</p>
+<div class="ex-code">WITH <input data-answer="RECURSIVE|recursive" aria-label="palavra-chave"> conta(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM conta WHERE n &lt; 5) SELECT n FROM conta;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A condição de parada</h3>
+<p>Complete para gerar os números de 1 a <strong>20</strong>:</p>
+<div class="ex-code">WITH RECURSIVE conta(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM conta WHERE n &lt; <input data-answer="20" aria-label="número">) SELECT n FROM conta;</div>
+</div>
+
+<div class="exercise">
+<h3>3. O dia seguinte</h3>
+<p>Complete o modificador da função <code>date</code> que soma um dia:</p>
+<div class="ex-code">SELECT date(dia, '<input data-answer="+1 day|+1 days" aria-label="modificador">') FROM dias WHERE dia &lt; '2026-10-31'</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Na hierarquia, por que a recursão para mesmo sem um <code>WHERE</code> de parada?</p>
+<label><input type="radio" name="q4"> Porque o SQLite para sozinho depois de 8 linhas</label>
+<label><input type="radio" name="q4"> Porque, quando a linha da vez é alguém que não chefia ninguém, o <code>JOIN</code> não acha par e nenhuma linha nova nasce</label>
+<label><input type="radio" name="q4"> Porque o <code>ORDER BY</code> do comando principal limita o resultado</label>
+<label><input type="radio" name="q4"> Porque a Marta tem <code>chefe_id</code> igual a 0</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. Uma CTE recursiva sem condição de parada roda no editor do guia. O que você vê?</p>
+<label><input type="radio" name="q5"> O erro <code>circular reference</code> na hora</label>
+<label><input type="radio" name="q5"> Uma tabela vazia</label>
+<label><input type="radio" name="q5"> Depois de uns 4 segundos, as primeiras linhas e o erro <code>interrupted</code></label>
+<label><input type="radio" name="q5"> Exatamente 1000 linhas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Num calendário de outubro gerado pela CTE, a Ana fez <code>LEFT JOIN pedidos</code>. Para os dias sem pedido aparecerem com 0, ela deve contar com…</p>
+<label><input type="radio" name="q6"> <code>COUNT(p.id)</code></label>
+<label><input type="radio" name="q6"> <code>COUNT(*)</code></label>
+<label><input type="radio" name="q6"> <code>SUM(p.id)</code></label>
+<label><input type="radio" name="q6"> <code>MAX(d.dia)</code></label>
+</div>
+
+<h3>Missão final: a equipe da Luana</h3>
+
+<div class="trysql" data-goal="linhas:4;;contem:Davi Nunes;;contem:Luana Castelo">
+<p class="try-task"><strong>Missão:</strong> este SQL mostra a equipe inteira, a partir da Marta. A Luana Castelo, supervisora, quer ver só a <strong>equipe dela</strong>: ela mesma (nível 0) e todo mundo abaixo dela. Troque a âncora para começar na Luana.</p>
+<pre class="script" data-file="consulta.sql">WITH RECURSIVE equipe(id, nome, cargo, nivel) AS (
+  SELECT id, nome, cargo, 0
+  FROM funcionarios
+  WHERE chefe_id IS NULL
+  UNION ALL
+  SELECT f.id, f.nome, f.cargo, e.nivel + 1
+  FROM funcionarios AS f
+  JOIN equipe AS e ON f.chefe_id = e.id
+)
+SELECT id, nome, cargo, nivel
+FROM equipe
+ORDER BY nivel, nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH RECURSIVE equipe(id, nome, cargo, nivel) AS (
+  SELECT id, nome, cargo, 0
+  FROM funcionarios
+  WHERE nome = 'Luana Castelo'
+  UNION ALL
+  SELECT f.id, f.nome, f.cargo, e.nivel + 1
+  FROM funcionarios AS f
+  JOIN equipe AS e ON f.chefe_id = e.id
+)
+SELECT id, nome, cargo, nivel
+FROM equipe
+ORDER BY nivel, nome;
+</pre>
+</div>
+
+<p>Também vale <code>WHERE id = 5</code> na âncora. A parte recursiva não mudou nada: a mesma regra desce a partir de quem estiver no ponto de partida.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma CTE recursiva (<code>WITH RECURSIVE</code>) tem três partes: a <strong>âncora</strong> (o primeiro dominó), a <strong>parte recursiva</strong> (a regra do próximo), ligadas por <code>UNION ALL</code>, e a <strong>condição de parada</strong>.</li>
+  <li>O SQLite tira uma linha da fila por vez e roda a parte recursiva só com ela; quando a fila esvazia, acabou.</li>
+  <li>Com ela você gera sequências (<code>n + 1</code>), calendários (<code>date(dia, '+1 day')</code>) e percorre hierarquias (<code>JOIN</code> pelo <code>chefe_id</code>), para baixo ou para cima.</li>
+  <li>Um calendário gerado com <code>LEFT JOIN</code> mostra também os dias sem nenhum pedido.</li>
+  <li>Sem parada, o laço não tem fim: o editor interrompe depois de ~4 s com <code>interrupted</code>; fora dele, não há trava. Use <code>WHERE</code>, e o <code>LIMIT</code> como cinto de segurança.</li>
+  <li>Na parte recursiva: nada de agregação, a CTE citada uma vez só, e as mesmas colunas da âncora.</li>
+  <li>Próxima aula: cálculos que olham para as linhas vizinhas sem juntá-las: <a href="janelas.html">Funções de Janela (OVER)</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
