@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Quando o Índice Ajuda — medindo antes e depois | Guia SQL</title>
+<meta name="description" content="Índices na prática para quem está começando: um banco de um milhão de vendas gerado com CTE recursiva, o tempo antes e depois do índice, o preço em espaço e em INSERT, os casos em que o índice não é usado (função na coluna, LIKE com % no começo, conta na coluna, ordem do índice composto) e quando ele atrapalha, com EXPLAIN QUERY PLAN real e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Quando o Índice Ajuda</span></h1>
+
+<p class="intro">Na aula <a href="indices.html">Índices (CREATE INDEX)</a> você aprendeu a criar um índice, e na <a href="explain.html">EXPLAIN QUERY PLAN</a> a ver se o banco usa ele. Agora a pergunta é outra: <strong>vale a pena?</strong> Nesta aula a Ana monta um banco com <strong>um milhão</strong> de vendas, mede o tempo de uma consulta antes e depois do índice, descobre quanto o índice custa e vê os casos em que ele é ignorado, ou até deixa tudo mais lento.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Gerar um banco grande de teste com uma CTE recursiva e medir o tempo com <code>.timer on</code>.</li>
+  <li>O ganho de um índice numa busca que pega poucas linhas, medido de verdade.</li>
+  <li>O preço do índice: espaço no disco e <code>INSERT</code> mais lento.</li>
+  <li>Os casos em que o índice <strong>não é usado</strong>: função na coluna, <code>LIKE '%…'</code>, conta na coluna, coluna fora de ordem no índice composto.</li>
+  <li>Quando o índice <strong>atrapalha</strong>: colunas com poucos valores diferentes.</li>
+  <li>Como forçar ou proibir o índice (<code>NOT INDEXED</code>, <code>INDEXED BY</code>) e um roteiro para decidir.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Sobre os tempos desta aula</strong>
+<p>Todos os tempos foram medidos no terminal, <strong>na máquina da Ana</strong> (o notebook dela, com o <code>sqlite3</code> 3.50.4). No seu computador os números vão ser outros: mais rápidos ou mais lentos. O que importa é a <strong>comparação</strong> entre eles (dez vezes mais rápido, duas vezes mais lento), não o valor exato. O editor do guia não mede tempo; nele você confere os <strong>planos</strong>, que são os mesmos.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: o índice do livro tem um preço</h2>
+<p>O índice remissivo no fim do livro de receitas economiza muito tempo de quem procura "cenoura". Mas ele não é de graça:</p>
+<ul>
+  <li>ocupa <strong>páginas a mais</strong> no livro;</li>
+  <li>a cada receita nova, alguém tem de <strong>atualizar o índice</strong>, além de escrever a receita;</li>
+  <li>e para uma palavra que aparece em <strong>metade</strong> das páginas (como "sal"), ele não ajuda nada: é mais fácil folhear o livro do que ir e voltar do índice quinhentas vezes.</li>
+</ul>
+<p>No banco é igual. Um índice compensa quando a consulta quer <strong>poucas linhas de muitas</strong>, e quando a tabela é mais <strong>lida</strong> do que escrita. O resto desta aula mostra isso com números.</p>
+
+<hr>
+
+<h2>1. Um banco grande para medir</h2>
+<p>Com os 90 pedidos da Loja Aurora, qualquer consulta é instantânea, com ou sem índice. Para ver diferença, a Ana precisa de muitas linhas. Ela cria, num arquivo separado (<code>vendas.db</code>, para não mexer na loja), uma tabela de vendas e a enche com <strong>um milhão</strong> de linhas inventadas, geradas por uma CTE recursiva (aula <a href="cte-recursiva.html">CTE Recursiva</a>):</p>
+
+<pre class="term">$ sqlite3 vendas.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> CREATE TABLE vendas (
+(x1...>   id INTEGER PRIMARY KEY,
+(x1...>   cliente_id INTEGER,
+(x1...>   produto_id INTEGER,
+(x1...>   data TEXT,
+(x1...>   pago INTEGER,
+(x1...>   valor REAL
+(x1...> );
+sqlite> .timer on
+sqlite> INSERT INTO vendas
+   ...> WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 1000000)
+   ...> SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+   ...>        date('2021-01-01', '+' || (i % 2000) || ' days'),
+   ...>        i % 2, round((i * 37) % 50000 / 100.0, 2)
+   ...> FROM n;
+Run Time: real 1.451 user 1.364664 sys 0.027988
+sqlite> SELECT COUNT(*) FROM vendas;
+1000000
+Run Time: real 0.012 user 0.003676 sys 0.008094</pre>
+
+<dl class="anatomy">
+  <dt>(x1...&gt; e ...&gt;</dt><dd>O <code>sqlite3</code> mostra esses prompts de continuação enquanto o comando não terminou (falta o <code>;</code>). O <code>(x1</code> avisa que há um parêntese aberto.</dd>
+  <dt>.timer on</dt><dd>Comando de ponto (aula <a href="comandos-ponto.html">Comandos de Ponto</a>): depois de cada comando, mostra quanto tempo ele levou.</dd>
+  <dt>WITH RECURSIVE n(i) AS (…)</dt><dd>Gera os números de 1 a 1.000.000, um por linha.</dd>
+  <dt>(i * 7919) % 50000 + 1</dt><dd>Um <code>cliente_id</code> entre 1 e 50.000, "embaralhado" por uma conta. Não é sorteio: rodando de novo, sai igual, e os números desta aula podem ser conferidos.</dd>
+  <dt>date('2021-01-01', '+' || (i % 2000) || ' days')</dt><dd>Uma data entre 2021 e 2026 (aula <a href="funcoes-data.html">Funções de Data</a>).</dd>
+  <dt>i % 2</dt><dd>A coluna <code>pago</code>: 0 ou 1, metade das vendas de cada.</dd>
+  <dt>Run Time: real 1.451</dt><dd>O tempo: <strong>real</strong> é o tempo de relógio, em segundos; <strong>user</strong> e <strong>sys</strong> são o tempo de processador gasto pelo programa e pelo sistema. Olhe o <code>real</code>.</dd>
+</dl>
+
+<p>Um milhão de linhas em um segundo e meio. Cada cliente tem 20 vendas: 1.000.000 dividido por 50.000 clientes.</p>
+
+<p>No editor, a mesma ideia funciona com <strong>dez mil</strong> linhas (cada Rodar tem um limite de cerca de 4 segundos, e um milhão de linhas não cabe nele). É assim que os exemplos desta aula mostram os planos:</p>
+
+<pre class="file" data-file="vendas.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+
+SELECT * FROM vendas LIMIT 3;
+</pre>
+
+<hr>
+
+<h2>2. Antes e depois do índice</h2>
+<p>A Ana quer o total comprado pelo cliente 4242. Sem índice, o plano é <code>SCAN vendas</code>: ler o milhão de linhas para achar as 20 dele. Ela roda duas vezes, para ter certeza do tempo:</p>
+
+<pre class="term">sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
+7128.6
+Run Time: real 0.044 user 0.028657 sys 0.015887
+sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
+7128.6
+Run Time: real 0.046 user 0.033042 sys 0.012045</pre>
+
+<p>Uns 45 milésimos de segundo. Parece pouco, mas é para <strong>uma</strong> busca; um site que faz essa consulta mil vezes por minuto gasta 45 segundos de processador por minuto só nela. Agora, com o índice:</p>
+
+<pre class="term">$ sqlite3 vendas.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> .timer on
+sqlite> CREATE INDEX idx_vendas_cliente ON vendas(cliente_id);
+Run Time: real 0.450 user 0.380075 sys 0.044106
+sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
+7128.6
+Run Time: real 0.000 user 0.000137 sys 0.000016
+sqlite> SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
+7128.6
+Run Time: real 0.000 user 0.000046 sys 0.000000
+sqlite> .timer off
+sqlite> EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas WHERE cliente_id = 4242;
+QUERY PLAN
+`--SEARCH vendas USING INDEX idx_vendas_cliente (cliente_id=?)</pre>
+
+<p><code>real 0.000</code>: menos de um milésimo de segundo, abaixo do que o <code>.timer</code> consegue mostrar. Pelo tempo de processador (<code>user</code>: 0,029 s antes, 0,0001 s depois), a busca ficou <strong>centenas de vezes</strong> mais rápida. O plano mudou de <code>SCAN</code> para <code>SEARCH … USING INDEX</code>: em vez de ler um milhão de linhas, o SQLite achou no índice as 20 do cliente e leu só essas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na máquina da Ana (1.000.000 de vendas)</th><th>Tempo (<code>real</code>)</th></tr>
+<tr><td>Total do cliente 4242, sem índice (<code>SCAN</code>)</td><td>0,044 s</td></tr>
+<tr><td>Criar o índice <code>idx_vendas_cliente</code></td><td>0,450 s (uma vez só)</td></tr>
+<tr><td>Total do cliente 4242, com índice (<code>SEARCH</code>)</td><td>menos de 0,001 s</td></tr>
+</table>
+</div>
+
+<p>Esse é o caso ideal do índice: uma tabela <strong>grande</strong> e uma busca que quer <strong>poucas</strong> linhas dela (20 de um milhão).</p>
+
+<hr>
+
+<h2>3. O preço do índice</h2>
+
+<h3>Espaço no disco</h3>
+<p>O índice é uma cópia ordenada da coluna, com o endereço de cada linha. Ele fica no mesmo arquivo do banco:</p>
+
+<pre class="term">$ ls -lh vendas.db
+-rw-r--r-- 1 ana ana 33M out 18 10:54 vendas.db
+$ ls -lh vendas.db
+-rw-r--r-- 1 ana ana 44M out 18 10:55 vendas.db</pre>
+
+<p>O primeiro <code>ls</code> foi feito antes de criar o <code>idx_vendas_cliente</code>; o segundo, logo depois. O arquivo cresceu de 33 para 44 megabytes. Quanto ocupa cada parte, a tabela virtual <code>dbstat</code> do SQLite conta (aqui já com mais dois índices, que você vai ver nas seções seguintes):</p>
+
+<pre class="term">sqlite> SELECT name, round(SUM(pgsize) / 1048576.0, 1) AS mb FROM dbstat GROUP BY name ORDER BY mb DESC;
+vendas|32.8
+idx_vendas_data|18.2
+idx_vendas_cliente|10.8
+idx_vendas_pago|8.6
+sqlite_schema|0.0</pre>
+
+<p>Três índices juntos (37,6 MB) já ocupam mais que a própria tabela (32,8 MB). O <code>dbstat</code> também funciona no editor, com a tabela de dez mil linhas:</p>
+
+<pre class="file" data-file="dbstat.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+CREATE INDEX idx_vendas_pago ON vendas(pago);
+
+SELECT name, SUM(pgsize) AS bytes
+FROM dbstat
+WHERE name LIKE '%vendas%'
+GROUP BY name;
+</pre>
+
+<h3><code>INSERT</code> mais lento</h3>
+<p>A cada linha nova, o SQLite grava a linha na tabela <strong>e</strong> uma entrada em cada índice, no lugar certo da ordem. A Ana copiou o milhão de vendas para duas tabelas vazias: uma sem índice e outra com três índices (em <code>cliente_id</code>, <code>data</code> e <code>pago</code>):</p>
+
+<pre class="term">sqlite> CREATE TABLE sem_indice AS SELECT * FROM vendas WHERE 0;
+sqlite> CREATE TABLE com_indices AS SELECT * FROM vendas WHERE 0;
+sqlite> CREATE INDEX ci_cliente ON com_indices(cliente_id);
+sqlite> CREATE INDEX ci_data ON com_indices(data);
+sqlite> CREATE INDEX ci_pago ON com_indices(pago);
+sqlite> .timer on
+sqlite> INSERT INTO sem_indice SELECT * FROM vendas;
+Run Time: real 0.279 user 0.209171 sys 0.031550
+sqlite> INSERT INTO com_indices SELECT * FROM vendas;
+Run Time: real 5.861 user 3.349615 sys 2.416946</pre>
+
+<p>De 0,28 segundo para 5,86 segundos: <strong>vinte vezes</strong> mais lento, na máquina da Ana. (O <code>WHERE 0</code> é um truque: copia só a estrutura da tabela, sem nenhuma linha.) Por isso, quem vai carregar muitos dados de uma vez costuma apagar os índices, carregar e criar os índices de novo no fim: criar um índice numa tabela cheia (0,45 s, na seção 2) é bem mais rápido que mantê-lo linha por linha.</p>
+
+<hr>
+
+<h2>4. Quando o índice não é usado</h2>
+<p>O índice guarda os valores da coluna <strong>como estão escritos</strong>, em ordem. Ele só serve quando o <code>WHERE</code> compara a <strong>coluna pura</strong> com um valor. Os casos abaixo são os mais comuns de "criei o índice e nada mudou".</p>
+
+<h3>4.1. Função na coluna</h3>
+<p>A Ana quer as vendas de março de 2022 e escreve, de um jeito bem natural, "os 7 primeiros caracteres da data são <code>2022-03</code>":</p>
+
+<pre class="file" data-file="funcao.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+CREATE INDEX idx_vendas_data ON vendas(data);
+
+EXPLAIN QUERY PLAN
+SELECT COUNT(*), SUM(valor) FROM vendas WHERE substr(data, 1, 7) = '2022-03';
+
+EXPLAIN QUERY PLAN
+SELECT COUNT(*), SUM(valor) FROM vendas WHERE data &gt;= '2022-03-01' AND data &lt; '2022-04-01';
+</pre>
+
+<p>Com o <code>substr()</code>: <code>SCAN vendas</code>. O índice tem as datas inteiras em ordem ("2022-03-01", "2022-03-02"…), não os pedaços que o <code>substr()</code> calcula. Para saber o <code>substr()</code> de cada linha, o SQLite tem de ler todas. Com a <strong>faixa de datas</strong> (de 1º de março até antes de 1º de abril), a coluna fica pura e o plano é <code>SEARCH … (data&gt;? AND data&lt;?)</code>. As duas consultas dão o mesmo resultado:</p>
+
+<pre class="file" data-file="mesmo.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+
+SELECT COUNT(*), SUM(valor) FROM vendas WHERE substr(data, 1, 7) = '2022-03';
+SELECT COUNT(*), SUM(valor) FROM vendas WHERE data &gt;= '2022-03-01' AND data &lt; '2022-04-01';
+</pre>
+
+<p>No milhão de vendas, na máquina da Ana:</p>
+
+<pre class="term">sqlite> CREATE INDEX idx_vendas_data ON vendas(data);
+Run Time: real 0.367 user 0.300515 sys 0.028195
+sqlite> SELECT COUNT(*), SUM(valor) FROM vendas WHERE substr(data, 1, 7) = '2022-03';
+15500|3847665.0
+Run Time: real 0.080 user 0.067806 sys 0.011966
+sqlite> SELECT COUNT(*), SUM(valor) FROM vendas WHERE data &gt;= '2022-03-01' AND data &lt; '2022-04-01';
+15500|3847665.0
+Run Time: real 0.009 user 0.008774 sys 0.000125</pre>
+
+<p>O mesmo resultado, nove vezes mais rápido. O mesmo vale para <code>lower(cidade) = 'teresina'</code>, <code>strftime('%Y', data) = '2025'</code> e qualquer outra função em volta da coluna.</p>
+
+<div class="trysql" data-goal="out:SEARCH pedidos USING (COVERING )?INDEX idx_pedidos_data;;out:\n32$">
+<p class="try-task"><strong>Missão:</strong> o índice na data dos pedidos existe, mas a consulta dos pedidos de 2025 não o usa (veja o plano). Reescreva as <strong>duas</strong> consultas, o plano e a contagem, com uma faixa de datas no lugar do <code>substr()</code>. A contagem tem de continuar dando 32.</p>
+<pre class="script" data-file="ano.sql">CREATE INDEX idx_pedidos_data ON pedidos(data);
+
+EXPLAIN QUERY PLAN
+SELECT COUNT(*) FROM pedidos WHERE substr(data, 1, 4) = '2025';
+
+SELECT COUNT(*) FROM pedidos WHERE substr(data, 1, 4) = '2025';
+</pre>
+<pre class="solucao" data-file="ano.sql">CREATE INDEX idx_pedidos_data ON pedidos(data);
+
+EXPLAIN QUERY PLAN
+SELECT COUNT(*) FROM pedidos WHERE data &gt;= '2025-01-01' AND data &lt; '2026-01-01';
+
+SELECT COUNT(*) FROM pedidos WHERE data &gt;= '2025-01-01' AND data &lt; '2026-01-01';
+</pre>
+</div>
+
+<div class="tip">
+<strong>E se eu precisar mesmo da função? Índice de expressão</strong>
+<p>O SQLite aceita um índice sobre uma <strong>expressão</strong>, não só sobre uma coluna. Aí a consulta tem de usar exatamente a mesma expressão:</p>
+<pre class="file" data-file="expressao.sql" data-resultado>CREATE INDEX idx_pedidos_ano ON pedidos(substr(data, 1, 4));
+
+EXPLAIN QUERY PLAN
+SELECT * FROM pedidos WHERE substr(data, 1, 4) = '2025';
+</pre>
+<p>O plano mostra <code>(&lt;expr&gt;=?)</code>: o índice da expressão. Funciona, mas é mais um índice para manter. Quando dá para escrever a faixa, a faixa com o índice comum serve para muito mais consultas.</p>
+</div>
+
+<h3>4.2. <code>LIKE</code> com <code>%</code> no começo (e o problema das maiúsculas)</h3>
+<p>Com um índice no nome dos clientes, veja três buscas:</p>
+
+<pre class="file" data-file="like.sql" data-resultado>CREATE INDEX idx_clientes_nome ON clientes(nome);
+
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE nome = 'Tiago Fontes';
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE nome LIKE '%Lima';
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE nome LIKE 'Ana%';
+</pre>
+
+<ol class="passo">
+  <li><code>nome = 'Tiago Fontes'</code>: <code>SEARCH</code>, como esperado.</li>
+  <li><code>LIKE '%Lima'</code>: <code>SCAN</code>. Um nome que <strong>termina</strong> com "Lima" pode começar com qualquer letra; num índice em ordem alfabética, ele pode estar em qualquer lugar. É como procurar no dicionário todas as palavras que terminam com "ção": o dicionário não ajuda.</li>
+  <li><code>LIKE 'Ana%'</code>: também <code>SCAN</code>, e esse surpreende. O começo é conhecido, então o índice deveria ajudar. O problema é que, no SQLite, o <code>LIKE</code> <strong>ignora maiúsculas</strong> (aula <a href="like.html">LIKE</a>): <code>'ana%'</code> também acha "Ana". E o índice comum está em ordem que <strong>diferencia</strong> maiúsculas ("Ana" e "ana" ficam longe um do outro). Por isso o SQLite não confia no índice.</li>
+</ol>
+
+<p>Há dois consertos. Um é escrever a faixa à mão, que diferencia maiúsculas: <code>nome &gt;= 'Ana' AND nome &lt; 'Anb'</code>. O outro é criar o índice na mesma regra do <code>LIKE</code>, com <code>COLLATE NOCASE</code> ("sem diferenciar maiúsculas"):</p>
+
+<pre class="file" data-file="nocase.sql" data-resultado>CREATE INDEX idx_clientes_nome_nc ON clientes(nome COLLATE NOCASE);
+
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE nome LIKE 'Ana%';
+SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+</pre>
+
+<p>Agora o plano é <code>SEARCH … (nome&gt;? AND nome&lt;?)</code>: o SQLite transformou o <code>LIKE 'Ana%'</code> numa faixa do índice. E a busca com <code>'ana%'</code> minúsculo continua achando a Ana Beatriz e a Ana Carvalho. O <code>LIKE '%Lima'</code>, com <code>%</code> no começo, não tem conserto com índice comum; para isso existe a busca de texto (aula <a href="fts.html">Busca de Texto (FTS5)</a>).</p>
+
+<h3>4.3. Conta na coluna</h3>
+
+<pre class="file" data-file="conta.sql" data-resultado>CREATE INDEX idx_produtos_preco ON produtos(preco);
+
+EXPLAIN QUERY PLAN SELECT * FROM produtos WHERE preco * 1.1 &gt; 50;
+EXPLAIN QUERY PLAN SELECT * FROM produtos WHERE preco &gt; 50 / 1.1;
+</pre>
+
+<p>"Os produtos que, com 10% de aumento, passam de 50 reais." Escrito como <code>preco * 1.1 &gt; 50</code>, a conta está na coluna, e é <code>SCAN</code>. Passando a conta para o outro lado (<code>preco &gt; 50 / 1.1</code>), a coluna fica pura e é <code>SEARCH</code>. É a mesma regra da função: a coluna sozinha de um lado, o valor do outro.</p>
+
+<h3>4.4. Índice composto fora de ordem</h3>
+<p>Um índice pode ter várias colunas. O índice <code>(estado, cidade)</code> é como uma lista telefônica ordenada por estado e, dentro de cada estado, por cidade:</p>
+
+<pre class="file" data-file="composto.sql" data-resultado>CREATE INDEX idx_clientes_estado_cidade ON clientes(estado, cidade);
+
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE estado = 'CE' AND cidade = 'Fortaleza';
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE estado = 'CE';
+EXPLAIN QUERY PLAN SELECT * FROM clientes WHERE cidade = 'Fortaleza';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th><code>WHERE</code></th><th>Plano</th><th>Por quê</th></tr>
+<tr><td><code>estado = 'CE' AND cidade = 'Fortaleza'</code></td><td><code>SEARCH … (estado=? AND cidade=?)</code></td><td>Usa as duas colunas do índice</td></tr>
+<tr><td><code>estado = 'CE'</code></td><td><code>SEARCH … (estado=?)</code></td><td>Usa a primeira coluna: todos do CE estão juntos</td></tr>
+<tr><td><code>cidade = 'Fortaleza'</code></td><td><code>SCAN</code></td><td>A cidade só está em ordem <strong>dentro</strong> de cada estado; as Fortalezas podem estar espalhadas pela lista</td></tr>
+</table>
+</div>
+
+<p>A regra: o índice composto serve para buscas que usam as colunas <strong>a partir da primeira</strong>, da esquerda para a direita. Na hora de criar, ponha primeiro a coluna que aparece em mais consultas com <code>=</code>.</p>
+
+<hr>
+
+<h2>5. Quando o índice atrapalha</h2>
+<p>A coluna <code>pago</code> tem só dois valores, 0 e 1, cada um em metade das vendas. A Ana criou um índice nela e mediu o total das vendas pagas, com o índice e proibindo o índice (<code>NOT INDEXED</code>, "não indexado", obriga o SQLite a ler a tabela direto):</p>
+
+<pre class="term">sqlite> CREATE INDEX idx_vendas_pago ON vendas(pago);
+Run Time: real 0.265 user 0.201534 sys 0.039734
+sqlite> SELECT SUM(valor) FROM vendas WHERE pago = 1;
+125000000.0
+Run Time: real 0.132 user 0.109303 sys 0.023443
+sqlite> SELECT SUM(valor) FROM vendas NOT INDEXED WHERE pago = 1;
+125000000.0
+Run Time: real 0.055 user 0.042003 sys 0.012384</pre>
+
+<p>Com o índice: 0,132 s. Sem: 0,055 s. O índice deixou a consulta <strong>duas vezes e meia mais lenta</strong>, na máquina da Ana. O motivo é o "sal" do livro de receitas: para 500 mil linhas, o SQLite vai ao índice, pega o endereço, pula para a linha na tabela, volta ao índice… quinhentas mil vezes. Ler a tabela de uma vez, em ordem, é mais rápido.</p>
+
+<p>E o SQLite escolheu o índice mesmo assim:</p>
+
+<pre class="term">sqlite> EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas WHERE pago = 1;
+QUERY PLAN
+`--SEARCH vendas USING INDEX idx_vendas_pago (pago=?)</pre>
+
+<p>Sem informação sobre os dados, ele supõe que um índice com <code>=</code> pega poucas linhas. Nem depois de um <code>ANALYZE</code> (que junta estatísticas sobre os índices; aula <a href="vacuum.html">VACUUM e ANALYZE</a>) o plano mudou, na versão 3.50.4. A lição é simples: <strong>não crie índice em coluna com poucos valores diferentes</strong> (sim/não, 0/1, sexo, status com 3 opções), a não ser que você busque quase sempre o valor raro.</p>
+
+<p>No editor, você confere os dois planos. Além do <code>NOT INDEXED</code>, um <code>+</code> na frente da coluna também faz o SQLite ignorar o índice (a coluna deixa de ser "pura"):</p>
+
+<pre class="file" data-file="not-indexed.sql" data-resultado>CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+CREATE INDEX idx_vendas_pago ON vendas(pago);
+
+EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas WHERE pago = 1;
+EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas NOT INDEXED WHERE pago = 1;
+EXPLAIN QUERY PLAN SELECT SUM(valor) FROM vendas WHERE +pago = 1;
+</pre>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> crie outros índices na tabela <code>vendas</code> (em <code>produto_id</code>, em <code>(cliente_id, data)</code>) e peça os planos de consultas diferentes: <code>WHERE produto_id = 7</code>, <code>WHERE cliente_id = 4242 AND data &gt;= '2024-01-01'</code>, <code>WHERE data = '2023-05-10'</code>.</p>
+<pre class="script" data-file="vendas.sql">CREATE TABLE vendas (id INTEGER PRIMARY KEY, cliente_id INTEGER, produto_id INTEGER,
+                     data TEXT, pago INTEGER, valor REAL);
+INSERT INTO vendas
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 10000)
+SELECT i, (i * 7919) % 50000 + 1, (i * 31) % 45 + 1,
+       date('2021-01-01', '+' || (i % 2000) || ' days'),
+       i % 2, round((i * 37) % 50000 / 100.0, 2)
+FROM n;
+CREATE INDEX idx_vendas_cli_data ON vendas(cliente_id, data);
+
+EXPLAIN QUERY PLAN
+SELECT * FROM vendas WHERE cliente_id = 4242 AND data &gt;= '2024-01-01';
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Roteiro: criar ou não criar?</h2>
+<ol class="passo">
+  <li><strong>A tabela é grande?</strong> Com algumas centenas de linhas, qualquer consulta é instantânea; o índice só ocupa espaço.</li>
+  <li><strong>A consulta é lenta e frequente?</strong> Comece pela consulta, não pelo índice. Rode-a com <code>.timer on</code> e peça o plano.</li>
+  <li><strong>O plano mostra <code>SCAN</code> numa tabela grande, buscando poucas linhas?</strong> Crie o índice na coluna do <code>WHERE</code> (ou do <code>JOIN</code>).</li>
+  <li><strong>A coluna tem muitos valores diferentes?</strong> <code>cliente_id</code>, <code>data</code>, <code>email</code>: sim. <code>pago</code>, <code>vip</code>: não.</li>
+  <li><strong>O <code>WHERE</code> usa a coluna pura?</strong> Tire funções e contas de cima da coluna, e o <code>%</code> do começo do <code>LIKE</code>.</li>
+  <li><strong>Meça de novo</strong> e confira o plano. Se não ficou mais rápido, apague o índice (<code>DROP INDEX</code>): ele vai deixar todo <code>INSERT</code> mais lento à toa.</li>
+</ol>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Para a mesma busca, "nomes que começam com Ana", e para o mesmo controle do índice, há várias escritas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Usa índice?</th><th>Quando usar</th></tr>
+<tr><td><code>nome LIKE 'Ana%'</code> com índice comum</td><td>Não</td><td>Tabela pequena</td></tr>
+<tr><td><code>nome LIKE 'Ana%'</code> com índice <code>COLLATE NOCASE</code></td><td>Sim</td><td>Busca por começo, sem diferenciar maiúsculas</td></tr>
+<tr><td><code>nome &gt;= 'Ana' AND nome &lt; 'Anb'</code></td><td>Sim, com índice comum</td><td>Quando maiúsculas importam</td></tr>
+<tr><td><code>substr(data, 1, 4) = '2025'</code></td><td>Não (só com índice de expressão)</td><td>Evite em tabela grande</td></tr>
+<tr><td><code>data &gt;= '2025-01-01' AND data &lt; '2026-01-01'</code></td><td>Sim</td><td>Sempre que der</td></tr>
+<tr><td><code>FROM t NOT INDEXED</code> ou <code>WHERE +col = …</code></td><td>Proíbe</td><td>Quando o índice atrapalha (seção 5) ou para medir</td></tr>
+<tr><td><code>FROM t INDEXED BY idx</code></td><td>Obriga a usar <code>idx</code></td><td>Raramente; para testes. Se o índice sumir, a consulta passa a dar erro</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O índice com esse nome já existe</strong>
+<pre class="file" data-file="existe.sql" data-resultado data-erro>CREATE INDEX idx_c ON clientes(cidade);
+CREATE INDEX idx_c ON clientes(cidade);
+</pre>
+<p><strong>A mensagem:</strong> <code>index idx_c already exists</code>, "o índice idx_c já existe". Acontece muito ao rodar o mesmo script duas vezes.</p>
+<p><strong>Como consertar:</strong> <code>CREATE INDEX IF NOT EXISTS idx_c ON clientes(cidade);</code> cria só se não existir, sem erro.</p>
+</div>
+
+<div class="cenario">
+<strong>Obrigou um índice que não existe</strong>
+<pre class="file" data-file="indexed-by.sql" data-resultado data-erro>SELECT * FROM clientes INDEXED BY idx_cidade WHERE cidade = 'Picos';
+</pre>
+<p><strong>A mensagem:</strong> <code>no such index: idx_cidade</code>, "não existe o índice idx_cidade". É o risco do <code>INDEXED BY</code>: se alguém apagar ou renomear o índice, a consulta, que antes funcionava, quebra. O mesmo erro aparece num <code>DROP INDEX</code> com nome errado.</p>
+<p><strong>Como consertar:</strong> deixe o SQLite escolher (tire o <code>INDEXED BY</code>), ou crie o índice antes.</p>
+</div>
+
+<div class="cenario">
+<strong>Índice único numa coluna que repete</strong>
+<pre class="file" data-file="unique.sql" data-resultado data-erro>CREATE UNIQUE INDEX idx_clientes_cidade ON clientes(cidade);
+</pre>
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: clientes.cidade</code>, "a regra UNIQUE falhou". Um <code>UNIQUE INDEX</code> (aula <a href="unique.html">UNIQUE</a>) é um índice que também <strong>proíbe</strong> valores repetidos, e há 10 clientes de Teresina. Ele não foi criado.</p>
+<p><strong>Como consertar:</strong> se a ideia era só deixar a busca rápida, use <code>CREATE INDEX</code>, sem <code>UNIQUE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Índice criado, e o plano continua <code>SCAN</code></strong>
+<p>Não é um erro com mensagem, e é o mais comum de todos. Confira, nesta ordem: o <code>WHERE</code> tem função ou conta em cima da coluna (seção 4.1 e 4.3)? Tem <code>LIKE</code> com <code>%</code> no começo, ou <code>LIKE</code> sem índice <code>NOCASE</code> (4.2)? É um índice composto e a consulta não usa a primeira coluna (4.4)? A consulta quer a maior parte da tabela (então o <code>SCAN</code> é o certo)?</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>As regras desta aula (coluna pura, ordem do índice composto, preço no <code>INSERT</code>) valem em todos os bancos. A escrita do índice de expressão muda. Os trechos são <strong>ilustrativos</strong>: não rodam no SQLite.</p>
+<ul>
+  <li><strong>PostgreSQL:</strong> aceita índice sobre expressão, como <code>CREATE INDEX … ON clientes (lower(cidade))</code>. A documentação lembra que ele custa a cada <code>INSERT</code> e <code>UPDATE</code>, porque a expressão é calculada para cada linha.</li>
+  <li><strong>MySQL:</strong> chama isso de <em>functional key part</em>, e a expressão vai entre parênteses <strong>duplos</strong>: <code>CREATE INDEX idx1 ON t1 ((col1 + col2))</code>.</li>
+</ul>
+<pre class="file" data-file="ilustrativo.sql">-- PostgreSQL (ilustrativo)
+CREATE INDEX idx_clientes_cidade_min ON clientes (lower(cidade));
+
+-- MySQL (ilustrativo)
+CREATE INDEX idx_clientes_cidade_min ON clientes ((lower(cidade)));
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>.timer on</code> / <code>.timer off</code></td><td>No terminal: mostra o tempo de cada comando</td></tr>
+<tr><td><code>CREATE INDEX IF NOT EXISTS i ON t(col)</code></td><td>Cria o índice, se ainda não existir</td></tr>
+<tr><td><code>CREATE INDEX i ON t(a, b)</code></td><td>Índice composto: serve para <code>a</code>, e para <code>a</code> + <code>b</code></td></tr>
+<tr><td><code>CREATE INDEX i ON t(col COLLATE NOCASE)</code></td><td>Índice que ignora maiúsculas: serve para <code>LIKE 'x%'</code></td></tr>
+<tr><td><code>CREATE INDEX i ON t(substr(data, 1, 4))</code></td><td>Índice de expressão</td></tr>
+<tr><td><code>DROP INDEX i</code></td><td>Apaga o índice (a tabela fica intacta)</td></tr>
+<tr><td><code>FROM t NOT INDEXED</code></td><td>Proíbe índices nesta consulta</td></tr>
+<tr><td><code>FROM t INDEXED BY i</code></td><td>Obriga a usar o índice <code>i</code></td></tr>
+<tr><td><code>SELECT name, SUM(pgsize) FROM dbstat GROUP BY name</code></td><td>Espaço ocupado por tabela e índice</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Faixa no lugar da função</h3>
+<p>Complete para buscar os pedidos de 2024 sem função na coluna:</p>
+<div class="ex-code">SELECT * FROM pedidos WHERE data &gt;= '2024-01-01' AND data &lt; '<input data-answer="2025-01-01" aria-label="data final">';</div>
+</div>
+
+<div class="exercise">
+<h3>2. Proibir o índice</h3>
+<p>Complete para o SQLite ler a tabela direto, sem índice:</p>
+<div class="ex-code">SELECT SUM(valor) FROM vendas <input data-answer="NOT INDEXED" aria-label="cláusula"> WHERE pago = 1;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Em qual coluna da tabela <code>vendas</code> (um milhão de linhas) um índice ajuda mais?</p>
+<label><input type="radio" name="q3"> <code>pago</code> (0 ou 1)</label>
+<label><input type="radio" name="q3"> Nenhuma: índice sempre deixa tudo mais lento</label>
+<label><input type="radio" name="q3"> <code>cliente_id</code> (50 mil valores diferentes, 20 vendas cada)</label>
+<label><input type="radio" name="q3"> <code>id</code>, que já é <code>INTEGER PRIMARY KEY</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Com um índice em <code>nome</code>, qual destas buscas pode usar o índice?</p>
+<label><input type="radio" name="q4"> <code>WHERE lower(nome) = 'ana beatriz sousa'</code></label>
+<label><input type="radio" name="q4"> <code>WHERE nome = 'Ana Beatriz Sousa'</code></label>
+<label><input type="radio" name="q4"> <code>WHERE nome LIKE '%Sousa'</code></label>
+<label><input type="radio" name="q4"> <code>WHERE nome || '' = 'Ana Beatriz Sousa'</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. O índice é <code>(estado, cidade)</code>. Qual consulta <strong>não</strong> consegue usá-lo para ir direto?</p>
+<label><input type="radio" name="q5"> <code>WHERE estado = 'PI'</code></label>
+<label><input type="radio" name="q5"> <code>WHERE estado = 'PI' AND cidade = 'Picos'</code></label>
+<label><input type="radio" name="q5"> <code>WHERE cidade = 'Picos' AND estado = 'PI'</code></label>
+<label><input type="radio" name="q5"> <code>WHERE cidade = 'Picos'</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Na máquina da Ana, copiar um milhão de vendas para uma tabela com três índices levou 5,86 s, e para uma sem índices, 0,28 s. Por quê?</p>
+<label><input type="radio" name="q6"> Porque cada linha nova também precisa entrar, no lugar certo, em cada um dos índices</label>
+<label><input type="radio" name="q6"> Porque o índice apaga as linhas repetidas</label>
+<label><input type="radio" name="q6"> Porque a tabela com índices é guardada em outro arquivo</label>
+<label><input type="radio" name="q6"> Porque o <code>INSERT</code> com índice roda o <code>ANALYZE</code></label>
+</div>
+
+<h3>Missão final: o <code>LIKE</code> que usa índice</h3>
+
+<div class="trysql" data-goal="out:SEARCH clientes USING (COVERING )?INDEX;;linhas:2">
+<p class="try-task"><strong>Missão:</strong> a busca de clientes por começo de nome (<code>LIKE 'ana%'</code>) não usa o índice, e o plano mostra <code>SCAN</code>. Mude <strong>só o <code>CREATE INDEX</code></strong> para o plano virar <code>SEARCH</code>, sem deixar de achar as duas Anas com o <code>'ana%'</code> minúsculo.</p>
+<pre class="script" data-file="ana.sql">CREATE INDEX idx_clientes_nome ON clientes(nome);
+
+EXPLAIN QUERY PLAN
+SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+
+SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+</pre>
+<pre class="solucao" data-file="ana.sql">CREATE INDEX idx_clientes_nome ON clientes(nome COLLATE NOCASE);
+
+EXPLAIN QUERY PLAN
+SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+
+SELECT nome FROM clientes WHERE nome LIKE 'ana%';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Para medir, gere muitas linhas com uma CTE recursiva e use <code>.timer on</code>. Compare os tempos entre si; o número exato depende da máquina.</li>
+  <li>Na máquina da Ana, achar 20 vendas em um milhão caiu de 0,044 s (<code>SCAN</code>) para menos de 0,001 s (<code>SEARCH</code>) com o índice. Esse é o caso ideal: tabela grande, poucas linhas.</li>
+  <li>O índice custa espaço (33 MB → 44 MB) e deixa o <code>INSERT</code> mais lento (0,28 s → 5,86 s com três índices).</li>
+  <li>O índice só é usado com a coluna <strong>pura</strong>: nada de função (<code>substr</code>, <code>lower</code>), conta ou <code>LIKE '%…'</code>. Troque por faixas (<code>data &gt;= … AND data &lt; …</code>).</li>
+  <li><code>LIKE 'x%'</code> só usa índice criado com <code>COLLATE NOCASE</code>. O índice composto vale a partir da primeira coluna.</li>
+  <li>Em coluna com poucos valores (como <code>pago</code>), o índice pode deixar a consulta mais lenta; <code>NOT INDEXED</code> e <code>+col</code> desligam o índice.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
