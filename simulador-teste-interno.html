@@ -87,6 +87,13 @@ SELECT x, '&lt;b&gt;não é negrito&lt;/b&gt;' AS texto FROM n;
 </pre>
 </div>
 
+<h2>8b. Aspa sem fechar (erro em duas linhas)</h2>
+<div class="trysql" id="cx-aspa" data-erro>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM clientes WHERE estado = 'PI;
+SELECT 2;
+</pre>
+</div>
+
 <h2>9. Quadros Resultado</h2>
 <pre class="file" data-file="consulta.sql" data-resultado id="res-select">SELECT nome, preco
 FROM produtos

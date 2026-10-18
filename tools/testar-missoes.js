@@ -181,7 +181,7 @@ function analisarHtml(html) {
     if (NIVEIS && !NIVEIS.has(alvo) && !alvo.includes("/"))
       problemas.push({ grav: "aviso", linha: linhaDe(l.index), msg: 'link para "' + alvo + '", que não está na NIVEIS' });
   }
-  const PROIBIDO = /\/home\/admin|\/home\/wallyson|wallyson|ip-172-\d|guia-sql-lab|\/tmp\/claude/i;
+  const PROIBIDO = /\/home\/admin|\/home\/wallyson|wallyson(?!devs\.github\.io)|ip-172-\d|guia-sql-lab|\/tmp\/claude/i;
   const linhasSrc = html.split("\n");
   for (let k = 0; k < linhasSrc.length; k++) {
     const p = PROIBIDO.exec(linhasSrc[k]);
@@ -427,7 +427,7 @@ pronto().then((motor) => {
     for (const it of r.itens) {
       c[it.grav]++;
       if (quieto && it.grav === "ok") continue;
-      console.log("  " + (it.grav + "      ").slice(0, 6) + " linha " + it.linha + ": " + it.msg);
+      console.log("  " + (it.grav + "      ").slice(0, 6) + " linha " + it.linha + ": " + it.msg.replace(/\n/g, "↵"));
     }
     console.log("  -> " + c.ok + " ok, " + c.FALHA + " FALHA, " + c.aviso + " aviso" +
       (nativo ? "; nativo: " + r.nDifComparados + " SQL comparados, " + r.nDif + " diferença(s)" : ""));

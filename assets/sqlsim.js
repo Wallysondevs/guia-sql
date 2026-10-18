@@ -68,7 +68,9 @@
       var scope = wasm.scopedAllocPush();
       try {
         var ppStmt = wasm.scopedAlloc(8), pzTail = ppStmt + 4;
-        var aloc = wasm.scopedAllocCString(String(sql || ""), true);
+        // sem o espaço/quebra do fim (como o sqlite3 faz): senão uma aspa sem fechar
+        // engole o \n final e a mensagem sai partida em duas linhas
+        var aloc = wasm.scopedAllocCString(String(sql || "").replace(/\s+$/, ""), true);
         var pSql = aloc[0], fim = aloc[0] + aloc[1];
         while (pSql && pSql < fim && wasm.peek(pSql, "i8")) {
           wasm.pokePtr(ppStmt, 0);

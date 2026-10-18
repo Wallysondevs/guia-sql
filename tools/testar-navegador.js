@@ -261,6 +261,12 @@ async function testeInterface(pg) {
   t = await pg.evaluate(() => document.querySelector("#cx-ponto .sql-erro") && document.querySelector("#cx-ponto .sql-erro").textContent);
   P(t === 'Erro do SQLite: near ".": syntax error', "cx-ponto: " + t);
 
+  // 6b. aspa sem fechar: a mensagem tem quebra de linha e o quadro mantém a quebra
+  await pg.click(sel("cx-aspa", ".ts-rodar"));
+  await saidaPronta("cx-aspa");
+  t = await pg.evaluate(() => { const e = document.querySelector("#cx-aspa .sql-erro"); return e ? { txt: e.innerText, ws: getComputedStyle(e).whiteSpace } : null; });
+  P(t && t.txt === "Erro do SQLite: unrecognized token: \"'PI;\nSELECT 2;\"" && t.ws === "pre-wrap", "cx-aspa: " + JSON.stringify(t));
+
   // 7. várias instruções
   await pg.click(sel("cx-varios", ".ts-rodar"));
   await saidaPronta("cx-varios");

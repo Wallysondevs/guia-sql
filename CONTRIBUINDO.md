@@ -124,6 +124,9 @@ Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .m
 | `mudou:tabela=N` | depois de rodar, a tabela tem exatamente N linhas |
 
 - **A barra vertical no `out:`.** Na saída canônica, `|` separa as colunas, mas na regex `|` quer dizer "ou". Para casar o separador, escape com barra invertida: `out:^Papelaria\|` casa `Papelaria|…`. Sem a barra, `out:a|b` quer dizer "tem `a` ou tem `b`".
+- **Mensagem de erro com quebra de linha.** Uma aspa sem fechar engole o resto do SQL, e a mensagem sai em várias linhas: `SELECT 1 WHERE x = 'PI;` + `SELECT 2;` na linha de baixo dá `unrecognized token: "'PI;` e, na linha seguinte, `SELECT 2;"`. O quadro vermelho mostra as duas linhas. Na regex do `erro:` o `.` **não** casa a quebra: use `[\s\S]*` (`erro:unrecognized token[\s\S]*SELECT 2`) ou case só o começo (`erro:unrecognized token`). Se a aspa sem fechar for a **última** coisa da caixa, a mensagem fica numa linha só (`unrecognized token: "'PI;"`), igual ao terminal: o editor tira os espaços e quebras do fim antes de rodar, como o `sqlite3`.
+- Na saída do testador, uma quebra de linha dentro de uma mensagem aparece como `↵`.
+- O filtro de privacidade do testador barra `wallyson`, mas deixa passar links para os guias irmãos em `wallysondevs.github.io`.
 - Combine com `;;`: `data-goal="colunas:nome,preco;;linhas:3"` — **todas** precisam passar.
 - Se o SQL deu erro, **só** metas `erro:` podem passar.
 - O código inicial da caixa **não pode** cumprir a meta; o `pre.solucao` **tem** de cumprir. O testador confere os dois.

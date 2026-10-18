@@ -1,0 +1,16 @@
+<!DOCTYPE html><html><body>
+<!-- teste: o 1º link é permitido (guias irmãos); o 2º e o 3º têm de dar FALHA -->
+<p><a href="https://wallysondevs.github.io/guia-php/index.html">Guia PHP</a></p>
+<p>wallyson@notebook</p>
+<p>https://github.com/wallysondevs</p>
+<div class="trysql" data-goal="erro:unrecognized token: &quot;'PI;&quot;$">
+<pre class="script">SELECT 1;</pre>
+<pre class="solucao">SELECT nome FROM clientes WHERE estado = 'PI;
+</pre>
+</div>
+<div class="trysql" data-goal="erro:unrecognized token[\s\S]*SELECT 2">
+<pre class="script">SELECT 1;</pre>
+<pre class="solucao">SELECT 1 WHERE x = 'PI;
+SELECT 2;</pre>
+</div>
+</body></html>
