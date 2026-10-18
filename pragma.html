@@ -196,12 +196,12 @@ sqlite&gt; PRAGMA journal_mode = WAL;
 wal
 sqlite&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 3;
 sqlite&gt; .shell ls -l loja.db*
--rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db
--rw-r--r-- 1 ana ana 32768 out 18 10:56 loja.db-shm
--rw-r--r-- 1 ana ana  4152 out 18 10:56 loja.db-wal
+-rw-r--r-- 1 ana ana 45056 out 18 11:20 loja.db
+-rw-r--r-- 1 ana ana 32768 out 18 11:20 loja.db-shm
+-rw-r--r-- 1 ana ana  4152 out 18 11:20 loja.db-wal
 sqlite&gt; .quit
 $ ls -l loja.db*
--rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:20 loja.db
 $ sqlite3 loja.db "PRAGMA journal_mode;"
 wal</pre>
 
@@ -276,10 +276,10 @@ Enter ".help" for usage hints.
 sqlite&gt; PRAGMA page_size;
 4096
 sqlite&gt; PRAGMA page_count;
-12
+11
 sqlite&gt; .quit
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db       « 4096 × 12 = 49152</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:20 loja.db       « 4096 × 11 = 45056</pre>
 
 <p>No editor, o banco em memória foi criado com outro tamanho de página:</p>
 
@@ -437,11 +437,11 @@ COMMIT;
 </div>
 
 <div class="mc" data-answer="1">
-<p class="mc-q">6. O <code>loja.db</code> tem <code>page_size</code> 4096 e <code>page_count</code> 12. Qual o tamanho do arquivo?</p>
-<label><input type="radio" name="q6"> 49152 bytes</label>
-<label><input type="radio" name="q6"> 4108 bytes</label>
+<p class="mc-q">6. O <code>loja.db</code> tem <code>page_size</code> 4096 e <code>page_count</code> 11. Qual o tamanho do arquivo?</p>
+<label><input type="radio" name="q6"> 45056 bytes</label>
+<label><input type="radio" name="q6"> 4107 bytes</label>
 <label><input type="radio" name="q6"> 4096 bytes</label>
-<label><input type="radio" name="q6"> 12 bytes</label>
+<label><input type="radio" name="q6"> 11 bytes</label>
 </div>
 
 <h3>Missão final: a versão 2 do esquema</h3>

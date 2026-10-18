@@ -25,7 +25,7 @@
 <ul>
   <li>Por que apagar dados não diminui o arquivo do banco, e como ver o espaço livre com <code>freelist_count</code>.</li>
   <li>O <code>VACUUM</code>: o que ele faz, quanto o arquivo diminui (com o tamanho real, antes e depois) e quando usar.</li>
-  <li>O <code>auto_vacuum</code>, que devolve o espaço sozinho, e por que o <code>loja.db</code> da Ana se comportou diferente da maioria.</li>
+  <li>O <code>auto_vacuum</code>, que devolve o espaço sozinho, e por que ele vem desligado.</li>
   <li>O <code>ANALYZE</code> e a tabela <code>sqlite_stat1</code>, onde ficam as estatísticas.</li>
   <li>O <code>PRAGMA optimize</code>, o jeito recomendado de manter as estatísticas em dia.</li>
   <li>As mensagens reais quando a manutenção dá errado.</li>
@@ -54,22 +54,15 @@
 <hr>
 
 <h2>1. O espaço que não volta</h2>
-<p>Antes de começar, a Ana confere um detalhe do arquivo dela:</p>
+<p>Antes de começar, a Ana mede o arquivo e confere quantas páginas ele tem, e se a opção <code>auto_vacuum</code> (que você vai ver na seção 4) está ligada:</p>
 
-<pre class="term">$ sqlite3 loja.db
-SQLite version 3.50.4 2025-07-30 19:33:53
-Enter ".help" for usage hints.
-sqlite&gt; PRAGMA auto_vacuum;
-1
-sqlite&gt; PRAGMA auto_vacuum = NONE;
-sqlite&gt; VACUUM;
-sqlite&gt; PRAGMA auto_vacuum;
+<pre class="term">$ ls -l loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:14 loja.db
+$ sqlite3 loja.db "PRAGMA auto_vacuum; PRAGMA page_count;"
 0
-sqlite&gt; .quit
-$ ls -l loja.db
--rw-r--r-- 1 ana ana 45056 out 18 11:01 loja.db</pre>
+11</pre>
 
-<p>O <code>loja.db</code> veio com o <strong><code>auto_vacuum</code></strong> ligado (<code>1</code>), uma opção que devolve o espaço sozinha, e que você vai ver na seção 4. A maioria dos bancos que você vai encontrar está com o padrão do SQLite para bancos novos, que é <code>0</code> (desligado). Para ver o que acontece num banco "comum", a Ana desligou a opção (<code>NONE</code> = "nenhum") e rodou um <code>VACUUM</code>, que é o que faz a mudança valer num banco que já existe. O arquivo ficou com 45056 bytes: 11 páginas de 4096.</p>
+<p>São 45056 bytes: 11 páginas de 4096. O <code>auto_vacuum</code> está em <code>0</code>, desligado, que é o padrão do SQLite para bancos novos e o que você vai encontrar na maioria dos bancos.</p>
 
 <p>Agora o histórico de visitas: uma tabela nova com 20 mil linhas, criadas de uma vez com um <code>WITH RECURSIVE</code> que conta de 1 a 20000 (veja <a href="cte-recursiva.html">CTE Recursiva</a>):</p>
 
@@ -80,13 +73,13 @@ sqlite&gt; CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
 sqlite&gt; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000) INSERT INTO historico SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
 sqlite&gt; .quit
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 1200128 out 18 11:01 loja.db</pre>
+-rw-r--r-- 1 ana ana 1200128 out 18 11:21 loja.db</pre>
 
 <p>De 45 KB para 1,2 MB. A Ana desiste do histórico e apaga a tabela inteira:</p>
 
 <pre class="term">$ sqlite3 loja.db "DROP TABLE historico;"
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 1200128 out 18 11:01 loja.db
+-rw-r--r-- 1 ana ana 1200128 out 18 11:21 loja.db
 $ sqlite3 loja.db "PRAGMA page_count; PRAGMA freelist_count;"
 293
 282</pre>
@@ -109,10 +102,10 @@ SQLite version 3.50.4 2025-07-30 19:33:53
 Enter ".help" for usage hints.
 sqlite&gt; .timer on
 sqlite&gt; VACUUM;
-Run Time: real 0.013 user 0.001259 sys 0.000000
+Run Time: real 0.013 user 0.001175 sys 0.000000
 sqlite&gt; .quit
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 45056 out 18 11:01 loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:21 loja.db
 $ sqlite3 loja.db "PRAGMA page_count; PRAGMA freelist_count;"
 11
 0
@@ -199,7 +192,7 @@ SELECT page_count, freelist_count FROM pragma_page_count, pragma_freelist_count;
 <hr>
 
 <h2>4. <code>auto_vacuum</code>: o espaço volta sozinho</h2>
-<p>E o <code>loja.db</code> original, que veio com <code>auto_vacuum</code> igual a 1? A Ana religa a opção (<code>FULL</code> = "completo"; de novo, com um <code>VACUUM</code> para valer) e repete o teste do histórico:</p>
+<p>Existe um jeito de o espaço voltar sozinho, sem <code>VACUUM</code>: a opção <code>auto_vacuum</code>. Num banco que já tem tabelas, mudar essa opção só vale depois de um <code>VACUUM</code>, que remonta o arquivo no modo novo. A Ana liga a opção (<code>FULL</code> = "completo") e repete o teste do histórico:</p>
 
 <pre class="term">$ sqlite3 loja.db
 SQLite version 3.50.4 2025-07-30 19:33:53
@@ -212,12 +205,12 @@ sqlite&gt; CREATE TABLE historico (id INTEGER PRIMARY KEY, evento TEXT);
 sqlite&gt; WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i &lt; 20000) INSERT INTO historico SELECT i, 'visita ao produto ' || (i % 45 + 1) || ' registrada pelo site da loja' FROM n;
 sqlite&gt; .quit
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 1204224 out 18 11:01 loja.db
+-rw-r--r-- 1 ana ana 1204224 out 18 11:21 loja.db
 $ sqlite3 loja.db "DROP TABLE historico;"
 $ ls -l loja.db
--rw-r--r-- 1 ana ana 49152 out 18 11:01 loja.db</pre>
+-rw-r--r-- 1 ana ana 49152 out 18 11:21 loja.db</pre>
 
-<p>Desta vez o arquivo diminuiu <strong>na hora</strong>, sem <code>VACUUM</code>: no fim de cada transação, o SQLite move as páginas livres para o fim do arquivo e corta o arquivo ali. Repare que, com a opção ligada, o banco tem 49152 bytes, uma página a mais que os 45056 do modo desligado: é o "mapa" que o SQLite mantém para saber o que pode mover.</p>
+<p>Desta vez o arquivo diminuiu <strong>na hora</strong>, sem <code>VACUUM</code>: no fim de cada transação, o SQLite move as páginas livres para o fim do arquivo e corta o arquivo ali. Repare que, com a opção ligada, o banco ficou com 49152 bytes, uma página a mais que os 45056 do começo: é o "mapa" que o SQLite mantém para saber o que pode mover.</p>
 
 <div class="table-wrap">
 <table class="ref">
@@ -338,7 +331,7 @@ PRAGMA auto_vacuum;
 VACUUM;
 PRAGMA auto_vacuum;
 </pre>
-<p><strong>O que aconteceu:</strong> num banco que já tem tabelas, <code>PRAGMA auto_vacuum = FULL;</code> não dá erro, mas também não muda o modo: a primeira leitura continua mostrando <code>0</code>. Só depois do <code>VACUUM</code>, que remonta o arquivo, a leitura mostra <code>1</code>. Foi por isso que a Ana sempre rodou o <code>VACUUM</code> logo depois de mudar a opção.</p>
+<p><strong>O que aconteceu:</strong> num banco que já tem tabelas, <code>PRAGMA auto_vacuum = FULL;</code> não dá erro, mas também não muda o modo: a primeira leitura continua mostrando <code>0</code>. Só depois do <code>VACUUM</code>, que remonta o arquivo, a leitura mostra <code>1</code>. Foi por isso que, na seção 4, a Ana rodou o <code>VACUUM</code> logo depois de mudar a opção.</p>
 <p><strong>Como evitar:</strong> como todo PRAGMA (aula <a href="pragma.html">PRAGMAs Úteis</a>), confira lendo de volta: <code>PRAGMA auto_vacuum;</code>.</p>
 </div>
 

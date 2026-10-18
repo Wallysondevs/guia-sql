@@ -100,8 +100,8 @@ sqlite&gt; .quit</pre>
 
 <pre class="term">$ sqlite3 loja.db .dump &gt; backup.sql
 $ ls -l loja.db backup.sql
--rw-rw-r-- 1 ana ana 30423 out 18 10:34 backup.sql
--rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db
+-rw-rw-r-- 1 ana ana 30423 out 18 11:18 backup.sql
+-rw-r--r-- 1 ana ana 45056 out 18 11:14 loja.db
 $ head -4 backup.sql
 PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
@@ -120,7 +120,7 @@ $ grep -c '^INSERT' backup.sql
   <dt>&gt; backup.sql</dt><dd>O shell grava tudo o que sairia na tela no arquivo <code>backup.sql</code>. O <code>.sql</code> no fim do nome é só um costume, para lembrar que o arquivo é SQL.</dd>
 </dl>
 
-<p>O <code>grep -c '^INSERT'</code> conta as linhas que começam com <code>INSERT</code>: 407, exatamente o total de linhas das sete tabelas da loja. O dump ficou <strong>menor</strong> que o banco (30 KB contra 48 KB): é só texto, sem os índices nem o espaço livre que o arquivo do banco guarda por dentro. Num banco grande, ele também comprime muito bem com <code>gzip</code>.</p>
+<p>O <code>grep -c '^INSERT'</code> conta as linhas que começam com <code>INSERT</code>: 407, exatamente o total de linhas das sete tabelas da loja. O dump ficou <strong>menor</strong> que o banco (30 KB contra 44 KB): é só texto, sem os índices nem o espaço livre que o arquivo do banco guarda por dentro. Num banco grande, ele também comprime muito bem com <code>gzip</code>.</p>
 
 <h3>Que números são esses: 54.29999999999999716?</h3>
 <p>No banco, o preço desse item é 54.3. O dump escreve o número com todas as casas que o computador guarda de verdade. Números com vírgula (o tipo <code>REAL</code>) são guardados em binário, e 54.3 não tem representação exata em binário, assim como 1/3 não tem em decimal (0,333…). O dump escreve a versão longa para que, ao restaurar, volte <strong>exatamente o mesmo número</strong>, sem nenhuma diferença:</p>
@@ -141,12 +141,12 @@ SELECT 54.29999999999999716 = 54.3 AS igual;
 
 <pre class="term">$ sqlite3 restaurado.db &lt; backup.sql
 $ ls -l restaurado.db
--rw-r--r-- 1 ana ana 73728 out 18 10:34 restaurado.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:18 restaurado.db
 $ sqlite3 restaurado.db "SELECT count(*) FROM produtos; SELECT count(*) FROM itens_pedido;"
 45
 220</pre>
 
-<p>O <code>restaurado.db</code> não existia: o <code>sqlite3</code> criou o arquivo vazio, rodou os 407 <code>INSERT</code> e os sete <code>CREATE TABLE</code>, e pronto. As contagens batem com o original. O tamanho não bate, e não tem problema. O SQLite guarda o banco em blocos de tamanho fixo, as <strong>páginas</strong>: o <code>loja.db</code> usa páginas de 4096 bytes, e o banco novo, criado por este <code>sqlite3</code>, ganhou páginas de 8192 bytes (dá para ver com <code>PRAGMA page_size</code>, na aula <a href="pragma.html">PRAGMAs Úteis</a>). Com páginas maiores e meio vazias, o arquivo cresce. Os <strong>dados</strong> são os mesmos.</p>
+<p>O <code>restaurado.db</code> não existia: o <code>sqlite3</code> criou o arquivo vazio, rodou os 407 <code>INSERT</code> e os sete <code>CREATE TABLE</code>, e pronto. As contagens batem com o original, e até o tamanho bateu: 45056 bytes, igual ao <code>loja.db</code>. Faz sentido, porque o <code>loja.db</code> da Ana foi criado exatamente assim, rodando um arquivo de SQL num banco vazio. O tamanho nem sempre bate (um banco que já teve muitos <code>DELETE</code> guarda espaço vazio que o dump não leva, como você vai ver em <a href="vacuum.html">VACUUM e ANALYZE</a>), e não precisa: o que importa é que os <strong>dados</strong> são os mesmos.</p>
 
 <p>De dentro do <code>sqlite3</code>, o mesmo efeito vem do <code>.read</code>, que lê e roda um arquivo de SQL:</p>
 
@@ -211,8 +211,8 @@ sqlite&gt; .quit</pre>
 <p>A Rosângela voltou. Fora do <code>sqlite3</code>, os dois arquivos têm o mesmo tamanho, e o <code>PRAGMA integrity_check</code> ("conferência de integridade") confirma que a cópia está saudável:</p>
 
 <pre class="term">$ ls -l loja.db copia.db
--rw-r--r-- 1 ana ana 49152 out 18 10:34 copia.db
--rw-r--r-- 1 ana ana 49152 out 18 10:34 loja.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:18 copia.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:19 loja.db
 $ sqlite3 copia.db "PRAGMA integrity_check;"
 ok</pre>
 
@@ -223,7 +223,7 @@ ok</pre>
 
 <pre class="term">$ sqlite3 loja.db ".backup backup-$(date +%F).db"
 $ ls -l backup-*
--rw-r--r-- 1 ana ana 49152 out 18 10:34 backup-2026-10-18.db</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:19 backup-2026-10-18.db</pre>
 
 <p>As aspas em volta de <code>.backup …</code> fazem o <code>sqlite3</code> receber o comando inteiro como uma coisa só. Essa linha pode ir para um agendador de tarefas (como o <code>cron</code>, no Linux) e rodar sozinha toda noite.</p>
 
@@ -234,7 +234,7 @@ $ ls -l backup-*
 
 <pre class="term">$ sqlite3 loja.db "VACUUM INTO 'compacta.db';"
 $ ls -l compacta.db
--rw-r--r-- 1 ana ana 49152 out 18 10:34 compacta.db</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:19 compacta.db</pre>
 
 <dl class="anatomy">
   <dt>VACUUM</dt><dd>O comando que reorganiza o banco por dentro e joga fora o espaço vazio (aula <a href="vacuum.html">VACUUM e ANALYZE</a>).</dd>
@@ -338,8 +338,8 @@ sqlite&gt; SELECT count(*) FROM clientes;
 30
 sqlite&gt; .quit
 $ ls -l loja.db nao-existe.db
--rw-r--r-- 1 ana ana 49152 out 18 10:34 loja.db
--rw-r--r-- 1 ana ana     0 out 18 10:34 nao-existe.db
+-rw-r--r-- 1 ana ana 45056 out 18 11:19 loja.db
+-rw-r--r-- 1 ana ana     0 out 18 11:19 nao-existe.db
 $ rm nao-existe.db</pre>
 <p>Repare no <code>nao-existe.db</code> com 0 bytes, que o <code>.restore</code> deixou para trás. <strong>Para nunca cair nessa:</strong> antes de um <code>.restore</code>, confira o nome com <code>ls</code> e faça um <code>.backup</code> do banco atual (por exemplo, <code>.backup antes-do-restore.db</code>). Assim, até um <code>.restore</code> errado tem volta.</p>
 </div>

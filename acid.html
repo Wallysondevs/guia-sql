@@ -82,8 +82,8 @@ sqlite&gt; SELECT id, nome, qtd FROM estoque_teste WHERE id IN (1, 2, 12);
 [1] 4
 $ sleep 1
 $ ls -l loja.db*
--rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db
--rw-r--r-- 1 ana ana 21032 out 18 10:52 loja.db-journal
+-rw-r--r-- 1 ana ana 45056 out 18 11:14 loja.db
+-rw-r--r-- 1 ana ana 21032 out 18 11:19 loja.db-journal
 $ kill -9 $!
 $ sqlite3 loja.db "SELECT count(*) FROM itens_pedido;"
 220
@@ -92,7 +92,7 @@ ok</pre>
 
 <dl class="anatomy">
   <dt>( echo …; sleep 30 ) | sqlite3 loja.db &amp;</dt><dd>Entrega ao <code>sqlite3</code> o <code>BEGIN</code> e o <code>DELETE</code> e, com o <code>sleep 30</code>, segura a transação aberta por 30 segundos. O <code>&amp;</code> roda tudo em segundo plano, e o terminal fica livre.</dd>
-  <dt>loja.db-journal</dt><dd>O <strong>diário</strong> (<em>journal</em>) da transação. Antes de mudar qualquer pedaço do banco, o SQLite guarda ali uma cópia de como esse pedaço era. Repare que o <code>loja.db</code> continua com a hora antiga (10:14): o banco em si nem foi tocado ainda.</dd>
+  <dt>loja.db-journal</dt><dd>O <strong>diário</strong> (<em>journal</em>) da transação. Antes de mudar qualquer pedaço do banco, o SQLite guarda ali uma cópia de como esse pedaço era. Repare que o <code>loja.db</code> continua com a hora antiga (11:14): o banco em si nem foi tocado ainda.</dd>
   <dt>kill -9 $!</dt><dd>Mata o <code>sqlite3</code> (o <code>$!</code> é o último programa posto em segundo plano) no meio da transação.</dd>
   <dt>220</dt><dd>Os 220 itens continuam lá. A transação não terminou, então não aconteceu.</dd>
   <dt>ok</dt><dd>O banco está saudável (aula <a href="pragma.html">PRAGMAs Úteis</a>).</dd>
@@ -225,9 +225,9 @@ $ kill -9 $!
 $ sqlite3 loja.db "SELECT count(*) FROM itens_pedido;"
 218
 $ ls -l loja.db*
--rw-r--r-- 1 ana ana 49152 out 18 10:52 loja.db</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:19 loja.db</pre>
 
-<p>O programa morreu do mesmo jeito, mas desta vez depois do <code>COMMIT</code>: os 2 itens continuam apagados (220 − 2 = 218). O <code>loja.db</code> ganhou hora nova (10:52), e o diário sumiu: a transação foi gravada e terminada. Para cumprir essa promessa, a cada <code>COMMIT</code> o SQLite espera o disco confirmar que os dados estão lá de verdade. É essa espera que deixa mil <code>COMMIT</code>s separados tão lentos (seção 5 de <a href="transacoes.html">Transações</a>).</p>
+<p>O programa morreu do mesmo jeito, mas desta vez depois do <code>COMMIT</code>: os 2 itens continuam apagados (220 − 2 = 218). O <code>loja.db</code> ganhou hora nova (11:19), e o diário sumiu: a transação foi gravada e terminada. Para cumprir essa promessa, a cada <code>COMMIT</code> o SQLite espera o disco confirmar que os dados estão lá de verdade. É essa espera que deixa mil <code>COMMIT</code>s separados tão lentos (seção 5 de <a href="transacoes.html">Transações</a>).</p>
 
 <div class="note">
 <strong>O banco do editor não é durável</strong>
