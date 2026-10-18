@@ -9,7 +9,10 @@ idêntica; qualquer diferença aparece abaixo, na seção da página.
 | Assunto | Editor do guia | sqlite3 no terminal |
 |---|---|---|
 | Mensagem de erro | a mensagem crua: `no such table: cliente` | `Parse error: no such table: cliente` (ou `Runtime error: …`; com stdin de arquivo: `Parse error near line 2: …`), às vezes com a seta `^--- error here` |
+| Chaves estrangeiras | ligadas: o `aurora.sql` faz `PRAGMA foreign_keys = ON;` | `sqlite3 loja.db` começa com `foreign_keys` **desligado** (`PRAGMA foreign_keys;` → 0): um INSERT com FK inválida passa. O `--nativo` carrega o `aurora.sql`, então não vê esta diferença |
+| Código do erro | só a mensagem | erros de execução às vezes ganham o código: `Runtime error: UNIQUE constraint failed: categorias.id (19)` |
 | Comandos de ponto (`.tables`) | não existem: erro de sintaxe | funcionam (são do programa sqlite3) |
+| `random()`, `datetime('now')` | muda a cada Rodar | muda a cada execução (a comparação dá diferença; não use em página) |
 | SQL sem fim | interrompido em ~4 s com `interrupted` | roda até alguém apertar Ctrl+C |
 | Tabela grande | desenha até 500 linhas (as metas contam todas) | mostra todas |
 | Cabeçalho e formato | tabela HTML com cabeçalho | `.mode list` sem cabeçalho, até mudar com `.mode`/`.headers` |
@@ -20,7 +23,7 @@ O testador compara a mensagem de erro só pelo miolo (a do editor tem de aparece
 <!-- AUTO: cada página tem a sua seção, reescrita a cada --nativo. Página sem diferença não aparece. -->
 
 <!-- pagina:nativo-bateria.html -->
-### nativo-bateria.html (2026-10-18 13:22 UTC)
+### nativo-bateria.html (2026-10-18 13:27 UTC)
 
 **resultado 10 (linha 39)** — saída diferente; o editor deu erro e o nativo não
 
