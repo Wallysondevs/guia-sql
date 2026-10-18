@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL As Garantias ACID — atomicidade, consistência, isolamento e durabilidade | Guia SQL</title>
+<meta name="description" content="As garantias ACID explicadas para quem está começando: atomicidade (tudo ou nada, até quando o programa morre no meio), consistência (as regras do banco), isolamento (o que uma transação enxerga da outra) e durabilidade (o que foi confirmado não se perde), com testes reais no SQLite, kill -9 e duas janelas de terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">As Garantias ACID</span></h1>
+
+<p class="intro">Por que uma loja confia o caixa dela a um banco de dados, e não a uma planilha? Porque um banco de dados de verdade faz quatro promessas sobre cada transação, e cumpre mesmo quando a luz acaba, o programa trava ou duas pessoas mexem no mesmo dado ao mesmo tempo. Essas promessas têm um apelido famoso, formado pelas iniciais em inglês: <strong>ACID</strong>. Nesta aula, a Ana põe cada uma à prova no SQLite: ela vai matar um programa no meio de uma transação, tentar quebrar as regras do banco e abrir duas janelas ao mesmo tempo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que quer dizer cada letra: <strong>A</strong>tomicidade, <strong>C</strong>onsistência, <strong>I</strong>solamento e <strong>D</strong>urabilidade.</li>
+  <li>Que até um único <code>UPDATE</code> é "tudo ou nada", e o que acontece quando o programa morre no meio de uma transação.</li>
+  <li>Que as regras da tabela (<code>NOT NULL</code>, <code>CHECK</code>, chaves estrangeiras) são o que mantém o banco consistente, e que no terminal uma delas vem desligada.</li>
+  <li>O que uma transação enxerga das outras, e a "foto" que o modo WAL tira do banco.</li>
+  <li>O que o <code>COMMIT</code> garante, e por que o banco do editor do guia não é durável.</li>
+</ul>
+</div>
+
+<p>Esta aula junta as duas anteriores, <a href="transacoes.html">Transações</a> e <a href="rollback.html">ROLLBACK e Savepoints</a>. Os exemplos com quadro "Resultado" rodam no SQLite do seu navegador. Os testes que dependem de um arquivo de verdade, de dois programas ao mesmo tempo ou de "matar" um programa saíram do terminal da Ana, com o banco <code>~/loja.db</code>.</p>
+
+<hr>
+
+<h2>A ideia: a transferência entre o caixa e o cofre</h2>
+<p>No fim do dia, a Ana tira R$ 200 do caixa da loja e guarda no cofre. São dois passos: tirar do caixa e pôr no cofre. Agora imagine as coisas que podem dar errado, e o que a loja espera de quem cuida do dinheiro:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Letra</th><th>Nome</th><th>A promessa</th><th>Na transferência</th></tr>
+<tr><td><strong>A</strong></td><td>Atomicidade</td><td>Tudo ou nada</td><td>O dinheiro nunca sai do caixa sem chegar ao cofre, nem se a Ana for interrompida no meio</td></tr>
+<tr><td><strong>C</strong></td><td>Consistência</td><td>As regras sempre valem</td><td>Nenhum dos dois fica com saldo negativo; o total continua o mesmo</td></tr>
+<tr><td><strong>I</strong></td><td>Isolamento</td><td>Uma transação não vê a outra pela metade</td><td>Quem conta o dinheiro nunca pega o momento em que os R$ 200 estão "na mão da Ana", fora dos dois</td></tr>
+<tr><td><strong>D</strong></td><td>Durabilidade</td><td>O que foi confirmado, fica</td><td>Depois de anotado no livro do cofre, nem um apagão faz a transferência "desacontecer"</td></tr>
+</table>
+</div>
+
+<p>"Atômico" vem do grego <em>átomos</em>, "indivisível": algo que não se parte em pedaços. As quatro palavras parecem difíceis, mas você já viu duas delas funcionando nas aulas anteriores. Agora, uma por uma.</p>
+
+<hr>
+
+<h2>1. A de Atomicidade: tudo ou nada</h2>
+
+<h3>Até um único comando é atômico</h3>
+<p>Para testar, a Ana cria uma cópia do estoque numa tabela com uma regra: a quantidade nunca pode ser negativa (<code>CHECK (qtd &gt;= 0)</code>, veja <a href="check.html">CHECK</a>). Depois, tenta tirar 30 unidades de <strong>todos</strong> os produtos de uma vez:</p>
+
+<pre class="file" data-file="atomico.sql" data-resultado data-erro>CREATE TABLE estoque_teste (id INTEGER PRIMARY KEY, nome TEXT,
+                            qtd INTEGER CHECK (qtd &gt;= 0));
+INSERT INTO estoque_teste SELECT id, nome, estoque FROM produtos;
+
+UPDATE estoque_teste SET qtd = qtd - 30;
+</pre>
+
+<p>O caderno tem 120 e a caneta 500: para eles, tirar 30 daria certo. Mas o pen drive tem 0, e 0 − 30 = −30 quebra a regra. O que aconteceu com o caderno e a caneta? O editor para no erro, então a Ana confere no terminal, com o mesmo comando:</p>
+
+<pre class="term">sqlite&gt; UPDATE estoque_teste SET qtd = qtd - 30;
+Runtime error: CHECK constraint failed: qtd &gt;= 0 (19)
+sqlite&gt; SELECT id, nome, qtd FROM estoque_teste WHERE id IN (1, 2, 12);
+1|Caderno Pautado 96 folhas|120
+2|Caneta Esferográfica Azul|500
+12|Pen Drive 32GB|0</pre>
+
+<p>Nada mudou: nem o caderno, nem a caneta. O <code>UPDATE</code> é <strong>um</strong> comando, e um comando é atômico: como uma das linhas falhou, o SQLite desfez as que já tinha mudado. Nunca acontece de "metade da tabela" ficar atualizada. Para vários comandos virarem uma coisa só, você já sabe: <code>BEGIN</code> … <code>COMMIT</code>.</p>
+
+<h3>E se o programa morrer no meio da transação?</h3>
+<p>Este é o teste de verdade. A Ana manda um <code>sqlite3</code> apagar <strong>todos</strong> os itens de pedido dentro de uma transação e deixa o programa parado ali, sem <code>COMMIT</code>, rodando em segundo plano (o <code>&amp;</code> no fim). Depois, ela o mata com <code>kill -9</code>, que encerra o programa na hora, sem dar chance de ele arrumar nada; é o mais perto que dá de puxar o cabo da tomada:</p>
+
+<pre class="term">$ ( echo "BEGIN;"; echo "DELETE FROM itens_pedido;"; sleep 30 ) | sqlite3 loja.db &amp;
+[1] 4
+$ sleep 1
+$ ls -l loja.db*
+-rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db
+-rw-r--r-- 1 ana ana 21032 out 18 10:52 loja.db-journal
+$ kill -9 $!
+$ sqlite3 loja.db "SELECT count(*) FROM itens_pedido;"
+220
+$ sqlite3 loja.db "PRAGMA integrity_check;"
+ok</pre>
+
+<dl class="anatomy">
+  <dt>( echo …; sleep 30 ) | sqlite3 loja.db &amp;</dt><dd>Entrega ao <code>sqlite3</code> o <code>BEGIN</code> e o <code>DELETE</code> e, com o <code>sleep 30</code>, segura a transação aberta por 30 segundos. O <code>&amp;</code> roda tudo em segundo plano, e o terminal fica livre.</dd>
+  <dt>loja.db-journal</dt><dd>O <strong>diário</strong> (<em>journal</em>) da transação. Antes de mudar qualquer pedaço do banco, o SQLite guarda ali uma cópia de como esse pedaço era. Repare que o <code>loja.db</code> continua com a hora antiga (10:14): o banco em si nem foi tocado ainda.</dd>
+  <dt>kill -9 $!</dt><dd>Mata o <code>sqlite3</code> (o <code>$!</code> é o último programa posto em segundo plano) no meio da transação.</dd>
+  <dt>220</dt><dd>Os 220 itens continuam lá. A transação não terminou, então não aconteceu.</dd>
+  <dt>ok</dt><dd>O banco está saudável (aula <a href="pragma.html">PRAGMAs Úteis</a>).</dd>
+</dl>
+
+<p>É o diário que garante a atomicidade mesmo num desastre. Se o programa morre depois de já ter gravado parte das mudanças no banco, o próximo programa que abrir o arquivo encontra o diário, percebe que ficou uma transação pela metade e usa as cópias guardadas para pôr tudo de volta como era, antes de deixar qualquer um ler.</p>
+
+<div class="warning">
+<strong>Nunca apague o <code>-journal</code> (nem o <code>-wal</code>)</strong>
+<p>Depois de um travamento, o arquivo <code>loja.db-journal</code> (ou, no modo WAL, o <code>loja.db-wal</code>) pode ficar na pasta. Parece lixo, mas pode ser justamente o que o SQLite precisa para desfazer uma transação pela metade. Apagá-lo à mão é um dos poucos jeitos de <strong>estragar</strong> um banco SQLite. Deixe que o próprio SQLite cuide dele: na próxima vez que alguém abrir e escrever no banco, ele some sozinho.</p>
+</div>
+
+<hr>
+
+<h2>2. C de Consistência: as regras sempre valem</h2>
+<p>Consistência quer dizer que o banco passa de um estado <strong>válido</strong> para outro estado válido. "Válido" é o que as regras da tabela dizem: <code>NOT NULL</code>, <code>UNIQUE</code>, <code>CHECK</code>, chaves primárias e estrangeiras (aulas do grupo de <a href="create-table.html">CREATE TABLE</a>). Um comando que quebraria uma regra é recusado inteiro.</p>
+
+<p>Um pedido para um cliente que não existe (não há cliente 99) quebraria a regra da chave estrangeira <code>pedidos.cliente_id → clientes.id</code> (veja <a href="foreign-key.html">FOREIGN KEY</a>):</p>
+
+<pre class="file" data-file="consistencia.sql" data-resultado data-erro>INSERT INTO pedidos (id, cliente_id, funcionario_id, data, frete)
+VALUES (91, 99, 2, '2026-10-18', 0);
+</pre>
+
+<p>"A restrição de chave estrangeira falhou": o banco se recusou a ter um pedido sem dono. Até aqui, tudo certo. Mas veja o mesmo <code>INSERT</code> no terminal da Ana:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; INSERT INTO pedidos (id, cliente_id, funcionario_id, data, frete) VALUES (91, 99, 2, '2026-10-18', 0);
+sqlite&gt; SELECT id, cliente_id FROM pedidos WHERE id = 91;
+91|99
+sqlite&gt; SELECT nome FROM clientes WHERE id = 99;
+sqlite&gt; DELETE FROM pedidos WHERE id = 91;
+sqlite&gt; PRAGMA foreign_keys;
+0
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; INSERT INTO pedidos (id, cliente_id, funcionario_id, data, frete) VALUES (91, 99, 2, '2026-10-18', 0);
+Runtime error: FOREIGN KEY constraint failed (19)</pre>
+
+<p>No terminal, o pedido do cliente 99 <strong>entrou</strong>, e o cliente 99 não existe. O motivo está no <code>PRAGMA foreign_keys</code>, que respondeu <code>0</code>: no SQLite, a conferência de chaves estrangeiras vem <strong>desligada</strong> por padrão, a cada vez que um programa abre o banco (é uma decisão antiga, mantida para não quebrar programas antigos). O editor do guia a liga ao carregar a Loja Aurora; no terminal, a Ana precisou ligar com <code>PRAGMA foreign_keys = ON</code>. A lição: <strong>o banco só é tão consistente quanto as regras que estão valendo</strong>.</p>
+
+<p>A consistência também vale para a transação inteira. Na transferência do caixa para o cofre, a regra é: nenhum saldo negativo.</p>
+
+<div class="trysql" data-goal="contem:caixa|50.0;;contem:cofre|1200.0;;contem:1250.0">
+<p class="try-task"><strong>Experimente:</strong> a transferência de R$ 200 do caixa para o cofre está pela metade: o dinheiro sai do caixa, mas não entra no cofre, e o total da loja "encolhe" de 1250 para 1050. Complete a transação para que o total continue 1250. Depois, para ver a regra funcionando, tente transferir 300 (o caixa só tem 250).</p>
+<pre class="script" data-file="transferencia.sql">CREATE TABLE caixas (nome TEXT PRIMARY KEY,
+                     saldo REAL NOT NULL CHECK (saldo &gt;= 0));
+INSERT INTO caixas VALUES ('caixa', 250.0), ('cofre', 1000.0);
+
+BEGIN;
+UPDATE caixas SET saldo = saldo - 200 WHERE nome = 'caixa';
+COMMIT;
+
+SELECT nome, saldo FROM caixas;
+SELECT sum(saldo) AS total FROM caixas;
+</pre>
+<pre class="solucao" data-file="transferencia.sql">CREATE TABLE caixas (nome TEXT PRIMARY KEY,
+                     saldo REAL NOT NULL CHECK (saldo &gt;= 0));
+INSERT INTO caixas VALUES ('caixa', 250.0), ('cofre', 1000.0);
+
+BEGIN;
+UPDATE caixas SET saldo = saldo - 200 WHERE nome = 'caixa';
+UPDATE caixas SET saldo = saldo + 200 WHERE nome = 'cofre';
+COMMIT;
+
+SELECT nome, saldo FROM caixas;
+SELECT sum(saldo) AS total FROM caixas;
+</pre>
+</div>
+
+<p>Com 300, o primeiro <code>UPDATE</code> daria saldo −50 no caixa, e o SQLite responde <code>CHECK constraint failed: saldo &gt;= 0</code>. Repare na divisão de trabalho: o banco garante as regras que <strong>você escreveu</strong> (saldo não negativo). A regra "o total não muda" não está escrita em lugar nenhum; quem a garante é você, pondo os dois <code>UPDATE</code> na mesma transação.</p>
+
+<hr>
+
+<h2>3. I de Isolamento: uma transação não vê a outra pela metade</h2>
+<p>Na aula <a href="transacoes.html">Transações</a>, você viu a primeira parte do isolamento: enquanto o caixa não dá <code>COMMIT</code>, a outra janela continua vendo o estoque antigo, e quem tenta escrever ao mesmo tempo recebe <code>database is locked</code>. O SQLite deixa só uma transação escrever por vez, e por isso ninguém nunca enxerga uma mudança pela metade.</p>
+
+<p>Agora a outra parte: e se for <strong>quem lê</strong> que está numa transação longa? Imagine a contadora somando o estoque, produto por produto, enquanto o caixa continua vendendo. Ela precisa de números que batam entre si, de um mesmo instante. Para ver isso, a Ana liga o modo <strong>WAL</strong> (<em>write-ahead log</em>, "registro antes da escrita"; mais na aula <a href="pragma.html">PRAGMAs Úteis</a>), que deixa quem lê e quem escreve trabalharem ao mesmo tempo. E abre duas janelas de novo.</p>
+
+<p>Na janela da contadora, ela abre uma transação e lê o estoque do lápis:</p>
+
+<pre class="term" data-title="Terminal 2: a contadora">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430</pre>
+
+<p>Enquanto isso, na janela do caixa, uma venda de 2 lápis é gravada (sem <code>BEGIN</code>: o <code>UPDATE</code> já é confirmado sozinho):</p>
+
+<pre class="term" data-title="Terminal 1: o caixa">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA journal_mode = WAL;
+wal
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428</pre>
+
+<p>A venda foi gravada: o caixa vê 428, e desta vez <strong>não</strong> houve <code>database is locked</code>. De volta à contadora, que ainda está na transação dela:</p>
+
+<pre class="term" data-title="Terminal 2: a contadora">sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430
+sqlite&gt; COMMIT;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+428</pre>
+
+<p>Mesmo com a venda já gravada, a contadora continua vendo 430 até terminar a transação dela. É como se, no <code>BEGIN</code>, ela tivesse tirado uma <strong>foto</strong> do banco: tudo o que ela ler na transação vem da mesma foto, e as contas batem. Depois do <code>COMMIT</code>, a próxima leitura já mostra o banco atual: 428.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Modo normal do SQLite</th><th>Modo WAL</th></tr>
+<tr><td>Uma transação escreve, outra lê</td><td>Quem lê vê os dados antigos, gravados</td><td>Quem lê vê os dados antigos, gravados</td></tr>
+<tr><td>Duas transações querem escrever</td><td>Uma de cada vez: a outra recebe <code>database is locked</code></td><td>Uma de cada vez: a outra recebe <code>database is locked</code></td></tr>
+<tr><td>Uma leitura longa e uma escrita</td><td>A escrita pode ter de esperar a leitura terminar para confirmar</td><td>As duas seguem juntas; quem lê continua vendo a sua "foto"</td></tr>
+</table>
+</div>
+
+<p>No editor do guia não dá para testar o isolamento: lá só existe um programa usando o banco, o seu navegador.</p>
+
+<hr>
+
+<h2>4. D de Durabilidade: o que foi confirmado, fica</h2>
+<p>Durabilidade é a promessa do <code>COMMIT</code>: quando ele responde, os dados já estão no disco, e nenhum travamento depois disso os desfaz. A Ana repete o teste do <code>kill -9</code>, agora com uma transação que <strong>termina</strong> com <code>COMMIT</code> (apagando só os 2 itens do pedido 90) antes de o programa ser morto:</p>
+
+<pre class="term">$ ( echo "BEGIN;"; echo "DELETE FROM itens_pedido WHERE pedido_id = 90;"; echo "COMMIT;"; sleep 30 ) | sqlite3 loja.db &amp;
+[2] 10
+$ sleep 1
+$ kill -9 $!
+$ sqlite3 loja.db "SELECT count(*) FROM itens_pedido;"
+218
+$ ls -l loja.db*
+-rw-r--r-- 1 ana ana 49152 out 18 10:52 loja.db</pre>
+
+<p>O programa morreu do mesmo jeito, mas desta vez depois do <code>COMMIT</code>: os 2 itens continuam apagados (220 − 2 = 218). O <code>loja.db</code> ganhou hora nova (10:52), e o diário sumiu: a transação foi gravada e terminada. Para cumprir essa promessa, a cada <code>COMMIT</code> o SQLite espera o disco confirmar que os dados estão lá de verdade. É essa espera que deixa mil <code>COMMIT</code>s separados tão lentos (seção 5 de <a href="transacoes.html">Transações</a>).</p>
+
+<div class="note">
+<strong>O banco do editor não é durável</strong>
+<p>No editor do guia, o banco vive na memória do navegador e é recriado a cada Rodar. É de propósito, para você poder apagar tudo sem medo, mas é o oposto da durabilidade: nada sobrevive ao próximo clique. Num programa de verdade, um banco em memória (<code>sqlite3</code> sem nome de arquivo, ou <code>:memory:</code>) serve para contas rápidas e testes, nunca para guardar o caixa da loja.</p>
+</div>
+
+<hr>
+
+<h2>5. ACID numa tabela só</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Garantia</th><th>Quer dizer</th><th>Quem cuida dela no SQLite</th><th>O que você faz</th></tr>
+<tr><td><strong>Atomicidade</strong></td><td>Tudo ou nada</td><td>O diário (<code>-journal</code>) ou o <code>-wal</code></td><td>Põe numa transação o que precisa ir junto</td></tr>
+<tr><td><strong>Consistência</strong></td><td>As regras sempre valem</td><td>As restrições: <code>NOT NULL</code>, <code>UNIQUE</code>, <code>CHECK</code>, chaves</td><td>Escreve as regras nas tabelas e liga o <code>foreign_keys</code></td></tr>
+<tr><td><strong>Isolamento</strong></td><td>Ninguém vê uma transação pela metade</td><td>As travas (uma escrita por vez) e a "foto" das leituras</td><td>Mantém as transações curtas</td></tr>
+<tr><td><strong>Durabilidade</strong></td><td>Confirmado é para sempre</td><td>A espera pelo disco a cada <code>COMMIT</code></td><td>Não apaga o <code>-journal</code>/<code>-wal</code> e faz backup (contra disco quebrado, nem ACID salva)</td></tr>
+</table>
+</div>
+
+<p>Uma planilha não faz nenhuma dessas promessas: se o computador desliga enquanto ela salva, o arquivo pode ficar pela metade; duas pessoas editando o mesmo arquivo atrapalham uma à outra; e nada impede alguém de digitar um estoque negativo. É por isso que dados importantes moram num banco.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Um comando quebra uma regra: <code>CHECK constraint failed</code></strong>
+<p>Na tabela <code>estoque_teste</code>, o <code>UPDATE … SET qtd = qtd - 30</code> deu <code>CHECK constraint failed: qtd &gt;= 0</code> e não mudou nenhuma linha.</p>
+<p><strong>Como consertar:</strong> se a intenção era tirar 30 só de quem tem pelo menos 30, diga isso no <code>WHERE</code> (é a missão final). Não remova a regra: ela está protegendo o banco.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma regra que não estava valendo</strong>
+<p>No terminal, o pedido do cliente 99 entrou sem erro nenhum, porque o <code>PRAGMA foreign_keys</code> estava em <code>0</code>.</p>
+<p><strong>Como consertar:</strong> rode <code>PRAGMA foreign_keys = ON;</code> logo depois de abrir o banco, em todo programa (ele vale só para aquela conexão). Para achar dados que já entraram quebrados, use <code>PRAGMA foreign_key_check;</code> (aula <a href="pragma.html">PRAGMAs Úteis</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Apagou o <code>-journal</code> depois de um travamento</strong>
+<p>Se o programa morreu depois de gravar parte da transação no banco, o diário é a única cópia de como as páginas eram. Sem ele, o SQLite não tem como desfazer, e o banco pode ficar com uma transação pela metade, ou estragado.</p>
+<p><strong>Como evitar:</strong> nunca apague nem mova os arquivos <code>-journal</code>, <code>-wal</code> e <code>-shm</code> que estão ao lado do banco. Para copiar o banco, use o <code>.backup</code> (aula <a href="dump-backup.html">Backup</a>), nunca um <code>cp</code> só do <code>.db</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>database is locked</code></strong>
+<p>É o isolamento trabalhando: outra transação está escrevendo. Veja a aula <a href="transacoes.html">Transações</a> para a demonstração com duas janelas e o <code>.timeout</code>.</p>
+</div>
+
+<hr>
+
+<h2>Nos outros bancos</h2>
+<div class="note">
+<strong>ACID no MySQL, PostgreSQL e SQL Server</strong>
+<p>Os três são bancos ACID, e as ideias desta aula valem para eles. A maior diferença está no <strong>isolamento</strong>. O SQLite é o mais rígido: as transações acontecem como se fossem uma de cada vez (o nome técnico é isolamento <em>serializable</em>, "serializável"). Os bancos com servidor deixam muitas transações escreverem ao mesmo tempo e oferecem <strong>níveis de isolamento</strong>, que trocam um pouco de proteção por velocidade:</p>
+<ul>
+  <li><strong>PostgreSQL</strong> e <strong>SQL Server</strong>: o padrão é <code>READ COMMITTED</code> ("ler o que foi confirmado"): cada comando vê o que já foi confirmado no momento em que começa. Duas leituras na mesma transação podem dar resultados diferentes, se alguém confirmar algo no meio.</li>
+  <li><strong>MySQL</strong> (com o motor InnoDB, o padrão): o padrão é <code>REPEATABLE READ</code> ("leitura repetível"): parecido com a "foto" do WAL que a contadora viu.</li>
+</ul>
+<pre class="file" data-file="isolamento.sql">-- ilustrativo: pedir o nível mais rígido numa transação (PostgreSQL, MySQL, SQL Server)
+SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+</pre>
+<p>Os níveis de isolamento são assunto para quando você trabalhar com um desses bancos. No SQLite, não há o que escolher.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>Quer dizer</th></tr>
+<tr><td>Atomicidade</td><td>A transação acontece inteira ou não acontece</td></tr>
+<tr><td>Consistência</td><td>O banco vai de um estado válido para outro; as restrições sempre valem</td></tr>
+<tr><td>Isolamento</td><td>Transações ao mesmo tempo não veem as mudanças umas das outras pela metade</td></tr>
+<tr><td>Durabilidade</td><td>Depois do <code>COMMIT</code>, os dados sobrevivem a travamentos e apagões</td></tr>
+<tr><td><code>loja.db-journal</code></td><td>O diário: cópia do que a transação está mudando, para poder desfazer</td></tr>
+<tr><td><code>loja.db-wal</code></td><td>No modo WAL: as mudanças novas, antes de irem para o banco</td></tr>
+<tr><td><code>PRAGMA foreign_keys = ON;</code></td><td>Liga a conferência das chaves estrangeiras (desligada por padrão no terminal)</td></tr>
+<tr><td><code>PRAGMA journal_mode = WAL;</code></td><td>Liga o modo WAL: leitores e escritor ao mesmo tempo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. As quatro letras</h3>
+<p>Complete a palavra de cada letra:</p>
+<div class="ex-code">A = <input data-answer="Atomicidade|atomicidade" aria-label="A"><br>C = <input data-answer="Consistência|consistência|Consistencia|consistencia" aria-label="C"><br>I = <input data-answer="Isolamento|isolamento" aria-label="I"><br>D = <input data-answer="Durabilidade|durabilidade" aria-label="D"></div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Um <code>UPDATE</code> que mexeria em 45 linhas falhou numa delas por causa de um <code>CHECK</code>. Quantas linhas mudaram?</p>
+<label><input type="radio" name="q2"> 44</label>
+<label><input type="radio" name="q2"> Nenhuma: o comando é atômico</label>
+<label><input type="radio" name="q2"> Só as que vinham antes da linha com problema</label>
+<label><input type="radio" name="q2"> 45, e a regra é ignorada</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. A Ana deu <code>BEGIN</code>, apagou todos os itens e o programa foi morto com <code>kill -9</code> antes do <code>COMMIT</code>. Que garantia faz os itens continuarem no banco?</p>
+<label><input type="radio" name="q3"> Consistência</label>
+<label><input type="radio" name="q3"> Isolamento</label>
+<label><input type="radio" name="q3"> Durabilidade</label>
+<label><input type="radio" name="q3"> Atomicidade</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. No terminal, um pedido para um cliente que não existe entrou sem erro. Por quê?</p>
+<label><input type="radio" name="q4"> Porque a conferência de chaves estrangeiras vem desligada: falta <code>PRAGMA foreign_keys = ON</code></label>
+<label><input type="radio" name="q4"> Porque o SQLite não tem chaves estrangeiras</label>
+<label><input type="radio" name="q4"> Porque faltou o <code>COMMIT</code></label>
+<label><input type="radio" name="q4"> Porque o terminal não é ACID</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No modo WAL, a contadora abriu uma transação e leu 430. O caixa gravou uma venda (428). O que a contadora lê na mesma transação?</p>
+<label><input type="radio" name="q5"> 428</label>
+<label><input type="radio" name="q5"> <code>database is locked</code></label>
+<label><input type="radio" name="q5"> 430: a transação dela continua vendo a mesma "foto"</label>
+<label><input type="radio" name="q5"> <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">6. Depois de um travamento, apareceu um arquivo <code>loja.db-journal</code> na pasta. O que a Ana deve fazer?</p>
+<label><input type="radio" name="q6"> Apagar, porque é lixo</label>
+<label><input type="radio" name="q6"> Deixar onde está: o SQLite usa esse arquivo para desfazer a transação pela metade</label>
+<label><input type="radio" name="q6"> Renomear para <code>loja.db</code></label>
+<label><input type="radio" name="q6"> Abrir com <code>sqlite3 loja.db-journal</code></label>
+</div>
+
+<h3>Missão final: tirar 30 de quem pode</h3>
+
+<div class="trysql" data-goal="contem:1|Caderno Pautado 96 folhas|90;;contem:12|Pen Drive 32GB|0">
+<p class="try-task"><strong>Missão:</strong> o <code>UPDATE</code> abaixo quebra a regra <code>qtd &gt;= 0</code> e, por ser atômico, não muda nada. Acrescente um <code>WHERE</code> para tirar 30 unidades só dos produtos que têm <strong>pelo menos 30</strong>. O caderno deve ficar com 90, e o pen drive, que tem 0, continua com 0.</p>
+<pre class="script" data-file="tirar30.sql">CREATE TABLE estoque_teste (id INTEGER PRIMARY KEY, nome TEXT,
+                            qtd INTEGER CHECK (qtd &gt;= 0));
+INSERT INTO estoque_teste SELECT id, nome, estoque FROM produtos;
+
+UPDATE estoque_teste SET qtd = qtd - 30;
+
+SELECT id, nome, qtd FROM estoque_teste WHERE id IN (1, 2, 12);
+</pre>
+<pre class="solucao" data-file="tirar30.sql">CREATE TABLE estoque_teste (id INTEGER PRIMARY KEY, nome TEXT,
+                            qtd INTEGER CHECK (qtd &gt;= 0));
+INSERT INTO estoque_teste SELECT id, nome, estoque FROM produtos;
+
+UPDATE estoque_teste SET qtd = qtd - 30 WHERE qtd &gt;= 30;
+
+SELECT id, nome, qtd FROM estoque_teste WHERE id IN (1, 2, 12);
+</pre>
+</div>
+
+<p>Com o <code>WHERE qtd &gt;= 30</code>, o <code>UPDATE</code> mexe em 31 produtos e deixa os outros 14 como estavam. A regra continua lá, protegendo o banco do próximo comando apressado.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>ACID</strong> são as quatro promessas de um banco de dados para cada transação: Atomicidade, Consistência, Isolamento e Durabilidade.</li>
+  <li><strong>Atomicidade:</strong> tudo ou nada. Vale para cada comando sozinho e para cada transação, mesmo se o programa morrer no meio (o diário <code>-journal</code> ou o <code>-wal</code> desfaz o que ficou pela metade).</li>
+  <li><strong>Consistência:</strong> as restrições da tabela sempre valem. No terminal do SQLite, ligue as chaves estrangeiras com <code>PRAGMA foreign_keys = ON</code>.</li>
+  <li><strong>Isolamento:</strong> ninguém vê uma transação pela metade; no SQLite, uma escrita por vez e, no modo WAL, cada leitura numa transação vê a mesma "foto".</li>
+  <li><strong>Durabilidade:</strong> depois do <code>COMMIT</code>, os dados estão no disco. O banco em memória do editor não é durável.</li>
+  <li>Nunca apague os arquivos <code>-journal</code>/<code>-wal</code> ao lado do banco, e faça backup: ACID não protege contra um disco quebrado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
