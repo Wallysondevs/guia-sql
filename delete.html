@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL DELETE — apagar linhas de uma tabela | Guia SQL</title>
+<meta name="description" content="DELETE em SQL para quem nunca mexeu num banco: apagar um cliente, vários produtos e um pedido inteiro na Loja Aurora, o WHERE que escolhe as linhas, as chaves estrangeiras que impedem apagar o que está em uso, DELETE × UPDATE SET NULL, o id que volta, RETURNING e os erros reais do SQLite, no editor e no terminal.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">DELETE</span></h1>
+
+<p class="intro">A Rosângela Dias pediu para sair do cadastro da Loja Aurora. Três produtos nunca venderam e vão sair do catálogo. Um pedido foi cancelado. Em todos esses casos, a Ana precisa <strong>tirar linhas</strong> de uma tabela, e o comando para isso é o <code>DELETE</code> ("apagar"). Ele é o mais simples dos comandos que mudam dados, e o mais perigoso: uma linha apagada não volta. Nesta aula você vai ver como o <code>WHERE</code> escolhe o que sai, por que o banco às vezes <strong>se recusa</strong> a apagar, e como apagar um pedido inteiro na ordem certa.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma <code>DELETE FROM tabela WHERE condição;</code> e o que cada parte faz.</li>
+  <li>Como apagar uma linha, várias linhas, ou nenhuma ("0 linhas afetadas").</li>
+  <li>Por que o SQLite responde <code>FOREIGN KEY constraint failed</code> quando você tenta apagar um cliente que tem pedidos.</li>
+  <li>Como apagar um pedido e os seus itens, na ordem certa.</li>
+  <li>A diferença entre apagar a <strong>linha</strong> (<code>DELETE</code>) e apagar um <strong>valor</strong> (<code>UPDATE … SET coluna = NULL</code>).</li>
+  <li>O que acontece com o <code>id</code> de uma linha apagada.</li>
+  <li><code>RETURNING</code>: ver exatamente o que foi apagado.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Pode apagar sem medo (aqui)</strong>
+<p>No editor do guia, <strong>cada Rodar começa do banco limpo</strong>: apague o que quiser, que no próximo Rodar está tudo de volta. Por isso os exemplos têm um <code>SELECT</code> depois do <code>DELETE</code>, na mesma caixa. No terminal, e em qualquer banco de verdade, <strong>não é assim</strong>: a seção 8 mostra.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: tirar a ficha do fichário</h2>
+<p>No fichário de papel, apagar um cliente é: <strong>achar a ficha</strong>, tirá-la da gaveta e jogá-la fora. A ficha sai inteira, com todos os campos. O <code>DELETE</code> é igual:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No fichário</th><th>No SQL</th></tr>
+<tr><td>Abrir a gaveta certa</td><td><code>DELETE FROM clientes</code></td></tr>
+<tr><td>Achar a ficha (ou as fichas) que vão sair</td><td><code>WHERE id = 30</code></td></tr>
+<tr><td>Jogar fora a ficha inteira</td><td>A linha sai com todas as colunas</td></tr>
+<tr><td>Apagar só um campo com a borracha</td><td>Não é <code>DELETE</code>: é <code>UPDATE … SET campo = NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O primeiro DELETE</h2>
+<p>A cliente 30, Rosângela Dias, pediu para sair do cadastro. Ela nunca fez um pedido.</p>
+
+<pre class="file" data-file="rosangela.sql" data-resultado>DELETE FROM clientes
+WHERE id = 30;
+
+SELECT id, nome FROM clientes WHERE id &gt; 26;
+</pre>
+
+<dl class="anatomy">
+  <dt>DELETE FROM</dt><dd>"Apagar de": vão sair linhas de uma tabela. O <code>FROM</code> é obrigatório no SQLite.</dd>
+  <dt>clientes</dt><dd>A tabela de onde as linhas saem.</dd>
+  <dt>WHERE id = 30</dt><dd>Quais linhas saem: só a do cliente 30. É o mesmo <code>WHERE</code> do <code>SELECT</code> e do <code>UPDATE</code>, com todas as condições que você já conhece.</dd>
+  <dt>;</dt><dd>Fim do comando. O <code>SELECT</code> depois é só para conferir.</dd>
+</dl>
+
+<p>O quadro mostra "1 linha afetada", e a lista termina no 29. Repare que o <code>DELETE</code> não tem lista de colunas: ele não apaga "o nome" ou "o email", apaga <strong>a linha inteira</strong>. Como no <code>UPDATE</code>, prefira escolher a linha pela <strong>chave primária</strong> (<code>id</code>): ela é única, então sai exatamente uma linha.</p>
+
+<div class="trysql" data-goal="mudou:clientes=29">
+<p class="try-task"><strong>Experimente:</strong> o cliente 29, Elias Furtado, também pediu para sair (ele nunca comprou). Escreva o <code>DELETE</code> antes do <code>SELECT</code> e rode.</p>
+<pre class="script" data-file="elias.sql">SELECT id, nome FROM clientes WHERE id &gt; 26;
+</pre>
+<pre class="solucao" data-file="elias.sql">DELETE FROM clientes
+WHERE id = 29;
+
+SELECT id, nome FROM clientes WHERE id &gt; 26;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Várias linhas de uma vez</h2>
+<p>Os produtos 43, 44 e 45 (o vaso, a tesoura de poda e as luvas de jardinagem) nunca foram vendidos e vão sair do catálogo. Um <code>DELETE</code> só, com <code>IN</code> (aula <a href="in.html">IN</a>):</p>
+
+<pre class="file" data-file="nunca-vendidos.sql" data-resultado>DELETE FROM produtos
+WHERE id IN (43, 44, 45);
+
+SELECT id, nome FROM produtos WHERE id &gt; 40;
+</pre>
+
+<p>"3 linhas afetadas". O <code>DELETE</code> apaga <strong>todas</strong> as linhas que passam no <code>WHERE</code>, seja uma ou mil. Por isso, antes de um <code>DELETE</code> com uma condição mais larga que um <code>id</code>, faça o <strong>ensaio</strong>: rode um <code>SELECT</code> com o mesmo <code>WHERE</code> e veja quem vai sair.</p>
+
+<pre class="file" data-file="ensaio.sql" data-resultado>SELECT id, nome
+FROM clientes
+WHERE id BETWEEN 27 AND 30;
+</pre>
+
+<p>São os quatro clientes que nunca pediram. Se a lista estiver certa, troque <code>SELECT id, nome</code> por <code>DELETE</code> e mantenha o resto igual. A aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a> mostra esse ensaio em detalhe.</p>
+
+<hr>
+
+<h2>3. Quando o banco se recusa a apagar</h2>
+<p>A Ana tenta apagar o cliente 1, José Ribamar Silva:</p>
+
+<pre class="file" data-file="cliente-com-pedidos.sql" data-resultado data-erro>DELETE FROM clientes
+WHERE id = 1;
+</pre>
+
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code> ("a restrição de chave estrangeira falhou"). O José tem pedidos: na tabela <code>pedidos</code>, a coluna <code>cliente_id</code> aponta para ele (é uma chave estrangeira, aula <a href="foreign-key.html">FOREIGN KEY</a>). Se ele sumisse, esses pedidos ficariam apontando para um cliente que não existe. O banco protege os dados e recusa o <code>DELETE</code>; nada é apagado.</p>
+
+<pre class="file" data-file="pedidos-do-jose.sql" data-resultado>SELECT id, cliente_id, data
+FROM pedidos
+WHERE cliente_id = 1;
+</pre>
+
+<p>A mesma proteção vale para tudo o que está em uso na Aurora: uma categoria com produtos (<code>DELETE FROM categorias WHERE id = 8</code> também dá <code>FOREIGN KEY constraint failed</code>), um produto que já foi vendido, um funcionário que atendeu pedidos. Na vida real, um cliente com histórico raramente é apagado: o comum é marcá-lo como inativo com um <a href="update.html">UPDATE</a>, e o histórico de vendas continua completo.</p>
+
+<hr>
+
+<h2>4. Apagar um pedido inteiro: a ordem importa</h2>
+<p>O pedido 90 foi cancelado. Ele tem duas linhas em <code>itens_pedido</code>, que apontam para ele:</p>
+
+<pre class="file" data-file="itens-90.sql" data-resultado>SELECT *
+FROM itens_pedido
+WHERE pedido_id = 90;
+</pre>
+
+<p>Se a Ana tentar apagar o pedido primeiro, é a mesma recusa da seção anterior: os itens ainda apontam para ele.</p>
+
+<pre class="file" data-file="pedido-primeiro.sql" data-resultado data-erro>DELETE FROM pedidos
+WHERE id = 90;
+</pre>
+
+<p>A ordem certa é a <strong>contrária</strong> da do cadastro: no <a href="insert-varios.html">INSERT</a>, primeiro o pedido, depois os itens; no <code>DELETE</code>, primeiro os itens, depois o pedido.</p>
+
+<pre class="file" data-file="cancelar-90.sql" data-resultado>DELETE FROM itens_pedido
+WHERE pedido_id = 90;
+
+DELETE FROM pedidos
+WHERE id = 90;
+
+SELECT id, data FROM pedidos WHERE id &gt; 87;
+</pre>
+
+<ol class="passo">
+  <li>O primeiro <code>DELETE</code> tira os 2 itens do pedido 90. Repare no <code>WHERE pedido_id = 90</code>: na tabela de itens, quem identifica o pedido é a coluna <code>pedido_id</code>.</li>
+  <li>Agora nada aponta para o pedido 90, e o segundo <code>DELETE</code> o apaga.</li>
+  <li>O <code>SELECT</code> mostra que a lista agora termina no 89.</li>
+</ol>
+
+<p>Esses dois comandos precisam dar certo <strong>juntos</strong>: um pedido sem itens, ou itens sem pedido, deixam o banco pela metade. Num sistema de verdade, eles iriam dentro de uma <strong>transação</strong>, que garante o "tudo ou nada" entre vários comandos (aula <a href="transacoes.html">Transações (BEGIN e COMMIT)</a>). Também dá para pedir ao banco que apague os itens sozinho quando o pedido sair, com <code>ON DELETE CASCADE</code>, assunto da aula <a href="foreign-key.html">FOREIGN KEY</a>.</p>
+
+<hr>
+
+<h2>5. DELETE apaga a linha; UPDATE apaga um valor</h2>
+<p>Uma confusão comum: querer "apagar o email" com <code>DELETE</code>.</p>
+
+<pre class="file" data-file="delete-coluna.sql" data-resultado data-erro>DELETE email FROM clientes
+WHERE id = 7;
+</pre>
+
+<p><strong>A mensagem:</strong> <code>near "email": syntax error</code>. O <code>DELETE</code> não aceita coluna: ele só sabe tirar linhas inteiras. Para apagar <strong>o valor</strong> de uma coluna e manter o cliente, use <code>UPDATE</code>:</p>
+
+<pre class="file" data-file="update-null.sql" data-resultado>UPDATE clientes
+SET email = NULL
+WHERE id = 6;
+
+SELECT id, nome, email FROM clientes WHERE id = 6;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Comando</th><th>Depois</th></tr>
+<tr><td>Tirar o cliente do cadastro</td><td><code>DELETE FROM clientes WHERE id = 6;</code></td><td>A linha não existe mais</td></tr>
+<tr><td>Apagar só o email</td><td><code>UPDATE clientes SET email = NULL WHERE id = 6;</code></td><td>O cliente continua, com email em branco</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>6. "0 linhas afetadas" e o id que volta</h2>
+<p>Como no <code>UPDATE</code>, um <code>DELETE</code> que não acha nada não é erro:</p>
+
+<pre class="file" data-file="ninguem.sql" data-resultado>DELETE FROM clientes
+WHERE nome = 'Rosangela Dias';
+</pre>
+
+<p>"0 linhas afetadas". A Ana escreveu "Rosangela" sem o acento; no banco, o nome é <code>'Rosângela Dias'</code>, e para o SQLite são textos diferentes. É mais um motivo para apagar pelo <code>id</code>, e para <strong>ler a contagem</strong> depois de todo <code>DELETE</code>.</p>
+
+<p>E o número de uma linha apagada, fica vago para sempre? Veja o que acontece quando a Ana apaga o cliente 30 (o último) e cadastra outro logo depois:</p>
+
+<pre class="file" data-file="id-volta.sql" data-resultado>DELETE FROM clientes WHERE id = 30;
+
+INSERT INTO clientes (nome) VALUES ('Lívia Rocha');
+
+SELECT id, nome FROM clientes WHERE id &gt; 27;
+</pre>
+
+<p>A Lívia ganhou o <strong>30</strong>, o número da Rosângela. Lembra da regra do <a href="insert.html">INSERT</a>? O <code>id</code> novo é "o maior que existe, mais 1"; depois do <code>DELETE</code>, o maior era 29. Se a linha apagada não for a última, o buraco fica: apagando o 28, o próximo cliente ganha o 31. Isso pode confundir um sistema que guardou o número antigo em algum lugar. Quando o número nunca pode ser reaproveitado, a tabela é criada com <code>AUTOINCREMENT</code> (aula <a href="auto-increment.html">AUTOINCREMENT</a>).</p>
+
+<hr>
+
+<h2>7. RETURNING: ver o que foi apagado</h2>
+<p>Com <code>RETURNING</code> no fim, o <code>DELETE</code> devolve as linhas que acabou de apagar. É um registro do que saiu, e um jeito de conferir na hora:</p>
+
+<pre class="file" data-file="returning.sql" data-resultado>DELETE FROM clientes
+WHERE id BETWEEN 27 AND 30
+RETURNING id, nome;
+</pre>
+
+<p>Os quatro clientes que saíram. Se aparecesse alguém inesperado, você saberia na hora, e a aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a> mostra como juntar isso com uma transação para ainda poder voltar atrás.</p>
+
+<div class="warning">
+<strong>E se esquecer o WHERE?</strong>
+<p><code>DELETE FROM clientes;</code>, sem <code>WHERE</code>, tenta apagar <strong>todos</strong> os clientes. Na Aurora, as chaves estrangeiras barram (quase todos têm pedidos), mas numa tabela sem essa proteção, todas as linhas vão embora, sem pergunta nenhuma. É tão importante que tem aula própria: <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>. Quando o objetivo é mesmo esvaziar a tabela, veja <a href="esvaziar-tabela.html">Esvaziar uma Tabela</a>.</p>
+</div>
+
+<hr>
+
+<h2>8. No terminal, o DELETE é para valer</h2>
+<p>No terminal não existe "Rodar de novo": a linha apagada sai do arquivo <code>loja.db</code>. E tem um detalhe perigoso, que você já viu no <a href="insert.html">INSERT</a>: no programa <code>sqlite3</code>, a verificação das chaves estrangeiras <strong>começa desligada</strong>. Aquele <code>DELETE</code> do cliente 1, que o editor recusou, no terminal passa:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> DELETE FROM clientes WHERE id = 1;
+sqlite> SELECT id, cliente_id, data FROM pedidos WHERE cliente_id = 1;
+1|1|2024-01-05
+27|1|2024-10-29
+53|1|2025-09-03
+79|1|2026-06-29              « 4 pedidos de um cliente que não existe mais
+sqlite> PRAGMA foreign_key_check;
+pedidos|1|clientes|1
+pedidos|27|clientes|1
+pedidos|53|clientes|1
+pedidos|79|clientes|1
+sqlite> PRAGMA foreign_keys = ON;
+sqlite> DELETE FROM clientes WHERE id = 2;
+Runtime error: FOREIGN KEY constraint failed (19)
+sqlite> .quit</pre>
+
+<ol class="passo">
+  <li>O <code>DELETE</code> do cliente 1 não deu erro: com a verificação desligada, o SQLite não olhou para os pedidos.</li>
+  <li>Os quatro pedidos do José ficaram "órfãos": apontam para o cliente 1, que sumiu.</li>
+  <li><code>PRAGMA foreign_key_check;</code> procura essas ligações quebradas: cada linha diz a tabela (<code>pedidos</code>), o número da linha órfã, a tabela para onde ela devia apontar (<code>clientes</code>) e, no fim, qual das chaves estrangeiras da tabela quebrou.</li>
+  <li>Depois de <code>PRAGMA foreign_keys = ON;</code>, a proteção volta, e o cliente 2 não pode ser apagado.</li>
+</ol>
+
+<p>Moral: no terminal, comece com <code>PRAGMA foreign_keys = ON;</code>, e faça um <a href="dump-backup.html">backup</a> antes de apagar qualquer coisa importante.</p>
+
+<hr>
+
+<h2>Formas diferentes de tirar dados</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Escreva</th></tr>
+<tr><td>Apagar uma linha</td><td><code>DELETE FROM t WHERE id = 30;</code></td></tr>
+<tr><td>Apagar um grupo de linhas</td><td><code>WHERE id IN (43, 44, 45)</code>, <code>WHERE id BETWEEN 27 AND 30</code>…</td></tr>
+<tr><td>Conferir antes</td><td><code>SELECT … WHERE</code> com o mesmo <code>WHERE</code></td></tr>
+<tr><td>Ver o que saiu</td><td><code>… RETURNING colunas;</code></td></tr>
+<tr><td>Apagar só um valor</td><td><code>UPDATE t SET coluna = NULL WHERE …;</code></td></tr>
+<tr><td>"Desativar" sem perder o histórico</td><td>Uma coluna como <code>descontinuado</code> e um <code>UPDATE</code></td></tr>
+<tr><td>Apagar o pai e os filhos</td><td>Filhos primeiro (itens), depois o pai (pedido); ou <code>ON DELETE CASCADE</code></td></tr>
+<tr><td>Poder desfazer</td><td>Uma transação: aula <a href="transacoes.html">Transações</a></td></tr>
+<tr><td>Esvaziar a tabela inteira</td><td>Aula <a href="esvaziar-tabela.html">Esvaziar uma Tabela</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Apagou algo que está em uso</strong>
+<pre class="file" data-file="categoria-em-uso.sql" data-resultado data-erro>DELETE FROM categorias
+WHERE id = 8;
+</pre>
+<p><strong>A mensagem:</strong> <code>FOREIGN KEY constraint failed</code>. A categoria 8 (Jardim) tem produtos. A mensagem não diz <strong>quem</strong> está usando a linha; procure com um <code>SELECT</code> nas tabelas que apontam para ela (aqui, <code>SELECT * FROM produtos WHERE categoria_id = 8</code>).</p>
+<p><strong>Como consertar:</strong> apague (ou mude) primeiro as linhas que apontam para ela, ou desista de apagar e marque como inativa.</p>
+</div>
+
+<div class="cenario">
+<strong>Escreveu como num SELECT</strong>
+<pre class="file" data-file="delete-asterisco.sql" data-resultado data-erro>DELETE * FROM clientes
+WHERE id = 30;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "*": syntax error</code>. O <code>DELETE</code> não tem lista de colunas, nem <code>*</code>: a linha sai inteira sempre. Do mesmo jeito, <code>DELETE email FROM …</code> dá <code>near "email": syntax error</code>.</p>
+<p><strong>Como consertar:</strong> <code>DELETE FROM clientes WHERE id = 30;</code></p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o FROM</strong>
+<pre class="file" data-file="sem-from.sql" data-resultado data-erro>DELETE clientes
+WHERE id = 30;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "clientes": syntax error</code>. No SQLite, o <code>FROM</code> do <code>DELETE</code> é obrigatório. (No SQL Server ele é opcional, por isso você pode ver <code>DELETE tabela WHERE …</code> em exemplos de lá.)</p>
+</div>
+
+<div class="cenario">
+<strong>Tabela com o nome errado</strong>
+<pre class="file" data-file="tabela.sql" data-resultado data-erro>DELETE FROM cliente
+WHERE id = 30;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such table: cliente</code>. A tabela é <code>clientes</code>, no plural.</p>
+</div>
+
+<div class="cenario">
+<strong>Vários ids com vírgula solta</strong>
+<pre class="file" data-file="virgula.sql" data-resultado data-erro>DELETE FROM produtos
+WHERE id = 43, 44, 45;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ",": syntax error</code>. O <code>=</code> compara com um valor só.</p>
+<p><strong>Como consertar:</strong> <code>WHERE id IN (43, 44, 45)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O WHERE não achou ninguém</strong>
+<pre class="file" data-file="null.sql" data-resultado>DELETE FROM pedidos
+WHERE entregue_em = NULL;
+</pre>
+<p><strong>O que acontece:</strong> "0 linhas afetadas", sem erro, embora haja 5 pedidos sem entrega. É o <code>= NULL</code> de novo (aula <a href="null.html">O Valor NULL</a>). Aqui o engano até "salvou" os pedidos; com <code>IS NULL</code>, o SQLite tentaria apagá-los e as chaves estrangeiras dos itens barrariam.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>DELETE FROM tabela WHERE condição</code> é do SQL padrão e funciona igual no MySQL, no PostgreSQL e no SQL Server. Diferenças que valem saber:</p>
+<ul>
+  <li>No <strong>SQL Server</strong>, o <code>FROM</code> é opcional (<code>DELETE clientes WHERE …</code>), e o equivalente ao <code>RETURNING</code> é <code>OUTPUT DELETED.*</code>. Trecho só ilustrativo:
+<pre class="file" data-file="sql server (ilustrativo)">DELETE clientes
+OUTPUT DELETED.*
+WHERE id = 30;
+</pre></li>
+  <li>O <strong>PostgreSQL</strong> também tem <code>RETURNING</code> no <code>DELETE</code>.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>DELETE FROM t WHERE id = 30;</code></td><td>Apaga a linha 30</td></tr>
+<tr><td><code>DELETE FROM t WHERE id IN (43, 44, 45);</code></td><td>Apaga três linhas</td></tr>
+<tr><td><code>DELETE FROM t WHERE … RETURNING …;</code></td><td>Apaga e devolve as linhas apagadas</td></tr>
+<tr><td><code>DELETE FROM t;</code></td><td>Apaga <strong>todas</strong> as linhas (cuidado!)</td></tr>
+<tr><td><code>UPDATE t SET c = NULL WHERE …;</code></td><td>Apaga só um valor; a linha fica</td></tr>
+<tr><td><code>PRAGMA foreign_keys = ON;</code></td><td>Liga a proteção das chaves estrangeiras no terminal</td></tr>
+<tr><td><code>PRAGMA foreign_key_check;</code></td><td>Lista as ligações quebradas</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Outra tabela aponta para a linha; apague os "filhos" antes</td></tr>
+<tr><td><code>near "*": syntax error</code> / <code>near "email": syntax error</code></td><td><code>DELETE</code> não tem lista de colunas</td></tr>
+<tr><td><code>near "clientes": syntax error</code></td><td>Faltou o <code>FROM</code></td></tr>
+<tr><td><code>no such table: cliente</code></td><td>Nome da tabela errado</td></tr>
+<tr><td>"0 linhas afetadas"</td><td>Nenhuma linha passou no <code>WHERE</code> (acento, <code>= NULL</code>, id errado)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<div class="ex-code"><input data-answer="DELETE|delete" aria-label="primeira palavra"> <input data-answer="FROM|from" aria-label="segunda palavra"> produtos <input data-answer="WHERE|where" aria-label="terceira palavra"> id = 45;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Por que <code>DELETE FROM clientes WHERE id = 1;</code> dá <code>FOREIGN KEY constraint failed</code> no editor?</p>
+<label><input type="radio" name="q2"> Porque o cliente 1 não existe</label>
+<label><input type="radio" name="q2"> Porque o cliente 1 tem pedidos que apontam para ele</label>
+<label><input type="radio" name="q2"> Porque o <code>id</code> não pode ser usado no <code>WHERE</code></label>
+<label><input type="radio" name="q2"> Porque faltou o <code>RETURNING</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana quer apagar só o email do cliente 6, sem tirá-lo do cadastro. Qual comando?</p>
+<label><input type="radio" name="q3"> <code>DELETE email FROM clientes WHERE id = 6;</code></label>
+<label><input type="radio" name="q3"> <code>DELETE FROM clientes WHERE id = 6;</code></label>
+<label><input type="radio" name="q3"> <code>UPDATE clientes SET email = NULL WHERE id = 6;</code></label>
+<label><input type="radio" name="q3"> <code>DELETE FROM clientes.email WHERE id = 6;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Para cancelar o pedido 90, em que ordem a Ana deve apagar?</p>
+<label><input type="radio" name="q4"> Primeiro os itens (<code>itens_pedido</code>), depois o pedido</label>
+<label><input type="radio" name="q4"> Primeiro o pedido, depois os itens</label>
+<label><input type="radio" name="q4"> Tanto faz</label>
+<label><input type="radio" name="q4"> Só o pedido: os itens somem sozinhos</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana apagou o cliente 30 (o último) e cadastrou um cliente novo logo depois. Que <code>id</code> ele ganhou?</p>
+<label><input type="radio" name="q5"> 31, porque o 30 fica reservado para sempre</label>
+<label><input type="radio" name="q5"> 1</label>
+<label><input type="radio" name="q5"> Dá erro, porque o 30 foi apagado</label>
+<label><input type="radio" name="q5"> 30, porque o maior que existia era o 29</label>
+</div>
+
+<h3>Missão final: cancelar o pedido 89</h3>
+
+<div class="trysql" data-goal="mudou:pedidos=89;;mudou:itens_pedido=218">
+<p class="try-task"><strong>Missão:</strong> o pedido 89 foi cancelado e precisa sair do banco, com os seus itens. A tentativa abaixo dá erro. Leia a mensagem e escreva os comandos na ordem certa. No fim, a tabela <code>pedidos</code> deve ficar com 89 linhas e a <code>itens_pedido</code>, com 218.</p>
+<pre class="script" data-file="cancelar-89.sql">DELETE FROM pedidos
+WHERE id = 89;
+
+SELECT id, data FROM pedidos WHERE id &gt; 86;
+</pre>
+<pre class="solucao" data-file="cancelar-89.sql">DELETE FROM itens_pedido
+WHERE pedido_id = 89;
+
+DELETE FROM pedidos
+WHERE id = 89;
+
+SELECT id, data FROM pedidos WHERE id &gt; 86;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>DELETE FROM tabela WHERE condição;</code> apaga as linhas que passam no <code>WHERE</code>, inteiras. Não tem lista de colunas.</li>
+  <li>Apague pela chave primária quando for uma linha só; para um grupo, faça antes o ensaio com <code>SELECT</code> e o mesmo <code>WHERE</code>.</li>
+  <li><code>FOREIGN KEY constraint failed</code>: outra tabela aponta para a linha. Apague primeiro os "filhos" (itens), depois o "pai" (pedido).</li>
+  <li>Para apagar só um valor, use <code>UPDATE … SET coluna = NULL</code>.</li>
+  <li>"0 linhas afetadas" não é erro. Leia sempre a contagem. <code>RETURNING</code> mostra o que saiu.</li>
+  <li>Sem <code>AUTOINCREMENT</code>, o <code>id</code> do último cliente apagado pode ser reaproveitado.</li>
+  <li>No terminal, o <code>DELETE</code> é definitivo e as chaves estrangeiras começam desligadas: use <code>PRAGMA foreign_keys = ON;</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
