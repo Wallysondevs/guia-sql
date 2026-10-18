@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL JSON — montar, ler e desmontar JSON no banco | Guia SQL</title>
+<meta name="description" content="JSON no SQL para quem está começando: json_object e json_array para montar, json_extract e os operadores -> e ->> para ler, json_each para virar linhas, json_group_array para juntar, o JSON completo de um pedido com seus itens e as mensagens reais de erro do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">JSON</span></h1>
+
+<p class="intro">A Loja Aurora vai ganhar um aplicativo de celular. O programador do aplicativo pediu à Ana: "me mande os pedidos em <strong>JSON</strong>". JSON é o formato de texto que quase todo aplicativo e site usa para trocar dados. Nesta aula você vai fazer o próprio banco <strong>montar</strong> esse texto, <strong>ler</strong> um JSON guardado numa coluna e <strong>desmontar</strong> uma lista JSON em linhas de tabela. No fim, você monta o JSON completo de um pedido, com todos os seus itens, numa consulta só.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é JSON: objetos <code>{…}</code>, listas <code>[…]</code> e valores.</li>
+  <li>Montar JSON com <code>json_object()</code> e <code>json_array()</code>.</li>
+  <li>Ler um pedaço de um JSON com <code>json_extract()</code> e com os operadores <code>-&gt;</code> e <code>-&gt;&gt;</code>, e a diferença entre os dois.</li>
+  <li>Guardar JSON numa coluna e garantir que ele é válido com <code>json_valid()</code>.</li>
+  <li>Transformar uma lista JSON em linhas com <code>json_each()</code>.</li>
+  <li>Juntar várias linhas numa lista JSON com <code>json_group_array()</code> e <code>json_group_object()</code>.</li>
+  <li>Montar o JSON de um pedido com seus itens, e as mensagens reais de erro do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam <strong>de verdade</strong> no seu navegador, no SQLite 3.50 com o banco da Loja Aurora (aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a>). As funções de JSON já vêm prontas no SQLite desde a versão 3.38: não é preciso instalar nada.</p>
+
+<hr>
+
+<h2>A ideia: uma ficha que viaja</h2>
+<p>Uma linha de tabela só faz sentido junto do cabeçalho: o valor <code>12.35</code> sozinho não diz nada; é a coluna <code>preco</code> que dá o sentido. Quando o dado sai do banco e vai para um aplicativo, ele precisa levar o "cabeçalho" junto. É como trocar a planilha por uma <strong>ficha preenchida</strong>, em que cada valor vem com o nome do campo ao lado:</p>
+
+<pre class="file" data-file="produto.json">{"id":1,"nome":"Caderno Pautado 96 folhas","preco":12.35}
+</pre>
+
+<p>Isso é JSON (de <em>JavaScript Object Notation</em>, "notação de objetos do JavaScript"; pronuncia-se "jêison"). Apesar do nome, qualquer linguagem lê JSON. Ele tem só três peças:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Peça</th><th>Escrita</th><th>Comparação</th><th>Exemplo</th></tr>
+<tr><td><strong>Objeto</strong></td><td>entre chaves <code>{ }</code>, pares <code>"nome": valor</code> separados por vírgula</td><td>uma ficha com campos</td><td><code>{"nome":"Ana","vip":1}</code></td></tr>
+<tr><td><strong>Lista</strong> (<em>array</em>)</td><td>entre colchetes <code>[ ]</code>, valores separados por vírgula</td><td>uma lista de compras</td><td><code>["livros","jardim"]</code></td></tr>
+<tr><td><strong>Valor</strong></td><td>texto entre aspas <strong>duplas</strong>, número, <code>true</code>, <code>false</code>, <code>null</code>, ou outro objeto/lista</td><td>o que vai escrito no campo</td><td><code>"Teresina"</code>, <code>4.9</code>, <code>null</code></td></tr>
+</table>
+</div>
+
+<p>Para o SQLite, um JSON é só um <strong>texto</strong> (tipo <code>TEXT</code>). O que as funções desta aula fazem é escrever esse texto sem erro (com as aspas e vírgulas no lugar) e saber andar dentro dele.</p>
+
+<div class="tip">
+<strong>Aspas duplas no JSON, aspas simples no SQL</strong>
+<p>Dentro do JSON, texto vai entre aspas <strong>duplas</strong>: <code>"Ana"</code>. No SQL, texto vai entre aspas <strong>simples</strong>: <code>'Ana'</code>. Por isso um JSON escrito dentro de um comando SQL fica assim: <code>'{"nome":"Ana"}'</code>, aspas simples por fora (é um texto do SQL) e duplas por dentro (é o JSON).</p>
+</div>
+
+<hr>
+
+<h2>1. Montando um objeto: <code>json_object()</code></h2>
+<p>Primeiro, três produtos do jeito de sempre, em tabela:</p>
+
+<pre class="file" data-file="produtos.sql" data-resultado>SELECT id, nome, preco
+FROM produtos
+WHERE id &lt;= 3;
+</pre>
+
+<p>Agora os mesmos três, cada um virando uma ficha JSON:</p>
+
+<pre class="file" data-file="produtos-json.sql" data-resultado>SELECT json_object('id', id, 'nome', nome, 'preco', preco) AS produto
+FROM produtos
+WHERE id &lt;= 3;
+</pre>
+
+<dl class="anatomy">
+  <dt>json_object(</dt><dd>"objeto JSON": monta um objeto <code>{…}</code>. Os argumentos vêm <strong>em pares</strong>: nome do campo, valor do campo, nome, valor…</dd>
+  <dt>'id', id</dt><dd>O primeiro par. <code>'id'</code> (com aspas simples) é o <strong>nome</strong> que o campo vai ter no JSON; <code>id</code> (sem aspas) é a <strong>coluna</strong> de onde vem o valor.</dd>
+  <dt>'nome', nome</dt><dd>Segundo par. O SQLite põe as aspas duplas em volta do texto sozinho.</dd>
+  <dt>'preco', preco</dt><dd>Terceiro par. Número vai sem aspas no JSON: <code>12.35</code>.</dd>
+  <dt>AS produto</dt><dd>O apelido da coluna (aula <a href="aliases.html">Apelidos (AS)</a>). O resultado é uma coluna só, com um texto JSON por linha.</dd>
+</dl>
+
+<p>O nome do campo no JSON não precisa ser igual ao da coluna: <code>json_object('valor', preco)</code> gera <code>{"valor":12.35}</code>. Quem escolhe é você (ou o programador do aplicativo, que vai ler o JSON).</p>
+
+<p>E o <code>NULL</code>? Ele vira o <code>null</code> do JSON. O cliente 7 não tem email (é um dos casos do banco):</p>
+
+<pre class="file" data-file="null.sql" data-resultado>SELECT json_object('nome', nome, 'email', email, 'vip', vip) AS cliente
+FROM clientes
+WHERE id IN (1, 7);
+</pre>
+
+<p>Repare também no <code>"vip":1</code>: no banco da Aurora o VIP é guardado como 0 ou 1, e é esse número que vai para o JSON. O SQLite não tem um tipo "verdadeiro/falso" (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>), então ele não adivinha que você queria <code>true</code>.</p>
+
+<div class="trysql" data-goal="linhas:5;;contem:{&quot;nome&quot;:&quot;José Ribamar Silva&quot;,&quot;cidade&quot;:&quot;Teresina&quot;}">
+<p class="try-task"><strong>Missão:</strong> o aplicativo quer a lista dos clientes VIP, cada um como uma ficha JSON com dois campos: <code>nome</code> e <code>cidade</code>, nessa ordem. Troque as duas colunas soltas por um <code>json_object()</code>.</p>
+<pre class="script" data-file="vips.sql">SELECT nome, cidade
+FROM clientes
+WHERE vip = 1;
+</pre>
+<pre class="solucao" data-file="vips.sql">SELECT json_object('nome', nome, 'cidade', cidade) AS cliente
+FROM clientes
+WHERE vip = 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Montando uma lista: <code>json_array()</code></h2>
+<p>O <code>json_array()</code> ("lista JSON") junta os valores que você passar, na ordem, entre colchetes:</p>
+
+<pre class="file" data-file="lista.sql" data-resultado>SELECT json_array('Teresina', 'Fortaleza', 42, 4.9, NULL) AS lista;
+</pre>
+
+<p>Os textos ganharam aspas duplas, os números ficaram sem aspas e o <code>NULL</code> virou <code>null</code>. Uma lista pode ter valores de tipos diferentes misturados.</p>
+
+<h3>Um dentro do outro</h3>
+<p>O valor de um campo pode ser outra lista (ou outro objeto). Basta colocar uma função dentro da outra:</p>
+
+<pre class="file" data-file="aninhado.sql" data-resultado>SELECT json_object('nome', 'Ana', 'gosta', json_array('livros', 'jardim')) AS ficha;
+</pre>
+
+<p>O <code>json_object()</code> percebeu que o valor de <code>gosta</code> já era JSON (veio de uma função de JSON) e o encaixou como lista. Guarde isso: em <a href="#errado">Quando dá errado</a> você vai ver o que acontece quando o valor é um texto que só <strong>parece</strong> JSON.</p>
+
+<hr>
+
+<h2>3. Lendo um pedaço: <code>json_extract()</code></h2>
+<p>Agora o caminho contrário: você tem um JSON e quer um valor lá de dentro. Para isso, diga o <strong>caminho</strong> (<em>path</em>) até ele:</p>
+
+<pre class="file" data-file="extrair.sql" data-resultado>SELECT json_extract('{"nome":"Ana","cidade":"Teresina","gosta":["livros","jardim"]}', '$.cidade') AS cidade;
+</pre>
+
+<dl class="anatomy">
+  <dt>json_extract(</dt><dd>"extrair do JSON". Recebe o JSON e o caminho, e devolve o valor que estiver lá.</dd>
+  <dt>'{"nome":"Ana",…}'</dt><dd>O JSON, como texto do SQL (aspas simples por fora).</dd>
+  <dt>'$.cidade'</dt><dd>O caminho. O <code>$</code> é "o JSON inteiro"; <code>.cidade</code> é "o campo <code>cidade</code> dele". Leia como "do JSON, pegue a cidade".</dd>
+</dl>
+
+<p>Os caminhos podem descer quantos níveis precisar. Numa lista, a posição vai entre colchetes, e a contagem <strong>começa do zero</strong>:</p>
+
+<pre class="file" data-file="caminhos.sql" data-resultado>SELECT
+  json_extract('{"nome":"Ana","gosta":["livros","jardim"]}', '$.gosta')       AS lista,
+  json_extract('{"nome":"Ana","gosta":["livros","jardim"]}', '$.gosta[0]')    AS primeiro,
+  json_extract('{"nome":"Ana","gosta":["livros","jardim"]}', '$.gosta[#-1]')  AS ultimo,
+  json_extract('{"nome":"Ana","gosta":["livros","jardim"]}', '$.idade')       AS idade;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Caminho</th><th>Quer dizer</th><th>Aqui deu</th></tr>
+<tr><td><code>$</code></td><td>o JSON inteiro</td><td>o próprio JSON</td></tr>
+<tr><td><code>$.gosta</code></td><td>o campo <code>gosta</code></td><td>a lista <code>["livros","jardim"]</code></td></tr>
+<tr><td><code>$.gosta[0]</code></td><td>o primeiro item da lista (posição 0)</td><td><code>livros</code></td></tr>
+<tr><td><code>$.gosta[#-1]</code></td><td>o último item (<code>#</code> é o tamanho da lista; <code>#-1</code>, a última posição)</td><td><code>jardim</code></td></tr>
+<tr><td><code>$.idade</code></td><td>um campo que não existe</td><td><code>NULL</code>, sem erro</td></tr>
+<tr><td><code>$.a.b</code></td><td>o campo <code>b</code> de dentro do objeto <code>a</code></td><td>(desce um nível)</td></tr>
+</table>
+</div>
+
+<p>Repare na última coluna do resultado: pedir um campo que não existe <strong>não é erro</strong>, dá <code>NULL</code>. Isso é bom (um cliente sem <code>idade</code> não derruba a consulta) e é perigoso (um nome de campo digitado errado também dá <code>NULL</code> calado).</p>
+
+<hr>
+
+<h2>4. Os atalhos <code>-&gt;</code> e <code>-&gt;&gt;</code></h2>
+<p>Escrever <code>json_extract(…)</code> o tempo todo cansa. O SQLite tem dois operadores que fazem quase a mesma coisa, com uma setinha: <code>-&gt;</code> (uma seta) e <code>-&gt;&gt;</code> (seta dupla). A diferença entre eles é <strong>o que volta</strong>:</p>
+
+<pre class="file" data-file="setas.sql" data-resultado>SELECT
+  '{"nome":"Ana"}' -&gt; '$.nome'   AS seta,
+  '{"nome":"Ana"}' -&gt;&gt; '$.nome'  AS seta_dupla,
+  '{"nome":"Ana"}' -&gt;&gt; 'nome'    AS sem_cifrao;
+</pre>
+
+<dl class="anatomy">
+  <dt>-&gt;</dt><dd>Devolve o pedaço <strong>como JSON</strong>. Um texto no JSON tem aspas duplas, então volta <code>"Ana"</code>, com as aspas. Serve para quando o resultado vai continuar sendo JSON (para encaixar em outro JSON, por exemplo).</dd>
+  <dt>-&gt;&gt;</dt><dd>Devolve o pedaço <strong>como valor do SQL</strong>: o texto <code>Ana</code>, sem aspas; um número vira número de verdade. É o que você quer para comparar, somar, ordenar.</dd>
+  <dt>'nome' (sem <code>$.</code>)</dt><dd>Atalho dos atalhos: com as setas, um nome simples vale como <code>'$.nome'</code>, e um número como <code>2</code> vale como <code>'$[2]'</code>. (No <code>json_extract()</code> isso <strong>não</strong> vale; lá o <code>$</code> é obrigatório.)</dd>
+</dl>
+
+<p>O tipo do que volta mostra a diferença sem sombra de dúvida. A função <code>typeof()</code> diz o tipo de um valor:</p>
+
+<pre class="file" data-file="tipos.sql" data-resultado>SELECT
+  typeof(json_extract('{"n":5}', '$.n')) AS com_extract,
+  typeof('{"n":5}' -&gt; '$.n')             AS com_seta,
+  typeof('{"n":5}' -&gt;&gt; '$.n')            AS com_seta_dupla;
+</pre>
+
+<p>O <code>json_extract()</code> e o <code>-&gt;&gt;</code> devolvem o número 5 (<code>integer</code>); o <code>-&gt;</code> devolve o texto JSON <code>5</code> (<code>text</code>). Para o dia a dia, a regra é simples: <strong>use <code>-&gt;&gt;</code></strong>. Deixe o <code>-&gt;</code> para quando você quer um pedaço de JSON para encaixar em outro JSON.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Texto <code>"Ana"</code> volta como</th><th>Lista volta como</th><th>Aceita <code>'nome'</code> sem <code>$.</code></th></tr>
+<tr><td><code>json_extract(j, '$.x')</code></td><td><code>Ana</code> (valor do SQL)</td><td>texto JSON</td><td>não (erro)</td></tr>
+<tr><td><code>j -&gt;&gt; '$.x'</code></td><td><code>Ana</code> (valor do SQL)</td><td>texto JSON</td><td>sim</td></tr>
+<tr><td><code>j -&gt; '$.x'</code></td><td><code>"Ana"</code> (JSON, com aspas)</td><td>texto JSON</td><td>sim</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. JSON guardado numa coluna</h2>
+<p>Até aqui o JSON estava escrito na própria consulta. Na vida real ele fica guardado numa coluna. A Ana quer guardar os <strong>carrinhos</strong> do aplicativo, as compras que o cliente começou e ainda não fechou. Cada carrinho chega do aplicativo como um JSON, com a origem, o cupom (se houver) e a lista de itens. Ela cria uma tabela com uma coluna <code>TEXT</code> para o JSON:</p>
+
+<pre class="file" data-file="carrinhos.sql" data-resultado>CREATE TABLE carrinhos (
+  id         INTEGER PRIMARY KEY,
+  cliente_id INTEGER REFERENCES clientes(id),
+  dados      TEXT CHECK (json_valid(dados))
+);
+
+INSERT INTO carrinhos (id, cliente_id, dados) VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT id,
+       dados -&gt;&gt; '$.origem'               AS origem,
+       dados -&gt;&gt; '$.cupom'                AS cupom,
+       json_array_length(dados, '$.itens') AS n_itens
+FROM carrinhos;
+</pre>
+
+<dl class="anatomy">
+  <dt>dados TEXT</dt><dd>O JSON fica numa coluna de texto comum. O SQLite não tem um tipo "JSON" separado.</dd>
+  <dt>CHECK (json_valid(dados))</dt><dd>A trava (aula <a href="check.html">CHECK</a>): <code>json_valid()</code> devolve 1 se o texto é um JSON válido e 0 se não é. Com ela, o banco recusa JSON quebrado na entrada, em vez de você descobrir o problema meses depois.</dd>
+  <dt>dados -&gt;&gt; '$.origem'</dt><dd>Lê o campo <code>origem</code> de cada linha. O carrinho 2 não tem <code>cupom</code>, então ali vem <code>NULL</code>.</dd>
+  <dt>json_array_length(dados, '$.itens')</dt><dd>"Tamanho da lista": quantos itens tem a lista <code>itens</code>. O carrinho 3 está vazio: <code>[]</code> tem 0 itens.</dd>
+</dl>
+
+<div class="note">
+<strong>Por que cada exemplo cria a tabela de novo?</strong>
+<p>A tabela <code>carrinhos</code> não existe no banco da Aurora: ela é criada no exemplo. E cada Rodar do editor parte do banco limpo (aula <a href="simulador.html">O Editor do Guia</a>). Por isso, nos exemplos seguintes, o <code>CREATE TABLE</code> e o <code>INSERT</code> se repetem antes da consulta.</p>
+</div>
+
+<p>Com o <code>-&gt;&gt;</code>, um campo do JSON entra no <code>WHERE</code> como qualquer coluna:</p>
+
+<pre class="file" data-file="filtro.sql" data-resultado>CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT id, cliente_id
+FROM carrinhos
+WHERE dados -&gt;&gt; '$.origem' = 'app';
+</pre>
+
+<h3>Mudando um campo: <code>json_set()</code></h3>
+<p>Para mudar um pedaço do JSON guardado, não é preciso reescrever o texto todo. O <code>json_set()</code> devolve o JSON com o campo trocado (ou acrescentado, se ele não existia), e o <code>UPDATE</code> grava:</p>
+
+<pre class="file" data-file="json-set.sql" data-resultado>CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}');
+
+UPDATE carrinhos
+SET dados = json_set(dados, '$.cupom', 'FRETEGRATIS')
+WHERE id = 2;
+
+SELECT dados FROM carrinhos WHERE id = 2;
+</pre>
+
+<p>O campo <code>cupom</code> não existia e foi acrescentado no fim. A família tem quatro irmãos, que diferem só no que fazem quando o campo já existe ou não:</p>
+
+<pre class="file" data-file="familia-set.sql" data-resultado>SELECT
+  json_set('{"a":1}', '$.b', 2)          AS set_novo,
+  json_insert('{"a":1}', '$.a', 9)       AS insert_existente,
+  json_replace('{"a":1}', '$.a', 9)      AS replace_existente,
+  json_remove('{"a":1,"b":2}', '$.b')    AS remove;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Campo já existe</th><th>Campo não existe</th></tr>
+<tr><td><code>json_set()</code></td><td>troca o valor</td><td>cria o campo</td></tr>
+<tr><td><code>json_insert()</code></td><td>não mexe (por isso o <code>"a"</code> continuou 1)</td><td>cria o campo</td></tr>
+<tr><td><code>json_replace()</code></td><td>troca o valor</td><td>não mexe</td></tr>
+<tr><td><code>json_remove()</code></td><td>apaga o campo</td><td>não mexe</td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="linhas:1;;out:^2$">
+<p class="try-task"><strong>Missão:</strong> a Ana quer o id dos carrinhos que vieram do <strong>site</strong>. A consulta abaixo roda sem erro, mas devolve zero linhas, e existe um carrinho do site. Descubra o porquê (releia a seção 4) e conserte só o operador.</p>
+<pre class="script" data-file="site.sql">CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT id
+FROM carrinhos
+WHERE dados -&gt; '$.origem' = 'site';
+</pre>
+<pre class="solucao" data-file="site.sql">CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT id
+FROM carrinhos
+WHERE dados -&gt;&gt; '$.origem' = 'site';
+</pre>
+</div>
+
+<hr>
+
+<h2>6. Da lista para as linhas: <code>json_each()</code></h2>
+<p>Uma lista JSON numa célula é ótima para guardar, e ruim para consultar: você não consegue fazer <code>JOIN</code> com uma lista. O <code>json_each()</code> ("cada um do JSON") resolve isso: ele <strong>desmonta</strong> a lista e devolve uma linha para cada item, como se fosse uma tabela:</p>
+
+<pre class="file" data-file="each.sql" data-resultado>SELECT * FROM json_each('["livros","jardim","papelaria"]');
+</pre>
+
+<p>Ele aparece no <code>FROM</code>, no lugar de uma tabela: é uma <strong>função de tabela</strong> (<em>table-valued function</em>). As colunas que importam no começo são duas:</p>
+
+<dl class="anatomy">
+  <dt>key</dt><dd>"Chave": a posição do item na lista (0, 1, 2…) ou, num objeto, o nome do campo.</dd>
+  <dt>value</dt><dd>"Valor": o próprio item, já como valor do SQL.</dd>
+  <dt>type, atom, id, parent, fullkey, path</dt><dd>Detalhes para JSON complicado: o tipo do item (<code>text</code>, <code>integer</code>, <code>object</code>…), o caminho completo até ele (<code>fullkey</code>: <code>$[0]</code>, <code>$[1]</code>…). Você raramente vai precisar.</dd>
+</dl>
+
+<p>Num objeto, cada campo vira uma linha, com o nome em <code>key</code>:</p>
+
+<pre class="file" data-file="each-objeto.sql" data-resultado>SELECT key, value
+FROM json_each('{"nome":"Ana","cidade":"Teresina","vip":1}');
+</pre>
+
+<h3>Os itens de cada carrinho</h3>
+<p>Agora o uso de verdade: abrir a lista <code>itens</code> de cada carrinho e juntar com a tabela <code>produtos</code> para saber o nome e o preço. O segundo argumento do <code>json_each()</code> é o caminho da lista dentro do JSON:</p>
+
+<pre class="file" data-file="each-join.sql" data-resultado>CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT c.id                  AS carrinho,
+       p.nome,
+       i.value -&gt;&gt; 'qtd'     AS qtd,
+       p.preco
+FROM carrinhos c
+JOIN json_each(c.dados, '$.itens') i
+JOIN produtos p ON p.id = i.value -&gt;&gt; 'produto_id';
+</pre>
+
+<dl class="anatomy">
+  <dt>JOIN json_each(c.dados, '$.itens') i</dt><dd>Para cada carrinho <code>c</code>, desmonta a lista <code>itens</code> dele. Cada item vira uma linha com o apelido <code>i</code>. O carrinho 3 tem a lista vazia, então não gera linha nenhuma.</dd>
+  <dt>i.value</dt><dd>O item da vez, que é um objeto: <code>{"produto_id":1,"qtd":2}</code>.</dd>
+  <dt>i.value -&gt;&gt; 'qtd'</dt><dd>Dentro do item, o campo <code>qtd</code>, como número.</dd>
+  <dt>ON p.id = i.value -&gt;&gt; 'produto_id'</dt><dd>Liga o item ao produto pelo id, como um <code>JOIN</code> comum (aula <a href="inner-join.html">INNER JOIN</a>).</dd>
+</dl>
+
+<p>Virou tabela, então todo o resto do SQL funciona. O total de cada carrinho, com <code>SUM</code> e <code>GROUP BY</code>:</p>
+
+<pre class="file" data-file="each-total.sql" data-resultado>CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES
+  (1, 3,  '{"origem":"app","cupom":"AURORA10","itens":[{"produto_id":1,"qtd":2},{"produto_id":5,"qtd":1}]}'),
+  (2, 18, '{"origem":"site","itens":[{"produto_id":3,"qtd":10}]}'),
+  (3, 27, '{"origem":"app","itens":[]}');
+
+SELECT c.id AS carrinho,
+       ROUND(SUM(p.preco * (i.value -&gt;&gt; 'qtd')), 2) AS total
+FROM carrinhos c
+JOIN json_each(c.dados, '$.itens') i
+JOIN produtos p ON p.id = i.value -&gt;&gt; 'produto_id'
+GROUP BY c.id;
+</pre>
+
+<p>O carrinho 1 dá 2 × 12.35 + 1 × 89.99 = 114.69; o carrinho 2, 10 × 1.15 = 11.5.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque a lista por outra (pode ser de números: <code>'[10, 20, 30]'</code>), por um objeto, ou some os valores com <code>SELECT SUM(value) FROM json_each('[10, 20, 30]');</code>.</p>
+<pre class="script" data-file="each.sql">SELECT key, value, type
+FROM json_each('["livros", "jardim", 42, null]');
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Das linhas para a lista: <code>json_group_array()</code></h2>
+<p>O caminho de volta. O <code>json_group_array()</code> é uma <strong>função agregada</strong>, da mesma família do <code>COUNT()</code> e do <code>SUM()</code> (aula <a href="funcoes-agregadas.html">O que são Funções Agregadas</a>): ela junta os valores de várias linhas numa lista JSON só.</p>
+
+<pre class="file" data-file="group-array.sql" data-resultado>SELECT json_group_array(nome) AS categorias
+FROM categorias;
+</pre>
+
+<p>Oito linhas viraram uma lista com oito nomes. Como toda agregada, ela combina com <code>GROUP BY</code> (aula <a href="group-by.html">GROUP BY</a>): uma lista por grupo. Os produtos de cada um dos três primeiros pedidos:</p>
+
+<pre class="file" data-file="group-by.sql" data-resultado>SELECT pedido_id, json_group_array(produto_id) AS produtos
+FROM itens_pedido
+WHERE pedido_id &lt;= 3
+GROUP BY pedido_id;
+</pre>
+
+<p>Quer a lista em ordem? Ponha um <code>ORDER BY</code> <strong>dentro</strong> dos parênteses da função:</p>
+
+<pre class="file" data-file="group-order.sql" data-resultado>SELECT json_group_array(nome ORDER BY nome) AS categorias
+FROM categorias;
+</pre>
+
+<h3>Um objeto em vez de lista: <code>json_group_object()</code></h3>
+<p>O irmão <code>json_group_object(nome, valor)</code> junta as linhas num objeto: o primeiro argumento vira o nome do campo e o segundo, o valor. Os produtos da categoria Papelaria, com seus preços:</p>
+
+<pre class="file" data-file="group-object.sql" data-resultado>SELECT json_group_object(nome, preco) AS precos
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<hr>
+
+<h2>8. O JSON de um pedido com seus itens</h2>
+<p>Agora o pedido do programador do aplicativo: o pedido 1 inteiro, num JSON só, com o cliente e a lista de itens. Primeiro, as duas partes separadas, em tabela, para ver o que vai entrar:</p>
+
+<pre class="file" data-file="partes.sql" data-resultado>SELECT p.id, p.data, p.frete, c.nome AS cliente
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+WHERE p.id = 1;
+
+SELECT pr.nome, ip.quantidade, ip.preco_unitario
+FROM itens_pedido ip
+JOIN produtos pr ON pr.id = ip.produto_id
+WHERE ip.pedido_id = 1;
+</pre>
+
+<p>Os itens viram uma lista de objetos com <code>json_group_array(json_object(…))</code>: o <code>json_object()</code> monta a ficha de cada item, e o <code>json_group_array()</code> junta as fichas numa lista:</p>
+
+<pre class="file" data-file="itens.sql" data-resultado>SELECT json_group_array(
+         json_object('produto', pr.nome, 'qtd', ip.quantidade, 'preco', ip.preco_unitario)
+       ) AS itens
+FROM itens_pedido ip
+JOIN produtos pr ON pr.id = ip.produto_id
+WHERE ip.pedido_id = 1;
+</pre>
+
+<p>Por fim, essa lista entra como o campo <code>itens</code> do objeto do pedido, por uma <strong>subconsulta</strong> (aula <a href="subconsultas.html">Subconsultas</a>) que roda para cada pedido:</p>
+
+<pre class="file" data-file="pedido-json.sql" data-resultado>SELECT json_object(
+  'pedido',  p.id,
+  'data',    p.data,
+  'cliente', c.nome,
+  'frete',   p.frete,
+  'itens',   (SELECT json_group_array(
+                       json_object('produto', pr.nome,
+                                   'qtd',     ip.quantidade,
+                                   'preco',   ip.preco_unitario))
+              FROM itens_pedido ip
+              JOIN produtos pr ON pr.id = ip.produto_id
+              WHERE ip.pedido_id = p.id)
+) AS pedido_json
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+WHERE p.id = 1;
+</pre>
+
+<ol class="passo">
+  <li>A consulta de fora pega o pedido 1 e o nome do cliente (José Ribamar Silva), como sempre.</li>
+  <li>Para esse pedido, a subconsulta entre parênteses monta a lista de itens. O <code>WHERE ip.pedido_id = p.id</code> liga a subconsulta ao pedido de fora.</li>
+  <li>O <code>json_object()</code> de fora junta tudo. Como o valor de <code>itens</code> veio de uma função de JSON, ele entra como lista de verdade, e não como texto entre aspas.</li>
+</ol>
+
+<p>Esse texto pode ir direto para o aplicativo. Para ler com calma, o <code>json_pretty()</code> devolve o mesmo JSON com quebras de linha e recuo. Ele é recente (SQLite 3.46) e serve para gente ler, não para guardar: <code>SELECT json_pretty(json_object('pedido', 1, 'itens', json_array(1, 2)));</code>.</p>
+
+<hr>
+
+<h2>9. No terminal: o modo JSON do <code>sqlite3</code></h2>
+<p>O programa <code>sqlite3</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>) tem um jeito de mostrar <strong>qualquer</strong> resultado como JSON, sem função nenhuma: a opção <code>-json</code> (ou o comando <code>.mode json</code> dentro dele). Cada linha vira um objeto, e o resultado inteiro vira uma lista:</p>
+
+<pre class="term">$ sqlite3 -json loja.db "SELECT id, nome, preco FROM produtos WHERE id &lt;= 2;"
+[{"id":1,"nome":"Caderno Pautado 96 folhas","preco":12.34999999999999965},
+{"id":2,"nome":"Caneta Esferográfica Azul","preco":2.790000000000000035}]
+$ sqlite3 -json loja.db "SELECT nome, email FROM clientes WHERE id = 7;"
+[{"nome":"Luís Otávio Brito","email":null}]
+$ sqlite3 loja.db "SELECT json_object('id', id, 'preco', preco) FROM produtos WHERE id &lt;= 2;"
+{"id":1,"preco":12.35}
+{"id":2,"preco":2.79}</pre>
+
+<p>Repare no preço: o modo JSON escreveu <code>12.34999999999999965</code>, enquanto o <code>json_object()</code> escreveu <code>12.35</code>. Não é erro de nenhum dos dois. Um <code>REAL</code> é guardado em binário, e 12.35 não tem representação exata em binário; o modo JSON mostra todos os dígitos, e as funções de JSON escrevem o número mais curto que volta ao mesmo valor. Para dinheiro, prefira montar o JSON com as funções. O <code>.mode json</code> é só do programa <code>sqlite3</code>: no editor do guia, ele não existe.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Ler o campo <code>origem</code> do carrinho, de três jeitos:</p>
+
+<pre class="file" data-file="tres-jeitos.sql" data-resultado>SELECT
+  json_extract('{"origem":"app"}', '$.origem') AS com_extract,
+  '{"origem":"app"}' -&gt;&gt; '$.origem'            AS com_seta_dupla,
+  '{"origem":"app"}' -&gt;&gt; 'origem'              AS curto;
+</pre>
+
+<p>E a lista de produtos do pedido 1, montada com <code>json_group_array()</code> ou escrita à mão com <code>json_array()</code>:</p>
+
+<pre class="file" data-file="duas-listas.sql" data-resultado>SELECT json_group_array(produto_id) AS agregada
+FROM itens_pedido WHERE pedido_id = 1;
+
+SELECT json_array(1, 2, 3) AS a_mao;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Ler um valor para comparar, somar, ordenar</td><td><code>-&gt;&gt;</code></td><td>Curto e devolve valor do SQL; é a forma que o MySQL e o PostgreSQL também entendem</td></tr>
+<tr><td>Ler um valor num SQL que precisa rodar em versões antigas do SQLite</td><td><code>json_extract()</code></td><td>É a forma mais antiga; as setas só chegaram no SQLite 3.38</td></tr>
+<tr><td>Pegar um pedaço que vai continuar sendo JSON</td><td><code>-&gt;</code></td><td>Mantém as aspas e a forma de JSON</td></tr>
+<tr><td>Montar uma lista com valores que você já sabe</td><td><code>json_array()</code></td><td>Os valores vão direto nos parênteses</td></tr>
+<tr><td>Montar uma lista com as linhas de uma consulta</td><td><code>json_group_array()</code></td><td>É agregada: junta quantas linhas vierem</td></tr>
+<tr><td>Despejar um resultado inteiro em JSON, no terminal</td><td><code>sqlite3 -json</code></td><td>Sem escrever função nenhuma (cuidado com os decimais)</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>JSON numa coluna não substitui tabelas</strong>
+<p>É tentador guardar tudo em JSON: "os itens do pedido? põe uma lista na coluna". Mas o banco não consegue garantir nada lá dentro: não há <code>FOREIGN KEY</code> para o <code>produto_id</code> do JSON, nem <code>NOT NULL</code> na <code>qtd</code>. Os carrinhos da Ana são um bom uso, porque são rascunhos que chegam prontos do aplicativo. Os pedidos de verdade ficam em <code>pedidos</code> e <code>itens_pedido</code>, com cada coisa na sua coluna (aula <a href="normalizacao.html">Normalização</a>). Use JSON para <strong>trocar</strong> dados e para guardar o que não tem forma fixa.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Comparou com <code>-&gt;</code> e não achou nada</strong>
+<pre class="file" data-file="seta-errada.sql" data-resultado>SELECT '{"nome":"Ana"}' -&gt; '$.nome' = 'Ana'   AS com_seta,
+       '{"nome":"Ana"}' -&gt;&gt; '$.nome' = 'Ana'  AS com_seta_dupla;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, e é isso que torna este o engano mais comum. A comparação com <code>-&gt;</code> dá 0 (falso), porque o <code>-&gt;</code> devolve <code>"Ana"</code> <strong>com as aspas</strong>, e <code>"Ana"</code> não é igual a <code>Ana</code>. Num <code>WHERE</code>, a consulta volta vazia e você acha que não existe o dado.</p>
+<p><strong>Como consertar:</strong> para comparar, use <code>-&gt;&gt;</code> (ou <code>json_extract()</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>O texto não é JSON</strong>
+<pre class="file" data-file="malformado.sql" data-resultado data-erro>SELECT json('isso nao e json');
+</pre>
+<p><strong>A mensagem:</strong> <code>malformed JSON</code>, "JSON malformado". As funções que precisam entender o JSON param a consulta com esse erro. A função <code>json()</code> do exemplo só confere o texto e o devolve arrumado; é um bom jeito de testar um JSON.</p>
+<p>Na tabela com a trava <code>CHECK (json_valid(dados))</code>, um JSON quebrado nem entra. O texto abaixo foi cortado no meio:</p>
+<pre class="file" data-file="check.sql" data-resultado data-erro>CREATE TABLE carrinhos (id INTEGER PRIMARY KEY, cliente_id INTEGER, dados TEXT CHECK (json_valid(dados)));
+INSERT INTO carrinhos VALUES (4, 1, '{"origem":"app",');
+</pre>
+<p><strong>A mensagem:</strong> <code>CHECK constraint failed: json_valid(dados)</code>, "a trava CHECK falhou". Melhor ouvir isso na hora de gravar do que achar o JSON quebrado depois.</p>
+<p><strong>Um detalhe:</strong> o SQLite (desde o 3.42) aceita na <strong>leitura</strong> algumas folgas do JSON5, como uma vírgula sobrando no fim (<code>'{"nome":"Ana",}'</code>). Mas o <code>json_valid()</code> sem opções segue a regra estrita do JSON e diz 0 para esse texto. Outros programas também podem recusá-lo, então escreva sempre o JSON certinho.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>$</code> no caminho</strong>
+<pre class="file" data-file="sem-cifrao.sql" data-resultado data-erro>SELECT json_extract('{"nome":"Ana"}', 'nome');
+</pre>
+<p><strong>A mensagem:</strong> <code>bad JSON path: 'nome'</code>, "caminho JSON ruim". No <code>json_extract()</code>, todo caminho começa com <code>$</code>. O mesmo erro aparece para <code>'$nome'</code> (faltou o ponto) e <code>'$.a.'</code> (ponto sobrando no fim).</p>
+<p><strong>Como consertar:</strong> <code>'$.nome'</code>. Só as setas aceitam o nome sozinho: <code>'{"nome":"Ana"}' -&gt;&gt; 'nome'</code> funciona.</p>
+</div>
+
+<div class="cenario">
+<strong>Faltou um valor no <code>json_object()</code></strong>
+<pre class="file" data-file="impar.sql" data-resultado data-erro>SELECT json_object('nome', nome, 'cidade') FROM clientes;
+</pre>
+<p><strong>A mensagem:</strong> <code>json_object() requires an even number of arguments</code>, "json_object() exige um número par de argumentos". Os argumentos vêm em pares nome-valor; aqui o campo <code>'cidade'</code> ficou sem valor. Outro parecido: <code>json_object(1, 'Ana')</code> dá <code>json_object() labels must be TEXT</code>, "os nomes dos campos têm de ser texto".</p>
+<p><strong>Como consertar:</strong> complete o par: <code>'cidade', cidade</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas no nome do campo</strong>
+<p>Como o JSON usa aspas duplas, é comum escrever o nome do campo com elas também:</p>
+<pre class="file" data-file="aspas.sql" data-resultado data-erro>SELECT json_object("nome", 'Ana');
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: "nome" - should this be a string literal in single-quotes?</code>, "não existe a coluna "nome"; isto devia ser um texto entre aspas simples?". No SQL, aspas duplas marcam <strong>nome de coluna</strong>, não texto. O próprio SQLite sugere o conserto.</p>
+<p><strong>Como consertar:</strong> no SQL, aspas simples: <code>json_object('nome', 'Ana')</code>. As aspas duplas do JSON quem põe é a função.</p>
+</div>
+
+<div class="cenario">
+<strong>Texto que parece JSON vira texto</strong>
+<pre class="file" data-file="parece.sql" data-resultado>SELECT json_object('nome', 'Ana', 'gosta', '["livros","jardim"]') AS errado,
+       json_object('nome', 'Ana', 'gosta', json('["livros","jardim"]')) AS certo;
+</pre>
+<p><strong>O que acontece:</strong> sem erro, mas na primeira coluna a lista virou um <strong>texto</strong> entre aspas, cheio de <code>\"</code> (a barra é como o JSON escreve uma aspa dentro de um texto). Para o <code>json_object()</code>, <code>'["livros","jardim"]'</code> é um texto como outro qualquer. O aplicativo recebe uma frase, não uma lista.</p>
+<p><strong>Como consertar:</strong> passe o valor por <code>json()</code> (ou monte com <code>json_array()</code>): assim o SQLite sabe que aquilo é JSON. Valores tirados de uma coluna de JSON com <code>-&gt;</code> também entram como JSON.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Todo banco grande tem JSON, mas os nomes mudam. As setas do SQLite foram feitas para serem compatíveis com o MySQL e o PostgreSQL. Os trechos abaixo são <strong>ilustrativos</strong>: não rodam no SQLite.</p>
+<ul>
+  <li><strong>MySQL:</strong> <code>JSON_OBJECT()</code>, <code>JSON_EXTRACT()</code> e as setas <code>coluna-&gt;'$.nome'</code> e <code>coluna-&gt;&gt;'$.nome'</code>. Na documentação, à esquerda da seta vai o <strong>nome de uma coluna</strong>, não uma expressão qualquer.</li>
+  <li><strong>PostgreSQL:</strong> tem os tipos <code>json</code> e <code>jsonb</code>. As setas recebem o <strong>nome do campo</strong> ou a posição, sem <code>$</code>: <code>dados -&gt;&gt; 'origem'</code>, <code>lista -&gt; 2</code>. Para montar: <code>json_build_object()</code> e <code>json_agg()</code>; para desmontar uma lista: <code>json_array_elements()</code>.</li>
+  <li><strong>SQL Server:</strong> <code>JSON_VALUE(coluna, '$.nome')</code> para um valor simples e <code>JSON_QUERY()</code> para um pedaço que é objeto ou lista; <code>OPENJSON()</code> faz o papel do <code>json_each()</code>.</li>
+</ul>
+<pre class="file" data-file="ilustrativo-postgresql.sql">-- PostgreSQL (ilustrativo)
+SELECT id, dados -&gt;&gt; 'origem' AS origem
+FROM carrinhos;
+
+-- SQL Server (ilustrativo)
+SELECT id, JSON_VALUE(dados, '$.origem') AS origem
+FROM carrinhos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Exemplo → resultado</th></tr>
+<tr><td><code>json_object(n1, v1, n2, v2…)</code></td><td>Monta um objeto com pares nome-valor</td><td><code>json_object('a', 1)</code> → <code>{"a":1}</code></td></tr>
+<tr><td><code>json_array(v1, v2…)</code></td><td>Monta uma lista</td><td><code>json_array(1, 'x')</code> → <code>[1,"x"]</code></td></tr>
+<tr><td><code>json_extract(j, caminho)</code></td><td>Lê um valor (como valor do SQL)</td><td><code>json_extract('{"a":1}', '$.a')</code> → <code>1</code></td></tr>
+<tr><td><code>j -&gt;&gt; caminho</code></td><td>Lê um valor como valor do SQL</td><td><code>'{"a":"x"}' -&gt;&gt; 'a'</code> → <code>x</code></td></tr>
+<tr><td><code>j -&gt; caminho</code></td><td>Lê um pedaço como JSON</td><td><code>'{"a":"x"}' -&gt; 'a'</code> → <code>"x"</code></td></tr>
+<tr><td><code>json_each(j [, caminho])</code></td><td>Função de tabela: uma linha por item (colunas <code>key</code>, <code>value</code>…)</td><td><code>SELECT value FROM json_each('[1,2]')</code></td></tr>
+<tr><td><code>json_group_array(x)</code></td><td>Agregada: junta as linhas numa lista</td><td><code>json_group_array(nome)</code></td></tr>
+<tr><td><code>json_group_object(n, v)</code></td><td>Agregada: junta as linhas num objeto</td><td><code>json_group_object(nome, preco)</code></td></tr>
+<tr><td><code>json_valid(j)</code></td><td>1 se é JSON válido, 0 se não</td><td><code>CHECK (json_valid(dados))</code></td></tr>
+<tr><td><code>json(j)</code></td><td>Confere e devolve o JSON arrumado; marca o texto como JSON</td><td><code>json('[1, 2]')</code> → <code>[1,2]</code></td></tr>
+<tr><td><code>json_array_length(j [, caminho])</code></td><td>Quantos itens tem a lista</td><td><code>json_array_length('[1,2,3]')</code> → <code>3</code></td></tr>
+<tr><td><code>json_type(j [, caminho])</code></td><td>O tipo do pedaço: <code>object</code>, <code>array</code>, <code>text</code>, <code>integer</code>…</td><td><code>json_type('{"a":[1]}', '$.a')</code> → <code>array</code></td></tr>
+<tr><td><code>json_set</code> / <code>json_insert</code> / <code>json_replace</code> / <code>json_remove</code></td><td>Devolvem o JSON com um campo trocado, criado ou apagado</td><td><code>json_set('{}', '$.a', 1)</code> → <code>{"a":1}</code></td></tr>
+<tr><td><code>json_pretty(j)</code></td><td>JSON com quebras de linha e recuo, para ler</td><td>(3.46 ou mais novo)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>malformed JSON</code></td><td>O texto não é um JSON válido</td></tr>
+<tr><td><code>bad JSON path: 'nome'</code></td><td>O caminho está mal escrito (falta o <code>$</code>, falta ou sobra ponto)</td></tr>
+<tr><td><code>json_object() requires an even number of arguments</code></td><td>Um nome de campo ficou sem valor</td></tr>
+<tr><td><code>json_object() labels must be TEXT</code></td><td>O nome do campo não é texto</td></tr>
+<tr><td><code>CHECK constraint failed: json_valid(dados)</code></td><td>A trava recusou um JSON inválido</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Montar uma ficha</h3>
+<p>Complete para gerar <code>{"nome":"Lápis Grafite HB"}</code> a partir do produto 3:</p>
+<div class="ex-code">SELECT <input data-answer="json_object" aria-label="função">('nome', nome) FROM produtos WHERE id = 3;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O caminho</h3>
+<p>Complete o caminho para ler o campo <code>cupom</code> com <code>json_extract()</code>:</p>
+<div class="ex-code">SELECT json_extract(dados, '<input data-answer="$.cupom" aria-label="caminho">') FROM carrinhos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é o resultado de <code>SELECT '{"cidade":"Picos"}' -&gt; '$.cidade';</code>?</p>
+<label><input type="radio" name="q3"> <code>Picos</code></label>
+<label><input type="radio" name="q3"> <code>"Picos"</code>, com as aspas duplas</label>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+<label><input type="radio" name="q3"> O erro <code>bad JSON path</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Você quer transformar a lista JSON <code>'[4, 8, 15]'</code> em três linhas, para fazer um <code>JOIN</code>. Qual função usa?</p>
+<label><input type="radio" name="q4"> <code>json_group_array()</code></label>
+<label><input type="radio" name="q4"> <code>json_extract()</code></label>
+<label><input type="radio" name="q4"> <code>json_each()</code></label>
+<label><input type="radio" name="q4"> <code>json_array()</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que dá <code>json_extract('{"nome":"Ana"}', '$.idade')</code>?</p>
+<label><input type="radio" name="q5"> <code>NULL</code>, sem erro</label>
+<label><input type="radio" name="q5"> O erro <code>malformed JSON</code></label>
+<label><input type="radio" name="q5"> O erro <code>bad JSON path</code></label>
+<label><input type="radio" name="q5"> <code>0</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que <code>json_object('gosta', '["livros"]')</code> não gera uma lista dentro do objeto?</p>
+<label><input type="radio" name="q6"> Porque listas não podem ficar dentro de objetos</label>
+<label><input type="radio" name="q6"> Porque faltou um número par de argumentos</label>
+<label><input type="radio" name="q6"> Porque o SQLite não tem listas</label>
+<label><input type="radio" name="q6"> Porque o valor é um texto comum; para ele virar JSON, passe por <code>json()</code> ou use <code>json_array()</code></label>
+</div>
+
+<h3>Missão final: o pedido 2 em JSON</h3>
+
+<div class="trysql" data-goal="linhas:1;;contem:&quot;pedido&quot;:2;;contem:&quot;cliente&quot;:&quot;Maria Clara Mendes&quot;;;contem:{&quot;produto&quot;:&quot;Marca-texto Amarelo&quot;,&quot;qtd&quot;:1}">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo lista os itens do pedido 2 em tabela. Transforme-a numa linha só, com um JSON assim: campos <code>pedido</code> (o id), <code>cliente</code> (o nome) e <code>itens</code>, uma lista de objetos com <code>produto</code> (o nome do produto) e <code>qtd</code> (a quantidade), nessa ordem. Dica: siga a seção 8, com uma subconsulta para os itens.</p>
+<pre class="script" data-file="pedido2.sql">SELECT p.id, c.nome, pr.nome, ip.quantidade
+FROM pedidos p
+JOIN clientes c      ON c.id = p.cliente_id
+JOIN itens_pedido ip ON ip.pedido_id = p.id
+JOIN produtos pr     ON pr.id = ip.produto_id
+WHERE p.id = 2;
+</pre>
+<pre class="solucao" data-file="pedido2.sql">SELECT json_object(
+  'pedido',  p.id,
+  'cliente', c.nome,
+  'itens',   (SELECT json_group_array(json_object('produto', pr.nome, 'qtd', ip.quantidade))
+              FROM itens_pedido ip
+              JOIN produtos pr ON pr.id = ip.produto_id
+              WHERE ip.pedido_id = p.id)
+) AS pedido_json
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+WHERE p.id = 2;
+</pre>
+</div>
+
+<p>Se deu certo, a resposta tem uma linha só, com a Maria Clara Mendes e três itens: Marca-texto Amarelo, Mochila Escolar Azul (2 unidades) e Estojo Duplo. Troque o <code>WHERE p.id = 2</code> por <code>WHERE p.id &lt;= 3</code> e veja três pedidos, cada um no seu JSON.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>JSON é texto com objetos <code>{"nome": valor}</code> e listas <code>[…]</code>. No SQLite, ele fica numa coluna <code>TEXT</code>.</li>
+  <li><code>json_object('nome', valor, …)</code> monta um objeto; <code>json_array(…)</code>, uma lista. Uma função pode ir dentro da outra.</li>
+  <li>Para ler: <code>json_extract(j, '$.campo')</code> ou <code>j -&gt;&gt; 'campo'</code>, que devolvem valor do SQL. O <code>-&gt;</code> devolve JSON (texto com aspas): não use para comparar.</li>
+  <li>Campo que não existe dá <code>NULL</code>; caminho mal escrito dá <code>bad JSON path</code>; texto que não é JSON dá <code>malformed JSON</code>.</li>
+  <li><code>CHECK (json_valid(dados))</code> barra JSON quebrado na entrada.</li>
+  <li><code>json_each()</code> desmonta uma lista em linhas (vai no <code>FROM</code>); <code>json_group_array()</code> e <code>json_group_object()</code> juntam linhas em JSON.</li>
+  <li>O JSON de um pedido com itens: <code>json_object(…, 'itens', (SELECT json_group_array(json_object(…)) …))</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
