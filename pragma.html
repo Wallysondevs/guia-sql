@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL PRAGMAs Úteis — configurar e examinar o banco SQLite | Guia SQL</title>
+<meta name="description" content="Os PRAGMAs mais úteis do SQLite para quem está começando: foreign_keys, table_info, table_list, index_list, foreign_key_check, journal_mode e o modo WAL, user_version, integrity_check, page_size e page_count; quais só fazem sentido com um arquivo, a forma pragma_table_info() dentro de um SELECT e por que um PRAGMA com nome errado não dá erro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">PRAGMAs Úteis</span></h1>
+
+<p class="intro">Todo carro tem o painel, com o velocímetro e o marcador de combustível, e tem os botões, que ligam o farol e o limpador. No SQLite, o painel e os botões do banco são os <strong>PRAGMAs</strong>: comandos especiais que <strong>mostram</strong> informações sobre o banco (quais colunas uma tabela tem, se o arquivo está saudável) ou <strong>mudam</strong> o jeito como ele trabalha (ligar as chaves estrangeiras, ligar o modo WAL). Você já esbarrou em alguns nas aulas anteriores. Nesta aula, a Ana conhece os mais úteis, um por um.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um PRAGMA e as suas três formas: ler, mudar e perguntar sobre uma tabela.</li>
+  <li>A examinar a estrutura do banco com <code>table_list</code>, <code>table_info</code>, <code>index_list</code> e <code>foreign_key_list</code>.</li>
+  <li>A ligar as chaves estrangeiras com <code>foreign_keys</code> e achar dados quebrados com <code>foreign_key_check</code>.</li>
+  <li>O <code>journal_mode</code> e o modo WAL.</li>
+  <li>A guardar a versão do seu esquema com <code>user_version</code>.</li>
+  <li>A conferir a saúde do arquivo com <code>integrity_check</code>, e o tamanho com <code>page_size</code> e <code>page_count</code>.</li>
+  <li>Quais PRAGMAs só fazem sentido com um arquivo de verdade, e não no banco em memória do editor.</li>
+  <li>Por que um PRAGMA com o nome errado não dá erro nenhum.</li>
+</ul>
+</div>
+
+<p>Os PRAGMAs são comandos SQL, então rodam no editor do guia: os exemplos com quadro "Resultado" rodam no SQLite do seu navegador, com a Loja Aurora. Mas lembre que o banco do editor vive na <strong>memória</strong> e é recriado a cada Rodar. Os PRAGMAs que mexem com o <strong>arquivo</strong> (o modo WAL, uma versão que precisa sobreviver até amanhã) foram testados no terminal da Ana, com o <code>~/loja.db</code>.</p>
+
+<hr>
+
+<h2>A ideia: o painel e os botões</h2>
+<p><em>Pragma</em> vem do grego e quer dizer "coisa prática". Um PRAGMA não lê nem muda os <strong>dados</strong> das tabelas: ele lê ou muda o <strong>banco</strong>. E ele é uma extensão do SQLite; não faz parte do SQL padrão (veja <a href="#outros">Nos outros bancos</a>). Todo PRAGMA tem uma destas formas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>No carro</th></tr>
+<tr><td>Ler um valor</td><td><code>PRAGMA foreign_keys;</code></td><td>Olhar o marcador</td></tr>
+<tr><td>Mudar um valor</td><td><code>PRAGMA foreign_keys = ON;</code></td><td>Apertar o botão</td></tr>
+<tr><td>Perguntar sobre algo</td><td><code>PRAGMA table_info(produtos);</code></td><td>Ler o manual de uma peça</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A estrutura do banco: <code>table_list</code> e <code>table_info</code></h2>
+<p>No terminal, o <code>.tables</code> e o <code>.schema</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>) mostram as tabelas. Mas eles são do programa <code>sqlite3</code>; um programa em Python ou PHP, ou o editor do guia, não os tem. Os PRAGMAs fazem o mesmo em SQL. O <code>table_list</code> lista as tabelas:</p>
+
+<pre class="file" data-file="tabelas.sql" data-resultado>PRAGMA table_list;
+</pre>
+
+<p>Aparecem as sete tabelas da Loja Aurora e duas que você não criou: <code>sqlite_schema</code> e <code>sqlite_temp_schema</code>, as tabelas internas onde o SQLite guarda a definição de tudo (do banco principal, <code>main</code>, e do banco temporário, <code>temp</code>). A coluna <code>ncol</code> é o número de colunas de cada tabela.</p>
+
+<p>O <code>table_info</code> descreve as colunas de <strong>uma</strong> tabela:</p>
+
+<pre class="file" data-file="colunas.sql" data-resultado>PRAGMA table_info(produtos);
+</pre>
+
+<dl class="anatomy">
+  <dt>cid</dt><dd>A posição da coluna, contando do 0.</dd>
+  <dt>name</dt><dd>O nome da coluna.</dd>
+  <dt>type</dt><dd>O tipo declarado no <code>CREATE TABLE</code> (veja <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</dd>
+  <dt>notnull</dt><dd><code>1</code> se a coluna é <code>NOT NULL</code> (veja <a href="not-null.html">NOT NULL</a>).</dd>
+  <dt>dflt_value</dt><dd>O valor padrão (<code>DEFAULT</code>), se houver: o estoque e o descontinuado começam em 0. <em>NULL</em> = sem padrão.</dd>
+  <dt>pk</dt><dd><code>1</code> se a coluna faz parte da chave primária (numa chave de duas colunas, 1 e 2).</dd>
+</dl>
+
+<p>Repare que o <code>id</code> aparece com <code>notnull</code> 0, mesmo sendo a chave primária: no SQLite, um <code>INTEGER PRIMARY KEY</code> nunca fica <code>NULL</code> (ele ganha um número sozinho), então não precisa da regra escrita. No terminal, com <code>.mode box</code>, a mesma pergunta sobre os clientes fica assim:</p>
+
+<pre class="term">sqlite&gt; .mode box
+sqlite&gt; PRAGMA table_info(clientes);
+┌─────┬────────────┬─────────┬─────────┬────────────┬────┐
+│ cid │    name    │  type   │ notnull │ dflt_value │ pk │
+├─────┼────────────┼─────────┼─────────┼────────────┼────┤
+│ 0   │ id         │ INTEGER │ 0       │            │ 1  │
+│ 1   │ nome       │ TEXT    │ 1       │            │ 0  │
+│ 2   │ email      │ TEXT    │ 0       │            │ 0  │
+│ 3   │ cidade     │ TEXT    │ 0       │            │ 0  │
+│ 4   │ estado     │ TEXT    │ 0       │            │ 0  │
+│ 5   │ nascimento │ TEXT    │ 0       │            │ 0  │
+│ 6   │ vip        │ INTEGER │ 1       │ 0          │ 0  │
+└─────┴────────────┴─────────┴─────────┴────────────┴────┘</pre>
+
+<h3>O PRAGMA dentro de um <code>SELECT</code></h3>
+<p>Os PRAGMAs que devolvem uma tabela também existem como <strong>funções de tabela</strong>: o mesmo nome com <code>pragma_</code> na frente, usado no <code>FROM</code>. Assim você pode filtrar, ordenar e juntar o resultado como o de qualquer consulta. Quais colunas de <code>clientes</code> aceitam ficar vazias?</p>
+
+<pre class="file" data-file="pragma-select.sql" data-resultado>SELECT name, type
+FROM pragma_table_info('clientes')
+WHERE "notnull" = 0 AND pk = 0;
+</pre>
+
+<dl class="anatomy">
+  <dt>pragma_table_info('clientes')</dt><dd>A função de tabela. O nome da tabela vai entre aspas simples, como um texto.</dd>
+  <dt>"notnull"</dt><dd>A coluna se chama <code>notnull</code>, que também é uma palavra do SQL (<code>NOT NULL</code>). As aspas <strong>duplas</strong> dizem ao SQLite "isto é o nome de uma coluna". É um dos poucos lugares onde aspas duplas são o certo.</dd>
+  <dt>pk = 0</dt><dd>Deixa de fora a chave primária.</dd>
+</dl>
+
+<div class="trysql" data-goal="contem:entregue_em;;linhas:1">
+<p class="try-task"><strong>Experimente:</strong> descubra qual coluna da tabela <code>pedidos</code> aceita <code>NULL</code> (sem contar a chave primária). A consulta abaixo lista todas as colunas; acrescente o filtro.</p>
+<pre class="script" data-file="pedidos-null.sql">SELECT name, "notnull", pk
+FROM pragma_table_info('pedidos');
+</pre>
+<pre class="solucao" data-file="pedidos-null.sql">SELECT name, "notnull", pk
+FROM pragma_table_info('pedidos')
+WHERE "notnull" = 0 AND pk = 0;
+</pre>
+</div>
+
+<p>É o <code>entregue_em</code>: um pedido que ainda não foi entregue não tem data de entrega (veja <a href="is-null.html">IS NULL</a>).</p>
+
+<hr>
+
+<h2>2. Índices: <code>index_list</code> e <code>index_info</code></h2>
+<p>O <code>index_list</code> mostra os índices de uma tabela (aula <a href="indices.html">Índices</a>). A Loja Aurora não criou nenhum índice à mão, mas a tabela <code>itens_pedido</code> tem um que o SQLite criou sozinho:</p>
+
+<pre class="file" data-file="indices.sql" data-resultado>PRAGMA index_list(itens_pedido);
+PRAGMA index_info(sqlite_autoindex_itens_pedido_1);
+</pre>
+
+<dl class="anatomy">
+  <dt>sqlite_autoindex_itens_pedido_1</dt><dd>Um índice automático (<em>autoindex</em>). A tabela tem a chave primária de duas colunas, <code>PRIMARY KEY (pedido_id, produto_id)</code>, e o SQLite precisa de um índice para conferir rápido se um par já existe.</dd>
+  <dt>unique = 1</dt><dd>O índice não aceita valores repetidos.</dd>
+  <dt>origin = pk</dt><dd>De onde ele veio: <code>pk</code> (chave primária), <code>u</code> (um <code>UNIQUE</code>) ou <code>c</code> (um <code>CREATE INDEX</code> seu).</dd>
+  <dt>index_info(…)</dt><dd>As colunas do índice, na ordem: <code>pedido_id</code> e depois <code>produto_id</code>.</dd>
+</dl>
+
+<p>Um índice criado com <code>CREATE INDEX</code> aparece com <code>origin</code> igual a <code>c</code>:</p>
+
+<pre class="file" data-file="indice-novo.sql" data-resultado>CREATE INDEX idx_produtos_categoria ON produtos (categoria_id);
+PRAGMA index_list(produtos);
+</pre>
+
+<hr>
+
+<h2>3. Chaves estrangeiras: <code>foreign_keys</code> e <code>foreign_key_check</code></h2>
+<p>Você viu na aula <a href="acid.html">As Garantias ACID</a> que a conferência de chaves estrangeiras vem <strong>desligada</strong> no SQLite. O <code>foreign_keys</code> lê e muda isso. No editor, o guia a liga ao carregar a Loja Aurora:</p>
+
+<pre class="file" data-file="fk.sql" data-resultado>PRAGMA foreign_keys;
+PRAGMA foreign_key_list(produtos);
+</pre>
+
+<p>O <code>1</code> quer dizer "ligado". O <code>foreign_key_list</code> mostra as chaves estrangeiras de uma tabela: o <code>categoria_id</code> de <code>produtos</code> aponta (<code>to</code>) para o <code>id</code> de <code>categorias</code>, e o <code>fornecedor_id</code>, para o <code>id</code> de <code>fornecedores</code>. Agora o terminal, onde ela vem desligada:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA foreign_keys;
+0
+sqlite&gt; INSERT INTO pedidos (id, cliente_id, funcionario_id, data, frete) VALUES (91, 99, 2, '2026-10-18', 0);
+sqlite&gt; PRAGMA foreign_key_check;
+pedidos|91|clientes|1
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; PRAGMA foreign_keys;
+1
+sqlite&gt; PRAGMA foreign_key_check;
+pedidos|91|clientes|1
+sqlite&gt; DELETE FROM pedidos WHERE id = 91;
+sqlite&gt; PRAGMA foreign_key_check;
+sqlite&gt; .quit
+$ sqlite3 loja.db "PRAGMA foreign_keys;"
+0                                « desligada de novo: vale só para a conexão</pre>
+
+<dl class="anatomy">
+  <dt>PRAGMA foreign_keys; → 0</dt><dd>Desligada. Por isso o pedido do cliente 99, que não existe, entrou sem erro.</dd>
+  <dt>PRAGMA foreign_key_check;</dt><dd>Procura no banco inteiro linhas que quebram alguma chave estrangeira. Respondeu: na tabela <code>pedidos</code>, a linha 91 aponta para um registro de <code>clientes</code> que não existe (o <code>1</code> é o número da chave estrangeira dentro de <code>pedidos</code>). Funciona mesmo com a conferência desligada.</dd>
+  <dt>PRAGMA foreign_keys = ON;</dt><dd>Liga a conferência. Repare que ligar <strong>não</strong> conserta o que já entrou: o <code>foreign_key_check</code> continua achando o pedido 91. A conferência vale só para os comandos daqui em diante.</dd>
+  <dt>(nada)</dt><dd>Depois do <code>DELETE</code>, o <code>foreign_key_check</code> não acha mais nada: o banco está consistente.</dd>
+  <dt>0, de novo</dt><dd>O <code>foreign_keys</code> não fica gravado no arquivo: vale para a <strong>conexão</strong>, do momento em que você liga até fechar o <code>sqlite3</code>. Todo programa precisa ligá-lo de novo, logo depois de abrir o banco.</dd>
+</dl>
+
+<div class="tip">
+<strong>Deixe ligado sempre, no terminal</strong>
+<p>O <code>sqlite3</code> lê, ao abrir, um arquivo de configuração na sua pasta pessoal, o <code>~/.sqliterc</code>. Uma linha <code>PRAGMA foreign_keys = ON;</code> nele liga a conferência em toda sessão do terminal. Em programas, ponha o <code>PRAGMA foreign_keys = ON</code> logo depois de abrir a conexão.</p>
+</div>
+
+<hr>
+
+<h2>4. O diário: <code>journal_mode</code> e o modo WAL</h2>
+<p>Na aula de ACID, você viu o <code>loja.db-journal</code>, o diário que guarda como as páginas eram antes de a transação mexer nelas. O <code>journal_mode</code> mostra e muda o jeito de manter esse diário:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA journal_mode;
+delete
+sqlite&gt; PRAGMA journal_mode = WAL;
+wal
+sqlite&gt; UPDATE produtos SET estoque = estoque - 1 WHERE id = 3;
+sqlite&gt; .shell ls -l loja.db*
+-rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db
+-rw-r--r-- 1 ana ana 32768 out 18 10:56 loja.db-shm
+-rw-r--r-- 1 ana ana  4152 out 18 10:56 loja.db-wal
+sqlite&gt; .quit
+$ ls -l loja.db*
+-rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db
+$ sqlite3 loja.db "PRAGMA journal_mode;"
+wal</pre>
+
+<dl class="anatomy">
+  <dt>delete</dt><dd>O modo padrão: o diário (<code>-journal</code>) é criado a cada transação e <strong>apagado</strong> no fim dela.</dd>
+  <dt>PRAGMA journal_mode = WAL;</dt><dd>Liga o modo WAL (<em>write-ahead log</em>, "registro antes da escrita"). O PRAGMA responde com o modo que ficou valendo: <code>wal</code>.</dd>
+  <dt>.shell ls -l loja.db*</dt><dd>O <code>.shell</code> roda um comando do terminal sem sair do <code>sqlite3</code>. Com o banco aberto em WAL, aparecem dois arquivos novos: o <code>-wal</code>, onde as mudanças novas são <strong>anotadas</strong> antes de irem para o banco, e o <code>-shm</code>, um índice que os programas usam para se organizar.</dd>
+  <dt>(depois do .quit)</dt><dd>Quando o último programa fecha o banco, o SQLite passa tudo do <code>-wal</code> para o <code>loja.db</code> e apaga os dois arquivos.</dd>
+  <dt>wal, de novo</dt><dd>Diferente do <code>foreign_keys</code>, o modo WAL fica <strong>gravado no arquivo</strong>: quem abrir o banco depois já o encontra em WAL.</dd>
+</dl>
+
+<p>No modo WAL, quem lê não atrapalha quem escreve, e vice-versa (a "foto" da contadora na aula <a href="acid.html">ACID</a>), e as gravações costumam ser mais rápidas. É o modo recomendado para quase todo programa que tem mais de um usuário ao mesmo tempo. Para voltar ao modo padrão:</p>
+
+<pre class="term">$ sqlite3 loja.db "PRAGMA journal_mode = DELETE;"
+delete</pre>
+
+<div class="note">
+<strong>No editor e em memória, não tem WAL</strong>
+<p>O WAL precisa de um arquivo ao lado do banco. Num banco em memória, como o do editor ou o do <code>sqlite3</code> aberto sem nome de arquivo, o diário também fica na memória, e o pedido de WAL é recusado em silêncio: o PRAGMA simplesmente responde com o modo que continua valendo.</p>
+<pre class="term">$ sqlite3
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+Connected to a transient in-memory database.
+Use ".open FILENAME" to reopen on a persistent database.
+sqlite&gt; PRAGMA journal_mode;
+memory
+sqlite&gt; PRAGMA journal_mode = WAL;
+memory</pre>
+<p>No editor, a resposta é a mesma: rode <code>PRAGMA journal_mode = WAL;</code> numa caixa e veja o <code>memory</code>.</p>
+</div>
+
+<hr>
+
+<h2>5. A versão do esquema: <code>user_version</code></h2>
+<p>Bancos mudam com o tempo: hoje a Ana acrescenta a coluna <code>telefone</code> aos clientes, no mês que vem uma tabela de cupons. Um programa que abre o banco precisa saber em que "versão" ele está, para saber o que ainda falta mudar. O <code>user_version</code> é um número guardado no cabeçalho do arquivo só para isso. O SQLite não usa esse número para nada: ele é seu.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA user_version;
+0
+sqlite&gt; PRAGMA user_version = 1;
+sqlite&gt; .quit
+$ sqlite3 loja.db "PRAGMA user_version;"
+1</pre>
+
+<p>Começa em 0. A Ana pôs 1, saiu, e o número continuou lá: fica gravado no arquivo, como o modo WAL. A ideia é que cada mudança no esquema venha junto com o aumento da versão; o programa lê o <code>user_version</code> ao abrir e, se for menor que o esperado, roda as mudanças que faltam.</p>
+
+<p>No editor, o número também funciona, mas só dura até o fim do Rodar, porque o banco é recriado a cada vez:</p>
+
+<pre class="file" data-file="versao.sql" data-resultado>PRAGMA user_version;
+PRAGMA user_version = 3;
+PRAGMA user_version;
+</pre>
+
+<hr>
+
+<h2>6. A saúde e o tamanho: <code>integrity_check</code>, <code>page_size</code> e <code>page_count</code></h2>
+<p>O <code>integrity_check</code> ("conferência de integridade") lê o banco inteiro e confere se a estrutura do arquivo está correta: se cada índice bate com a sua tabela, se nenhuma página está estragada. Quando está tudo certo, a resposta é uma palavra só:</p>
+
+<pre class="file" data-file="saude.sql" data-resultado>PRAGMA integrity_check;
+PRAGMA quick_check;
+</pre>
+
+<p>O <code>quick_check</code> ("conferência rápida") faz quase tudo o que o <code>integrity_check</code> faz, mas pula a comparação dos índices com as tabelas: num banco grande, termina bem mais rápido. Se algo estiver errado, os dois listam os problemas em vez do <code>ok</code>. No editor, o resultado sempre será <code>ok</code>, porque o banco acabou de ser criado na memória. Onde esses PRAGMAs servem de verdade é num <strong>arquivo</strong>: depois de um travamento, depois de copiar o banco de um pendrive, ou para conferir um backup (aula <a href="dump-backup.html">Backup</a>).</p>
+
+<p>O arquivo do banco é dividido em blocos de tamanho fixo, as <strong>páginas</strong>. O <code>page_size</code> diz o tamanho de cada uma, em bytes, e o <code>page_count</code> quantas o banco tem. Multiplicando os dois, dá o tamanho do arquivo:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA page_size;
+4096
+sqlite&gt; PRAGMA page_count;
+12
+sqlite&gt; .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:56 loja.db       « 4096 × 12 = 49152</pre>
+
+<p>No editor, o banco em memória foi criado com outro tamanho de página:</p>
+
+<pre class="file" data-file="paginas.sql" data-resultado>PRAGMA page_size;
+PRAGMA page_count;
+</pre>
+
+<p>Para saber quantas dessas páginas estão vazias, esperando dados novos, existe o <code>freelist_count</code>. Ele e o <code>VACUUM</code>, que devolve esse espaço, são o assunto da próxima aula, <a href="vacuum.html">VACUUM e ANALYZE</a>.</p>
+
+<hr>
+
+<h2>7. Quais PRAGMAs fazem sentido onde</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>Onde fica guardado</th><th>No editor (memória)</th><th>No terminal (arquivo)</th></tr>
+<tr><td><code>table_list</code>, <code>table_info</code>, <code>index_list</code>, <code>foreign_key_list</code></td><td>(só leem o esquema)</td><td>Funcionam igual</td><td>Funcionam igual</td></tr>
+<tr><td><code>foreign_keys</code></td><td>Na conexão: some ao fechar</td><td>Já vem <code>1</code> (o guia liga)</td><td>Vem <code>0</code>: ligue a cada sessão</td></tr>
+<tr><td><code>foreign_key_check</code></td><td>(só lê os dados)</td><td>Funciona</td><td>Funciona; mais útil, porque lá dados quebrados entram fácil</td></tr>
+<tr><td><code>journal_mode</code></td><td>No arquivo (o modo WAL)</td><td>Sempre <code>memory</code>; WAL é recusado</td><td><code>delete</code> por padrão; WAL funciona e fica gravado</td></tr>
+<tr><td><code>user_version</code></td><td>No cabeçalho do arquivo</td><td>Funciona, mas some no próximo Rodar</td><td>Fica gravado</td></tr>
+<tr><td><code>integrity_check</code>, <code>quick_check</code></td><td>(só leem o arquivo)</td><td>Sempre <code>ok</code>: banco recém-criado</td><td>Úteis de verdade: depois de travamentos e em backups</td></tr>
+<tr><td><code>page_size</code>, <code>page_count</code></td><td>No arquivo</td><td>Mostram o banco em memória</td><td>Explicam o tamanho do arquivo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>8. Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para</th><th>No terminal</th><th>Em SQL (qualquer programa)</th></tr>
+<tr><td>Ver as tabelas</td><td><code>.tables</code></td><td><code>PRAGMA table_list;</code> ou <code>SELECT name FROM sqlite_schema WHERE type = 'table';</code></td></tr>
+<tr><td>Ver as colunas</td><td><code>.schema produtos</code></td><td><code>PRAGMA table_info(produtos);</code> ou <code>SELECT … FROM pragma_table_info('produtos')</code></td></tr>
+<tr><td>Ver os índices</td><td><code>.indexes produtos</code></td><td><code>PRAGMA index_list(produtos);</code></td></tr>
+<tr><td>Ler um PRAGMA</td><td></td><td><code>PRAGMA user_version;</code> ou <code>SELECT user_version FROM pragma_user_version;</code></td></tr>
+</table>
+</div>
+
+<p>A forma <code>pragma_…()</code> é a mais flexível: dá para juntar o resultado com outras tabelas e filtrar com <code>WHERE</code>. A forma <code>PRAGMA …;</code> é a mais curta para uma olhada rápida.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Os PRAGMAs têm uma pegadinha séria: na maior parte dos erros, <strong>não aparece mensagem nenhuma</strong>.</p>
+
+<div class="cenario">
+<strong>Nome errado: nenhum erro</strong>
+<pre class="file" data-file="nome-errado.sql" data-resultado>PRAGMA foreign_key = ON;
+PRAGMA tabela_que_nao_existe;
+</pre>
+<p><strong>O que aconteceu:</strong> o primeiro está sem o <code>s</code> no fim (<code>foreign_key</code> em vez de <code>foreign_keys</code>), e o segundo nem existe. Os dois responderam só "PRAGMA: ok". A documentação do SQLite diz isso com todas as letras: um PRAGMA desconhecido é <strong>ignorado</strong>, sem mensagem de erro. Quem escreveu o primeiro acha que ligou alguma coisa e não ligou nada.</p>
+<p><strong>Como evitar:</strong> depois de mudar um PRAGMA, leia de volta: <code>PRAGMA foreign_keys;</code> tem de responder <code>1</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Tabela com nome errado: resposta vazia</strong>
+<pre class="file" data-file="tabela-errada.sql" data-resultado>PRAGMA table_info(cliente);
+</pre>
+<p><strong>O que aconteceu:</strong> a tabela se chama <code>clientes</code>, no plural. Um <code>SELECT * FROM cliente</code> daria <code>no such table: cliente</code>; o <code>table_info</code> só devolve uma tabela vazia, com 0 linhas. Se o seu programa conclui "a tabela não tem colunas", está enganado: ela não existe.</p>
+<p><strong>Como evitar:</strong> confira o nome com <code>PRAGMA table_list;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Desligar as chaves estrangeiras dentro de uma transação</strong>
+<pre class="file" data-file="fk-transacao.sql" data-resultado>BEGIN;
+PRAGMA foreign_keys = OFF;
+PRAGMA foreign_keys;
+COMMIT;
+</pre>
+<p><strong>O que aconteceu:</strong> a leitura logo depois respondeu <code>1</code>: continuou ligado. O <code>foreign_keys</code> não pode ser mudado com uma transação aberta, e o SQLite ignora o pedido, de novo sem erro.</p>
+<p><strong>Como consertar:</strong> mude o <code>foreign_keys</code> <strong>antes</strong> do <code>BEGIN</code>. É por isso que o <code>.dump</code> (aula <a href="dump-backup.html">Backup</a>) escreve o <code>PRAGMA foreign_keys=OFF;</code> na primeira linha, antes do <code>BEGIN TRANSACTION</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Pediu WAL e continuou <code>memory</code></strong>
+<p>No editor (ou no <code>sqlite3</code> sem arquivo), <code>PRAGMA journal_mode = WAL;</code> responde <code>memory</code>. Não é erro: é o SQLite dizendo que o modo pedido não serve para um banco em memória. A resposta de um <code>journal_mode = …</code> é sempre o modo que <strong>ficou</strong> valendo; confira se é o que você pediu.</p>
+</div>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>Os "PRAGMAs" do MySQL, PostgreSQL e SQL Server</strong>
+<p>O comando <code>PRAGMA</code> é só do SQLite. Os outros bancos fazem as mesmas coisas por outros caminhos (trechos <strong>ilustrativos</strong>):</p>
+<ul>
+  <li>Para ver tabelas e colunas, o padrão SQL tem o <code>INFORMATION_SCHEMA</code>, um conjunto de "tabelas sobre as tabelas" que o MySQL, o PostgreSQL e o SQL Server oferecem: <code>SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'produtos';</code>. O SQLite não tem o <code>INFORMATION_SCHEMA</code>; o equivalente dele é o <code>pragma_table_info()</code>.</li>
+  <li>As chaves estrangeiras, nesses bancos, valem desde o começo, sem precisar ligar nada. O MySQL tem o botão ao contrário: <code>SET foreign_key_checks = 0;</code> desliga a conferência numa sessão (o padrão é ligada).</li>
+  <li>Configurações do banco ficam em comandos como o <code>SET</code> (MySQL e PostgreSQL) e o <code>ALTER DATABASE</code>, ou em arquivos de configuração do servidor.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que faz</th></tr>
+<tr><td><code>PRAGMA table_list;</code></td><td>Lista as tabelas (e views) do banco</td></tr>
+<tr><td><code>PRAGMA table_info(t);</code></td><td>As colunas de <code>t</code>: nome, tipo, <code>NOT NULL</code>, padrão, chave primária</td></tr>
+<tr><td><code>PRAGMA index_list(t);</code></td><td>Os índices de <code>t</code></td></tr>
+<tr><td><code>PRAGMA index_info(i);</code></td><td>As colunas do índice <code>i</code></td></tr>
+<tr><td><code>PRAGMA foreign_key_list(t);</code></td><td>As chaves estrangeiras de <code>t</code></td></tr>
+<tr><td><code>PRAGMA foreign_keys = ON;</code></td><td>Liga a conferência das chaves estrangeiras (só nesta conexão; fora de transação)</td></tr>
+<tr><td><code>PRAGMA foreign_key_check;</code></td><td>Lista as linhas que quebram alguma chave estrangeira</td></tr>
+<tr><td><code>PRAGMA journal_mode = WAL;</code></td><td>Liga o modo WAL (fica gravado no arquivo)</td></tr>
+<tr><td><code>PRAGMA user_version = N;</code></td><td>Guarda a versão do seu esquema no arquivo</td></tr>
+<tr><td><code>PRAGMA integrity_check;</code> / <code>quick_check;</code></td><td>Conferem a saúde do arquivo: <code>ok</code></td></tr>
+<tr><td><code>PRAGMA page_size;</code> / <code>page_count;</code></td><td>Tamanho de cada página e quantas o banco tem</td></tr>
+<tr><td><code>SELECT … FROM pragma_table_info('t')</code></td><td>Qualquer PRAGMA que devolve tabela, dentro de um <code>SELECT</code></td></tr>
+</table>
+</div>
+
+<p>A lista completa está na referência <a href="ref-pragmas.html">PRAGMAs</a>.</p>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. As colunas de uma tabela</h3>
+<p>Complete para ver as colunas da tabela <code>fornecedores</code>:</p>
+<div class="ex-code">PRAGMA <input data-answer="table_info" aria-label="nome do pragma">(fornecedores);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Ligar as chaves estrangeiras</h3>
+<p>Complete para ligar a conferência das chaves estrangeiras no terminal:</p>
+<div class="ex-code">PRAGMA <input data-answer="foreign_keys" aria-label="nome do pragma"> = <input data-answer="ON|on|1" aria-label="valor">;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. A Ana ligou o <code>foreign_keys</code> no terminal, saiu do <code>sqlite3</code> e abriu de novo. O que <code>PRAGMA foreign_keys;</code> responde?</p>
+<label><input type="radio" name="q3"> <code>1</code>, porque fica gravado no arquivo</label>
+<label><input type="radio" name="q3"> Um erro</label>
+<label><input type="radio" name="q3"> <code>0</code>: vale só para a conexão, e cada abertura começa desligada</label>
+<label><input type="radio" name="q3"> <code>ON</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que acontece com <code>PRAGMA foriegn_keys = ON;</code> (com as letras trocadas)?</p>
+<label><input type="radio" name="q4"> Erro: <code>no such pragma</code></label>
+<label><input type="radio" name="q4"> Nada, e sem mensagem: um PRAGMA desconhecido é ignorado</label>
+<label><input type="radio" name="q4"> O SQLite corrige o nome e liga as chaves</label>
+<label><input type="radio" name="q4"> O banco fecha</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual destes PRAGMAs <strong>não</strong> faz sentido no banco em memória do editor?</p>
+<label><input type="radio" name="q5"> <code>table_info</code></label>
+<label><input type="radio" name="q5"> <code>index_list</code></label>
+<label><input type="radio" name="q5"> <code>foreign_key_list</code></label>
+<label><input type="radio" name="q5"> <code>journal_mode = WAL</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O <code>loja.db</code> tem <code>page_size</code> 4096 e <code>page_count</code> 12. Qual o tamanho do arquivo?</p>
+<label><input type="radio" name="q6"> 49152 bytes</label>
+<label><input type="radio" name="q6"> 4108 bytes</label>
+<label><input type="radio" name="q6"> 4096 bytes</label>
+<label><input type="radio" name="q6"> 12 bytes</label>
+</div>
+
+<h3>Missão final: a versão 2 do esquema</h3>
+
+<div class="trysql" data-goal="colunas:tem_telefone,versao;;out:^1\|2$">
+<p class="try-task"><strong>Missão:</strong> a Ana vai lançar a versão 2 do banco da loja, com a coluna <code>telefone</code> (texto) na tabela <code>clientes</code>. Escreva a mudança da tabela (veja <a href="alter-table.html">ALTER TABLE</a>) e anote a nova versão com <code>user_version</code>. A consulta do fim confere as duas coisas: tem de mostrar <code>1</code> e <code>2</code>.</p>
+<pre class="script" data-file="versao2.sql">-- 1. acrescente a coluna telefone em clientes
+-- 2. mude o user_version para 2
+
+SELECT (SELECT count(*) FROM pragma_table_info('clientes')
+        WHERE name = 'telefone') AS tem_telefone,
+       user_version AS versao
+FROM pragma_user_version;
+</pre>
+<pre class="solucao" data-file="versao2.sql">ALTER TABLE clientes ADD COLUMN telefone TEXT;
+PRAGMA user_version = 2;
+
+SELECT (SELECT count(*) FROM pragma_table_info('clientes')
+        WHERE name = 'telefone') AS tem_telefone,
+       user_version AS versao
+FROM pragma_user_version;
+</pre>
+</div>
+
+<p>A consulta do fim usa duas funções de PRAGMA: <code>pragma_table_info</code> conta se existe a coluna <code>telefone</code>, e <code>pragma_user_version</code> lê a versão. No terminal, a Ana faria o mesmo no <code>loja.db</code>, e as duas mudanças ficariam gravadas. Melhor ainda: dentro de um <code>BEGIN</code> … <code>COMMIT</code>, para que a coluna e a versão mudem juntas, ou nenhuma das duas.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um PRAGMA lê ou muda o <strong>banco</strong>, não os dados: <code>PRAGMA nome;</code> lê, <code>PRAGMA nome = valor;</code> muda, <code>PRAGMA nome(tabela);</code> pergunta sobre uma tabela. É só do SQLite.</li>
+  <li><code>table_list</code>, <code>table_info</code>, <code>index_list</code> e <code>foreign_key_list</code> mostram a estrutura, em SQL; com <code>pragma_…()</code> no <code>FROM</code>, dá para filtrar com <code>WHERE</code>.</li>
+  <li><code>foreign_keys</code> vem desligado no terminal e vale só para a conexão: ligue a cada vez, fora de transação. <code>foreign_key_check</code> acha o que já entrou quebrado.</li>
+  <li><code>journal_mode = WAL</code> e <code>user_version</code> ficam gravados no arquivo; no banco em memória do editor, o WAL é recusado e a versão some no próximo Rodar.</li>
+  <li><code>integrity_check</code> e <code>quick_check</code> respondem <code>ok</code> quando o arquivo está saudável; <code>page_size</code> × <code>page_count</code> = tamanho do arquivo.</li>
+  <li>PRAGMA com nome errado não dá erro: depois de mudar um, leia de volta.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
