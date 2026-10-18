@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Injection — como o ataque funciona e como se proteger | Guia SQL</title>
+<meta name="description" content="SQL Injection para quem está começando: como um programa que cola o texto digitado dentro do SQL deixa o invasor mudar a consulta, o ' OR '1'='1 que mostra a tabela inteira, o login sem senha, o UNION que lê outra tabela, por que algumas bibliotecas só rodam um comando e como se proteger com parâmetros, rodando de verdade no navegador e num programa Python.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Injection</span></h1>
+
+<p class="intro">Até aqui, quem escrevia o SQL era você. Num site ou num aplicativo, quem escreve é um <strong>programa</strong>, e muitas vezes ele junta um pedaço fixo de SQL com o que a pessoa digitou num formulário. Se essa junção for feita do jeito ingênuo, quem digita pode escrever SQL no lugar do dado e <strong>mudar a consulta</strong>: ver a tabela inteira de clientes, entrar sem senha, ler os salários dos funcionários. Esse problema se chama <strong>SQL Injection</strong> ("injeção de SQL") e é uma das falhas mais antigas e mais comuns da web. Nesta aula você vai ver o problema acontecer de verdade, no editor e num programa Python da Ana, para aprender a <strong>se proteger</strong> dele.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como um programa "monta" uma consulta colando texto, e por que isso é perigoso.</li>
+  <li>O caso clássico <code>' OR '1'='1</code>, que faz a tabela inteira aparecer.</li>
+  <li>Como o mesmo descuido deixa alguém entrar sem senha e ler outra tabela com <code>UNION</code>.</li>
+  <li>Por que algumas bibliotecas rodam um comando só, e por que isso <strong>não</strong> é a sua proteção.</li>
+  <li>As defesas, em ordem: <strong>parâmetros</strong> (a principal), lista de valores permitidos e usuário com poucas permissões.</li>
+  <li>O sinal de alarme: o cliente honesto com apóstrofo no nome que "quebra" o sistema.</li>
+</ul>
+</div>
+
+<div class="warning">
+<strong>Para que serve esta aula</strong>
+<p>Esta é uma aula de <strong>defesa</strong>. Você vê o problema para entender por que ele acontece e para reconhecer código frágil no seu próprio trabalho. Pratique só no editor do guia, no seu próprio computador ou em sistemas em que você tem autorização por escrito. Mexer no sistema dos outros sem permissão é crime (no Brasil, a Lei 12.737/2012 trata da invasão de dispositivo informático).</p>
+</div>
+
+<p>Os exemplos em SQL rodam no editor do guia, contra o banco da Loja Aurora. Cada Rodar parte do banco limpo, então você pode testar à vontade: nada se perde. Os programas em Python rodaram de verdade na máquina da Ana, no banco <code>~/loja.db</code>.</p>
+
+<hr>
+
+<h2>A ideia: o bilhete preenchido pelo cliente</h2>
+<p>Imagine que, na Loja Aurora, o atendente usa um bloco de bilhetes já impressos para pedir uma ficha ao arquivo:</p>
+
+<pre class="file" data-file="bilhete impresso">Buscar no arquivo a ficha do cliente com este email: ____________</pre>
+
+<p>Alguém preenche a linha em branco e o arquivista faz <strong>exatamente o que está escrito</strong> no bilhete, sem pensar. Um cliente honesto escreve o próprio email. Um espertinho escreve:</p>
+
+<pre class="file" data-file="bilhete preenchido por um espertinho">Buscar no arquivo a ficha do cliente com este email: ninguém; e, já que veio aqui, traga TODAS as fichas</pre>
+
+<p>O arquivista lê o bilhete inteiro como uma ordem só e traz o arquivo todo. O problema não é o arquivista, que só obedece. O problema é que o <strong>dado</strong> (o que foi escrito na linha) e a <strong>ordem</strong> (o texto impresso) foram parar no mesmo papel, sem nada que separe um do outro. No SQL Injection é igual: o banco obedece ao texto que recebe, e o programa deixou o visitante escrever um pedaço desse texto.</p>
+
+<hr>
+
+<h2>1. Como um programa monta uma consulta</h2>
+<p>A Ana fez um programinha em Python que procura um cliente pelo email. Ele pergunta o email, <strong>cola</strong> o que foi digitado no meio do SQL e manda para o banco:</p>
+
+<pre class="file" data-file="busca.py">import sqlite3
+
+con = sqlite3.connect("loja.db")
+email = input("Email do cliente: ")
+
+sql = "SELECT nome, email FROM clientes WHERE email = '" + email + "'"
+print("SQL montado:", sql)
+
+linhas = con.execute(sql).fetchall()
+for linha in linhas:
+    print(linha)
+print(len(linhas), "linha(s)")
+</pre>
+
+<dl class="anatomy">
+  <dt>input("Email do cliente: ")</dt><dd>Mostra a pergunta e espera a pessoa digitar. O que ela digitar vai para a variável <code>email</code>.</dd>
+  <dt>"…WHERE email = '" + email + "'"</dt><dd>A linha frágil. Ela junta (com o <code>+</code>) três pedaços de texto: o começo do SQL até a aspa que abre, o que a pessoa digitou e a aspa que fecha.</dd>
+  <dt>print("SQL montado:", sql)</dt><dd>Mostra o SQL que vai para o banco. Programas de verdade não fazem isso; está aqui só para você ver a montagem.</dd>
+  <dt>con.execute(sql)</dt><dd>Manda o texto pronto para o SQLite rodar. O banco não sabe que parte veio da Ana e que parte veio do visitante: para ele, é tudo SQL.</dd>
+</dl>
+
+<p>Com um email normal, tudo funciona:</p>
+
+<pre class="term">$ python3 busca.py
+Email do cliente: ana.beatriz@exemplo.com.br      « a Ana digita o email e aperta Enter
+SQL montado: SELECT nome, email FROM clientes WHERE email = 'ana.beatriz@exemplo.com.br'
+('Ana Beatriz Sousa', 'ana.beatriz@exemplo.com.br')
+1 linha(s)</pre>
+
+<p>É a mesma consulta que você escreveria no editor:</p>
+
+<pre class="file" data-file="busca-normal.sql" data-resultado>SELECT nome, email FROM clientes WHERE email = 'ana.beatriz@exemplo.com.br';
+</pre>
+
+<hr>
+
+<h2>2. Quando o texto digitado vira SQL: <code>' OR '1'='1</code></h2>
+<p>Agora alguém digita, no lugar do email, este texto: <code>' OR '1'='1</code>. O programa cola tudo do mesmo jeito, sem desconfiar:</p>
+
+<pre class="term">$ python3 busca.py
+Email do cliente: ' OR '1'='1
+SQL montado: SELECT nome, email FROM clientes WHERE email = '' OR '1'='1'
+('José Ribamar Silva', 'jose.ribamar@exemplo.com.br')
+('Maria Clara Mendes', 'maria.clara@exemplo.com.br')
+('Ana Beatriz Sousa', 'ana.beatriz@exemplo.com.br')
+('Carlos Eduardo Lima', 'carlos.lima@exemplo.com.br')
+('Conceição Prado', 'conceicao.prado@exemplo.com.br')
+('Rafael Monteiro', 'rafael.monteiro@exemplo.com.br')
+('Luís Otávio Brito', None)
+('Fernanda Carvalho', 'fernanda.carvalho@exemplo.com.br')
+('Antônio Carlos Neves', 'antonio.neves@exemplo.com.br')
+('Juliana Paes Barbosa', 'juliana.barbosa@exemplo.com.br')
+('Marcos Vinícius Rocha', 'marcos.rocha@exemplo.com.br')
+('Patrícia Gusmão', 'patricia.gusmao@exemplo.com.br')
+('Tiago Fontes', 'tiago.fontes@exemplo.com.br')
+('Camila Duarte', 'camila.duarte@exemplo.com.br')
+('Roberto Falcão', None)
+('Larissa Macêdo', 'larissa.macedo@exemplo.com.br')
+('Gustavo Henrique Prado', 'gustavo.prado@exemplo.com.br')
+('Ana Carvalho Lima', 'ana.carvalho@exemplo.com.br')
+('Bruno Cavalcante', 'bruno.cavalcante@exemplo.com.br')
+('Vitória Régia Campos', 'vitoria.campos@exemplo.com.br')
+('Sebastião Moura', 'sebastiao.moura@exemplo.com.br')
+('Débora Cristina Alves', 'debora.alves@exemplo.com.br')
+('Henrique Sales', None)
+('Isabela Franco', 'isabela.franco@exemplo.com.br')
+('Otávio Bezerra', 'otavio.bezerra@exemplo.com.br')
+('Mirela Pontes', 'mirela.pontes@exemplo.com.br')
+('Paulo Sérgio Andrade', 'paulo.andrade@exemplo.com.br')
+('Tainá Soares', 'taina.soares@exemplo.com.br')
+('Elias Furtado', 'elias.furtado@exemplo.com.br')
+('Rosângela Dias', 'rosangela.dias@exemplo.com.br')
+30 linha(s)          « os 30 clientes da loja, com o email de todos</pre>
+
+<p>O programa devia mostrar <strong>um</strong> cliente e mostrou <strong>os 30</strong>. Rode a consulta montada no editor e veja a tabela inteira aparecer:</p>
+
+<pre class="file" data-file="consulta-alterada.sql" data-resultado>SELECT nome, email FROM clientes WHERE email = '' OR '1'='1';
+</pre>
+
+<p>O que mudou está nas aspas. Olhe o SQL montado com o que o visitante digitou marcado entre colchetes:</p>
+
+<pre class="file" data-file="a montagem, pedaço por pedaço">SELECT nome, email FROM clientes WHERE email = '[' OR '1'='1]'
+                                                ↑  └── digitado ──┘↑
+                                       aspa do programa      aspa do programa</pre>
+
+<dl class="anatomy">
+  <dt>email = ''</dt><dd>A <strong>primeira aspa que a pessoa digitou</strong> fecha o texto que o programa tinha aberto. Para o banco, o email procurado é o texto vazio.</dd>
+  <dt>OR '1'='1'</dt><dd>Depois do texto vazio sobra isto, que o banco agora lê como <strong>SQL, não como dado</strong>: "ou então, quando <code>'1'</code> for igual a <code>'1'</code>". E <code>'1'</code> é sempre igual a <code>'1'</code>.</dd>
+  <dt>a última aspa</dt><dd>A aspa que o programa colou no fim casa com a última aspa digitada, então o SQL fica bem-formado e o banco não reclama.</dd>
+</dl>
+
+<p>Como a condição <code>OR '1'='1'</code> é verdadeira em <strong>toda</strong> linha, o <code>WHERE</code> deixa passar a tabela inteira. Foi o "traga todas as fichas" do bilhete. Repare: quem digitou nem precisava saber um email de verdade.</p>
+
+<div class="trysql" data-goal="linhas:1">
+<p class="try-task"><strong>Experimente:</strong> a caixa está com a consulta alterada, mostrando os 30 clientes. Conserte o <code>WHERE</code> para que ela volte a procurar <strong>um</strong> email de verdade (o da Ana Beatriz, <code>ana.beatriz@exemplo.com.br</code>) e devolva só 1 linha. É assim que o programa deveria ter se comportado.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, email FROM clientes WHERE email = '' OR '1'='1';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, email FROM clientes WHERE email = 'ana.beatriz@exemplo.com.br';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Entrar sem senha, com um comentário</h2>
+<p>O estrago cresce quando a consulta decide quem <strong>entra</strong> num sistema. Imagine uma tabela de logins (vamos criá-la aqui só para a demonstração) e um programa que confere login e senha montando o SQL por colagem:</p>
+
+<pre class="file" data-file="login (o SQL que o programa monta)">SELECT login FROM usuarios
+WHERE login = 'DIGITADO' AND senha = 'DIGITADO';</pre>
+
+<p>Se vier uma linha, o programa deixa entrar. Veja o que acontece quando o invasor digita, no campo do login, <code>caio'--</code> e deixa a senha em branco. As duas aspas e os dois tracinhos fazem o serviço:</p>
+
+<pre class="file" data-file="login-burlado.sql" data-resultado>CREATE TABLE usuarios (login TEXT, senha TEXT);
+INSERT INTO usuarios VALUES ('ana', 'girassol42'), ('caio', 'teresina2024');
+
+SELECT login FROM usuarios
+WHERE login = 'caio'--' AND senha = 'qualquer';
+</pre>
+
+<dl class="anatomy">
+  <dt>login = 'caio'</dt><dd>A aspa digitada depois de <code>caio</code> fecha o texto. O banco entende: login igual a <code>caio</code>.</dd>
+  <dt>--</dt><dd>Em SQL, <code>--</code> começa um <strong>comentário</strong>: daí até o fim da linha, o banco <strong>ignora tudo</strong> (veja a aula <a href="comentarios.html">Comentários</a>). Some a parte <code>AND senha = '…'</code>.</dd>
+  <dt>o resto da linha</dt><dd>Fica dentro do comentário, então a checagem da senha nunca acontece. A consulta devolve a linha do <code>caio</code>, e o programa deixa entrar sem conferir a senha.</dd>
+</dl>
+
+<p>Rodou e devolveu a linha <code>caio</code>: para o programa, login aprovado. O invasor entrou na conta de alguém só sabendo (ou chutando) o nome de login.</p>
+
+<div class="cenario">
+<strong>E se a pessoa nem souber um login?</strong>
+<p>Aí entra o <code>OR</code> da seção 2, agora do lado do login: digitando <code>' OR '1'='1</code> no campo de login, o <code>WHERE</code> fica verdadeiro para todas as linhas e a consulta devolve a tabela inteira de usuários. O programa, que só olha se "veio alguma linha", deixa entrar. É o mesmo descuido da busca de clientes, com uma consequência bem pior.</p>
+</div>
+
+<hr>
+
+<h2>4. Ler outra tabela com <code>UNION</code></h2>
+<p>Lembra do <code>UNION</code> (aula <a href="union.html">UNION</a>), que empilha o resultado de duas consultas? Se a consulta frágil mostra uma lista na tela, quem ataca pode <strong>pendurar</strong> um <code>SELECT</code> de outra tabela no fim e fazer esses dados aparecerem no lugar da lista.</p>
+
+<p>A loja tem uma busca de produtos pelo nome. O invasor digita um texto que fecha o <code>LIKE</code>, acrescenta um <code>UNION SELECT</code> dos salários dos funcionários e comenta o resto. Como os salários não são para o público, isso é um vazamento:</p>
+
+<pre class="file" data-file="union-ataque.sql" data-resultado>SELECT nome, preco FROM produtos WHERE nome LIKE '%zzz' UNION SELECT nome, salario FROM funcionarios --%';
+</pre>
+
+<dl class="anatomy">
+  <dt>LIKE '%zzz'</dt><dd>Nenhum produto casa com <code>%zzz</code>, então a primeira consulta vem vazia. O invasor fez de propósito: ele quer só a segunda metade.</dd>
+  <dt>UNION SELECT nome, salario FROM funcionarios</dt><dd>Empilha os salários. Para o <code>UNION</code> funcionar, as duas consultas precisam do <strong>mesmo número de colunas</strong>; por isso o invasor escolheu duas (<code>nome</code> e <code>salario</code>), casando com <code>nome, preco</code>.</dd>
+  <dt>--%'</dt><dd>O <code>--</code> comenta o pedaço <code>%'</code> que o programa ia colar no fim, para o SQL não ficar quebrado.</dd>
+</dl>
+
+<p>No lugar dos produtos, apareceu a folha de pagamento. Em sistemas reais, esse mesmo truque já serviu para ler tabelas de senhas e de cartões. O invasor costuma descobrir quantas colunas usar testando aos poucos; os detalhes não importam aqui — o que importa é a causa, sempre a mesma: <strong>texto digitado virou SQL</strong>.</p>
+
+<hr>
+
+<h2>5. "Mas a minha biblioteca só roda um comando" — e os dois tracinhos</h2>
+<p>Você pode ter ouvido que o perigo do SQL Injection é alguém mandar um <strong>segundo</strong> comando junto, separado por <code>;</code>, como um <code>DELETE</code> ou um <code>DROP TABLE</code> grudado na consulta. Isso existe, mas muitas bibliotecas <strong>recusam</strong> dois comandos numa chamada só. O <code>sqlite3</code> do Python é uma delas. Quando a Ana manda, pela colagem, um texto com <code>;</code> no meio, o próprio Python barra:</p>
+
+<pre class="term">$ echo "'; DELETE FROM clientes; --" | python3 busca.py
+Email do cliente: SQL montado: SELECT nome, email FROM clientes WHERE email = ''; DELETE FROM clientes; --'
+Traceback (most recent call last):
+  File "/home/ana/busca.py", line 9, in &lt;module&gt;
+    linhas = con.execute(sql).fetchall()
+             ~~~~~~~~~~~^^^^^
+sqlite3.ProgrammingError: You can only execute one statement at a time.</pre>
+
+<p>A mensagem diz, em inglês: "você só pode executar um comando por vez". O método <code>execute()</code> do Python compila e roda <strong>só o primeiro comando</strong> do texto. Isso é parecido com o que a biblioteca C do SQLite faz por baixo: a documentação oficial da função <code>sqlite3_prepare_v2</code> diz que ela <em>"só compila o primeiro comando"</em> do texto e deixa o resto de lado.</p>
+
+<div class="warning">
+<strong>Isso protege você? Não.</strong>
+<p>Veja de novo as seções 2, 3 e 4: <strong>nenhum</strong> daqueles ataques precisou de um segundo comando. O <code>' OR '1'='1</code>, o login sem senha e o <code>UNION</code> são <strong>um comando só</strong> — a própria consulta, alterada por dentro. Contar com "a biblioteca só roda um comando" é uma falsa sensação de segurança. E há bibliotecas e funções que <em>aceitam</em> vários comandos (no PHP, por exemplo, a <code>mysqli_multi_query()</code>, cuja própria documentação avisa para usar <strong>prepared statements</strong> quando houver dado vindo de fora). A única defesa de verdade é a da próxima seção.</p>
+</div>
+
+<p>E por que o <code>--</code> dos ataques some com o resto da linha? Porque, como você viu na aula <a href="comentarios.html">Comentários</a>, <code>--</code> começa um comentário até o fim da linha. O invasor usa isso para "cortar fora" o pedaço de SQL que o programa ia colar depois do dado dele.</p>
+
+<div class="note">
+<strong>Nos outros bancos: o comentário tem variações</strong>
+<p>O comentário <code>--</code> funciona em MySQL, PostgreSQL, SQL Server e SQLite. Há uma pegadinha: no <strong>MySQL</strong>, a documentação oficial exige que, depois dos dois tracinhos, venha <strong>um espaço</strong> (ou tab) — <code>-- </code> — senão não é comentário. O MySQL também aceita <code>#</code> como comentário até o fim da linha, o que o SQLite não aceita. Nada disso muda o remédio: parâmetros.</p>
+</div>
+
+<hr>
+
+<h2>6. A defesa de verdade: parâmetros</h2>
+<p>A causa de tudo é sempre a mesma: o dado e o SQL andaram juntos no mesmo texto. A solução é <strong>separá-los</strong>. Em vez de colar o valor dentro do SQL, você deixa um <strong>espaço reservado</strong> (um <code>?</code>) e entrega o valor <strong>por fora</strong>, numa lista à parte. O banco monta a consulta primeiro e só depois encaixa o valor, tratando-o <strong>sempre como dado</strong>, nunca como comando. Isso se chama <strong>consulta com parâmetros</strong> (ou <em>prepared statement</em>), e tem aula só para ela: <a href="parametros.html">Consultas com Parâmetros</a>.</p>
+
+<p>Veja o mesmo programa da Ana, agora com <code>?</code> no lugar da colagem:</p>
+
+<pre class="file" data-file="busca_segura.py">import sqlite3
+
+con = sqlite3.connect("loja.db")
+email = input("Email do cliente: ")
+
+sql = "SELECT nome, email FROM clientes WHERE email = ?"
+print("SQL enviado:", sql)
+
+linhas = con.execute(sql, (email,)).fetchall()
+for linha in linhas:
+    print(linha)
+print(len(linhas), "linha(s)")
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE email = ?</dt><dd>O <code>?</code> é o espaço reservado. O SQL agora é <strong>fixo</strong>: não muda com o que a pessoa digita. Repare que não há aspa nenhuma em volta do <code>?</code>.</dd>
+  <dt>con.execute(sql, (email,))</dt><dd>O valor vai no <strong>segundo argumento</strong>, numa lista à parte. O banco recebe a consulta e o valor por caminhos separados e encaixa o valor como dado.</dd>
+</dl>
+
+<p>Agora o ataque não cola mais. O mesmo <code>' OR '1'='1</code> de antes é tratado como um <strong>email literal</strong> — e, como nenhum cliente tem esse email esquisito, a busca volta vazia:</p>
+
+<pre class="term">$ echo "ana.beatriz@exemplo.com.br" | python3 busca_segura.py
+Email do cliente: SQL enviado: SELECT nome, email FROM clientes WHERE email = ?
+('Ana Beatriz Sousa', 'ana.beatriz@exemplo.com.br')
+1 linha(s)
+$ echo "' OR '1'='1" | python3 busca_segura.py
+Email do cliente: SQL enviado: SELECT nome, email FROM clientes WHERE email = ?
+0 linha(s)          « o texto do ataque virou um email comum: ninguém tem esse email
+$ echo "'; DELETE FROM clientes; --" | python3 busca_segura.py
+Email do cliente: SQL enviado: SELECT nome, email FROM clientes WHERE email = ?
+0 linha(s)          « idem: procurou por um "email" bem esquisito, não achou</pre>
+
+<p>Repare que o SQL enviado é sempre o mesmo, <code>…email = ?</code>. O que a pessoa digita nunca mais vira comando. Essa é a regra de ouro: <strong>todo valor que vem de fora entra por parâmetro</strong>.</p>
+
+<hr>
+
+<h2>7. O sinal de alarme honesto: o apóstrofo no nome</h2>
+<p>Você não precisa de um invasor para descobrir que o seu código cola texto. Basta um cliente de verdade com <strong>apóstrofo no nome</strong>. A Loja Aurora tem um fornecedor assim: <code>Loja D'Água</code>. Procure por ele com a busca que cola texto:</p>
+
+<pre class="file" data-file="apostrofo-quebra.sql" data-resultado data-erro>SELECT id, nome FROM fornecedores WHERE nome = 'Loja D'Água';
+</pre>
+
+<p>O banco respondeu com um erro (<code>near "Água": syntax error</code> — "erro de sintaxe perto de <code>Água</code>"). O apóstrofo de <code>D'Água</code> fechou o texto cedo demais, exatamente como a aspa do ataque, e o <code>Água'</code> que sobrou virou SQL sem sentido. Veja o que o banco recebeu:</p>
+
+<pre class="file" data-file="o que o banco viu">WHERE nome = 'Loja D'Água'
+                   ↑ a aspa aqui fechou o texto; sobrou  Água'</pre>
+
+<p>Esse erro é um <strong>presente</strong>: ele avisa, com um cliente honesto, que o seu programa cola texto — e o que hoje é um erro chato, amanhã é a porta do ataque. Com parâmetros, o problema simplesmente não existe: o nome com apóstrofo é guardado e procurado certinho, porque o banco o trata como dado. A aula <a href="parametros.html">Consultas com Parâmetros</a> mostra isso rodando. (E, quando você precisa escrever a aspa dentro do SQL à mão, ela é dobrada: <code>'Loja D''Água'</code>, como na aula <a href="where.html">WHERE</a>.)</p>
+
+<hr>
+
+<h2>8. As defesas, em ordem</h2>
+<p>Parâmetros resolvem quase tudo. As outras defesas são reforços, para os casos em que um valor não pode entrar por parâmetro.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Defesa</th><th>Quando usar</th><th>O que faz</th></tr>
+<tr><td><strong>Parâmetros</strong> (<code>?</code>, <code>:nome</code>)</td><td>Sempre, para todo valor que vem de fora</td><td>Separa o dado do SQL; o dado nunca vira comando. É a defesa principal.</td></tr>
+<tr><td><strong>Lista de permitidos</strong></td><td>Quando o que varia é um <strong>nome de coluna ou a direção do ORDER BY</strong> (que não dá para passar por <code>?</code>)</td><td>Você compara o que veio com uma lista fixa que você escreveu (<code>'preco'</code>, <code>'nome'</code>…) e recusa o resto. Nunca cole um nome de coluna vindo de fora.</td></tr>
+<tr><td><strong>Usuário com poucas permissões</strong></td><td>Em bancos com servidor (MySQL, PostgreSQL…)</td><td>Se o site só lê, o usuário do banco só tem permissão de <code>SELECT</code>. Mesmo que algo escape, o estrago é menor. Veja <a href="usuarios-permissoes.html">Usuários e Permissões</a>.</td></tr>
+<tr><td><strong>Escapar o texto à mão</strong></td><td>Último recurso, quando não dá para usar parâmetro</td><td>Dobrar as aspas do valor você mesmo. É fácil errar; prefira sempre o parâmetro.</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Validar não é o mesmo que proteger</strong>
+<p>"Só aceitar emails com <code>@</code>" ou "proibir a palavra <code>DROP</code>" ajuda a melhorar o formulário, mas <strong>não</strong> protege contra SQL Injection: o <code>' OR '1'='1</code> não tem <code>@</code> nem a palavra <code>DROP</code>, e listas de palavras proibidas sempre deixam um buraco. A proteção vem da <strong>separação</strong> entre dado e SQL, ou seja, dos parâmetros. Validação é um acréscimo, não a defesa.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado (no editor)</h2>
+
+<div class="cenario">
+<strong>A aspa dobrada dentro do texto</strong>
+<p>No editor, se você quiser procurar o fornecedor com apóstrofo, a forma certa é <strong>dobrar</strong> a aspa dentro do texto — e aí funciona:</p>
+<pre class="file" data-file="apostrofo-certo.sql" data-resultado>SELECT id, nome FROM fornecedores WHERE nome = 'Loja D''Água';
+</pre>
+<p>As duas aspas seguidas (<code>''</code>) dizem ao banco "aqui é uma aspa de verdade, parte do texto", e o texto não é fechado cedo. É exatamente esse cuidado que os parâmetros fazem por você, sem você precisar lembrar.</p>
+</div>
+
+<div class="cenario">
+<strong>As aspas duplas não resolvem</strong>
+<p>Pode parecer que trocar <code>'</code> por <code>"</code> em volta do texto resolveria. No SQLite do guia, aspas duplas são para <strong>nomes de coluna</strong>, não para texto. Procurar um email assim dá erro de coluna:</p>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE email = "ana.beatriz@exemplo.com.br";
+</pre>
+<p>A mensagem é <code>no such column: "ana.beatriz@exemplo.com.br" - should this be a string literal in single-quotes?</code> ("não existe essa coluna… isto não deveria ser um texto entre aspas simples?"): o banco achou que você citou uma coluna com esse nome enorme e ainda sugeriu a correção. Texto vai sempre entre aspas <strong>simples</strong> — e, melhor ainda, por parâmetro.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Termo</th><th>O que é</th></tr>
+<tr><td>SQL Injection</td><td>Quando texto digitado por um visitante vira parte do SQL e muda a consulta.</td></tr>
+<tr><td><code>' OR '1'='1</code></td><td>Texto que fecha a aspa e acrescenta uma condição sempre verdadeira: devolve a tabela inteira.</td></tr>
+<tr><td><code>'--</code></td><td>Fecha a aspa e comenta o resto da linha, cortando fora a checagem de senha ou o fim da consulta.</td></tr>
+<tr><td><code>UNION SELECT …</code> injetado</td><td>Pendura outra consulta no fim para ler uma tabela que não era para aparecer.</td></tr>
+<tr><td>Parâmetro (<code>?</code>, <code>:nome</code>)</td><td>Espaço reservado; o valor vai por fora e é sempre tratado como dado. A defesa principal.</td></tr>
+<tr><td>Lista de permitidos</td><td>Para nome de coluna ou direção de <code>ORDER BY</code>, que não cabem num parâmetro.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. Por que o texto <code>' OR '1'='1</code> faz a consulta devolver a tabela inteira?</p>
+<label><input type="radio" name="q1"> Porque <code>OR</code> é uma palavra proibida que destrava o banco</label>
+<label><input type="radio" name="q1"> Porque a aspa fecha o texto e sobra uma condição que é verdadeira em toda linha</label>
+<label><input type="radio" name="q1"> Porque o SQLite sempre mostra tudo quando há um erro</label>
+<label><input type="radio" name="q1"> Porque o <code>1</code> é o número de linhas a mostrar</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. A biblioteca <code>sqlite3</code> do Python recusa rodar dois comandos de uma vez. Isso basta para proteger contra SQL Injection?</p>
+<label><input type="radio" name="q2"> Sim, sem isso o ataque é impossível</label>
+<label><input type="radio" name="q2"> Sim, desde que o banco seja o SQLite</label>
+<label><input type="radio" name="q2"> Não: os ataques <code>' OR '1'='1</code>, login sem senha e <code>UNION</code> usam um comando só</label>
+<label><input type="radio" name="q2"> Só protege se você também proibir a palavra <code>DROP</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">3. Qual é a defesa principal contra SQL Injection?</p>
+<label><input type="radio" name="q3"> Usar parâmetros: o valor vai por fora e nunca vira comando</label>
+<label><input type="radio" name="q3"> Proibir a palavra <code>SELECT</code> nos formulários</label>
+<label><input type="radio" name="q3"> Esconder as mensagens de erro do banco</label>
+<label><input type="radio" name="q3"> Usar aspas duplas em vez de simples</label>
+</div>
+
+<div class="exercise">
+<h3>4. O comentário que corta a senha</h3>
+<p>No ataque de login, o invasor digitou <code>caio'--</code>. Complete os dois caracteres que começam o comentário que faz o banco ignorar o resto da linha:</p>
+<div class="ex-code">login = 'caio'<input data-answer="--" aria-label="início do comentário"> ' AND senha = ...</div>
+</div>
+
+<h3>Missão final: transforme o ataque numa busca honesta</h3>
+<div class="trysql" data-goal="linhas:1;;contem:Loja D'Água">
+<p class="try-task"><strong>Missão:</strong> a caixa tem uma busca de fornecedor alterada para devolver todos os 6. Reescreva o <code>WHERE</code> para procurar <strong>só</strong> o fornecedor <code>Loja D'Água</code> (atenção ao apóstrofo: dentro do texto, dobre a aspa) e devolver 1 linha. É o que um parâmetro faria por você sem esse trabalho todo.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, nome FROM fornecedores WHERE nome = '' OR '1'='1';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, nome FROM fornecedores WHERE nome = 'Loja D''Água';
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><strong>SQL Injection</strong> acontece quando um programa cola o texto digitado por alguém dentro do SQL: o dado pode virar comando e mudar a consulta.</li>
+  <li><code>' OR '1'='1</code> fecha o texto e acrescenta uma condição sempre verdadeira, devolvendo a tabela inteira. Um <code>'--</code> comenta o resto e pula a checagem de senha. Um <code>UNION SELECT</code> injetado lê outra tabela.</li>
+  <li>"A minha biblioteca só roda um comando" <strong>não</strong> é defesa: os piores ataques usam um comando só.</li>
+  <li>A defesa de verdade é <strong>parâmetro</strong> (<code>?</code>, <code>:nome</code>): o valor vai por fora e é sempre tratado como dado. Para nome de coluna, use uma lista de permitidos. Em bancos com servidor, dê poucas permissões ao usuário.</li>
+  <li>Um cliente honesto com apóstrofo no nome (<code>Loja D'Água</code>) já quebra o código que cola texto — é o aviso de que falta parâmetro.</li>
+  <li>A aula <a href="parametros.html">Consultas com Parâmetros</a> mostra os parâmetros em detalhe.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
