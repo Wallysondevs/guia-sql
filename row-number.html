@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL ROW_NUMBER, RANK e DENSE_RANK — numerar e fazer rankings | Guia SQL</title>
+<meta name="description" content="ROW_NUMBER, RANK e DENSE_RANK para quem está começando: numerar linhas, o ranking dos produtos e clientes da Loja Aurora por valor vendido, o que muda com empates, o top N que não corta empatados, NTILE, paginação e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">ROW_NUMBER, RANK e DENSE_RANK</span></h1>
+
+<p class="intro">Todo fim de ano a Loja Aurora premia os produtos campeões de venda e os melhores clientes. A Ana precisa de um <strong>ranking</strong>: 1º lugar, 2º lugar, 3º lugar… Ordenar com <code>ORDER BY</code> ela já sabe; o que falta é a coluna com a <strong>posição</strong>. E aí aparece a pergunta que todo campeonato tem de responder: e quando dois empatam? Nesta aula você conhece três funções de janela que numeram as linhas, cada uma com uma regra diferente para os empates: <code>ROW_NUMBER</code>, <code>RANK</code> e <code>DENSE_RANK</code>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>ROW_NUMBER()</code>: numerar as linhas 1, 2, 3…</li>
+  <li><code>RANK()</code> e <code>DENSE_RANK()</code>: posições com empate, como num pódio.</li>
+  <li>A diferença entre as três, lado a lado, com os empates reais da Aurora.</li>
+  <li>Como pegar o "top N" sem cortar quem empatou, e por que um <code>LIMIT</code> não basta.</li>
+  <li><code>NTILE(n)</code>: dividir em faixas, e a paginação com <code>ROW_NUMBER</code>.</li>
+  <li>Os erros mais comuns, com a mensagem real do SQLite.</li>
+</ul>
+</div>
+
+<p>Esta aula continua a de <a href="janelas.html">Funções de Janela (OVER)</a>. Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: a fila da senha e o pódio</h2>
+<p>Pense em duas situações do dia a dia:</p>
+<ul>
+  <li><strong>A senha do banco</strong>: cada pessoa pega um número, 1, 2, 3, 4… Dois clientes nunca têm a mesma senha, mesmo que tenham chegado juntos. Isso é o <code>ROW_NUMBER</code>.</li>
+  <li><strong>O pódio de uma corrida</strong>: se dois atletas cruzam a linha no mesmo instante, os dois ficam em 2º lugar. Isso é o <code>RANK</code> (e o <code>DENSE_RANK</code>, com uma diferença que você vai ver já já).</li>
+</ul>
+<p>As três funções são funções de janela: escrevem-se com <code>OVER (ORDER BY …)</code>, e o <code>ORDER BY</code> de dentro diz <strong>quem vem primeiro</strong>. Ao contrário de <code>SUM</code> e <code>AVG</code>, elas <strong>só</strong> existem como janela: não há <code>ROW_NUMBER()</code> sem <code>OVER</code>.</p>
+
+<hr>
+
+<h2>1. ROW_NUMBER: numerar as linhas</h2>
+<p>Os 5 produtos mais caros da loja, numerados:</p>
+
+<pre class="file" data-file="numerar.sql" data-resultado>SELECT ROW_NUMBER() OVER (ORDER BY preco DESC) AS posicao,
+       nome,
+       preco
+FROM produtos
+ORDER BY posicao
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>ROW_NUMBER()</dt><dd>"Número da linha". Não recebe nada entre os parênteses: o que ela numera vem do <code>OVER</code>.</dd>
+  <dt>OVER (ORDER BY preco DESC)</dt><dd>A janela é a tabela inteira, em ordem de preço do maior para o menor. O mais caro ganha 1, o seguinte 2, e assim por diante.</dd>
+  <dt>AS posicao</dt><dd>O apelido da coluna. Ele pode ser usado no <code>ORDER BY</code> final (mas não no <code>WHERE</code>; veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>ORDER BY posicao LIMIT 5</dt><dd>Mostra o resultado em ordem de posição e só os 5 primeiros.</dd>
+</dl>
+
+<h3>O ranking dos produtos por valor vendido</h3>
+<p>Agora o ranking de verdade: quanto cada produto rendeu em vendas. A janela pode ordenar por uma <strong>agregação</strong>, no mesmo <code>SELECT</code> do <code>GROUP BY</code>. É que o SQLite primeiro agrupa e só depois calcula a janela (aula anterior, seção 6):</p>
+
+<pre class="file" data-file="ranking-produtos.sql" data-resultado>SELECT ROW_NUMBER() OVER (ORDER BY SUM(i.quantidade * i.preco_unitario) DESC) AS posicao,
+       pr.nome,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendido
+FROM itens_pedido AS i
+JOIN produtos AS pr ON pr.id = i.produto_id
+GROUP BY pr.id
+ORDER BY posicao
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>GROUP BY pr.id</dt><dd>Uma linha por produto vendido (42 produtos; os 3 de jardinagem nunca vendidos ficam de fora, porque o <code>JOIN</code> não acha itens deles).</dd>
+  <dt>OVER (ORDER BY SUM(…) DESC)</dt><dd>Ordena os grupos pelo valor vendido, do maior para o menor, e numera.</dd>
+</dl>
+
+<p>O Jogo de Panelas 5 peças é o campeão, com R$ 1.999,20. Aqui não há empate de valor, então qualquer uma das três funções daria 1, 2, 3, 4, 5. A diferença aparece quando há empate.</p>
+
+<div class="trysql" data-goal="colunas:posicao,nome,gasto;;linhas:5">
+<p class="try-task"><strong>Missão:</strong> agora os <strong>clientes</strong>. Monte o ranking dos 5 clientes que mais gastaram em produtos, com as colunas <code>posicao</code>, <code>nome</code> e <code>gasto</code>. O <code>JOIN</code> e o <code>GROUP BY</code> já estão prontos; falta a coluna da posição e o limite de 5.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.nome,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS gasto
+FROM clientes AS c
+JOIN pedidos AS p ON p.cliente_id = c.id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+GROUP BY c.id
+ORDER BY gasto DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT ROW_NUMBER() OVER (ORDER BY SUM(i.quantidade * i.preco_unitario) DESC) AS posicao,
+       c.nome,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS gasto
+FROM clientes AS c
+JOIN pedidos AS p ON p.cliente_id = c.id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+GROUP BY c.id
+ORDER BY posicao
+LIMIT 5;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. RANK e DENSE_RANK: o pódio com empates</h2>
+<p>Para ver empates, o ranking agora é por <strong>unidades</strong> vendidas: aí muitos produtos empatam (vários venderam 10 unidades, por exemplo). As três funções lado a lado:</p>
+
+<pre class="file" data-file="tres-juntas.sql" data-resultado>WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+)
+SELECT nome,
+       unidades,
+       ROW_NUMBER() OVER (ORDER BY unidades DESC, nome) AS row_number,
+       RANK()       OVER (ORDER BY unidades DESC) AS rank,
+       DENSE_RANK() OVER (ORDER BY unidades DESC) AS dense_rank
+FROM vendidos
+ORDER BY unidades DESC, nome
+LIMIT 16;
+</pre>
+
+<p>Siga a tabela de cima para baixo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Unidades</th><th>Quem</th><th><code>ROW_NUMBER</code></th><th><code>RANK</code></th><th><code>DENSE_RANK</code></th></tr>
+<tr><td>14</td><td>Cabo HDMI (sozinho)</td><td>1</td><td>1</td><td>1</td></tr>
+<tr><td>12</td><td>3 produtos empatados</td><td>2, 3, 4</td><td>2, 2, 2</td><td>2, 2, 2</td></tr>
+<tr><td>11</td><td>2 produtos empatados</td><td>5, 6</td><td><strong>5</strong>, 5</td><td><strong>3</strong>, 3</td></tr>
+<tr><td>10</td><td>8 produtos empatados</td><td>7 a 14</td><td><strong>7</strong>, …</td><td><strong>4</strong>, …</td></tr>
+<tr><td>9</td><td>os seguintes</td><td>15, 16…</td><td><strong>15</strong>, …</td><td><strong>5</strong>, …</td></tr>
+</table>
+</div>
+
+<dl class="anatomy">
+  <dt>ROW_NUMBER()</dt><dd>Nunca repete: cada linha ganha um número diferente, como a senha. Entre empatados, quem decide a ordem é o desempate do <code>ORDER BY</code> (aqui, o <code>nome</code>, em ordem alfabética).</dd>
+  <dt>RANK()</dt><dd>Empatados ganham <strong>a mesma posição</strong>, e as posições seguintes <strong>pulam</strong>: depois de três em 2º, o próximo é o 5º, porque já passaram 4 produtos na frente dele. É o jeito das competições esportivas.</dd>
+  <dt>DENSE_RANK()</dt><dd>"Rank denso". Empatados ganham a mesma posição, mas <strong>sem pular</strong>: depois do 2º vem o 3º. A posição conta quantos <strong>valores diferentes</strong> vieram antes, e não quantas linhas.</dd>
+</dl>
+
+<p>Uma conta para conferir: no <code>RANK</code>, a posição é "1 + quantos produtos venderam <strong>mais</strong> do que eu". Os produtos de 10 unidades têm 6 na frente (1 de 14, 3 de 12, 2 de 11), então ficam em 7º. No <code>DENSE_RANK</code>, a posição é "1 + quantos <strong>valores</strong> maiores existem": 14, 12 e 11 são três valores, então ficam em 4º.</p>
+
+<h3>Qual escolher</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Função</th><th>Empates</th><th>Exemplo com 14, 12, 12, 11</th><th>Use quando…</th></tr>
+<tr><td><code>ROW_NUMBER()</code></td><td>Números diferentes; o desempate decide</td><td>1, 2, 3, 4</td><td>Você precisa de um número único por linha: numerar, paginar, escolher <strong>uma</strong> linha</td></tr>
+<tr><td><code>RANK()</code></td><td>Mesma posição; depois pula</td><td>1, 2, 2, 4</td><td>Premiação, classificação de campeonato</td></tr>
+<tr><td><code>DENSE_RANK()</code></td><td>Mesma posição; não pula</td><td>1, 2, 2, 3</td><td>"Os 3 maiores <strong>valores</strong>", faixas de preço, "o 2º maior salário"</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. O top 3 que não corta empatados</h2>
+<p>A Ana quer premiar os 3 produtos que venderam mais unidades. A primeira ideia é <code>ORDER BY … LIMIT 3</code>:</p>
+
+<pre class="file" data-file="limit.sql" data-resultado>WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+)
+SELECT nome, unidades
+FROM vendidos
+ORDER BY unidades DESC
+LIMIT 3;
+</pre>
+
+<p>Vieram 3 linhas, mas a Garrafa Térmica 1L, que também vendeu 12, ficou de fora. E por que ela, e não o Lápis? Por acaso: entre empatados, o SQLite entrega na ordem que quiser, e o <code>LIMIT</code> corta onde o número mandar. Injusto com a garrafa.</p>
+
+<p>Com <code>RANK</code>, o corte é pela <strong>posição</strong>, não pela quantidade de linhas. Como uma janela não pode ir no <code>WHERE</code>, a posição é calculada numa CTE (aula <a href="with-cte.html">CTE (WITH)</a>) e filtrada fora:</p>
+
+<pre class="file" data-file="top3.sql" data-resultado>WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+),
+ranking AS (
+  SELECT nome, unidades,
+         RANK() OVER (ORDER BY unidades DESC) AS posicao
+  FROM vendidos
+)
+SELECT posicao, nome, unidades
+FROM ranking
+WHERE posicao &lt;= 3
+ORDER BY posicao, nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>ranking</dt><dd>A segunda CTE dá a posição de cada produto. Dentro dela, <code>posicao</code> é uma coluna comum para quem lê de fora.</dd>
+  <dt>WHERE posicao &lt;= 3</dt><dd>"Do 1º ao 3º lugar". Como os três produtos de 12 unidades estão todos em 2º, os quatro entram. O próximo é o 5º, e fica de fora.</dd>
+</dl>
+
+<p>Quatro premiados, e ninguém foi cortado por sorte. Se a regra fosse "os 3 maiores <strong>números</strong> de unidades" (14, 12 e 11), a função seria <code>DENSE_RANK</code>, e entrariam 6 produtos.</p>
+
+<hr>
+
+<h2>4. NTILE: dividir em faixas</h2>
+<p>Uma quarta função da família: <code>NTILE(n)</code> divide as linhas, em ordem, em <code>n</code> grupos do mesmo tamanho (ou quase). Os produtos de papelaria e eletrônicos em 4 faixas de preço:</p>
+
+<pre class="file" data-file="ntile.sql" data-resultado>SELECT nome,
+       preco,
+       NTILE(4) OVER (ORDER BY preco DESC) AS faixa
+FROM produtos
+WHERE categoria_id IN (1, 2)
+ORDER BY preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>NTILE(4)</dt><dd>"N-ésimo pedaço", em 4 pedaços. São 13 produtos: 13 ÷ 4 dá 3 e sobra 1, então a primeira faixa fica com 4 e as outras com 3.</dd>
+  <dt>faixa 1</dt><dd>O quarto mais caro; faixa 4, o quarto mais barato.</dd>
+</dl>
+
+<hr>
+
+<h2>5. Formas diferentes de fazer a mesma coisa</h2>
+
+<h3>A posição com subconsulta</h3>
+<p>Sem funções de janela, o <code>RANK</code> se calcula com uma subconsulta correlacionada: "1 + quantos venderam mais do que eu".</p>
+
+<pre class="file" data-file="rank-subconsulta.sql" data-resultado>WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+)
+SELECT v.nome,
+       v.unidades,
+       (SELECT COUNT(*) FROM vendidos AS v2
+        WHERE v2.unidades &gt; v.unidades) + 1 AS posicao
+FROM vendidos AS v
+ORDER BY posicao, v.nome
+LIMIT 6;
+</pre>
+
+<p>Mesmo resultado do <code>RANK</code> (1, 2, 2, 2, 5, 5), mas a subconsulta roda uma vez para cada produto, e a ideia fica escondida na conta.</p>
+
+<h3>Paginação: ROW_NUMBER × LIMIT/OFFSET</h3>
+<p>Para mostrar o catálogo em páginas de 5 produtos, a 3ª página (do 11º ao 15º mais caro) sai de dois jeitos:</p>
+
+<pre class="file" data-file="pagina-rownumber.sql" data-resultado>WITH numerados AS (
+  SELECT nome, preco,
+         ROW_NUMBER() OVER (ORDER BY preco DESC, nome) AS n
+  FROM produtos
+)
+SELECT n, nome, preco
+FROM numerados
+WHERE n BETWEEN 11 AND 15;
+</pre>
+
+<pre class="file" data-file="pagina-limit.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC, nome
+LIMIT 5 OFFSET 10;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Uma página de resultados</td><td><code>LIMIT … OFFSET …</code> (aula <a href="limit.html">LIMIT e OFFSET</a>): mais curto</td></tr>
+<tr><td>A página <strong>e</strong> o número de cada linha</td><td><code>ROW_NUMBER()</code> numa CTE + <code>WHERE n BETWEEN …</code></td></tr>
+<tr><td>Os N primeiros, sem cortar empatados</td><td><code>RANK()</code> numa CTE + <code>WHERE posicao &lt;= N</code></td></tr>
+<tr><td>Os N maiores valores diferentes</td><td><code>DENSE_RANK()</code> numa CTE + <code>WHERE posicao &lt;= N</code></td></tr>
+<tr><td>Faixas do mesmo tamanho</td><td><code>NTILE(n)</code></td></tr>
+<tr><td>A posição num SQLite antigo, sem janelas</td><td>Subconsulta: <code>(SELECT COUNT(*) … WHERE v2.x &gt; v.x) + 1</code></td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E o "melhor de cada grupo"?</strong>
+<p>"O produto mais vendido <strong>de cada categoria</strong>" e "o último pedido <strong>de cada cliente</strong>" são os usos mais famosos do <code>ROW_NUMBER</code>. Para isso a numeração precisa recomeçar em cada grupo, e é esse o assunto de <a href="partition-by.html">PARTITION BY</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Filtrar pela posição no WHERE</strong>
+<pre class="file" data-file="erro-where.sql" data-resultado data-erro>SELECT nome,
+       ROW_NUMBER() OVER (ORDER BY preco DESC) AS posicao
+FROM produtos
+WHERE posicao &lt;= 3;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aliased window function posicao</code>, "uso indevido da função de janela com apelido posicao". O <code>WHERE</code> roda antes da janela: na hora de filtrar, a posição ainda não foi calculada.</p>
+<p><strong>Como consertar:</strong> calcule a posição numa CTE e filtre fora dela, como na seção 3. (Para "os 3 primeiros" sem empate, <code>ORDER BY posicao LIMIT 3</code> também funciona, porque o <code>ORDER BY</code> roda depois da janela.)</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>OVER</code></strong>
+<pre class="file" data-file="erro-over.sql" data-resultado data-erro>SELECT nome, ROW_NUMBER() AS posicao
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of window function ROW_NUMBER()</code>. Ao contrário de <code>SUM</code> e <code>AVG</code>, que funcionam sozinhas como agregação, <code>ROW_NUMBER</code>, <code>RANK</code> e <code>DENSE_RANK</code> só existem como janela.</p>
+<p><strong>Como consertar:</strong> <code>ROW_NUMBER() OVER (ORDER BY …)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Coluna dentro dos parênteses da função</strong>
+<pre class="file" data-file="erro-argumento.sql" data-resultado data-erro>SELECT nome, RANK(preco) OVER (ORDER BY preco DESC) AS posicao
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function RANK()</code>, "número errado de argumentos para a função RANK()". A coluna que decide o ranking vai no <code>ORDER BY</code> do <code>OVER</code>, não dentro de <code>RANK()</code>.</p>
+<p><strong>Como consertar:</strong> <code>RANK() OVER (ORDER BY preco DESC)</code>, com os parênteses da função vazios.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas todo mundo em 1º: faltou o ORDER BY da janela</strong>
+<pre class="file" data-file="sem-order.sql" data-resultado>SELECT nome, preco, RANK() OVER () AS posicao
+FROM produtos
+LIMIT 5;
+</pre>
+<p><strong>O que acontece:</strong> todos ficaram em 1º lugar. Sem <code>ORDER BY</code> dentro do <code>OVER</code>, ninguém vem antes de ninguém: todas as linhas são pares (empatadas), e o <code>RANK</code> dá 1 para todas. Com <code>ROW_NUMBER() OVER ()</code> seria pior: números 1, 2, 3… numa ordem qualquer, que parece certa mas não quer dizer nada.</p>
+<p><strong>Como consertar:</strong> diga quem vem primeiro: <code>RANK() OVER (ORDER BY preco DESC)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas instável: ROW_NUMBER com empate e sem desempate</strong>
+<p>Com <code>ROW_NUMBER() OVER (ORDER BY unidades DESC)</code>, os três produtos de 12 unidades recebem 2, 3 e 4, mas <strong>qual</strong> recebe o 2 o SQLite decide. Numa versão nova do banco, ou com um índice novo, a ordem pode mudar, e o relatório de hoje não bate com o de amanhã.</p>
+<p><strong>Como consertar:</strong> sempre que usar <code>ROW_NUMBER</code>, termine o <code>ORDER BY</code> da janela com uma coluna única, como o <code>id</code> ou o <code>nome</code>: <code>OVER (ORDER BY unidades DESC, nome)</code>. Se o empate deve ser empate, use <code>RANK</code> ou <code>DENSE_RANK</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>RANK = 3 que não acha ninguém</strong>
+<p>Veja a missão final logo abaixo: com <code>RANK</code>, depois de três produtos em 2º, ninguém fica em 3º nem em 4º, e um <code>WHERE posicao = 3</code> devolve zero linhas. Não é erro; é a regra do <code>RANK</code> (as posições pulam). Para "o 3º maior valor", use <code>DENSE_RANK</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><code>ROW_NUMBER</code>, <code>RANK</code>, <code>DENSE_RANK</code> e <code>NTILE</code> são do padrão SQL e se escrevem igual no <strong>PostgreSQL</strong>, no <strong>SQL Server</strong> e no <strong>MySQL</strong> (a partir da 8.0).</li>
+  <li><strong>SQL Server</strong>: o <code>ORDER BY</code> dentro do <code>OVER</code> é <strong>obrigatório</strong> no <code>ROW_NUMBER</code>, e a documentação avisa que, sem colunas de ordem únicas, a numeração pode mudar de uma execução para outra, a mesma instabilidade de que falamos acima.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>ROW_NUMBER() OVER (ORDER BY x DESC, id)</code></td><td>1, 2, 3… sem repetir; termine com uma coluna única</td></tr>
+<tr><td><code>RANK() OVER (ORDER BY x DESC)</code></td><td>Empate = mesma posição; depois pula (1, 2, 2, 4)</td></tr>
+<tr><td><code>DENSE_RANK() OVER (ORDER BY x DESC)</code></td><td>Empate = mesma posição; não pula (1, 2, 2, 3)</td></tr>
+<tr><td><code>NTILE(n) OVER (ORDER BY x)</code></td><td>Divide em n faixas de tamanho parecido</td></tr>
+<tr><td><code>… OVER (ORDER BY SUM(x) DESC)</code> com <code>GROUP BY</code></td><td>Ranking dos grupos, no mesmo <code>SELECT</code></td></tr>
+<tr><td><code>WITH r AS (SELECT …, RANK() OVER (…) AS pos FROM …) SELECT … FROM r WHERE pos &lt;= 3</code></td><td>Top 3 com empatados</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aliased window function posicao</code></td><td>O apelido da janela no <code>WHERE</code></td></tr>
+<tr><td><code>misuse of window function ROW_NUMBER()</code></td><td>Faltou o <code>OVER (…)</code></td></tr>
+<tr><td><code>wrong number of arguments to function RANK()</code></td><td>Coluna dentro de <code>RANK()</code>; ela vai no <code>ORDER BY</code> do <code>OVER</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Numerar</h3>
+<p>Complete a função que numera as linhas sem repetir número:</p>
+<div class="ex-code">SELECT <input data-answer="ROW_NUMBER|row_number" aria-label="função">() OVER (ORDER BY nome) AS n, nome FROM clientes;</div>
+</div>
+
+<div class="exercise">
+<h3>2. O pódio sem pulos</h3>
+<p>Complete a função que dá a mesma posição aos empatados e <strong>não</strong> pula a posição seguinte:</p>
+<div class="ex-code">SELECT nome, salario, <input data-answer="DENSE_RANK|dense_rank" aria-label="função">() OVER (ORDER BY salario DESC) AS faixa FROM funcionarios;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Os valores, já em ordem, são 50, 40, 40, 30. Que posições o <code>RANK()</code> dá?</p>
+<label><input type="radio" name="q3"> 1, 2, 3, 4</label>
+<label><input type="radio" name="q3"> 1, 2, 2, 3</label>
+<label><input type="radio" name="q3"> 1, 2, 2, 4</label>
+<label><input type="radio" name="q3"> 1, 1, 1, 1</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Por que <code>ORDER BY unidades DESC LIMIT 3</code> pode ser injusto num ranking?</p>
+<label><input type="radio" name="q4"> Porque o <code>LIMIT</code> ordena ao contrário</label>
+<label><input type="radio" name="q4"> Porque corta pela quantidade de linhas: entre empatados, um entra e outro fica de fora por acaso</label>
+<label><input type="radio" name="q4"> Porque o <code>LIMIT</code> não funciona com <code>GROUP BY</code></label>
+<label><input type="radio" name="q4"> Porque ele sempre devolve 4 linhas</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana escreveu <code>WHERE posicao &lt;= 3</code> no mesmo <code>SELECT</code> em que criou <code>posicao</code> com <code>RANK() OVER (…)</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> Funciona normalmente</label>
+<label><input type="radio" name="q5"> Volta uma tabela vazia</label>
+<label><input type="radio" name="q5"> O SQLite ignora o <code>WHERE</code></label>
+<label><input type="radio" name="q5"> Dá <code>misuse of aliased window function posicao</code>; a posição precisa ser calculada numa CTE antes</label>
+</div>
+
+<h3>Missão final: o 3º lugar</h3>
+
+<div class="trysql" data-goal="linhas:2;;contem:Estojo Duplo">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os produtos do <strong>3º maior número de unidades vendidas</strong>. Rode o SQL como está: com <code>RANK</code>, ninguém fica em 3º (as posições pulam do 2 para o 5) e volta vazio. Troque a função para que o 3º lugar seja o 3º <strong>valor</strong> diferente, e apareçam os 2 produtos de 11 unidades.</p>
+<pre class="script" data-file="consulta.sql">WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+),
+ranking AS (
+  SELECT nome, unidades,
+         RANK() OVER (ORDER BY unidades DESC) AS posicao
+  FROM vendidos
+)
+SELECT posicao, nome, unidades
+FROM ranking
+WHERE posicao = 3;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH vendidos AS (
+  SELECT pr.nome, SUM(i.quantidade) AS unidades
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+),
+ranking AS (
+  SELECT nome, unidades,
+         DENSE_RANK() OVER (ORDER BY unidades DESC) AS posicao
+  FROM vendidos
+)
+SELECT posicao, nome, unidades
+FROM ranking
+WHERE posicao = 3;
+</pre>
+</div>
+
+<p>O Estojo Duplo e o Conjunto de Copos 6 unidades, com 11 unidades cada, dividem o 3º lugar no <code>DENSE_RANK</code>. No <code>RANK</code>, eles estavam em 5º.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ROW_NUMBER()</code>, <code>RANK()</code> e <code>DENSE_RANK()</code> são funções de janela: sempre com <code>OVER (ORDER BY …)</code>, e o <code>ORDER BY</code> de dentro diz quem vem primeiro.</li>
+  <li><code>ROW_NUMBER</code> nunca repete (1, 2, 3, 4); termine o <code>ORDER BY</code> com uma coluna única para o resultado não mudar.</li>
+  <li><code>RANK</code> repete nos empates e pula depois (1, 2, 2, 4); <code>DENSE_RANK</code> repete e não pula (1, 2, 2, 3).</li>
+  <li>Para o top N com empatados, calcule a posição numa CTE e filtre com <code>WHERE posicao &lt;= N</code>; um <code>LIMIT</code> corta empatados por acaso.</li>
+  <li><code>NTILE(n)</code> divide em n faixas; <code>ROW_NUMBER</code> também numera páginas.</li>
+  <li>A janela pode ordenar por uma agregação (<code>OVER (ORDER BY SUM(…))</code>) no mesmo <code>SELECT</code> do <code>GROUP BY</code>.</li>
+  <li>Próxima aula: espiar a linha anterior e a seguinte com <a href="lag-lead.html">LAG e LEAD</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
