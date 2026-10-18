@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL AUTOINCREMENT — o id que se numera sozinho | Guia SQL</title>
+<meta name="description" content="AUTOINCREMENT no SQLite para quem nunca mexeu num banco: como o INTEGER PRIMARY KEY já numera as linhas sozinho, o que o AUTOINCREMENT muda (não reaproveita números), a tabela sqlite_sequence, os erros reais e o AUTO_INCREMENT, SERIAL e IDENTITY dos outros bancos.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">AUTOINCREMENT</span></h1>
+
+<p class="intro">Toda vez que a Loja Aurora ganha um cliente novo, ele precisa de um número: o <code>id</code>. Quem escolhe esse número? Se fosse a Ana, ela teria de olhar qual foi o último, somar 1 e torcer para ninguém cadastrar outro cliente ao mesmo tempo. Ainda bem que o banco faz isso sozinho. Nesta aula você vai ver que, no SQLite, a coluna <code>INTEGER PRIMARY KEY</code> <strong>já se numera sozinha</strong>, e o que a palavra <code>AUTOINCREMENT</code> ("incremento automático") acrescenta: a garantia de que um número usado <strong>nunca volta</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>INTEGER PRIMARY KEY</code> escolhe o id de cada linha nova, sem você digitar nada.</li>
+  <li>O que é o <code>rowid</code>, o número escondido de toda tabela do SQLite.</li>
+  <li>Por que, sem <code>AUTOINCREMENT</code>, um número apagado pode ser <strong>reaproveitado</strong>.</li>
+  <li>O que o <code>AUTOINCREMENT</code> muda, e a tabela <code>sqlite_sequence</code>, onde ele guarda a conta.</li>
+  <li>Quando vale a pena usar <code>AUTOINCREMENT</code> (quase nunca) e quando não.</li>
+  <li>Os erros reais: <code>AUTOINCREMENT is only allowed on an INTEGER PRIMARY KEY</code>, o <code>AUTO_INCREMENT</code> do MySQL e o <code>INT PRIMARY KEY</code> que deixa o id vazio.</li>
+  <li>Como o MySQL, o PostgreSQL e o SQL Server fazem a mesma coisa.</li>
+</ul>
+</div>
+
+<p>Esta aula continua a de <a href="primary-key.html">PRIMARY KEY</a>. Todos os exemplos rodam de verdade no seu navegador, contra o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada um começa do banco limpo.</p>
+
+<hr>
+
+<h2>A ideia: duas maneiras de numerar fichas</h2>
+<p>Imagine dois jeitos de numerar as fichas dos clientes num fichário:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>Como funciona</th><th>O que acontece se você jogar fora a última ficha</th></tr>
+<tr><td><strong>"O maior + 1"</strong></td><td>Para a ficha nova, você olha o maior número que está no fichário e soma 1.</td><td>O número dela fica livre de novo: a próxima ficha ganha o mesmo número.</td></tr>
+<tr><td><strong>Talão numerado</strong></td><td>Você usa um talão com as folhas já numeradas. Cada ficha nova é a próxima folha do talão.</td><td>A folha arrancada não volta. A próxima ficha ganha o número seguinte, e fica um "buraco".</td></tr>
+</table>
+</div>
+
+<p>No SQLite, o <code>INTEGER PRIMARY KEY</code> sozinho é o primeiro jeito. Com <code>AUTOINCREMENT</code>, vira o segundo. Os dois numeram sozinhos; a diferença só aparece quando você apaga linhas.</p>
+
+<hr>
+
+<h2>1. O INTEGER PRIMARY KEY já numera sozinho</h2>
+<p>A tabela <code>clientes</code> da Loja Aurora foi criada assim (só as primeiras colunas):</p>
+
+<pre class="file" data-file="trecho do aurora.sql">CREATE TABLE clientes (
+    id         INTEGER PRIMARY KEY,
+    nome       TEXT NOT NULL,
+    ...
+);
+</pre>
+
+<p>Não tem <code>AUTOINCREMENT</code> nenhum. Mesmo assim, veja o que acontece quando a Ana cadastra a cliente Rita Moura <strong>sem dizer o id</strong>:</p>
+
+<pre class="file" data-file="novo-cliente.sql" data-resultado>INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Rita Moura', 'Teresina', 'PI');
+
+SELECT id, nome, cidade
+FROM clientes
+WHERE id &gt; 28;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO clientes (nome, cidade, estado)</dt><dd>A lista de colunas <strong>não tem</strong> o <code>id</code>. As colunas que ficaram de fora recebem o valor padrão (veja <a href="default.html">DEFAULT</a>); para o <code>id</code>, o "padrão" é um número novo.</dd>
+  <dt>VALUES ('Rita Moura', 'Teresina', 'PI')</dt><dd>Os valores, na mesma ordem da lista.</dd>
+  <dt>WHERE id &gt; 28</dt><dd>Só para mostrar o fim da tabela: os clientes 29 e 30, que já existiam, e a Rita.</dd>
+</dl>
+
+<p>A Rita ganhou o <strong>31</strong>. A Loja Aurora tinha os clientes de 1 a 30, e o SQLite fez a conta "o maior + 1". Dá o mesmo resultado se você escrever o id como <code>NULL</code>: <code>INSERT INTO clientes (id, nome) VALUES (NULL, 'Rita Moura');</code>. Para o <code>INTEGER PRIMARY KEY</code>, <code>NULL</code> quer dizer "escolha você".</p>
+
+<h3>Qual número a linha ganhou?</h3>
+<p>Num programa de verdade, logo depois de cadastrar o cliente você quer saber o número dele (para gravar o pedido, por exemplo). A função <code>last_insert_rowid()</code> ("o último rowid inserido") devolve exatamente isso:</p>
+
+<pre class="file" data-file="ultimo-id.sql" data-resultado>INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Rita Moura', 'Teresina', 'PI');
+
+SELECT last_insert_rowid();
+</pre>
+
+<div class="tip">
+<strong>O rowid: o número escondido</strong>
+<p>Toda tabela comum do SQLite tem um número escondido em cada linha, o <code>rowid</code> ("id da linha"). Ele existe mesmo que você não crie coluna nenhuma para isso. Quando você declara uma coluna <code>INTEGER PRIMARY KEY</code>, ela vira um <strong>outro nome</strong> para o rowid: são a mesma coisa. Por isso ela se numera sozinha. Repare no nome da primeira coluna do resultado abaixo: o SQLite chamou o <code>rowid</code> de <code>id</code>, porque, nesta tabela, é a mesma coluna.</p>
+<pre class="file" data-file="rowid.sql" data-resultado>SELECT rowid, id, nome
+FROM clientes
+LIMIT 3;
+</pre>
+</div>
+
+<div class="trysql" data-goal="contem:31|Rita Moura">
+<p class="try-task"><strong>Experimente:</strong> o código mostra os três últimos clientes. Antes do <code>SELECT</code>, cadastre a cliente <code>Rita Moura</code>, de <code>Teresina</code> (<code>PI</code>), <strong>sem</strong> informar o id, e veja qual número ela ganha.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, nome
+FROM clientes
+ORDER BY id DESC
+LIMIT 3;
+</pre>
+<pre class="solucao" data-file="consulta.sql">INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Rita Moura', 'Teresina', 'PI');
+
+SELECT id, nome
+FROM clientes
+ORDER BY id DESC
+LIMIT 3;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. O problema: o número apagado volta</h2>
+<p>A regra "o maior + 1" tem uma consequência. O cliente 30, Rosângela Dias, nunca fez pedido. Suponha que a Ana apague o cadastro dela e, depois, cadastre a Rita:</p>
+
+<pre class="file" data-file="reaproveita.sql" data-resultado>DELETE FROM clientes WHERE id = 30;
+
+INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Rita Moura', 'Teresina', 'PI');
+
+SELECT id, nome
+FROM clientes
+WHERE id &gt;= 28;
+</pre>
+
+<p>A Rita ganhou o <strong>30</strong>, o número que era da Rosângela. Depois do <code>DELETE</code>, o maior id da tabela passou a ser 29, e 29 + 1 = 30. O número foi <strong>reaproveitado</strong>.</p>
+
+<p>Isso só acontece com o <strong>último</strong> número. Se a Ana apagar um cliente do meio, o buraco fica, porque o maior continua lá em cima:</p>
+
+<pre class="file" data-file="buraco.sql" data-resultado>DELETE FROM clientes WHERE id = 28;
+
+INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Rita Moura', 'Teresina', 'PI');
+
+SELECT id, nome
+FROM clientes
+WHERE id &gt;= 27;
+</pre>
+
+<p>O 28 sumiu e a Rita ganhou o 31. Na maioria dos sistemas, reaproveitar o último número não faz mal nenhum. Mas pense numa situação em que faz: a Rosângela tinha recebido um email "seu cadastro é o número 30", ou um sistema de fora guardou "cliente 30 = Rosângela". Agora o 30 é outra pessoa. É para esses casos que existe o <code>AUTOINCREMENT</code>.</p>
+
+<hr>
+
+<h2>3. AUTOINCREMENT: o número nunca volta</h2>
+<p>A Ana vai criar uma tabela de cupons de desconto. Cupom é coisa que vai para a rua: está impresso em folheto, foi mandado por mensagem. Um número de cupom apagado <strong>não pode</strong> voltar como outro cupom. Ela escreve:</p>
+
+<pre class="file" data-file="cupons.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+SELECT * FROM cupons;
+</pre>
+
+<dl class="anatomy">
+  <dt>id</dt><dd>O nome da coluna.</dd>
+  <dt>INTEGER</dt><dd>O tipo, escrito <strong>exatamente</strong> assim: <code>INTEGER</code>. Com <code>INT</code>, <code>BIGINT</code> ou outro nome, não funciona (veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>PRIMARY KEY</dt><dd>A chave primária: o número que identifica cada cupom.</dd>
+  <dt>AUTOINCREMENT</dt><dd>"Incremento automático": o número escolhido para uma linha nova é sempre <strong>maior que todos os que já existiram</strong> nesta tabela, inclusive os que foram apagados. Só pode vir logo depois de <code>INTEGER PRIMARY KEY</code>.</dd>
+</dl>
+
+<p>Até aqui, nenhuma diferença: 1, 2, 3. Agora o teste que importa. O cupom 3, <code>PIAUI</code>, foi cancelado, e a Ana cria o cupom <code>VERAO</code>:</p>
+
+<pre class="file" data-file="cupons2.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+DELETE FROM cupons WHERE id = 3;
+
+INSERT INTO cupons (codigo, desconto) VALUES ('VERAO', 20);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>O <code>VERAO</code> ganhou o <strong>4</strong>, e não o 3. Mesmo que alguém ainda tenha o folheto do cupom 3 na mão, esse número nunca vai apontar para outro cupom. Compare com o que aconteceu com a Rita na seção 2.</p>
+
+<h3>Onde o SQLite guarda a conta: sqlite_sequence</h3>
+<p>Para lembrar do maior número que já existiu (mesmo depois de apagado), o SQLite precisa anotá-lo em algum lugar. Quando você cria a primeira tabela com <code>AUTOINCREMENT</code>, ele cria sozinho uma tabela interna chamada <code>sqlite_sequence</code> ("sequência do SQLite"), com uma linha por tabela:</p>
+
+<pre class="file" data-file="sequencia.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+DELETE FROM cupons WHERE id = 3;
+
+SELECT name, seq FROM sqlite_sequence;
+</pre>
+
+<dl class="anatomy">
+  <dt>name</dt><dd>O nome da tabela que tem <code>AUTOINCREMENT</code>.</dd>
+  <dt>seq</dt><dd>O maior id que essa tabela já teve. O cupom 3 foi apagado, mas o <code>seq</code> continua 3: é por isso que o próximo será o 4.</dd>
+</dl>
+
+<p>No banco limpo da Loja Aurora, essa tabela <strong>não existe</strong>, porque nenhuma tabela da loja usa <code>AUTOINCREMENT</code>. Tente <code>SELECT * FROM sqlite_sequence;</code> sozinho e o SQLite responde <code>no such table: sqlite_sequence</code> ("não existe a tabela sqlite_sequence").</p>
+
+<p>No terminal do <code>sqlite3</code>, a Ana pode ver que a tabela foi criada, com um detalhe: o comando <code>.tables</code> <strong>esconde</strong> as tabelas internas, cujos nomes começam com <code>sqlite_</code>. Para vê-la, é preciso pedir pelo nome:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE cupons (id INTEGER PRIMARY KEY AUTOINCREMENT, codigo TEXT NOT NULL);
+sqlite&gt; .tables
+categorias    cupons        funcionarios  pedidos
+clientes      fornecedores  itens_pedido  produtos
+sqlite&gt; .schema sqlite_sequence
+CREATE TABLE sqlite_sequence(name,seq);
+sqlite&gt; INSERT INTO cupons (codigo) VALUES ('BEMVINDO');
+sqlite&gt; SELECT * FROM sqlite_sequence;
+cupons|1
+sqlite&gt; .quit</pre>
+
+<div class="warning">
+<strong>Não mexa na sqlite_sequence sem saber o que está fazendo</strong>
+<p>Dá para mudar a <code>sqlite_sequence</code> com <code>UPDATE</code> e <code>DELETE</code> comuns, e alguns tutoriais ensinam isso para "zerar o contador". A documentação do SQLite avisa que mexer nela "provavelmente vai bagunçar" o algoritmo do <code>AUTOINCREMENT</code>. Se você zerar o contador com cupons ainda na tabela, o próximo id pode bater num que já existe. E zerar o contador desfaz justamente a garantia que fez você escolher <code>AUTOINCREMENT</code>.</p>
+</div>
+
+<h3>Mesmo esvaziando a tabela, a conta continua</h3>
+<p>Aqui a diferença entre os dois jeitos fica mais clara. A Ana apaga <strong>todos</strong> os cupons e cria um novo:</p>
+
+<pre class="file" data-file="esvaziar-auto.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+DELETE FROM cupons;
+INSERT INTO cupons (codigo, desconto) VALUES ('VERAO', 20);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Com <code>AUTOINCREMENT</code>, o <code>VERAO</code> é o 4. Agora a mesma coisa <strong>sem</strong> <code>AUTOINCREMENT</code>:</p>
+
+<pre class="file" data-file="esvaziar-sem.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+DELETE FROM cupons;
+INSERT INTO cupons (codigo, desconto) VALUES ('VERAO', 20);
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Sem <code>AUTOINCREMENT</code>, a tabela vazia recomeça do <strong>1</strong>: o maior id de uma tabela vazia é "nenhum", e a primeira linha ganha 1.</p>
+
+<h3>E se você digitar o id?</h3>
+<p>Você sempre pode escolher o número na mão. Nos dois jeitos, o número seguinte continua a partir do maior:</p>
+
+<pre class="file" data-file="id-manual.sql" data-resultado>CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+
+INSERT INTO cupons (id, codigo, desconto) VALUES (100, 'BEMVINDO', 10);
+INSERT INTO cupons (codigo, desconto) VALUES ('NATAL', 15);
+
+SELECT * FROM cupons;
+SELECT name, seq FROM sqlite_sequence;
+</pre>
+
+<p>O <code>NATAL</code> ganhou o 101, e a <code>sqlite_sequence</code> anotou 101. Isso é útil para "começar a numeração do 100": insira a primeira linha com o id 100 e deixe o banco seguir dali.</p>
+
+<hr>
+
+<h2>4. Então devo usar AUTOINCREMENT sempre?</h2>
+<p><strong>Não.</strong> A própria documentação do SQLite diz que o <code>AUTOINCREMENT</code> "gasta mais processador, memória, espaço em disco e acesso ao disco, e deve ser evitado se não for estritamente necessário. Normalmente, não é necessário." A cada <code>INSERT</code>, o banco precisa ler e atualizar a <code>sqlite_sequence</code>. Repare que as sete tabelas da Loja Aurora usam só <code>INTEGER PRIMARY KEY</code>.</p>
+
+<p>E um detalhe que confunde: o <code>AUTOINCREMENT</code> garante que os números <strong>crescem</strong> e nunca voltam, mas <strong>não</strong> garante que vêm em sequência sem buracos: cada linha apagada deixa um buraco para sempre, e um id digitado na mão (como o 100 da seção anterior) pula todos os números do meio. Se você precisa de "nota fiscal 1, 2, 3, sem pular nenhuma", isso é regra do seu sistema, não do <code>AUTOINCREMENT</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Quase todas as tabelas (clientes, produtos, pedidos…)</td><td><code>INTEGER PRIMARY KEY</code></td><td>Numera sozinho, é o mais rápido, e reaproveitar o último número não atrapalha.</td></tr>
+<tr><td>O número vai para fora do banco e não pode nunca apontar para outra coisa (cupom impresso, protocolo de atendimento, número enviado a outro sistema)</td><td><code>INTEGER PRIMARY KEY AUTOINCREMENT</code></td><td>Um número apagado nunca volta, nem se a tabela for esvaziada.</td></tr>
+<tr><td>O número já vem de fora (código de barras, CPF, código do fornecedor)</td><td>Chave que você mesmo informa</td><td>Não precisa numeração automática; veja <a href="primary-key.html">PRIMARY KEY</a>.</td></tr>
+<tr><td>Uma tabela sem nenhuma chave declarada</td><td>O <code>rowid</code> escondido</td><td>Ele existe e numera sozinho, mas não aparece no <code>SELECT *</code>. Prefira declarar o <code>id</code>: deixa a tabela clara para quem lê.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>AUTOINCREMENT em uma coluna que não é INTEGER PRIMARY KEY</strong>
+<p>A Ana escreveu <code>INT</code> em vez de <code>INTEGER</code>:</p>
+<pre class="file" data-file="erro-int.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id     INT PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT NOT NULL
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>AUTOINCREMENT is only allowed on an INTEGER PRIMARY KEY</code>, "o AUTOINCREMENT só é permitido numa INTEGER PRIMARY KEY". O SQLite exige o tipo escrito <strong>exatamente</strong> <code>INTEGER</code>. O mesmo erro aparece com <code>TEXT PRIMARY KEY AUTOINCREMENT</code>.</p>
+<p><strong>Como consertar:</strong> <code>id INTEGER PRIMARY KEY AUTOINCREMENT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>AUTOINCREMENT sem PRIMARY KEY</strong>
+<pre class="file" data-file="erro-sem-pk.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id     INTEGER AUTOINCREMENT,
+    codigo TEXT NOT NULL
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "AUTOINCREMENT": syntax error</code>, "erro de sintaxe perto de AUTOINCREMENT". Para o SQLite, <code>AUTOINCREMENT</code> é um pedaço do <code>PRIMARY KEY</code>; sozinho, ele não faz sentido.</p>
+<p><strong>Como consertar:</strong> escreva as três partes juntas, nesta ordem: <code>INTEGER PRIMARY KEY AUTOINCREMENT</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O AUTO_INCREMENT do MySQL</strong>
+<p>Quem vem do MySQL escreve com sublinhado:</p>
+<pre class="file" data-file="erro-mysql.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id     INTEGER PRIMARY KEY AUTO_INCREMENT,
+    codigo TEXT NOT NULL
+);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "AUTO_INCREMENT": syntax error</code>. No SQLite a palavra é <code>AUTOINCREMENT</code>, junta e sem sublinhado.</p>
+<p><strong>Como consertar:</strong> tire o sublinhado, ou tire a palavra inteira: na maioria dos casos o <code>INTEGER PRIMARY KEY</code> sozinho já basta.</p>
+</div>
+
+<div class="cenario">
+<strong>INT PRIMARY KEY: o id fica vazio, sem erro nenhum</strong>
+<p>Este é o pior, porque não dá erro. A Ana criou a tabela de recados com <code>INT</code> no lugar de <code>INTEGER</code>, e sem <code>AUTOINCREMENT</code>:</p>
+<pre class="file" data-file="int-pk.sql" data-resultado>CREATE TABLE recados (
+    id    INT PRIMARY KEY,
+    texto TEXT
+);
+INSERT INTO recados (texto)
+VALUES ('Repor lápis'), ('Ligar para o fornecedor');
+
+SELECT * FROM recados;
+</pre>
+<p><strong>O que aconteceu:</strong> os dois recados ficaram com o id <em>NULL</em>. Só a escrita exata <code>INTEGER PRIMARY KEY</code> faz a coluna virar o rowid e se numerar sozinha. Com <code>INT</code>, ela é uma coluna comum que, por um defeito antigo que o SQLite mantém por compatibilidade, ainda aceita <code>NULL</code> mesmo sendo chave primária. O mesmo acontece com <code>id SERIAL PRIMARY KEY</code>, a forma do PostgreSQL: o SQLite aceita o nome <code>SERIAL</code> como tipo, mas ele não numera nada.</p>
+<p><strong>Como consertar:</strong> <code>id INTEGER PRIMARY KEY</code>. Se você quer se proteger também do <code>NULL</code>, a aula <a href="not-null.html">NOT NULL</a> mostra como.</p>
+</div>
+
+<div class="trysql" data-goal="contem:1|Repor lápis;;contem:2|Ligar para o fornecedor">
+<p class="try-task"><strong>Missão:</strong> rode o código e veja os ids vazios. Conserte a criação da tabela para que os recados ganhem os números 1 e 2 sozinhos. Não mude o <code>INSERT</code>.</p>
+<pre class="script" data-file="recados.sql">CREATE TABLE recados (
+    id    INT PRIMARY KEY,
+    texto TEXT
+);
+INSERT INTO recados (texto)
+VALUES ('Repor lápis'), ('Ligar para o fornecedor');
+
+SELECT * FROM recados;
+</pre>
+<pre class="solucao" data-file="recados.sql">CREATE TABLE recados (
+    id    INTEGER PRIMARY KEY,
+    texto TEXT
+);
+INSERT INTO recados (texto)
+VALUES ('Repor lápis'), ('Ligar para o fornecedor');
+
+SELECT * FROM recados;
+</pre>
+</div>
+
+<div class="cenario">
+<strong>Digitou um id que já existe</strong>
+<pre class="file" data-file="erro-repetido.sql" data-resultado data-erro>INSERT INTO clientes (id, nome)
+VALUES (5, 'Rita Moura');
+</pre>
+<p><strong>A mensagem:</strong> <code>UNIQUE constraint failed: clientes.id</code>, "a regra de valor único falhou em clientes.id". O cliente 5 é a Conceição Prado. Numeração automática não impede você de digitar um número repetido na mão; quem impede é a chave primária, que não aceita dois iguais.</p>
+<p><strong>Como consertar:</strong> não informe o id e deixe o banco escolher.</p>
+</div>
+
+<div class="cenario">
+<strong>Acabaram os números (com AUTOINCREMENT)</strong>
+<p>O maior número que cabe num <code>INTEGER</code> do SQLite é 9223372036854775807 (mais de 9 quintilhões). Se ele já foi usado numa tabela com <code>AUTOINCREMENT</code>, não existe "próximo":</p>
+<pre class="file" data-file="erro-cheio.sql" data-resultado data-erro>CREATE TABLE cupons (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT
+);
+INSERT INTO cupons (id, codigo) VALUES (9223372036854775807, 'MAX');
+INSERT INTO cupons (codigo) VALUES ('X');
+</pre>
+<p><strong>A mensagem:</strong> <code>database or disk is full</code>, "o banco ou o disco está cheio". O disco não está cheio: o SQLite usa esse erro para dizer que não há mais número disponível. Na vida real ninguém chega lá contando de 1 em 1; isso só acontece quando alguém digita um id gigante na mão. Sem <code>AUTOINCREMENT</code>, o SQLite ainda tenta sortear um número livre antes de desistir.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Cada banco tem o seu jeito de numerar sozinho. Os trechos abaixo são <strong>ilustrativos</strong>: não rodam no SQLite.</p>
+<pre class="file" data-file="mysql.sql">-- MySQL e MariaDB: AUTO_INCREMENT (com sublinhado)
+CREATE TABLE cupons (
+    id     INT NOT NULL AUTO_INCREMENT,
+    codigo VARCHAR(20) NOT NULL,
+    PRIMARY KEY (id)
+);
+SELECT LAST_INSERT_ID();   -- o último número gerado
+</pre>
+<pre class="file" data-file="postgresql.sql">-- PostgreSQL: a forma do padrão SQL
+CREATE TABLE cupons (
+    id     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    codigo text NOT NULL
+);
+-- forma antiga, ainda muito vista: id serial PRIMARY KEY
+</pre>
+<pre class="file" data-file="sqlserver.sql">-- SQL Server: IDENTITY(início, passo)
+CREATE TABLE cupons (
+    id     INT IDENTITY(1, 1) PRIMARY KEY,
+    codigo VARCHAR(20) NOT NULL
+);
+</pre>
+<p>As documentações do SQL Server e do PostgreSQL avisam que um número já gerado <strong>não</strong> é reaproveitado e que pode haver buracos na sequência, mesmo sem apagar nada (um <code>INSERT</code> que falha também "gasta" o número). É o comportamento do <code>AUTOINCREMENT</code> do SQLite, não o do <code>INTEGER PRIMARY KEY</code> simples. No PostgreSQL, o <code>serial</code> é, segundo a documentação, "uma conveniência de escrita": cria um contador (<em>sequence</em>) e põe o próximo número dele como valor padrão da coluna. O <code>GENERATED ALWAYS</code> recusa um id digitado na mão, a não ser que o <code>INSERT</code> peça isso explicitamente; o <code>GENERATED BY DEFAULT</code> aceita.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>id INTEGER PRIMARY KEY</code></td><td>Vira o rowid e numera sozinho: "o maior + 1". O último número pode ser reaproveitado.</td></tr>
+<tr><td><code>id INTEGER PRIMARY KEY AUTOINCREMENT</code></td><td>Numera sozinho e nunca reaproveita: sempre maior que todos os que já existiram.</td></tr>
+<tr><td><code>INSERT</code> sem o <code>id</code>, ou com <code>id = NULL</code></td><td>Pede ao banco para escolher o número.</td></tr>
+<tr><td><code>INSERT</code> com <code>id = 100</code></td><td>Usa o 100; os próximos seguem a partir dele.</td></tr>
+<tr><td><code>SELECT last_insert_rowid();</code></td><td>O número que a última linha inserida ganhou.</td></tr>
+<tr><td><code>SELECT * FROM sqlite_sequence;</code></td><td>O maior id que cada tabela com <code>AUTOINCREMENT</code> já teve. Só existe depois da primeira tabela com <code>AUTOINCREMENT</code>.</td></tr>
+<tr><td><code>rowid</code></td><td>O número escondido de toda linha de uma tabela comum.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>AUTOINCREMENT is only allowed on an INTEGER PRIMARY KEY</code></td><td>O tipo não é exatamente <code>INTEGER</code> (ex.: <code>INT</code>, <code>TEXT</code>).</td></tr>
+<tr><td><code>near "AUTOINCREMENT": syntax error</code></td><td><code>AUTOINCREMENT</code> fora do <code>PRIMARY KEY</code>.</td></tr>
+<tr><td><code>near "AUTO_INCREMENT": syntax error</code></td><td>Escrita do MySQL; no SQLite é <code>AUTOINCREMENT</code>.</td></tr>
+<tr><td><code>UNIQUE constraint failed: clientes.id</code></td><td>Você digitou um id que já existe.</td></tr>
+<tr><td><code>no such table: sqlite_sequence</code></td><td>Nenhuma tabela deste banco usa <code>AUTOINCREMENT</code> ainda.</td></tr>
+<tr><td><code>database or disk is full</code></td><td>Com <code>AUTOINCREMENT</code>: o maior número possível já foi usado.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra certa</h3>
+<p>Complete para que um id apagado nunca seja reaproveitado:</p>
+<div class="ex-code">id INTEGER PRIMARY KEY <input data-answer="AUTOINCREMENT" aria-label="palavra-chave"></div>
+</div>
+
+<div class="exercise">
+<h3>2. A tabela da conta</h3>
+<p>Complete o nome da tabela interna onde o SQLite guarda o maior id de cada tabela com <code>AUTOINCREMENT</code>:</p>
+<div class="ex-code">SELECT * FROM <input data-answer="sqlite_sequence" aria-label="nome da tabela">;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A tabela <code>clientes</code> (com <code>id INTEGER PRIMARY KEY</code>, sem <code>AUTOINCREMENT</code>) tem os ids de 1 a 30. A Ana apaga o cliente 30 e cadastra um novo sem informar o id. Que número ele ganha?</p>
+<label><input type="radio" name="q3"> 31</label>
+<label><input type="radio" name="q3"> 30</label>
+<label><input type="radio" name="q3"> 1</label>
+<label><input type="radio" name="q3"> <em>NULL</em></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. E se a tabela fosse a de <code>cupons</code>, com <code>AUTOINCREMENT</code>, com os ids de 1 a 3, e a Ana apagasse <strong>todos</strong> os cupons antes de criar um novo?</p>
+<label><input type="radio" name="q4"> 1, porque a tabela ficou vazia</label>
+<label><input type="radio" name="q4"> 3, porque reaproveita o último</label>
+<label><input type="radio" name="q4"> 4, porque nenhum número já usado volta</label>
+<label><input type="radio" name="q4"> Dá erro, porque a tabela está vazia</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana criou uma tabela com <code>id INT PRIMARY KEY</code> e inseriu linhas sem informar o id. O que aparece na coluna <code>id</code>?</p>
+<label><input type="radio" name="q5"> 1, 2, 3…, igual ao <code>INTEGER PRIMARY KEY</code></label>
+<label><input type="radio" name="q5"> O erro <code>AUTOINCREMENT is only allowed on an INTEGER PRIMARY KEY</code></label>
+<label><input type="radio" name="q5"> O erro <code>NOT NULL constraint failed</code></label>
+<label><input type="radio" name="q5"> <em>NULL</em> em todas as linhas, sem erro</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Por que a documentação do SQLite recomenda evitar o <code>AUTOINCREMENT</code> quando ele não é necessário?</p>
+<label><input type="radio" name="q6"> Porque ele deixa cada <code>INSERT</code> mais trabalhoso: o banco precisa ler e atualizar a <code>sqlite_sequence</code></label>
+<label><input type="radio" name="q6"> Porque ele pode dar o mesmo id para duas linhas</label>
+<label><input type="radio" name="q6"> Porque ele só funciona no MySQL</label>
+<label><input type="radio" name="q6"> Porque ele impede de digitar o id na mão</label>
+</div>
+
+<h3>Missão final: o cupom que não pode voltar</h3>
+
+<div class="trysql" data-goal="contem:4|VERAO">
+<p class="try-task"><strong>Missão:</strong> o código cria os cupons, cancela o cupom 3 e cria o <code>VERAO</code>. Rode e veja: o <code>VERAO</code> ganhou o número 3, o mesmo do cupom cancelado. Mude <strong>só a criação da tabela</strong> para que o <code>VERAO</code> ganhe o 4 sozinho, sem digitar o id no <code>INSERT</code>. Se quiser, acrescente no fim um <code>SELECT</code> na <code>sqlite_sequence</code> para ver a conta.</p>
+<pre class="script" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+DELETE FROM cupons WHERE id = 3;
+INSERT INTO cupons (codigo, desconto) VALUES ('VERAO', 20);
+
+SELECT * FROM cupons;
+</pre>
+<pre class="solucao" data-file="cupons.sql">CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto)
+VALUES ('BEMVINDO', 10), ('NATAL', 15), ('PIAUI', 5);
+
+DELETE FROM cupons WHERE id = 3;
+INSERT INTO cupons (codigo, desconto) VALUES ('VERAO', 20);
+
+SELECT * FROM cupons;
+SELECT name, seq FROM sqlite_sequence;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>No SQLite, uma coluna <code>INTEGER PRIMARY KEY</code> é outro nome para o <code>rowid</code> e <strong>já numera sozinha</strong>: deixe o id fora do <code>INSERT</code> (ou mande <code>NULL</code>) e ela ganha "o maior + 1".</li>
+  <li>Sem <code>AUTOINCREMENT</code>, o número do <strong>último</strong> registro apagado pode voltar, e uma tabela esvaziada recomeça do 1.</li>
+  <li>Com <code>INTEGER PRIMARY KEY AUTOINCREMENT</code>, o número novo é sempre maior que todos os que já existiram. A conta fica na tabela interna <code>sqlite_sequence</code>.</li>
+  <li><code>AUTOINCREMENT</code> custa um pouco a cada <code>INSERT</code>: use só quando um número reaproveitado causaria confusão fora do banco.</li>
+  <li>A escrita tem de ser exata: <code>INTEGER</code>, não <code>INT</code>; <code>AUTOINCREMENT</code>, não <code>AUTO_INCREMENT</code>. Com <code>INT PRIMARY KEY</code>, o id fica <em>NULL</em> sem erro nenhum.</li>
+  <li><code>last_insert_rowid()</code> diz o número que a última linha ganhou. Nos outros bancos: <code>AUTO_INCREMENT</code> (MySQL), <code>GENERATED … AS IDENTITY</code> ou <code>serial</code> (PostgreSQL), <code>IDENTITY(1, 1)</code> (SQL Server).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
