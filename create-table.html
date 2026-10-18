@@ -1,0 +1,635 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL CREATE TABLE — criar a sua primeira tabela | Guia SQL</title>
+<meta name="description" content="CREATE TABLE para quem nunca mexeu num banco de dados: criar uma tabela nova na Loja Aurora, escolher nomes e tipos das colunas, conferir o que foi criado, IF NOT EXISTS, e os erros reais do SQLite quando falta ou sobra uma vírgula, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">CREATE TABLE</span></h1>
+
+<p class="intro">Até aqui você só usou tabelas que já existiam: <code>clientes</code>, <code>produtos</code>, <code>pedidos</code>… Agora a Ana quer guardar uma coisa nova: as <strong>avaliações</strong> que os clientes deixam nos produtos da Loja Aurora ("chegou rápido, nota 5"). Não existe tabela para isso, então ela vai criar uma. O comando é o <code>CREATE TABLE</code> ("crie a tabela"). Nesta aula você vai criar tabelas, conferir o que foi criado e conhecer os erros mais comuns, inclusive um que <strong>não</strong> dá erro nenhum e estraga a tabela em silêncio.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é <strong>criar uma tabela</strong>: definir o nome dela e as colunas, antes de existir qualquer dado.</li>
+  <li>A forma do <code>CREATE TABLE</code>: nome, parênteses, colunas separadas por vírgula, cada uma com o seu tipo.</li>
+  <li>Como colocar as primeiras linhas na tabela nova e como conferir o que foi criado (<code>sqlite_schema</code>, <code>PRAGMA table_info</code>, <code>.schema</code>).</li>
+  <li>Boas regras para dar nome a tabelas e colunas, e as palavras que o SQL reserva para si.</li>
+  <li><code>IF NOT EXISTS</code>: criar só se ainda não existir, e a pegadinha dele.</li>
+  <li>As mensagens reais do SQLite quando a tabela já existe, quando sobra uma vírgula, quando uma coluna se repete, e o que acontece quando <strong>falta</strong> uma vírgula.</li>
+</ul>
+</div>
+
+<p>Lembre-se: no editor do guia, <strong>cada Rodar parte do banco limpo</strong> da Loja Aurora. A tabela que você criar existe só durante aquela execução; ao rodar de novo, ela some e o banco volta ao original. Por isso os exemplos desta aula sempre trazem o <code>CREATE TABLE</code> junto com o que vem depois (o <code>INSERT</code>, o <code>SELECT</code>), na mesma caixa.</p>
+
+<hr>
+
+<h2>A ideia: o cabeçalho da planilha</h2>
+<p>Pense numa planilha nova, em branco. Antes de anotar a primeira avaliação, a Ana escreve na primeira linha os <strong>títulos das colunas</strong>: "número", "produto", "nota", "comentário". Ela ainda não tem nenhuma avaliação, mas já decidiu <strong>o que</strong> vai anotar de cada uma.</p>
+
+<pre class="file" data-file="a planilha da Ana">| id | produto_id | nota | comentario |
+|----|------------|------|------------|
+|    |            |      |            |   ← ainda vazia
+</pre>
+
+<p>Num banco de dados é igual, com uma diferença importante: o banco é mais exigente que a planilha. Cada coluna ganha um <strong>nome</strong> e um <strong>tipo</strong> (número inteiro, texto, número com casas decimais…), e pode ganhar <strong>regras</strong> ("esta coluna não pode ficar vazia"). Tudo isso se escreve uma vez só, no <code>CREATE TABLE</code>. Depois, cada <code>INSERT</code> só preenche as linhas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na planilha</th><th>No banco</th><th>Comando</th></tr>
+<tr><td>Criar a aba "Avaliações" e escrever os títulos das colunas</td><td>Criar a tabela <code>avaliacoes</code> com as suas colunas</td><td><code>CREATE TABLE</code></td></tr>
+<tr><td>Anotar uma avaliação numa linha</td><td>Inserir uma linha</td><td><code>INSERT INTO</code> (aula <a href="insert.html">INSERT INTO</a>)</td></tr>
+<tr><td>Olhar a aba</td><td>Consultar a tabela</td><td><code>SELECT</code> (aula <a href="select.html">SELECT</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A primeira tabela</h2>
+<p>Aqui está a tabela de avaliações. O <code>SELECT</code> logo depois serve para você ver a tabela que acabou de nascer:</p>
+
+<pre class="file" data-file="avaliacoes.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>O resultado mostra o "CREATE TABLE: ok" e uma tabela com as quatro colunas e <strong>nenhuma linha</strong>. É a planilha com o cabeçalho escrito e nada embaixo.</p>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE</dt><dd>"Crie a tabela." As duas palavras-chave que abrem o comando.</dd>
+  <dt>avaliacoes</dt><dd>O <strong>nome</strong> da tabela nova. Sem acento, sem espaço, em minúsculas (as regras estão na seção 5).</dd>
+  <dt>( … )</dt><dd>Os parênteses guardam a lista de colunas. Abre depois do nome, fecha depois da última coluna.</dd>
+  <dt>id INTEGER</dt><dd>Uma coluna: primeiro o <strong>nome</strong> (<code>id</code>), depois o <strong>tipo</strong> (<code>INTEGER</code>, "inteiro": números sem vírgula, como 1, 2, 3).</dd>
+  <dt>,</dt><dd>A vírgula separa uma coluna da outra. Vai <strong>entre</strong> as colunas: depois da última não tem vírgula.</dd>
+  <dt>comentario TEXT</dt><dd>A última coluna, do tipo <code>TEXT</code> ("texto"): qualquer frase.</dd>
+  <dt>;</dt><dd>O ponto e vírgula termina o comando, como em qualquer SQL.</dd>
+</dl>
+
+<p>As colunas desta tabela seguem o mesmo jeito das tabelas da Loja Aurora: <code>id</code> é o número da avaliação, <code>produto_id</code> diz <strong>qual produto</strong> foi avaliado (o mesmo número do <code>id</code> em <code>produtos</code>), <code>nota</code> vai de 1 a 5 e <code>comentario</code> é o texto do cliente.</p>
+
+<div class="tip">
+<strong>Uma coluna por linha</strong>
+<p>O SQL não liga para quebras de linha nem para espaços a mais: <code>CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);</code> numa linha só cria exatamente a mesma tabela. Mas escrever <strong>uma coluna por linha</strong>, com os tipos alinhados, deixa o comando fácil de ler e de conferir. É assim que estão escritas as tabelas da Loja Aurora, e é assim que você vai ver em quase todo projeto.</p>
+</div>
+
+<hr>
+
+<h2>2. Os tipos mais usados</h2>
+<p>Cada coluna tem um tipo. Os tipos têm duas aulas só para eles (<a href="tipos-de-dados.html">Tipos de Dados</a> e <a href="tipos-sqlite.html">Os Tipos no SQLite</a>); por enquanto, quatro bastam para quase tudo:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tipo</th><th>Guarda</th><th>Exemplo na Loja Aurora</th></tr>
+<tr><td><code>INTEGER</code></td><td>Números inteiros</td><td><code>estoque</code> em <code>produtos</code>, <code>quantidade</code> em <code>itens_pedido</code></td></tr>
+<tr><td><code>REAL</code></td><td>Números com casas decimais</td><td><code>preco</code> em <code>produtos</code>, <code>frete</code> em <code>pedidos</code></td></tr>
+<tr><td><code>TEXT</code></td><td>Texto</td><td><code>nome</code>, <code>email</code>, <code>cidade</code> em <code>clientes</code></td></tr>
+<tr><td><code>TEXT</code> com data</td><td>Datas no formato <code>AAAA-MM-DD</code></td><td><code>data</code> em <code>pedidos</code>, <code>nascimento</code> em <code>clientes</code></td></tr>
+</table>
+</div>
+
+<p>Uma tabela para os <strong>cupons de desconto</strong> da loja usa três deles: o código do cupom é texto, o desconto tem casas decimais e a validade é uma data.</p>
+
+<pre class="file" data-file="cupons.sql" data-resultado>CREATE TABLE cupons (
+    codigo   TEXT,
+    desconto REAL,
+    validade TEXT
+);
+
+INSERT INTO cupons (codigo, desconto, validade)
+VALUES ('AURORA10', 10, '2026-12-31');
+
+SELECT * FROM cupons;
+</pre>
+
+<p>Repare no resultado: a Ana escreveu <code>10</code>, mas o SELECT mostra <code>10.0</code>. A coluna é <code>REAL</code>, então o SQLite guardou o número como número com casas decimais. É o tipo da coluna trabalhando. Datas são guardadas como texto no SQLite (<code>'2026-12-31'</code>, entre aspas simples); a aula <a href="datas.html">Datas e Horas</a> explica por quê.</p>
+
+<div class="trysql" data-goal="tabela:cupons">
+<p class="try-task"><strong>Experimente:</strong> a Ana tentou criar a tabela de cupons, mas o comando deu erro. Rode, leia a mensagem em vermelho e conserte. (Dica: olhe o fim da lista de colunas.)</p>
+<pre class="script" data-file="cupons.sql">CREATE TABLE cupons (
+    codigo   TEXT,
+    desconto REAL,
+    validade TEXT,
+);
+</pre>
+<pre class="solucao" data-file="cupons.sql">CREATE TABLE cupons (
+    codigo   TEXT,
+    desconto REAL,
+    validade TEXT
+);
+</pre>
+</div>
+
+<hr>
+
+<h2>3. As primeiras linhas</h2>
+<p>Tabela criada, agora é só usar o <code>INSERT INTO</code> que você já conhece (aula <a href="insert.html">INSERT INTO</a>). Duas avaliações do produto 3, o <em>Lápis Grafite HB</em>:</p>
+
+<pre class="file" data-file="primeiras.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 3, 5, 'Chegou rápido');
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (2, 3, 4, 'Bom, mas a caixa veio amassada');
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>O quadro mostra os três passos, na ordem: "CREATE TABLE: ok", depois "1 linha afetada" duas vezes (um para cada <code>INSERT</code>) e, por fim, a tabela com as duas avaliações.</p>
+
+<p>E se o cliente não escreveu comentário? Basta deixar a coluna de fora do <code>INSERT</code>. Como a tabela não tem nenhuma regra dizendo o contrário, a coluna esquecida fica vazia, com <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>):</p>
+
+<pre class="file" data-file="sem-comentario.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota)
+VALUES (3, 1, 2);
+
+SELECT * FROM avaliacoes;
+</pre>
+
+<p>Às vezes é isso que você quer; às vezes não (uma avaliação sem nota não serve para nada). Para proibir o vazio, ou para pôr um valor automático no lugar dele, existem as <strong>restrições</strong> que você vai ver nas próximas aulas: <a href="not-null.html">NOT NULL</a> e <a href="default.html">DEFAULT</a>.</p>
+
+<hr>
+
+<h2>4. Conferir o que foi criado</h2>
+<p>Criou a tabela e quer ver como ela ficou? Há três jeitos, e cada um serve num lugar.</p>
+
+<h3>No editor: a tabela <code>sqlite_schema</code></h3>
+<p>Todo banco SQLite tem uma tabela especial, a <code>sqlite_schema</code> ("o esquema do SQLite"), com uma linha para cada tabela do banco e o <code>CREATE TABLE</code> que a criou. Ela se consulta com um <code>SELECT</code> comum:</p>
+
+<pre class="file" data-file="esquema.sql" data-resultado>CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);
+
+SELECT name, sql FROM sqlite_schema WHERE type = 'table';
+</pre>
+
+<dl class="anatomy">
+  <dt>sqlite_schema</dt><dd>A tabela onde o SQLite anota o próprio banco: o que existe nele.</dd>
+  <dt>name</dt><dd>O nome de cada tabela. A sua <code>avaliacoes</code> aparece por último, ao lado das sete da Loja Aurora.</dd>
+  <dt>sql</dt><dd>O <code>CREATE TABLE</code> que criou aquela tabela, guardado do jeito que foi escrito. É a melhor forma de descobrir quais colunas e regras uma tabela tem.</dd>
+  <dt>WHERE type = 'table'</dt><dd>Só as tabelas. A <code>sqlite_schema</code> também guarda índices e views (aulas <a href="indices.html">Índices</a> e <a href="views.html">Views</a>).</dd>
+</dl>
+
+<h3>No editor: <code>PRAGMA table_info</code></h3>
+<p>O <code>PRAGMA table_info(tabela)</code> mostra as colunas uma por linha, já separadas em partes. Os <code>PRAGMA</code>s são comandos próprios do SQLite (aula <a href="pragma.html">PRAGMAs Úteis</a>):</p>
+
+<pre class="file" data-file="colunas.sql" data-resultado>CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna do resultado</th><th>O que diz</th></tr>
+<tr><td><code>cid</code></td><td>A posição da coluna, contando do 0</td></tr>
+<tr><td><code>name</code></td><td>O nome da coluna</td></tr>
+<tr><td><code>type</code></td><td>O tipo que você escreveu</td></tr>
+<tr><td><code>notnull</code></td><td>1 se a coluna tem a regra <code>NOT NULL</code> (aula <a href="not-null.html">NOT NULL</a>), 0 se não</td></tr>
+<tr><td><code>dflt_value</code></td><td>O valor padrão (aula <a href="default.html">DEFAULT</a>); <em>NULL</em> se não tem</td></tr>
+<tr><td><code>pk</code></td><td>Diferente de 0 se a coluna faz parte da chave primária (aula <a href="primary-key.html">PRIMARY KEY</a>)</td></tr>
+</table>
+</div>
+
+<p>Rode o mesmo <code>PRAGMA</code> numa tabela da loja e você já vê as regras que ela tem: em <code>clientes</code>, o <code>nome</code> tem <code>notnull</code> 1 e o <code>vip</code> tem valor padrão 0.</p>
+
+<pre class="file" data-file="colunas-clientes.sql" data-resultado>PRAGMA table_info(clientes);
+</pre>
+
+<h3>No terminal: <code>.tables</code> e <code>.schema</code></h3>
+<p>No programa <code>sqlite3</code> (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>), os comandos de ponto <code>.tables</code> e <code>.schema</code> fazem o mesmo trabalho com menos digitação. Eles <strong>não existem no editor</strong>, só no terminal (aula <a href="comandos-ponto.html">Comandos de Ponto</a>). A Ana abriu o banco da loja, criou a tabela e conferiu:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);
+sqlite&gt; .tables
+avaliacoes    clientes      funcionarios  pedidos
+categorias    fornecedores  itens_pedido  produtos
+sqlite&gt; .schema avaliacoes
+CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);
+sqlite&gt; .quit</pre>
+
+<p>Repare que o <code>CREATE TABLE</code> que deu certo não imprime nada: no terminal, silêncio quer dizer "deu certo". A tabela nova já aparece no <code>.tables</code>, em ordem alfabética, e o <code>.schema</code> devolve o comando que a criou. Diferente do editor, aqui a tabela fica <strong>gravada</strong> no arquivo <code>loja.db</code>: na próxima vez que a Ana abrir o banco, ela continua lá.</p>
+
+<hr>
+
+<h2>5. Como dar nome a tabelas e colunas</h2>
+<p>O SQLite aceita muita coisa como nome, mas nem tudo que ele aceita é uma boa ideia. As regras que o guia (e a maioria dos projetos) segue:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Regra</th><th>Bom</th><th>Evite</th><th>Por quê</th></tr>
+<tr><td>Minúsculas</td><td><code>avaliacoes</code></td><td><code>Avaliacoes</code>, <code>AVALIACOES</code></td><td>Fica fácil separar o que é palavra do SQL (maiúscula) do que é nome seu (minúscula)</td></tr>
+<tr><td>Sem espaço: use <code>_</code></td><td><code>produto_id</code></td><td><code>produto id</code></td><td>Com espaço, o SQL acha que são duas palavras e dá erro</td></tr>
+<tr><td>Sem acento nem <code>ç</code></td><td><code>avaliacoes</code>, <code>descricao</code></td><td><code>avaliações</code>, <code>descrição</code></td><td>O SQLite aceita, mas outros programas e bancos podem tropeçar, e ninguém lembra onde estava o acento</td></tr>
+<tr><td>Comece por letra</td><td><code>vendas_2026</code></td><td><code>2026_vendas</code></td><td>Começando por número, o SQLite não reconhece o nome</td></tr>
+<tr><td>Tabela no plural, coluna no singular</td><td><code>clientes</code>, <code>nome</code></td><td><code>cliente</code>, <code>nomes</code></td><td>A tabela guarda <strong>muitos</strong> clientes; cada coluna guarda <strong>um</strong> valor por linha. É o padrão da Loja Aurora</td></tr>
+<tr><td>Nada de palavra reservada</td><td><code>pedidos</code>, <code>ordem</code></td><td><code>order</code>, <code>select</code>, <code>table</code></td><td>São palavras do próprio SQL (veja abaixo)</td></tr>
+</table>
+</div>
+
+<p>E maiúscula ou minúscula faz diferença? Para o SQLite, <strong>não</strong>: <code>Avaliacoes</code> e <code>avaliacoes</code> são o mesmo nome. Tanto que, se a Ana criar a <code>Avaliacoes</code> e depois tentar criar a <code>avaliacoes</code>, a segunda dá erro:</p>
+
+<pre class="file" data-file="maiusculas.sql" data-resultado data-erro>CREATE TABLE Avaliacoes (id INTEGER);
+CREATE TABLE avaliacoes (id INTEGER);
+</pre>
+
+<h3>Palavras reservadas</h3>
+<p>Algumas palavras são do próprio SQL: <code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>, <code>ORDER</code>, <code>TABLE</code>, <code>GROUP</code>… São as <strong>palavras reservadas</strong>. Uma tabela de "ordens de serviço" chamada <code>order</code> parece uma boa ideia, mas o SQLite lê <code>order</code> como o começo de um <code>ORDER BY</code> e se perde:</p>
+
+<pre class="file" data-file="reservada.sql" data-resultado data-erro>CREATE TABLE order (id INTEGER);
+</pre>
+
+<p>Dá para forçar com aspas duplas (<code>CREATE TABLE "order" (…)</code>): no SQL padrão, aspas duplas marcam um <strong>nome</strong>, e então qualquer palavra vale. Só que aí você vai ter de escrever <code>"order"</code> com aspas em <strong>todas</strong> as consultas, para sempre. Escolha outro nome (<code>ordens</code>, <code>ordens_servico</code>) e economize a dor de cabeça. A lista completa está em <a href="ref-palavras-chave.html">Palavras-chave SQL</a>.</p>
+
+<hr>
+
+<h2>6. <code>IF NOT EXISTS</code>: criar só se não existir</h2>
+<p>A Loja Aurora já tem uma tabela <code>fornecedores</code>. O que acontece se alguém tentar criá-la de novo?</p>
+
+<pre class="file" data-file="ja-existe.sql" data-resultado data-erro>CREATE TABLE fornecedores (id INTEGER, nome TEXT);
+</pre>
+
+<p>"A tabela <code>fornecedores</code> já existe." O SQLite não deixa duas tabelas com o mesmo nome no mesmo banco, e para tudo ali. Isso incomoda quando você tem um <strong>roteiro</strong> (um arquivo <code>.sql</code> com vários comandos, como o que monta a Loja Aurora) que precisa rodar mais de uma vez: na segunda vez, o primeiro <code>CREATE TABLE</code> já derruba o roteiro inteiro.</p>
+
+<p>Para isso existe o <code>IF NOT EXISTS</code> ("se não existir"):</p>
+
+<pre class="file" data-file="se-nao-existir.sql" data-resultado>CREATE TABLE IF NOT EXISTS fornecedores (id INTEGER, nome TEXT);
+
+SELECT count(*) FROM fornecedores;
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE TABLE</dt><dd>O comando de sempre.</dd>
+  <dt>IF NOT EXISTS</dt><dd>"Se não existir." Vem entre <code>TABLE</code> e o nome. Se a tabela ainda não existe, ela é criada normalmente. Se já existe, o comando <strong>não faz nada</strong> e não dá erro.</dd>
+  <dt>fornecedores (…)</dt><dd>O nome e as colunas, como sempre.</dd>
+</dl>
+
+<p>O editor mostrou "CREATE TABLE: ok" e o <code>count(*)</code> continua 6: os seis fornecedores estão lá, intactos. O comando simplesmente não fez nada.</p>
+
+<div class="warning">
+<strong>A pegadinha: ele não compara as colunas</strong>
+<p>O <code>IF NOT EXISTS</code> só olha o <strong>nome</strong>. Se já existe uma tabela com esse nome, ele desiste, mesmo que ela tenha colunas totalmente diferentes das que você escreveu. Veja: a Ana pediu uma <code>clientes</code> com as colunas <code>codigo</code> e <code>apelido</code>. Nada de erro, e nada mudou:</p>
+<pre class="file" data-file="pegadinha.sql" data-resultado>CREATE TABLE IF NOT EXISTS clientes (codigo INTEGER, apelido TEXT);
+
+PRAGMA table_info(clientes);
+</pre>
+<p>A tabela continua com as sete colunas de sempre (<code>id</code>, <code>nome</code>, <code>email</code>…), sem <code>codigo</code> nem <code>apelido</code>. Se o seu programa contava com essas colunas, o erro só vai aparecer lá na frente, numa consulta. Para <strong>mudar</strong> as colunas de uma tabela que já existe, o comando é outro: <a href="alter-table.html">ALTER TABLE</a>.</p>
+</div>
+
+<p>No terminal é igual: sem <code>IF NOT EXISTS</code>, o erro; com ele, silêncio. Aqui a mensagem vem com o prefixo <code>Parse error:</code> e uma setinha embaixo do ponto do problema:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER, produto_id INTEGER, nota INTEGER, comentario TEXT);
+sqlite&gt; CREATE TABLE avaliacoes (id INTEGER);
+Parse error: table avaliacoes already exists
+  CREATE TABLE avaliacoes (id INTEGER);
+               ^--- error here
+sqlite&gt; CREATE TABLE IF NOT EXISTS avaliacoes (id INTEGER);
+sqlite&gt; .quit</pre>
+
+<div class="trysql" data-goal="tabela:avaliacoes;;mudou:avaliacoes=1">
+<p class="try-task"><strong>Experimente:</strong> este roteiro cria a tabela de avaliações, mas foi escrito para um banco onde a tabela talvez já exista, e por isso ele precisa do <code>IF NOT EXISTS</code>. Só que a Ana escreveu as palavras na ordem errada, e o comando deu erro. Conserte a ordem e rode: a tabela tem de ser criada e receber a avaliação.</p>
+<pre class="script" data-file="roteiro.sql">CREATE TABLE avaliacoes IF NOT EXISTS (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 10, 5, 'Carrega o celular bem rápido');
+</pre>
+<pre class="solucao" data-file="roteiro.sql">CREATE TABLE IF NOT EXISTS avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 10, 5, 'Carrega o celular bem rápido');
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Uma tabela de verdade: tipos e regras</h2>
+<p>As tabelas que você criou até aqui só têm nome e tipo em cada coluna. As tabelas da Loja Aurora têm mais coisa. Veja como foi criada a tabela <code>produtos</code>:</p>
+
+<pre class="file" data-file="como-foi-criada.sql" data-resultado>SELECT sql FROM sqlite_schema WHERE name = 'produtos';
+</pre>
+
+<p>Depois do tipo, várias colunas têm <strong>restrições</strong> (em inglês, <em>constraints</em>): regras que o banco confere a cada <code>INSERT</code> e <code>UPDATE</code>, e que recusam o dado errado com uma mensagem de erro. Cada uma tem a sua aula, logo a seguir:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Restrição</th><th>Na tabela <code>produtos</code></th><th>Quer dizer</th><th>Aula</th></tr>
+<tr><td><code>PRIMARY KEY</code></td><td><code>id INTEGER PRIMARY KEY</code></td><td>O número que identifica cada produto: único e nunca vazio</td><td><a href="primary-key.html">PRIMARY KEY</a></td></tr>
+<tr><td><code>NOT NULL</code></td><td><code>nome TEXT NOT NULL</code></td><td>Todo produto tem de ter nome</td><td><a href="not-null.html">NOT NULL</a></td></tr>
+<tr><td><code>DEFAULT</code></td><td><code>estoque INTEGER NOT NULL DEFAULT 0</code></td><td>Se o <code>INSERT</code> não disser o estoque, ele começa em 0</td><td><a href="default.html">DEFAULT</a></td></tr>
+<tr><td><code>REFERENCES</code></td><td><code>categoria_id … REFERENCES categorias(id)</code></td><td>A categoria tem de existir na tabela <code>categorias</code></td><td><a href="foreign-key.html">FOREIGN KEY</a></td></tr>
+</table>
+</div>
+
+<p>Uma versão mais caprichada da tabela de avaliações, com essas regras, ficaria assim. Você vai entender cada pedaço nas próximas aulas; por enquanto, repare que <strong>a estrutura é a mesma</strong>: nome da coluna, tipo, e as regras no fim da linha.</p>
+
+<pre class="file" data-file="avaliacoes-v2.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER PRIMARY KEY,
+    produto_id INTEGER NOT NULL REFERENCES produtos(id),
+    nota       INTEGER NOT NULL,
+    comentario TEXT,
+    criada_em  TEXT NOT NULL DEFAULT CURRENT_DATE
+);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+
+<hr>
+
+<h2>Formas diferentes de criar uma tabela</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Uma coluna por linha</td><td><code>CREATE TABLE avaliacoes (<br>&nbsp;&nbsp;id INTEGER,<br>&nbsp;&nbsp;nota INTEGER<br>);</code></td><td>Sempre que der: é a mais fácil de ler e de conferir</td></tr>
+<tr><td>Tudo numa linha</td><td><code>CREATE TABLE avaliacoes (id INTEGER, nota INTEGER);</code></td><td>Tabelas pequenas, testes rápidos no terminal</td></tr>
+<tr><td>Com <code>IF NOT EXISTS</code></td><td><code>CREATE TABLE IF NOT EXISTS avaliacoes (…);</code></td><td>Roteiros que podem rodar mais de uma vez (lembre: não compara as colunas)</td></tr>
+<tr><td>A partir de uma consulta</td><td><code>CREATE TABLE baratos AS SELECT …;</code></td><td>Copiar um pedaço de outra tabela (aula <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>)</td></tr>
+<tr><td>Sem tipos</td><td><code>CREATE TABLE avaliacoes (id, nota);</code></td><td>Nunca. O SQLite aceita, mas os outros bancos não, e você perde a ajuda do tipo (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Num <code>CREATE TABLE</code>, quase todo erro é de digitação: uma vírgula, um parêntese, uma palavra trocada. Os quadros abaixo rodam o SQL errado de verdade e mostram a mensagem do SQLite.</p>
+
+<div class="cenario">
+<strong>Sobrou uma vírgula depois da última coluna</strong>
+<pre class="file" data-file="virgula-sobrando.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    nota       INTEGER,
+    comentario TEXT,
+);
+</pre>
+<p><strong>O que diz:</strong> <code>near ")": syntax error</code>, "erro de sintaxe perto do <code>)</code>". Depois de uma vírgula, o SQLite espera mais uma coluna, e encontrou o parêntese de fechamento. É o erro mais comum de todos, porque acontece quando você apaga a última coluna e esquece a vírgula da penúltima. No terminal, a seta aponta o lugar:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE teste (id INTEGER,);
+Parse error: near ")": syntax error
+  CREATE TABLE teste (id INTEGER,);
+                   error here ---^
+sqlite&gt; .quit</pre>
+<p><strong>Como consertar:</strong> apague a vírgula da última coluna. Vírgula só <strong>entre</strong> colunas.</p>
+</div>
+
+<div class="cenario">
+<strong>Faltou uma vírgula (e o SQLite não reclamou!)</strong>
+<p>Este é traiçoeiro. A Ana esqueceu a vírgula entre <code>produto_id</code> e <code>nota</code>:</p>
+<pre class="file" data-file="virgula-faltando.sql" data-resultado>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER
+    nota       INTEGER
+);
+
+PRAGMA table_info(avaliacoes);
+</pre>
+<p><strong>O que acontece:</strong> "CREATE TABLE: ok". Nenhum erro! Mas o <code>PRAGMA</code> mostra que a tabela ficou com <strong>duas</strong> colunas, e não três: a coluna <code>produto_id</code> ganhou um tipo esquisito, que começa em <code>INTEGER</code> e vai até o <code>INTEGER</code> da linha de baixo, com a quebra de linha e os espaços no meio (numa linha só, seria <code>INTEGER nota INTEGER</code>). Sem a vírgula, o SQLite leu <code>nota INTEGER</code> como parte do nome do tipo (ele aceita tipos com várias palavras, como <code>DOUBLE PRECISION</code>). O erro só aparece depois, quando alguém tenta usar a coluna que não existe:</p>
+<pre class="file" data-file="virgula-faltando-2.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER
+    nota       INTEGER
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota) VALUES (1, 3, 5);
+</pre>
+<p>"A tabela <code>avaliacoes</code> não tem uma coluna chamada <code>nota</code>." <strong>Como consertar:</strong> apague a tabela (aula <a href="drop-table.html">DROP TABLE</a>), ponha a vírgula e crie de novo. E crie o hábito: depois de todo <code>CREATE TABLE</code>, confira com <code>PRAGMA table_info</code> ou <code>.schema</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A tabela já existe</strong>
+<pre class="file" data-file="existe.sql" data-resultado data-erro>CREATE TABLE clientes (id INTEGER, nome TEXT);
+</pre>
+<p><strong>O que diz:</strong> <code>table clientes already exists</code>, "a tabela <code>clientes</code> já existe". <strong>Como consertar:</strong> se você queria uma tabela nova, escolha outro nome. Se o roteiro pode rodar de novo, use <code>CREATE TABLE IF NOT EXISTS</code>. Se você quer <strong>trocar</strong> a tabela velha pela nova, apague a velha antes com <a href="drop-table.html">DROP TABLE</a> (com cuidado: os dados dela vão junto).</p>
+</div>
+
+<div class="cenario">
+<strong>Duas colunas com o mesmo nome</strong>
+<pre class="file" data-file="duplicada.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id         INTEGER,
+    nota       INTEGER,
+    comentario TEXT,
+    nota       TEXT
+);
+</pre>
+<p><strong>O que diz:</strong> <code>duplicate column name: nota</code>, "nome de coluna repetido: <code>nota</code>". Numa tabela, cada coluna tem um nome só seu; senão, como o <code>SELECT nota</code> saberia qual das duas você quer? <strong>Como consertar:</strong> renomeie uma delas (<code>nota_entrega</code>, por exemplo) ou apague a repetida.</p>
+</div>
+
+<div class="cenario">
+<strong>Nome com espaço ou começando por número</strong>
+<pre class="file" data-file="espaco.sql" data-resultado data-erro>CREATE TABLE minhas avaliacoes (id INTEGER);
+</pre>
+<p><code>near "avaliacoes": syntax error</code>: o SQLite pegou <code>minhas</code> como nome da tabela e não entendeu o que <code>avaliacoes</code> está fazendo ali. E com um número na frente:</p>
+<pre class="file" data-file="numero.sql" data-resultado data-erro>CREATE TABLE 2026_vendas (id INTEGER);
+</pre>
+<p><code>unrecognized token: "2026_vendas"</code>, "símbolo não reconhecido". Um nome que começa por algarismo não é nome para o SQLite. <strong>Como consertar:</strong> <code>minhas_avaliacoes</code> e <code>vendas_2026</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu de fechar o parêntese</strong>
+<pre class="file" data-file="sem-fechar.sql" data-resultado data-erro>CREATE TABLE avaliacoes (
+    id   INTEGER,
+    nota INTEGER
+</pre>
+<p><strong>No editor:</strong> <code>incomplete input</code>, "comando incompleto": o texto acabou com o parêntese ainda aberto. <strong>No terminal</strong> é diferente: o <code>sqlite3</code> não dá erro, ele <strong>espera</strong> você terminar. O prompt muda de <code>sqlite&gt;</code> para <code>(x1...&gt;</code>, o jeito dele de avisar "tem 1 parêntese aberto, continue digitando":</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE teste (id INTEGER
+(x1...&gt; );                         « fechou o parêntese: agora o comando roda
+sqlite&gt; .quit</pre>
+<p><strong>Como consertar:</strong> feche o parêntese e ponha o <code>;</code>. Se você ficou preso no <code>(x1...&gt;</code> sem saber o que faltava, digite <code>);</code> e Enter.</p>
+</div>
+
+<div class="cenario">
+<strong>Mais valores que colunas no <code>INSERT</code></strong>
+<pre class="file" data-file="valores-demais.sql" data-resultado data-erro>CREATE TABLE avaliacoes (id INTEGER, nota INTEGER);
+
+INSERT INTO avaliacoes VALUES (1, 5, 'Chegou rápido');
+</pre>
+<p><strong>O que diz:</strong> <code>table avaliacoes has 2 columns but 3 values were supplied</code>, "a tabela tem 2 colunas, mas foram dados 3 valores". A tabela foi criada com duas colunas e só aceita duas. <strong>Como consertar:</strong> se faltou a coluna do comentário, ela tem de estar no <code>CREATE TABLE</code> (ou ser acrescentada com <a href="alter-table.html">ALTER TABLE</a>).</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>CREATE TABLE</code> é do SQL padrão e funciona igual no MySQL, no PostgreSQL e no SQL Server: nome, parênteses, colunas separadas por vírgula. As diferenças estão nos <strong>tipos</strong> (aula <a href="tipos-de-dados.html">Tipos de Dados</a>) e no <code>IF NOT EXISTS</code>:</p>
+<ul>
+  <li><strong>MySQL e PostgreSQL</strong> aceitam <code>CREATE TABLE IF NOT EXISTS</code>, e as duas documentações avisam a mesma pegadinha do SQLite: não há conferência de que a tabela existente tem a estrutura pedida. O PostgreSQL ainda emite um aviso (<em>notice</em>).</li>
+  <li><strong>SQL Server</strong> não tem <code>IF NOT EXISTS</code> no <code>CREATE TABLE</code>. O costume lá é testar antes com a função <code>OBJECT_ID</code> (trecho ilustrativo, não roda no SQLite):</li>
+</ul>
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">IF OBJECT_ID(N'avaliacoes', N'U') IS NULL
+    CREATE TABLE avaliacoes (id INT, nota INT);
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>CREATE TABLE nome (col1 TIPO, col2 TIPO);</code></td><td>Cria a tabela <code>nome</code> com essas colunas, vazia</td></tr>
+<tr><td><code>CREATE TABLE IF NOT EXISTS nome (…);</code></td><td>Cria só se não existir; se existir, não faz nada (não compara as colunas)</td></tr>
+<tr><td><code>col TIPO NOT NULL DEFAULT 0</code></td><td>Coluna com restrições depois do tipo</td></tr>
+<tr><td><code>SELECT sql FROM sqlite_schema WHERE name = 'nome';</code></td><td>Mostra o <code>CREATE TABLE</code> de uma tabela</td></tr>
+<tr><td><code>PRAGMA table_info(nome);</code></td><td>Lista as colunas, os tipos e as regras</td></tr>
+<tr><td><code>.tables</code> / <code>.schema nome</code></td><td>O mesmo, no terminal <code>sqlite3</code> (não no editor)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>table X already exists</code></td><td>Já existe uma tabela com esse nome</td></tr>
+<tr><td><code>near ")": syntax error</code></td><td>Quase sempre: vírgula sobrando antes do <code>)</code></td></tr>
+<tr><td><code>duplicate column name: X</code></td><td>Duas colunas com o mesmo nome</td></tr>
+<tr><td><code>near "order": syntax error</code></td><td>Usou uma palavra reservada como nome</td></tr>
+<tr><td><code>unrecognized token: "2026_vendas"</code></td><td>Nome que começa por número</td></tr>
+<tr><td><code>incomplete input</code></td><td>Faltou fechar o parêntese (no editor)</td></tr>
+<tr><td><code>table X has no column named Y</code></td><td>A coluna não existe: confira o <code>CREATE TABLE</code> (vírgula faltando?)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<p>Complete para criar a tabela <code>marcas</code> com as colunas <code>id</code> (inteiro) e <code>nome</code> (texto):</p>
+<div class="ex-code"><input data-answer="CREATE|create" aria-label="primeira palavra"> <input data-answer="TABLE|table" aria-label="segunda palavra"> marcas (id <input data-answer="INTEGER|integer" aria-label="tipo do id">, nome TEXT);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Só se não existir</h3>
+<p>Complete para que o comando não dê erro se a tabela já existir:</p>
+<div class="ex-code">CREATE TABLE <input data-answer="IF NOT EXISTS|if not exists" aria-label="as três palavras"> marcas (id INTEGER, nome TEXT);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Qual destes comandos dá <code>near ")": syntax error</code>?</p>
+<label><input type="radio" name="q3"> <code>CREATE TABLE marcas (id INTEGER, nome TEXT);</code></label>
+<label><input type="radio" name="q3"> <code>CREATE TABLE marcas (id INTEGER);</code></label>
+<label><input type="radio" name="q3"> <code>CREATE TABLE marcas (id INTEGER, nome TEXT,);</code></label>
+<label><input type="radio" name="q3"> <code>CREATE TABLE IF NOT EXISTS marcas (id INTEGER);</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A Ana rodou <code>CREATE TABLE IF NOT EXISTS clientes (codigo INTEGER);</code> no banco da loja, que já tem a tabela <code>clientes</code>. O que acontece?</p>
+<label><input type="radio" name="q4"> Dá erro: <code>table clientes already exists</code></label>
+<label><input type="radio" name="q4"> Nada: a tabela continua com as colunas antigas, e não aparece erro</label>
+<label><input type="radio" name="q4"> A tabela antiga é apagada e trocada pela nova</label>
+<label><input type="radio" name="q4"> A coluna <code>codigo</code> é acrescentada à tabela antiga</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Qual é o melhor nome para uma tabela que guarda as entregas da loja?</p>
+<label><input type="radio" name="q5"> <code>Entregas da Loja</code></label>
+<label><input type="radio" name="q5"> <code>2026_entregas</code></label>
+<label><input type="radio" name="q5"> <code>order</code></label>
+<label><input type="radio" name="q5"> <code>entregas</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Depois de <code>CREATE TABLE t (a INTEGER b TEXT);</code> (sem vírgula), quantas colunas a tabela <code>t</code> tem?</p>
+<label><input type="radio" name="q6"> Uma: <code>a</code>, com o tipo <code>INTEGER b TEXT</code></label>
+<label><input type="radio" name="q6"> Duas: <code>a</code> e <code>b</code></label>
+<label><input type="radio" name="q6"> Nenhuma: o comando dá erro de sintaxe</label>
+<label><input type="radio" name="q6"> Três: <code>a</code>, <code>INTEGER</code> e <code>b</code></label>
+</div>
+
+<h3>Missão final: a tabela de avaliações</h3>
+
+<div class="trysql" data-goal="tabela:avaliacoes;;mudou:avaliacoes=2;;colunas:id,produto_id,nota,comentario">
+<p class="try-task"><strong>Missão:</strong> crie a tabela <code>avaliacoes</code> com quatro colunas, nesta ordem: <code>id</code> (inteiro), <code>produto_id</code> (inteiro), <code>nota</code> (inteiro) e <code>comentario</code> (texto). Os dois <code>INSERT</code> e o <code>SELECT</code> já estão prontos embaixo; só falta o <code>CREATE TABLE</code> no lugar do comentário.</p>
+<pre class="script" data-file="missao.sql">-- escreva aqui o CREATE TABLE avaliacoes
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 1, 5, 'Folhas grossas, a caneta não atravessa');
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (2, 5, 3, 'Bonita, mas a alça é fina');
+
+SELECT * FROM avaliacoes;
+</pre>
+<pre class="solucao" data-file="missao.sql">CREATE TABLE avaliacoes (
+    id         INTEGER,
+    produto_id INTEGER,
+    nota       INTEGER,
+    comentario TEXT
+);
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (1, 1, 5, 'Folhas grossas, a caneta não atravessa');
+
+INSERT INTO avaliacoes (id, produto_id, nota, comentario)
+VALUES (2, 5, 3, 'Bonita, mas a alça é fina');
+
+SELECT * FROM avaliacoes;
+</pre>
+</div>
+
+<p>Se a sua tabela funcionou, experimente juntar as avaliações com os nomes dos produtos (produto 1 é o <em>Caderno Pautado 96 folhas</em>, o 5 é a <em>Mochila Escolar Azul</em>): isso é um JOIN, e você já sabe fazer (aula <a href="inner-join.html">INNER JOIN</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>CREATE TABLE nome (coluna TIPO, …);</code> cria uma tabela nova, vazia. As colunas vão entre parênteses, separadas por vírgula, cada uma com nome e tipo.</li>
+  <li>Os tipos do dia a dia: <code>INTEGER</code> (inteiro), <code>REAL</code> (com decimais) e <code>TEXT</code> (texto, e também datas no formato <code>AAAA-MM-DD</code>).</li>
+  <li>Confira o que criou: <code>sqlite_schema</code> e <code>PRAGMA table_info</code> no editor; <code>.tables</code> e <code>.schema</code> no terminal.</li>
+  <li>Nomes em minúsculas, sem espaço nem acento, começando por letra, e nada de palavra reservada como <code>order</code>.</li>
+  <li><code>IF NOT EXISTS</code> evita o erro <code>table X already exists</code>, mas não compara as colunas: se a tabela existe, ele simplesmente não faz nada.</li>
+  <li>Vírgula sobrando dá <code>near ")": syntax error</code>; vírgula faltando <strong>não dá erro</strong> e junta duas colunas numa. Depois de criar, confira sempre.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
