@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Datas e Horas — como o SQLite guarda datas | Guia SQL</title>
+<meta name="description" content="Datas e horas em SQL para quem está começando: por que o SQLite guarda datas como texto no formato AAAA-MM-DD, como ordenar e filtrar por período, a armadilha do BETWEEN com data e hora, os formatos texto, dia juliano e Unix, a data de hoje com date('now') e CURRENT_TIMESTAMP em UTC, como impedir datas inválidas, e as diferenças dos outros bancos, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Datas e Horas</span></h1>
+
+<p class="intro">Quase todo banco de dados guarda datas: o dia do pedido, o dia da entrega, o aniversário do cliente, a hora do pagamento. A Loja Aurora tem 90 pedidos, de janeiro de 2024 a outubro de 2026, e a Ana precisa responder perguntas como "quantos pedidos tivemos em 2025?" e "o que foi pago no dia 14?". Nesta aula você vai entender <strong>como o SQLite guarda datas e horas</strong> (ele não tem um tipo de data próprio!), por que o formato <code>AAAA-MM-DD</code> é o único que funciona bem, como filtrar por período sem cair na armadilha do <code>BETWEEN</code>, e como pegar a data de hoje.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Que o SQLite não tem tipo <code>DATE</code>: as datas são texto (ou número), e o formato ISO 8601 (<code>2025-03-14</code>) é o combinado.</li>
+  <li>Por que <code>AAAA-MM-DD</code> ordena e compara certo, e <code>DD/MM/AAAA</code> não.</li>
+  <li>Filtrar por ano, por mês e por período com <code>&gt;=</code>, <code>&lt;</code>, <code>BETWEEN</code> e <code>LIKE</code>.</li>
+  <li>Data com hora (<code>2026-10-14 16:45:10</code>) e a armadilha do <code>BETWEEN</code> com elas.</li>
+  <li>Os três jeitos de guardar o mesmo instante: texto, dia juliano e tempo Unix.</li>
+  <li>A data e a hora de agora: <code>date('now')</code>, <code>CURRENT_DATE</code>, <code>CURRENT_TIMESTAMP</code>, e por que elas vêm em UTC.</li>
+  <li>Como impedir que uma data impossível (<code>2024-02-30</code>, <code>30/01/2024</code>) entre na tabela.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, num SQLite com o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada exemplo parte do banco limpo. As sessões de terminal saíram do <code>sqlite3</code> 3.50.4 no computador fictício da Ana. As <strong>funções</strong> de data (<code>date</code>, <code>strftime</code>, somar dias, descobrir o dia da semana…) têm aula própria, logo depois desta: <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<hr>
+
+<h2>A ideia: escrever a data de um jeito que ordena</h2>
+<p>Pense numa pasta de fotos no computador. Se cada arquivo se chama <code>05-01-2024.jpg</code>, <code>14-01-2024.jpg</code>, <code>27-12-2023.jpg</code>, o computador põe em ordem pelo <strong>dia</strong> (05, 14, 27), misturando meses e anos. Quem já sofreu com isso passou a nomear as fotos assim: <code>2023-12-27.jpg</code>, <code>2024-01-05.jpg</code>, <code>2024-01-14.jpg</code>. Com o <strong>ano primeiro</strong>, depois o mês, depois o dia, sempre com dois dígitos, a ordem alfabética dos nomes é a mesma ordem do calendário.</p>
+
+<p>O SQLite usa exatamente esse truque. Ele <strong>não tem</strong> um tipo especial para datas (veja <a href="tipos-sqlite.html">Os Tipos no SQLite</a>): uma data é um texto comum, como <code>'2025-03-14'</code>. Esse formato, ano-mês-dia com hífens, é um padrão internacional, o <strong>ISO 8601</strong>. Todas as funções de data do SQLite entendem esse formato, e, como o ano vem primeiro, ordenar e comparar o texto dá o mesmo que ordenar e comparar as datas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Parte</th><th>Formato</th><th>Exemplo</th></tr>
+<tr><td>Data</td><td><code>AAAA-MM-DD</code> (ano com 4 dígitos, mês e dia com 2)</td><td><code>2025-03-14</code></td></tr>
+<tr><td>Hora</td><td><code>HH:MM:SS</code> (0 a 23 horas)</td><td><code>16:45:10</code></td></tr>
+<tr><td>Data e hora</td><td><code>AAAA-MM-DD HH:MM:SS</code> (um espaço no meio; um <code>T</code> também vale)</td><td><code>2026-10-14 16:45:10</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. As datas da Loja Aurora</h2>
+<p>A tabela <code>pedidos</code> tem duas colunas de data: <code>data</code> (o dia do pedido) e <code>entregue_em</code> (o dia da entrega, ou <code>NULL</code> se ainda não chegou). A função <code>typeof</code> ("tipo de") mostra como cada valor está guardado:</p>
+
+<pre class="file" data-file="datas.sql" data-resultado>SELECT id, data, entregue_em,
+       typeof(data) AS tipo_data,
+       typeof(entregue_em) AS tipo_entrega
+FROM pedidos
+WHERE id IN (1, 2, 86);
+</pre>
+
+<dl class="anatomy">
+  <dt>data</dt><dd>O dia do pedido, como texto ISO: <code>2024-01-05</code> é 5 de janeiro de 2024.</dd>
+  <dt>entregue_em</dt><dd>O dia da entrega. O pedido 86 ainda não foi entregue: <em>NULL</em> (veja <a href="null.html">O Valor NULL</a>).</dd>
+  <dt>typeof(data)</dt><dd><code>text</code>: a data é um texto. Não existe "tipo data" no SQLite.</dd>
+  <dt>typeof(entregue_em)</dt><dd><code>null</code> no pedido 86: é a ausência de valor, não uma data.</dd>
+</dl>
+
+<p>Na tabela <code>clientes</code>, a coluna <code>nascimento</code> usa o mesmo formato. Dois clientes (9 e 21) estão sem data de nascimento.</p>
+
+<hr>
+
+<h2>2. Ordenar e comparar: por que ano-mês-dia</h2>
+<p>Com as datas em ISO, o <code>ORDER BY</code> (aula <a href="order-by.html">ORDER BY</a>) põe os clientes do mais velho para o mais novo sem nenhum esforço:</p>
+
+<pre class="file" data-file="ordenar.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento IS NOT NULL
+ORDER BY nascimento
+LIMIT 5;
+</pre>
+
+<p>Agora veja o que acontece quando alguém guarda as datas do jeito brasileiro, <code>DD/MM/AAAA</code>. A Ana fez uma tabelinha de aniversários da equipe:</p>
+
+<pre class="file" data-file="formato-br.sql" data-resultado>CREATE TABLE aniversarios (nome TEXT, dia TEXT);
+INSERT INTO aniversarios VALUES
+  ('Ana',    '05/01/2024'),
+  ('Caio',   '14/01/2024'),
+  ('Renata', '27/12/2023'),
+  ('Pedro',  '03/02/2024');
+
+SELECT * FROM aniversarios ORDER BY dia;
+</pre>
+
+<p>A ordem saiu errada: Pedro (fevereiro de 2024) veio primeiro e Renata (dezembro de <strong>2023</strong>) ficou por último. O SQLite não sabe que aquilo é uma data; ele ordenou o <strong>texto</strong>, letra por letra, e comparou primeiro os dias: <code>03</code>, <code>05</code>, <code>14</code>, <code>27</code>. Com comparações, o estrago é o mesmo: <code>WHERE dia &gt; '01/01/2024'</code> traria a Renata, de 2023.</p>
+
+<div class="warning">
+<strong>Guarde em ISO, mostre como quiser</strong>
+<p>Grave sempre <code>AAAA-MM-DD</code> no banco. Na hora de <strong>mostrar</strong> para o cliente, aí sim converta para <code>14/03/2025</code>, com <code>strftime('%d/%m/%Y', data)</code> (aula <a href="funcoes-data.html">Funções de Data</a>). Banco é para guardar certo; a tela é para mostrar bonito.</p>
+</div>
+
+<hr>
+
+<h2>3. Filtrar por período</h2>
+<p>Como data ISO compara certo, filtrar por período é usar os operadores que você já conhece (aula <a href="operadores-comparacao.html">Comparações</a>) com texto entre aspas simples.</p>
+
+<h3>Um ano inteiro</h3>
+<pre class="file" data-file="ano.sql" data-resultado>SELECT COUNT(*) AS pedidos_2025
+FROM pedidos
+WHERE data &gt;= '2025-01-01' AND data &lt; '2026-01-01';
+</pre>
+
+<dl class="anatomy">
+  <dt>data &gt;= '2025-01-01'</dt><dd>Do primeiro dia de 2025 em diante (incluindo ele).</dd>
+  <dt>AND</dt><dd>As duas condições ao mesmo tempo (aula <a href="and.html">AND</a>).</dd>
+  <dt>data &lt; '2026-01-01'</dt><dd>Antes do primeiro dia de 2026 (sem incluí-lo).</dd>
+</dl>
+
+<p>Foram 32 pedidos em 2025. Esse jeito, "maior ou igual ao início <strong>e</strong> menor que o início do período seguinte", é o mais seguro de todos: funciona igual para datas com e sem hora, e você nunca precisa saber se o mês acaba no dia 28, 30 ou 31.</p>
+
+<h3>Com <code>BETWEEN</code></h3>
+<p>O <code>BETWEEN</code> ("entre", aula <a href="between.html">BETWEEN</a>) inclui as duas pontas. Para datas sem hora, como as da loja, ele funciona bem:</p>
+
+<pre class="file" data-file="between.sql" data-resultado>SELECT COUNT(*) AS pedidos_2025
+FROM pedidos
+WHERE data BETWEEN '2025-01-01' AND '2025-12-31';
+</pre>
+
+<p>Os mesmos 32. Mas guarde a palavra "sem hora": na seção 4 você vai ver o <code>BETWEEN</code> errar.</p>
+
+<h3>Um mês com <code>LIKE</code></h3>
+<p>Como a data é texto, dá para usar o <code>LIKE</code> (aula <a href="like.html">LIKE</a>): todo dia de março de 2025 começa com <code>2025-03-</code>.</p>
+
+<pre class="file" data-file="like.sql" data-resultado>SELECT id, data
+FROM pedidos
+WHERE data LIKE '2025-03-%';
+</pre>
+
+<p>Funciona, e é fácil de ler. A desvantagem é que o <code>LIKE</code> trata a data só como texto; com <code>&gt;=</code> e <code>&lt;</code> o banco consegue usar um índice na coluna de data (aula <a href="indices.html">Índices</a>), e o <code>LIKE</code>, em geral, não.</p>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Experimente:</strong> a Ana quer os pedidos de <strong>dezembro de 2025</strong>. A consulta tem só o começo do período, e trouxe dezembro de 2025 e tudo o que veio depois. Acrescente o fim do período.</p>
+<pre class="script" data-file="consulta.sql">SELECT id, data
+FROM pedidos
+WHERE data &gt;= '2025-12-01';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id, data
+FROM pedidos
+WHERE data &gt;= '2025-12-01' AND data &lt; '2026-01-01';
+</pre>
+</div>
+
+<hr>
+
+<h2>4. Data com hora e a armadilha do <code>BETWEEN</code></h2>
+<p>Quando a hora importa, ela vem depois da data, separada por um espaço: <code>'2026-10-14 16:45:10'</code>. A Ana anotou os pagamentos dos últimos pedidos numa tabela nova, com a hora exata de cada um:</p>
+
+<pre class="file" data-file="pagamentos.sql" data-resultado>CREATE TABLE pagamentos (pedido_id INTEGER, pago_em TEXT);
+INSERT INTO pagamentos VALUES
+  (88, '2026-10-05 09:12:40'),
+  (89, '2026-10-09 18:03:05'),
+  (90, '2026-10-14 08:30:00'),
+  (87, '2026-10-14 16:45:10'),
+  (86, '2026-10-15 00:00:00');
+
+SELECT * FROM pagamentos ORDER BY pago_em;
+</pre>
+
+<p>Ordenou certo, de novo: o formato ISO com hora também ordena como texto. Agora a pergunta: "o que foi pago no dia 14?". A primeira ideia de muita gente:</p>
+
+<pre class="file" data-file="armadilha.sql" data-resultado>CREATE TABLE pagamentos (pedido_id INTEGER, pago_em TEXT);
+INSERT INTO pagamentos VALUES
+  (88, '2026-10-05 09:12:40'), (89, '2026-10-09 18:03:05'),
+  (90, '2026-10-14 08:30:00'), (87, '2026-10-14 16:45:10'),
+  (86, '2026-10-15 00:00:00');
+
+SELECT * FROM pagamentos
+WHERE pago_em BETWEEN '2026-10-14' AND '2026-10-14';
+</pre>
+
+<p><strong>Zero linhas</strong>, e houve dois pagamentos no dia 14! Por quê? Para o SQLite, <code>'2026-10-14'</code> é só um texto, e quer dizer "dia 14 à meia-noite em ponto". O texto <code>'2026-10-14 08:30:00'</code> é <strong>maior</strong> que <code>'2026-10-14'</code> (é mais comprido e começa igual), então está fora do intervalo. A tentativa seguinte também erra:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Filtro</th><th>O que vem</th><th>Certo?</th></tr>
+<tr><td><code>BETWEEN '2026-10-14' AND '2026-10-14'</code></td><td>Nada</td><td>Não</td></tr>
+<tr><td><code>BETWEEN '2026-10-14' AND '2026-10-15'</code></td><td>Os dois do dia 14</td><td>Por sorte. O pagamento <code>'2026-10-15 00:00:00'</code> ficou de fora porque é maior que <code>'2026-10-15'</code>; mas um pagamento gravado só como <code>'2026-10-15'</code> entraria, e ele é do dia 15</td></tr>
+<tr><td><code>pago_em &gt;= '2026-10-14' AND pago_em &lt; '2026-10-15'</code></td><td>Só os dois do dia 14</td><td>Sim</td></tr>
+<tr><td><code>date(pago_em) = '2026-10-14'</code></td><td>Só os dois do dia 14</td><td>Sim (mas não usa índice)</td></tr>
+<tr><td><code>pago_em LIKE '2026-10-14%'</code></td><td>Só os dois do dia 14</td><td>Sim</td></tr>
+</table>
+</div>
+
+<p>A <code>date(pago_em)</code> corta a hora e deixa só a data; ela é da próxima aula (<a href="funcoes-data.html">Funções de Data</a>). A regra que resolve tudo é a mesma da seção 3: <strong>maior ou igual ao começo, menor que o começo do dia seguinte</strong>.</p>
+
+<div class="trysql" data-goal="linhas:2">
+<p class="try-task"><strong>Missão:</strong> conserte o filtro para trazer os dois pagamentos do dia 14 de outubro de 2026, e só eles.</p>
+<pre class="script" data-file="consulta.sql">CREATE TABLE pagamentos (pedido_id INTEGER, pago_em TEXT);
+INSERT INTO pagamentos VALUES
+  (88, '2026-10-05 09:12:40'), (89, '2026-10-09 18:03:05'),
+  (90, '2026-10-14 08:30:00'), (87, '2026-10-14 16:45:10'),
+  (86, '2026-10-15 00:00:00');
+
+SELECT * FROM pagamentos
+WHERE pago_em BETWEEN '2026-10-14' AND '2026-10-14';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE TABLE pagamentos (pedido_id INTEGER, pago_em TEXT);
+INSERT INTO pagamentos VALUES
+  (88, '2026-10-05 09:12:40'), (89, '2026-10-09 18:03:05'),
+  (90, '2026-10-14 08:30:00'), (87, '2026-10-14 16:45:10'),
+  (86, '2026-10-15 00:00:00');
+
+SELECT * FROM pagamentos
+WHERE pago_em &gt;= '2026-10-14' AND pago_em &lt; '2026-10-15';
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Três jeitos de guardar o mesmo instante</h2>
+<p>O texto ISO é o jeito mais comum, mas o SQLite aceita mais dois. Os três representam o mesmo dia, o do primeiro pedido da loja:</p>
+
+<pre class="file" data-file="tres-formatos.sql" data-resultado>SELECT '2024-01-05'              AS texto_iso,
+       julianday('2024-01-05')   AS dia_juliano,
+       unixepoch('2024-01-05')   AS tempo_unix;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Formato</th><th>Tipo</th><th>O que é</th><th>Bom para</th></tr>
+<tr><td><strong>Texto ISO 8601</strong></td><td><code>TEXT</code></td><td><code>'2024-01-05'</code> ou <code>'2024-01-05 08:30:00'</code></td><td>Quase tudo: dá para ler a olho, ordena certo. <strong>É o recomendado</strong> e o que a Loja Aurora usa.</td></tr>
+<tr><td><strong>Dia juliano</strong></td><td><code>REAL</code></td><td>Quantos dias se passaram desde o meio-dia de 24 de novembro de 4714 a.C. (um marco dos astrônomos). A parte depois do ponto é a fração do dia: o <code>.5</code> quer dizer meia-noite.</td><td>Fazer contas: a diferença entre dois dias julianos é o número de dias entre as datas.</td></tr>
+<tr><td><strong>Tempo Unix</strong></td><td><code>INTEGER</code></td><td>Quantos <strong>segundos</strong> se passaram desde 1º de janeiro de 1970, à meia-noite em UTC.</td><td>Trocar dados com programas: quase toda linguagem (PHP, Python, JavaScript) fala esse número.</td></tr>
+</table>
+</div>
+
+<p>As funções de data convertem de um para o outro. A <code>date()</code> volta para o texto ISO; com tempo Unix, é preciso avisar com <code>'unixepoch'</code>, senão ela acharia que o número é um dia juliano:</p>
+
+<pre class="file" data-file="voltar.sql" data-resultado>SELECT date(2460314.5)                    AS do_juliano,
+       date(1704412800, 'unixepoch')      AS do_unix,
+       datetime(1704412800, 'unixepoch')  AS do_unix_com_hora;
+</pre>
+
+<h3>Uma conta com dias julianos</h3>
+<p>Quantos dias cada pedido levou para ser entregue? Subtraindo os dias julianos das duas datas:</p>
+
+<pre class="file" data-file="dias.sql" data-resultado>SELECT id, data, entregue_em,
+       julianday(entregue_em) - julianday(data) AS dias
+FROM pedidos
+WHERE id &lt;= 3;
+</pre>
+
+<p>O pedido 1 levou 5 dias, de 5 a 10 de janeiro. Subtrair os textos direto (<code>entregue_em - data</code>) não funciona: o SQLite transforma cada texto em número aproveitando só o <code>2024</code> do começo, e a conta dá <code>0</code>. Essa e as outras contas de data estão em <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<hr>
+
+<h2>6. A data e a hora de agora</h2>
+<p>Para saber o dia de hoje, o SQLite tem a função <code>date('now')</code> ("agora") e três palavras do SQL padrão: <code>CURRENT_DATE</code> ("data atual"), <code>CURRENT_TIME</code> ("hora atual") e <code>CURRENT_TIMESTAMP</code> ("data e hora atuais"). Elas dão uma resposta diferente a cada dia (e a cada segundo), então a sessão abaixo mostra o que a Ana viu numa manhã de outubro de 2026:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT date('now');
+2026-10-18
+sqlite&gt; SELECT CURRENT_DATE, CURRENT_TIME;
+2026-10-18|13:40:15
+sqlite&gt; SELECT CURRENT_TIMESTAMP;
+2026-10-18 13:40:15                « 13h40 em UTC
+sqlite&gt; SELECT datetime('now', 'localtime');
+2026-10-18 10:40:15                « 10h40 no relógio da Ana (horário de Brasília)
+sqlite&gt; .quit</pre>
+
+<p>Repare na diferença de 3 horas. O SQLite dá a hora de agora em <strong>UTC</strong> (o "tempo universal coordenado", a hora de Greenwich, a referência do mundo inteiro), e não na hora local. No horário de Brasília, o relógio está 3 horas atrás do UTC. Para a hora do relógio da parede, acrescente <code>'localtime'</code> ("hora local"). Guardar em UTC é, na verdade, uma boa prática: um sistema com clientes em Fortaleza, Lisboa e Buenos Aires tem uma hora só como referência.</p>
+
+<div class="warning">
+<strong>Por que o guia evita <code>now</code> nos exemplos</strong>
+<p>Uma consulta com <code>date('now')</code> dá uma resposta hoje e outra amanhã. Se esta aula dissesse "a consulta abaixo devolve 3 pedidos", a frase ficaria errada na semana que vem. Por isso os exemplos usam datas fixas dos pedidos da loja (como <code>'2026-10-14'</code>, a data do último pedido). No editor do guia você pode rodar <code>SELECT date('now');</code> à vontade: vai ver a data do seu computador, em UTC.</p>
+</div>
+
+<h3>Gravar a hora automaticamente</h3>
+<p>O uso mais comum do <code>CURRENT_TIMESTAMP</code> é como valor padrão (<code>DEFAULT</code>, aula <a href="default.html">DEFAULT</a>) de uma coluna "criado em": cada linha nova anota sozinha quando foi gravada.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE TABLE avisos (id INTEGER PRIMARY KEY, texto TEXT, criado_em TEXT DEFAULT CURRENT_TIMESTAMP);
+sqlite&gt; INSERT INTO avisos (texto) VALUES ('Chegou o estoque de cadernos');
+sqlite&gt; SELECT * FROM avisos;
+1|Chegou o estoque de cadernos|2026-10-18 13:40:15
+sqlite&gt; DROP TABLE avisos;
+sqlite&gt; .quit</pre>
+
+<p>O <code>INSERT</code> não disse nada sobre <code>criado_em</code>, e a coluna recebeu a data e a hora do momento, em UTC. No editor, onde o resultado mudaria a cada segundo, dá para conferir só o formato:</p>
+
+<pre class="file" data-file="default.sql" data-resultado>CREATE TABLE avisos (
+  id        INTEGER PRIMARY KEY,
+  texto     TEXT,
+  criado_em TEXT DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO avisos (texto) VALUES ('Chegou o estoque de cadernos');
+
+SELECT texto, typeof(criado_em) AS tipo, length(criado_em) AS tamanho
+FROM avisos;
+</pre>
+
+<p>Um texto de 19 caracteres: <code>AAAA-MM-DD HH:MM:SS</code>.</p>
+
+<hr>
+
+<h2>7. O SQLite aceita qualquer coisa: proteja a coluna</h2>
+<p>Como a data é só texto, o SQLite grava o que você mandar, sem reclamar. Até numa coluna declarada como <code>DATE</code>:</p>
+
+<pre class="file" data-file="aceita-tudo.sql" data-resultado>CREATE TABLE eventos (dia DATE);
+INSERT INTO eventos VALUES ('2024-02-30'), ('ontem'), (20240105);
+
+SELECT dia, typeof(dia) AS tipo FROM eventos;
+</pre>
+
+<p>Um 30 de fevereiro, a palavra "ontem" e um número: tudo entrou. O nome <code>DATE</code> no <code>CREATE TABLE</code> não faz o SQLite conferir nada (ele só influencia a "afinidade" da coluna, assunto de <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Quem confere é a função <code>date()</code>: ela devolve a data no formato ISO, ou <code>NULL</code> quando não entende o texto.</p>
+
+<pre class="file" data-file="conferir.sql" data-resultado>SELECT date('2024-02-29') AS bissexto,
+       date('2024-02-30') AS dia_30,
+       date('30/01/2024') AS formato_br,
+       date('2024-1-5')   AS sem_zeros;
+</pre>
+
+<p>Três surpresas: <code>'30/01/2024'</code> e <code>'2024-1-5'</code> (sem os zeros) não são entendidos e viram <em>NULL</em>; e o <code>'2024-02-30'</code> não vira <em>NULL</em>, vira <code>2024-03-01</code>: o SQLite "empurra" o dia que sobrou para o mês seguinte. O truque para validar é comparar o valor com a <code>date()</code> dele: só uma data correta e bem escrita continua igual. Use isso num <code>CHECK</code> (aula <a href="check.html">CHECK</a>):</p>
+
+<pre class="file" data-file="check.sql" data-resultado data-erro>CREATE TABLE eventos (
+  dia TEXT CHECK (dia IS date(dia))
+);
+INSERT INTO eventos VALUES ('2024-02-29');   -- passa
+INSERT INTO eventos VALUES ('2024-02-30');   -- é recusado
+</pre>
+
+<dl class="anatomy">
+  <dt>CHECK (…)</dt><dd>Uma regra que toda linha precisa cumprir.</dd>
+  <dt>dia IS date(dia)</dt><dd>O texto guardado tem de ser igual à data que a <code>date()</code> entende. <code>'2024-02-30'</code> vira <code>'2024-03-01'</code>: diferente, recusado. <code>'30/01/2024'</code> vira <em>NULL</em>: diferente, recusado.</dd>
+  <dt>IS</dt><dd>Por que <code>IS</code> e não <code>=</code>? Com <code>=</code>, <code>'30/01/2024' = NULL</code> dá <em>NULL</em>, e um <code>CHECK</code> que dá <em>NULL</em> <strong>deixa passar</strong>. O <code>IS</code> compara de verdade, até com <em>NULL</em> (aula <a href="is-null.html">IS NULL</a>). Bônus: uma linha sem data (<em>NULL</em>) passa, porque <code>NULL IS NULL</code> é verdadeiro; para proibir, junte <code>NOT NULL</code>.</dd>
+</dl>
+
+<p>O primeiro <code>INSERT</code> passou; o segundo parou com <code>CHECK constraint failed: dia IS date(dia)</code>, "a restrição CHECK falhou".</p>
+
+<hr>
+
+<h2>8. Formas diferentes de filtrar um período</h2>
+<p>Todas estas trazem os pedidos de março de 2025 (os pedidos 38, 39 e 40):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Prós e contras</th></tr>
+<tr><td><code>&gt;=</code> início <code>AND</code> <code>&lt;</code> início do seguinte</td><td><code>data &gt;= '2025-03-01' AND data &lt; '2025-04-01'</code></td><td><strong>A recomendada.</strong> Certa com ou sem hora, usa índice, não precisa saber o último dia do mês.</td></tr>
+<tr><td><code>BETWEEN</code></td><td><code>data BETWEEN '2025-03-01' AND '2025-03-31'</code></td><td>Fácil de ler. Certa só se a coluna <strong>não</strong> tiver hora.</td></tr>
+<tr><td><code>LIKE</code></td><td><code>data LIKE '2025-03-%'</code></td><td>Curta. Trata a data como texto; em geral, sem índice.</td></tr>
+<tr><td>Função de data</td><td><code>strftime('%Y-%m', data) = '2025-03'</code></td><td>Muito flexível (dia da semana, trimestre…), mas calcula linha por linha, sem índice. Veja <a href="funcoes-data.html">Funções de Data</a>.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Erros de data quase nunca dão mensagem de erro: a consulta roda e traz o resultado <strong>errado</strong>, ou nenhum. Por isso é preciso conhecer os casos.</p>
+
+<div class="cenario">
+<strong>A data escrita sem os zeros</strong>
+<pre class="file" data-file="sem-zeros.sql" data-resultado>SELECT COUNT(*) AS pedidos
+FROM pedidos
+WHERE data = '2024-1-5';
+</pre>
+<p><strong>O que aconteceu:</strong> zero pedidos, e existe um pedido em 5 de janeiro de 2024 (o pedido 1). A coluna guarda <code>'2024-01-05'</code>, e o texto <code>'2024-1-5'</code> é outro texto. Nenhum aviso.</p>
+<p><strong>Como consertar:</strong> sempre com zeros: <code>'2024-01-05'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A data no formato brasileiro</strong>
+<pre class="file" data-file="formato-br-where.sql" data-resultado>SELECT COUNT(*) AS pedidos
+FROM pedidos
+WHERE data = '05/01/2024';
+</pre>
+<p><strong>O que aconteceu:</strong> zero, de novo. E com <code>&gt;</code> ou <code>&lt;</code> é pior: o resultado vem, mas errado, porque o texto <code>'05/01/2024'</code> é comparado letra por letra com <code>'2024-…'</code>.</p>
+<p><strong>Como consertar:</strong> no SQL, escreva sempre a data como <code>'AAAA-MM-DD'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu as aspas</strong>
+<pre class="file" data-file="sem-aspas.sql" data-resultado>SELECT COUNT(*) AS pedidos
+FROM pedidos
+WHERE data = 2024-01-05;
+</pre>
+<p><strong>O que aconteceu:</strong> sem aspas, <code>2024-01-05</code> é uma <strong>conta</strong>: 2024 menos 1 menos 5, que dá 2018. A consulta procurou pedidos com data igual ao número 2018 e não achou nenhum. Sem erro, sem aviso.</p>
+<p><strong>Como consertar:</strong> data é texto, e texto vai entre aspas simples: <code>'2024-01-05'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas em vez de simples</strong>
+<pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT COUNT(*) AS pedidos
+FROM pedidos
+WHERE data = "2024-01-05";
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such column: "2024-01-05" - should this be a string literal in single-quotes?</code>: "não existe a coluna "2024-01-05"; isto deveria ser um texto entre aspas simples?". No SQL, aspas duplas são para <strong>nomes</strong> de colunas e tabelas; texto, inclusive datas, vai entre aspas simples.</p>
+<p><strong>Como consertar:</strong> <code>WHERE data = '2024-01-05'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>BETWEEN</code> numa coluna com hora</strong>
+<p>Você já viu na seção 4: <code>pago_em BETWEEN '2026-10-14' AND '2026-10-14'</code> não traz nada, porque <code>'2026-10-14 08:30:00'</code> é maior que <code>'2026-10-14'</code>. <strong>Como consertar:</strong> <code>pago_em &gt;= '2026-10-14' AND pago_em &lt; '2026-10-15'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Achou que a hora de agora era a do relógio</strong>
+<p><code>CURRENT_TIMESTAMP</code> e <code>datetime('now')</code> vêm em <strong>UTC</strong>, 3 horas à frente do horário de Brasília. Um relatório "pedidos de hoje" rodado às 22h em Teresina já estaria no dia seguinte em UTC. <strong>Como consertar:</strong> guarde em UTC e, para mostrar ou comparar com a hora local, use <code>datetime('now', 'localtime')</code> (seção 6).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>MySQL, PostgreSQL e SQL Server têm <strong>tipos de data de verdade</strong>, e conferem o valor na hora de gravar. A data é escrita do mesmo jeito, como texto ISO entre aspas simples (<code>'2025-03-14'</code>), mas o banco a transforma num valor de data.</p>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Tipos</th><th>Agora</th></tr>
+<tr><td>SQLite</td><td>Nenhum: <code>TEXT</code> (ISO), <code>REAL</code> ou <code>INTEGER</code></td><td><code>CURRENT_TIMESTAMP</code>, <code>datetime('now')</code> (UTC)</td></tr>
+<tr><td>PostgreSQL</td><td><code>DATE</code>, <code>TIME</code>, <code>TIMESTAMP</code>, <code>TIMESTAMP WITH TIME ZONE</code>, <code>INTERVAL</code></td><td><code>CURRENT_DATE</code>, <code>CURRENT_TIMESTAMP</code>, <code>now()</code></td></tr>
+<tr><td>MySQL</td><td><code>DATE</code>, <code>TIME</code>, <code>DATETIME</code>, <code>TIMESTAMP</code>, <code>YEAR</code></td><td><code>CURRENT_DATE</code>, <code>CURRENT_TIMESTAMP</code>, <code>NOW()</code></td></tr>
+<tr><td>SQL Server</td><td><code>date</code>, <code>time</code>, <code>datetime</code>, <code>datetime2</code>, <code>datetimeoffset</code></td><td><code>CURRENT_TIMESTAMP</code>, <code>GETDATE()</code>, <code>SYSDATETIME()</code></td></tr>
+</table>
+</div>
+<p>Numa coluna <code>DATE</code> do PostgreSQL ou do SQL Server, um <code>'2024-02-30'</code> é recusado com erro. O MySQL também recusa no modo estrito (o modo que vem ligado de fábrica); se o modo estrito estiver desligado, ele grava a "data zero" <code>0000-00-00</code> com um aviso. No SQLite, a proteção é o <code>CHECK</code> da seção 7. Trecho ilustrativo, que não roda no SQLite:</p>
+<pre class="file" data-file="postgresql.sql (ilustrativo)">-- PostgreSQL: a coluna é do tipo DATE de verdade
+CREATE TABLE pedidos (id INTEGER PRIMARY KEY, data DATE NOT NULL);
+SELECT data + 7 FROM pedidos;   -- soma 7 dias direto na data
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que é / o que faz</th></tr>
+<tr><td><code>'2025-03-14'</code></td><td>Uma data (texto ISO 8601: ano-mês-dia, com zeros)</td></tr>
+<tr><td><code>'2025-03-14 16:45:10'</code></td><td>Data e hora (24 horas)</td></tr>
+<tr><td><code>col &gt;= '2025-03-01' AND col &lt; '2025-04-01'</code></td><td>Um período (março de 2025), certo com ou sem hora</td></tr>
+<tr><td><code>col BETWEEN '2025-03-01' AND '2025-03-31'</code></td><td>Um período, só para colunas sem hora</td></tr>
+<tr><td><code>col LIKE '2025-03-%'</code></td><td>Um mês, comparando o texto</td></tr>
+<tr><td><code>julianday(data)</code></td><td>A data como dia juliano (<code>REAL</code>); diferença = dias</td></tr>
+<tr><td><code>unixepoch(data)</code></td><td>A data como tempo Unix (segundos desde 1970)</td></tr>
+<tr><td><code>date(numero)</code> / <code>date(numero, 'unixepoch')</code></td><td>Volta de juliano / de Unix para texto ISO</td></tr>
+<tr><td><code>date('now')</code>, <code>CURRENT_DATE</code></td><td>A data de hoje (UTC)</td></tr>
+<tr><td><code>CURRENT_TIME</code></td><td>A hora de agora (UTC)</td></tr>
+<tr><td><code>CURRENT_TIMESTAMP</code>, <code>datetime('now')</code></td><td>Data e hora de agora (UTC)</td></tr>
+<tr><td><code>datetime('now', 'localtime')</code></td><td>Data e hora de agora no fuso do computador</td></tr>
+<tr><td><code>DEFAULT CURRENT_TIMESTAMP</code></td><td>Coluna que anota sozinha quando a linha foi gravada</td></tr>
+<tr><td><code>CHECK (col IS date(col))</code></td><td>Só aceita datas válidas no formato <code>AAAA-MM-DD</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Escreva a data</h3>
+<p>Escreva o dia 7 de março de 2025 no formato que o SQLite entende (com as aspas):</p>
+<div class="ex-code">WHERE data = <input data-answer="'2025-03-07'" aria-label="data"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Complete o período</h3>
+<p>Pedidos do ano de 2024 inteiro, do jeito recomendado:</p>
+<div class="ex-code">WHERE data &gt;= '2024-01-01' AND data <input data-answer="&lt;" aria-label="operador"> '2025-01-01'</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que o SQLite consegue ordenar as datas da Loja Aurora com um simples <code>ORDER BY data</code>?</p>
+<label><input type="radio" name="q3"> Porque a coluna é do tipo <code>DATE</code></label>
+<label><input type="radio" name="q3"> Porque o SQLite reconhece qualquer data escrita em português</label>
+<label><input type="radio" name="q3"> Porque estão no formato ano-mês-dia com zeros, e a ordem do texto é a ordem do calendário</label>
+<label><input type="radio" name="q3"> Porque elas são guardadas como números</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. A coluna <code>pago_em</code> guarda data e hora. Quantas linhas <code>WHERE pago_em BETWEEN '2026-10-14' AND '2026-10-14'</code> traz para os pagamentos feitos às 08:30 e às 16:45 do dia 14?</p>
+<label><input type="radio" name="q4"> As duas</label>
+<label><input type="radio" name="q4"> Nenhuma</label>
+<label><input type="radio" name="q4"> Só a das 08:30</label>
+<label><input type="radio" name="q4"> Dá erro de sintaxe</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou <code>SELECT CURRENT_TIMESTAMP;</code> às 10h da manhã em Teresina. Que hora apareceu?</p>
+<label><input type="radio" name="q5"> 10:00, a hora do computador</label>
+<label><input type="radio" name="q5"> 07:00</label>
+<label><input type="radio" name="q5"> Nenhuma: <code>CURRENT_TIMESTAMP</code> só mostra a data</label>
+<label><input type="radio" name="q5"> 13:00, porque a hora vem em UTC</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O que <code>date('2024-02-30')</code> devolve no SQLite?</p>
+<label><input type="radio" name="q6"> <code>2024-03-01</code>: o dia que sobra vai para o mês seguinte</label>
+<label><input type="radio" name="q6"> <code>NULL</code></label>
+<label><input type="radio" name="q6"> Um erro de data inválida</label>
+<label><input type="radio" name="q6"> <code>2024-02-29</code></label>
+</div>
+
+<h3>Missão final: os clientes dos anos 90</h3>
+
+<div class="trysql" data-goal="linhas:12;;out:^Rafael Monteiro\|1990-05-14">
+<p class="try-task"><strong>Missão:</strong> a loja vai fazer uma campanha para os clientes nascidos nos <strong>anos 90</strong> (de 1º de janeiro de 1990 a 31 de dezembro de 1999). Mostre o <code>nome</code> e o <code>nascimento</code> deles, do mais velho para o mais novo.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes
+WHERE nascimento &gt;= '1990-01-01' AND nascimento &lt; '2000-01-01'
+ORDER BY nascimento;
+</pre>
+</div>
+
+<p>São 12 clientes, do Rafael Monteiro (maio de 1990) à Larissa Macêdo (janeiro de 1999). Os dois clientes sem data de nascimento ficaram de fora sozinhos: <code>NULL &gt;= '1990-01-01'</code> não é verdadeiro.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O SQLite <strong>não tem tipo de data</strong>. O combinado é guardar texto no formato ISO 8601: <code>'AAAA-MM-DD'</code> ou <code>'AAAA-MM-DD HH:MM:SS'</code>, sempre com zeros.</li>
+  <li>Com o ano primeiro, a ordem do texto é a ordem do calendário: <code>ORDER BY</code>, <code>&lt;</code> e <code>&gt;</code> funcionam. <code>DD/MM/AAAA</code> ordena e compara errado.</li>
+  <li>Para um período, use <code>col &gt;= início AND col &lt; início do próximo</code>. O <code>BETWEEN</code> só é seguro em colunas sem hora.</li>
+  <li>O mesmo instante pode ser texto ISO, dia juliano (<code>julianday</code>, bom para contas) ou tempo Unix (<code>unixepoch</code>, segundos desde 1970).</li>
+  <li><code>date('now')</code>, <code>CURRENT_DATE</code> e <code>CURRENT_TIMESTAMP</code> dão o momento atual em <strong>UTC</strong>; <code>'localtime'</code> dá a hora do relógio. Mudam a cada dia: nunca dependa delas para um resultado fixo.</li>
+  <li>O SQLite grava qualquer texto como data. Proteja a coluna com <code>CHECK (col IS date(col))</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
