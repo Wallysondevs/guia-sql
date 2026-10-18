@@ -1,0 +1,1050 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: Controle de Gastos — centavos, orçamento e saldo | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: o controle de gastos pessoal da Ana, versão por versão. Uma tabela de gastos, por que dinheiro não se guarda em REAL, valores em centavos com entrada e saída pelo sinal, categorias com orçamento, entradas e saídas por mês, saldo acumulado com SUM OVER e o fechamento do orçamento, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Controle de Gastos</span></h1>
+
+<p class="intro">Todo mês acontece a mesma coisa com a Ana: o salário cai no dia 1º e, lá pelo dia 25, ela não sabe para onde foi o dinheiro. Ela já tentou caderno, planilha e aplicativo. Agora vai tentar o que aprendeu neste guia: um <strong>banco de dados</strong> só dela, com cada gasto anotado e o SQL respondendo às perguntas. Quanto gastei no mercado? Estourei o orçamento do lazer? Quanto sobrou em setembro? Neste projeto você constrói esse banco em versões e, no caminho, aprende a regra de ouro de quem guarda dinheiro em banco de dados: <strong>nada de casas decimais "soltas"</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A começar com uma tabela de gastos e a somar por categoria.</li>
+  <li>Por que <code>REAL</code> engana com dinheiro (<code>0.1 + 0.2</code> não é <code>0.3</code>) e como guardar tudo em <strong>centavos</strong>.</li>
+  <li>A registrar entradas e saídas na mesma tabela, pelo sinal do valor, e a mostrar reais com <code>printf</code>.</li>
+  <li>A criar categorias com um <strong>orçamento</strong> mensal e comparar com o que foi gasto.</li>
+  <li>Entradas, saídas e saldo por mês com <code>CASE</code> dentro do <code>SUM</code>.</li>
+  <li>O saldo acumulado, dia a dia, com <code>SUM() OVER</code>.</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Como as caixas deste projeto funcionam</strong>
+<p>O controle de gastos é um banco novo. Como o editor começa do zero a cada Rodar (com a Loja Aurora carregada), toda caixa traz a <strong>montagem</strong> (as tabelas e os lançamentos) e, depois do comentário <code>-- a consulta</code>, a pergunta daquela versão. A montagem só muda quando a versão muda o modelo.</p>
+</div>
+
+<hr>
+
+<h2>Versão 1: uma tabela de gastos</h2>
+<p>A primeira ideia da Ana é copiar o caderno: cada gasto numa linha, com a data, o que foi, a categoria e o valor em reais.</p>
+
+<pre class="file" data-file="gastos-v1.sql" data-resultado>CREATE TABLE gastos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     REAL NOT NULL
+);
+
+INSERT INTO gastos (data, descricao, categoria, valor) VALUES
+('2026-09-06', 'Supermercado',      'Mercado',    385.90),
+('2026-09-10', 'Recarga do ônibus', 'Transporte', 150.00),
+('2026-09-13', 'Cinema',            'Lazer',       64.00),
+('2026-09-18', 'Feira',             'Mercado',     92.35),
+('2026-09-20', 'Farmácia',          'Saúde',       47.89),
+('2026-09-22', 'Supermercado',      'Mercado',    412.70),
+('2026-09-27', 'Show',              'Lazer',      180.00);
+
+-- a consulta
+SELECT categoria, SUM(valor) AS total
+FROM gastos
+GROUP BY categoria
+ORDER BY total DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>data TEXT NOT NULL</dt><dd>A data no formato <code>AAAA-MM-DD</code>, que se ordena certinho e que as funções de data entendem (aula <a href="datas.html">Datas e Horas</a>).</dd>
+  <dt>valor REAL NOT NULL</dt><dd>O valor em reais, com centavos depois do <strong>ponto</strong>. Guarde essa escolha: a versão 2 vai mudá-la.</dd>
+  <dt>SUM(valor) … GROUP BY categoria</dt><dd>Quanto foi para cada categoria (aulas <a href="sum.html">SUM()</a> e <a href="group-by.html">GROUP BY</a>).</dd>
+</dl>
+
+<p>Em setembro, o mercado levou 890.95, e o lazer, 244.0. Repare que o SQLite escreve <code>244.0</code>, não <code>244.00</code>: ele mostra o número, não "dinheiro". Isso também se resolve na versão 2.</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:Supermercado|412.7">
+<p class="try-task"><strong>Missão:</strong> a Ana quer ver, um por um, os gastos da categoria <code>Mercado</code>: a data, a descrição e o valor, do maior para o menor (aulas <a href="where.html">WHERE</a> e <a href="order-by.html">ORDER BY</a>).</p>
+<pre class="script" data-file="gastos-v1.sql">CREATE TABLE gastos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     REAL NOT NULL
+);
+INSERT INTO gastos (data, descricao, categoria, valor) VALUES
+('2026-09-06', 'Supermercado',      'Mercado',    385.90),
+('2026-09-10', 'Recarga do ônibus', 'Transporte', 150.00),
+('2026-09-13', 'Cinema',            'Lazer',       64.00),
+('2026-09-18', 'Feira',             'Mercado',     92.35),
+('2026-09-20', 'Farmácia',          'Saúde',       47.89),
+('2026-09-22', 'Supermercado',      'Mercado',    412.70),
+('2026-09-27', 'Show',              'Lazer',      180.00);
+
+-- a consulta
+SELECT categoria, SUM(valor) AS total
+FROM gastos
+GROUP BY categoria;
+</pre>
+<pre class="solucao" data-file="gastos-v1.sql">CREATE TABLE gastos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     REAL NOT NULL
+);
+INSERT INTO gastos (data, descricao, categoria, valor) VALUES
+('2026-09-06', 'Supermercado',      'Mercado',    385.90),
+('2026-09-10', 'Recarga do ônibus', 'Transporte', 150.00),
+('2026-09-13', 'Cinema',            'Lazer',       64.00),
+('2026-09-18', 'Feira',             'Mercado',     92.35),
+('2026-09-20', 'Farmácia',          'Saúde',       47.89),
+('2026-09-22', 'Supermercado',      'Mercado',    412.70),
+('2026-09-27', 'Show',              'Lazer',      180.00);
+
+-- a consulta
+SELECT data, descricao, valor
+FROM gastos
+WHERE categoria = 'Mercado'
+ORDER BY valor DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>Versão 2: dinheiro em centavos</h2>
+<p>Antes de crescer o banco, um teste que todo programador faz uma vez na vida e nunca esquece:</p>
+
+<pre class="file" data-file="ponto-flutuante.sql" data-resultado>SELECT 0.1 + 0.2       AS soma,
+       0.1 + 0.2 = 0.3 AS igual,
+       0.1 + 0.2 - 0.3 AS diferenca,
+       10 + 20 = 30    AS igual_em_centavos;
+</pre>
+
+<p>A soma aparece como <code>0.3</code>, mas a comparação com 0.3 dá <strong>0</strong>, falso. A diferença mostra o porquê: sobra um <code>5.55111512312578e-17</code> (0,0000000000000000555…). O tipo <code>REAL</code> guarda números em <strong>binário</strong>, e 0.1 em binário é uma dízima, como 1/3 em decimal: o computador guarda uma aproximação. Na tela, o arredondamento esconde o erro; na comparação, ele aparece (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+
+<p>E isso acontece com os dados da Ana. O total do mercado em setembro "é" 890.95, mas:</p>
+
+<pre class="file" data-file="mercado-real.sql" data-resultado>SELECT 385.90 + 92.35 + 412.70          AS total_mercado,
+       385.90 + 92.35 + 412.70 = 890.95 AS bate_com_890_95;
+</pre>
+
+<p>Não bate. Num relatório que só mostra o número, ninguém percebe; num <code>WHERE total = 890.95</code>, a linha some. A solução clássica é guardar o dinheiro em <strong>centavos</strong>, como número <strong>inteiro</strong>: 385.90 vira 38590. Inteiros são exatos: somam, subtraem e comparam sem resto nenhum. E já que vamos refazer a tabela, ela passa a guardar também as <strong>entradas</strong>, como o extrato do banco: dinheiro que entra é positivo, dinheiro que sai é negativo.</p>
+
+<pre class="file" data-file="lancamentos-v2.sql" data-resultado>-- montagem da versão 2
+CREATE TABLE lancamentos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     INTEGER NOT NULL        -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos (data, descricao, categoria, valor) VALUES
+('2026-09-01', 'Salário',           'Salário',     350000),
+('2026-09-05', 'Aluguel',           'Moradia',    -110000),
+('2026-09-06', 'Supermercado',      'Mercado',     -38590),
+('2026-09-10', 'Recarga do ônibus', 'Transporte',  -15000),
+('2026-09-13', 'Cinema',            'Lazer',        -6400),
+('2026-09-18', 'Feira',             'Mercado',      -9235),
+('2026-09-20', 'Farmácia',          'Saúde',        -4789),
+('2026-09-22', 'Supermercado',      'Mercado',     -41270),
+('2026-09-27', 'Show',              'Lazer',       -18000);
+-- a consulta
+SELECT data, descricao, valor,
+       printf('%.2f', valor / 100.0) AS reais
+FROM lancamentos;
+</pre>
+
+<dl class="anatomy">
+  <dt>valor INTEGER NOT NULL</dt><dd>Centavos, inteiros. O salário de R$ 3.500,00 é <code>350000</code>; o supermercado de R$ 385,90 é <code>-38590</code>.</dd>
+  <dt>o sinal</dt><dd><code>+</code> entra, <code>-</code> sai. Com isso, o <strong>saldo</strong> é simplesmente <code>SUM(valor)</code>.</dd>
+  <dt>valor / 100.0</dt><dd>Volta para reais <strong>só na hora de mostrar</strong>. O <code>.0</code> é obrigatório: <code>valor / 100</code>, com dois inteiros, faria divisão inteira e jogaria os centavos fora (<code>38590 / 100</code> dá <code>385</code>).</dd>
+  <dt>printf('%.2f', …)</dt><dd>Formata com exatamente 2 casas: <code>385.90</code>, <code>-60.00</code>… O <code>%.2f</code> quer dizer "número com 2 casas decimais" (aula <a href="funcoes-texto.html">Funções de Texto</a>).</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:1;;contem:1067.16">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo tenta mostrar o saldo de setembro em reais, mas mostra <code>1067</code>: sumiram os centavos. Conserte para aparecer o saldo com 2 casas decimais, numa coluna <code>saldo</code>.</p>
+<pre class="script" data-file="lancamentos-v2.sql">-- montagem da versão 2
+CREATE TABLE lancamentos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     INTEGER NOT NULL        -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos (data, descricao, categoria, valor) VALUES
+('2026-09-01', 'Salário',           'Salário',     350000),
+('2026-09-05', 'Aluguel',           'Moradia',    -110000),
+('2026-09-06', 'Supermercado',      'Mercado',     -38590),
+('2026-09-10', 'Recarga do ônibus', 'Transporte',  -15000),
+('2026-09-13', 'Cinema',            'Lazer',        -6400),
+('2026-09-18', 'Feira',             'Mercado',      -9235),
+('2026-09-20', 'Farmácia',          'Saúde',        -4789),
+('2026-09-22', 'Supermercado',      'Mercado',     -41270),
+('2026-09-27', 'Show',              'Lazer',       -18000);
+-- a consulta
+SELECT SUM(valor) / 100 AS saldo
+FROM lancamentos;
+</pre>
+<pre class="solucao" data-file="lancamentos-v2.sql">-- montagem da versão 2
+CREATE TABLE lancamentos (
+    id        INTEGER PRIMARY KEY,
+    data      TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    categoria TEXT NOT NULL,
+    valor     INTEGER NOT NULL        -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos (data, descricao, categoria, valor) VALUES
+('2026-09-01', 'Salário',           'Salário',     350000),
+('2026-09-05', 'Aluguel',           'Moradia',    -110000),
+('2026-09-06', 'Supermercado',      'Mercado',     -38590),
+('2026-09-10', 'Recarga do ônibus', 'Transporte',  -15000),
+('2026-09-13', 'Cinema',            'Lazer',        -6400),
+('2026-09-18', 'Feira',             'Mercado',      -9235),
+('2026-09-20', 'Farmácia',          'Saúde',        -4789),
+('2026-09-22', 'Supermercado',      'Mercado',     -41270),
+('2026-09-27', 'Show',              'Lazer',       -18000);
+-- a consulta
+SELECT printf('%.2f', SUM(valor) / 100.0) AS saldo
+FROM lancamentos;
+</pre>
+</div>
+
+<p>R$ 1067,16 sobraram em setembro. Repare que <code>SUM(valor) / 100.0</code>, sem o <code>printf</code>, também cumpre a missão: dá <code>1067.16</code>. O <code>printf</code> só garante as duas casas sempre, inclusive em valores redondos como <code>1100.00</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Como guardar dinheiro</th><th>Exemplo</th><th>Prós e contras</th></tr>
+<tr><td><code>REAL</code> em reais</td><td><code>385.90</code></td><td>Fácil de ler, mas soma com "restos" e comparação de igualdade falha. Evite.</td></tr>
+<tr><td><code>INTEGER</code> em centavos</td><td><code>38590</code></td><td>Exato. Exige dividir por <code>100.0</code> para mostrar. O jeito recomendado no SQLite.</td></tr>
+<tr><td>Texto</td><td><code>'385,90'</code></td><td>Não faz conta: o SQLite trata como texto. Nunca.</td></tr>
+<tr><td><code>DECIMAL(10,2)</code> em outros bancos</td><td><code>385.90</code></td><td>Exato, nos bancos que têm esse tipo de verdade (veja "Nos outros bancos").</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Versão 3: categorias com orçamento</h2>
+<p>A categoria escrita como texto em cada lançamento tem o mesmo problema dos autores no projeto <a href="projeto-biblioteca.html">Biblioteca</a>: um "mercado" minúsculo vira uma categoria nova. E a Ana quer mais: um <strong>limite</strong> de gasto por mês para cada categoria. Isso pede uma tabela própria. A primeira tentativa de nome dá erro no editor:</p>
+
+<pre class="file" data-file="nome-ocupado.sql" data-resultado data-erro>CREATE TABLE categorias (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER
+);
+</pre>
+
+<p>"A tabela categorias já existe": é a das categorias de produto da Loja Aurora, que o editor carrega. Num banco só da Ana não haveria conflito, mas o nome <code>categorias_gasto</code> é até melhor: diz de quê são as categorias.</p>
+
+<pre class="file" data-file="financas-v3.sql" data-resultado>-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT c.nome AS categoria,
+       printf('%.2f', c.limite / 100.0) AS orcamento
+FROM categorias_gasto c;
+</pre>
+
+<dl class="anatomy">
+  <dt>nome TEXT NOT NULL UNIQUE</dt><dd>Não existem duas categorias com o mesmo nome (aula <a href="unique.html">UNIQUE</a>).</dd>
+  <dt>limite INTEGER</dt><dd>O orçamento do mês, em centavos. O Salário não é gasto, então não tem limite: <code>NULL</code>. E o <code>printf</code> com <code>NULL</code> devolve um texto vazio, não um erro.</dd>
+  <dt>categoria_id … REFERENCES categorias_gasto(id)</dt><dd>Cada lançamento aponta para a sua categoria (aula <a href="foreign-key.html">FOREIGN KEY</a>).</dd>
+  <dt>outubro</dt><dd>A montagem agora tem também os lançamentos de outubro, até o dia 16: 16 lançamentos ao todo.</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:5;;contem:Mercado|890.95">
+<p class="try-task"><strong>Missão:</strong> quanto a Ana gastou em cada categoria em <strong>setembro</strong>? Mostre o nome da categoria e o <code>gasto</code> em reais (positivo), só das saídas (<code>valor &lt; 0</code>) com data de setembro. Dica: gasto positivo é <code>-SUM(l.valor)</code>, ou <code>SUM(-l.valor)</code>.</p>
+<pre class="script" data-file="financas-v3.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT c.nome AS categoria,
+       printf('%.2f', c.limite / 100.0) AS orcamento
+FROM categorias_gasto c;
+</pre>
+<pre class="solucao" data-file="financas-v3.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT c.nome AS categoria,
+       -SUM(l.valor) / 100.0 AS gasto
+FROM lancamentos l
+JOIN categorias_gasto c ON c.id = l.categoria_id
+WHERE l.valor &lt; 0
+  AND l.data BETWEEN '2026-09-01' AND '2026-09-30'
+GROUP BY c.id
+ORDER BY gasto DESC;
+</pre>
+</div>
+
+<p>Aqui, o 890.95 do mercado vem de <code>89095 / 100.0</code>: uma divisão só, de um inteiro exato, no fim da conta. É bem diferente de somar três <code>REAL</code> aproximados. A regra é <strong>calcular em centavos, dividir só para mostrar</strong>.</p>
+
+<hr>
+
+<h2>Versão 4: entradas, saídas e saldo de cada mês</h2>
+<p>O resumo que a Ana quer ver no dia 1º: quanto entrou, quanto saiu e quanto sobrou em cada mês. Com o sinal, o saldo é <code>SUM(valor)</code>. Para separar entradas de saídas, um <code>CASE</code> dentro do <code>SUM</code> escolhe o que entra em cada coluna (aula <a href="case.html">CASE</a>):</p>
+
+<pre class="file" data-file="financas-v4.sql" data-resultado>-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', data) AS mes,
+       SUM(CASE WHEN valor &gt; 0 THEN valor ELSE 0 END) / 100.0  AS entradas,
+       SUM(CASE WHEN valor &lt; 0 THEN -valor ELSE 0 END) / 100.0 AS saidas,
+       SUM(valor) / 100.0 AS saldo
+FROM lancamentos
+GROUP BY mes;
+</pre>
+
+<dl class="anatomy">
+  <dt>strftime('%Y-%m', data)</dt><dd>De <code>'2026-09-22'</code>, o mês: <code>'2026-09'</code> (aula <a href="funcoes-data.html">Funções de Data</a>).</dd>
+  <dt>SUM(CASE WHEN valor &gt; 0 THEN valor ELSE 0 END)</dt><dd>Soma só os positivos: os negativos viram 0 e não mudam a soma.</dd>
+  <dt>SUM(CASE WHEN valor &lt; 0 THEN -valor ELSE 0 END)</dt><dd>Soma só os negativos, com o sinal trocado, para a coluna "saídas" sair positiva.</dd>
+  <dt>SUM(valor)</dt><dd>Tudo junto: o saldo do mês.</dd>
+</dl>
+
+<p>Em setembro saíram 2432.84 e sobraram 1067.16; em outubro, até o dia 16, saíram 2069.85 e sobram 1430.15. Outubro ainda não acabou, então essa sobra vai diminuir.</p>
+
+<div class="trysql" data-goal="colunas:mes,saldo,poupado;;linhas:2;;contem:2026-09|1067.16|30.5">
+<p class="try-task"><strong>Missão:</strong> a Ana quer saber que <strong>porcentagem</strong> do que entrou ela conseguiu guardar. Mostre as colunas <code>mes</code>, <code>saldo</code> (em reais) e <code>poupado</code>: o saldo dividido pelas entradas, vezes 100, arredondado em 1 casa. Cuidado com a divisão de inteiros: comece a conta por <code>100.0 *</code>.</p>
+<pre class="script" data-file="financas-v4.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', data) AS mes,
+       SUM(CASE WHEN valor &gt; 0 THEN valor ELSE 0 END) / 100.0 AS entradas,
+       SUM(valor) / 100.0 AS saldo
+FROM lancamentos
+GROUP BY mes;
+</pre>
+<pre class="solucao" data-file="financas-v4.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', data) AS mes,
+       SUM(valor) / 100.0 AS saldo,
+       ROUND(100.0 * SUM(valor) / SUM(CASE WHEN valor &gt; 0 THEN valor ELSE 0 END), 1) AS poupado
+FROM lancamentos
+GROUP BY mes;
+</pre>
+</div>
+
+<p>30.5% em setembro e, por enquanto, 40.9% em outubro. Sem o <code>100.0</code>, a conta <code>SUM(valor) / SUM(…)</code> seria uma divisão de inteiros, e daria <strong>0</strong> nos dois meses.</p>
+
+<hr>
+
+<h2>Versão 5: o saldo dia a dia</h2>
+<p>O extrato do banco mostra, depois de cada lançamento, o saldo <strong>até ali</strong>. É uma soma que vai acumulando, linha a linha: o <code>SUM</code> como <strong>função de janela</strong> (aula <a href="janelas.html">Funções de Janela (OVER)</a>).</p>
+
+<pre class="file" data-file="financas-v5.sql" data-resultado>-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT data, descricao,
+       valor / 100.0 AS valor,
+       SUM(valor) OVER (ORDER BY data, id) / 100.0 AS saldo
+FROM lancamentos;
+</pre>
+
+<dl class="anatomy">
+  <dt>SUM(valor) OVER ( … )</dt><dd>Com <code>OVER</code>, o <code>SUM</code> não junta as linhas num grupo: cada linha continua lá e ganha a soma da sua "janela".</dd>
+  <dt>ORDER BY data, id</dt><dd>A janela de cada linha vai do primeiro lançamento até ela, nessa ordem. O <code>id</code> desempata dois lançamentos no mesmo dia.</dd>
+  <dt>/ 100.0</dt><dd>Só para mostrar em reais; a soma continua em centavos.</dd>
+</dl>
+
+<p>O saldo nunca ficou negativo: o ponto mais baixo foi 1067.16, no fim de setembro, logo antes do salário de outubro. No fim da lista, 2497.31: a soma de tudo, igual a um <code>SUM(valor)</code> comum.</p>
+
+<div class="trysql" data-goal="linhas:14;;contem:2026-10-05|Aluguel|1100.0|1100.0;;contem:2026-10-16|Feira|87.9|2069.85">
+<p class="try-task"><strong>Missão:</strong> agora a Ana quer só as <strong>saídas</strong>, com uma coluna <code>gasto_no_mes</code>: quanto ela já gastou no mês até aquele lançamento, <strong>recomeçando do zero a cada mês</strong>. Mostre <code>data</code>, <code>descricao</code>, <code>gasto</code> (positivo, em reais) e <code>gasto_no_mes</code>. Para a soma recomeçar, ponha <code>PARTITION BY strftime('%Y-%m', data)</code> dentro do <code>OVER</code> (aula <a href="partition-by.html">PARTITION BY</a>).</p>
+<pre class="script" data-file="financas-v5.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT data, descricao,
+       valor / 100.0 AS valor,
+       SUM(valor) OVER (ORDER BY data, id) / 100.0 AS saldo
+FROM lancamentos;
+</pre>
+<pre class="solucao" data-file="financas-v5.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT data, descricao,
+       -valor / 100.0 AS gasto,
+       SUM(-valor) OVER (PARTITION BY strftime('%Y-%m', data)
+                         ORDER BY data, id) / 100.0 AS gasto_no_mes
+FROM lancamentos
+WHERE valor &lt; 0;
+</pre>
+</div>
+
+<p>Em outubro, o aluguel do dia 5 abre a conta do mês com 1100.0, e a feira do dia 16 fecha com 2069.85, o mesmo número das saídas de outubro na versão 4. O <code>WHERE valor &lt; 0</code> roda <strong>antes</strong> da janela: as entradas nem chegam a ela.</p>
+
+<hr>
+
+<h2>Versão 6: o fechamento do orçamento</h2>
+<p>A pergunta que motivou tudo: <strong>estourei o orçamento?</strong> Para cada mês e categoria, o que foi gasto, o limite e quanto do limite foi usado.</p>
+
+<pre class="file" data-file="financas-v6.sql" data-resultado>-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', l.data) AS mes,
+       c.nome                    AS categoria,
+       -SUM(l.valor) / 100.0     AS gasto,
+       c.limite / 100.0          AS limite,
+       ROUND(100.0 * -SUM(l.valor) / c.limite, 1) AS usado
+FROM lancamentos l
+JOIN categorias_gasto c ON c.id = l.categoria_id
+WHERE l.valor &lt; 0
+GROUP BY mes, c.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>GROUP BY mes, c.id</dt><dd>Um grupo por mês e categoria (aula <a href="group-by-varios.html">Agrupando por Mais de uma Coluna</a>).</dd>
+  <dt>c.limite</dt><dd>Fora de uma agregação, mas seguro: dentro do grupo, a categoria é uma só, e o limite também.</dd>
+  <dt>ROUND(100.0 * -SUM(l.valor) / c.limite, 1)</dt><dd>A porcentagem do orçamento usada. Mais de 100 é orçamento estourado.</dd>
+</dl>
+
+<p>Três estouros: em setembro, o Mercado (111.4%) e o Lazer (122.0%, culpa do show); em outubro, a Saúde (166.7%, a consulta médica). E repare que o Lazer nem aparece em outubro: a Ana não gastou nada com lazer, e um grupo sem linhas não existe. Se ela quisesse ver "Lazer: 0", a consulta precisaria partir das categorias com <code>LEFT JOIN</code>, como na estante do projeto <a href="projeto-biblioteca.html">Biblioteca</a>.</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:2026-10|Saúde|250.0|150.0|estourou">
+<p class="try-task"><strong>Missão final:</strong> monte o alerta do orçamento: só as linhas em que o gasto <strong>passou</strong> do limite, com as colunas <code>mes</code>, <code>categoria</code>, <code>gasto</code>, <code>limite</code> e uma coluna <code>situacao</code> com o texto <code>'estourou'</code>. O filtro é sobre uma soma, então vai no <code>HAVING</code> (aula <a href="having.html">HAVING</a>).</p>
+<pre class="script" data-file="financas-v6.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', l.data) AS mes,
+       c.nome                    AS categoria,
+       -SUM(l.valor) / 100.0     AS gasto,
+       c.limite / 100.0          AS limite
+FROM lancamentos l
+JOIN categorias_gasto c ON c.id = l.categoria_id
+WHERE l.valor &lt; 0
+GROUP BY mes, c.id;
+</pre>
+<pre class="solucao" data-file="financas-v6.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', l.data) AS mes,
+       c.nome                    AS categoria,
+       -SUM(l.valor) / 100.0     AS gasto,
+       c.limite / 100.0          AS limite,
+       'estourou'                AS situacao
+FROM lancamentos l
+JOIN categorias_gasto c ON c.id = l.categoria_id
+WHERE l.valor &lt; 0
+GROUP BY mes, c.id
+HAVING -SUM(l.valor) &gt; c.limite;
+</pre>
+</div>
+
+<p>Uma variação mais completa, que também cumpre a missão se você filtrar depois: uma coluna <code>CASE WHEN -SUM(l.valor) &gt; c.limite THEN 'estourou' WHEN -SUM(l.valor) &gt; 0.8 * c.limite THEN 'atenção' ELSE 'ok' END</code>, que avisa antes de estourar. A Moradia, com 91.7% nos dois meses, ficaria em "atenção".</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Comparou um REAL com <code>=</code></strong>
+<pre class="file" data-file="real-igual.sql" data-resultado>CREATE TABLE gastos (descricao TEXT, categoria TEXT, valor REAL);
+INSERT INTO gastos VALUES ('Supermercado', 'Mercado', 385.90),
+                          ('Feira', 'Mercado', 92.35),
+                          ('Supermercado', 'Mercado', 412.70);
+
+SELECT categoria, SUM(valor) AS total
+FROM gastos
+GROUP BY categoria
+HAVING SUM(valor) = 890.95;
+</pre>
+<p><strong>O que aconteceu:</strong> nenhuma linha. O total "é" 890.95 na tela, mas não é exatamente 890.95 na memória, e o <code>=</code> compara bit a bit. Sem erro, sem aviso.</p>
+<p><strong>Como consertar:</strong> guarde centavos em <code>INTEGER</code> (versão 2). Se precisar lidar com um <code>REAL</code> que já existe, compare arredondado: <code>HAVING ROUND(SUM(valor), 2) = 890.95</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Dividiu por 100 e perdeu os centavos</strong>
+<pre class="file" data-file="divisao-inteira.sql" data-resultado>SELECT 38590 / 100   AS inteira,
+       38590 / 100.0 AS com_ponto,
+       printf('%.2f', 38590 / 100.0) AS formatada;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>38590 / 100</code> deu <code>385</code>. Inteiro dividido por inteiro, no SQLite, é divisão inteira: os 90 centavos foram embora, sem aviso.</p>
+<p><strong>Como consertar:</strong> divida por <code>100.0</code>. Basta um dos lados ter ponto para a conta ter casas decimais.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o sinal do gasto</strong>
+<pre class="file" data-file="sinal.sql" data-resultado>CREATE TABLE lancamentos (descricao TEXT, valor INTEGER NOT NULL);
+INSERT INTO lancamentos VALUES ('Salário', 350000),
+                               ('Aluguel', 110000);   -- faltou o sinal de menos
+
+SELECT SUM(valor) / 100.0 AS saldo FROM lancamentos;
+</pre>
+<p><strong>O que aconteceu:</strong> saldo de 4600.0, em vez de 2400.0. O aluguel entrou como se fosse <strong>dinheiro recebido</strong>. Na convenção do sinal, esquecer o <code>-</code> é o erro mais comum, e o banco não tem como saber.</p>
+<p><strong>Como consertar:</strong> corrija com <code>UPDATE lancamentos SET valor = -110000 WHERE descricao = 'Aluguel';</code>. Para não depender do sinal, existe outra forma de modelar: <code>valor</code> sempre positivo, com <code>CHECK (valor &gt; 0)</code>, e uma coluna <code>tipo</code> com <code>CHECK (tipo IN ('entrada', 'saida'))</code>. O saldo vira <code>SUM(CASE WHEN tipo = 'entrada' THEN valor ELSE -valor END)</code>: mais longo, mas o banco recusa um tipo errado (aula <a href="check.html">CHECK</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Dividiu por um limite que não existe</strong>
+<pre class="file" data-file="divisao-por-nada.sql" data-resultado>SELECT 100 / 0             AS por_zero,
+       100 / NULL          AS por_null,
+       ROUND(100.0 * 350000 / NULL, 1) AS salario_usado;
+</pre>
+<p><strong>O que aconteceu:</strong> as três dão <em>NULL</em>, e nenhuma dá erro. No SQLite, dividir por zero devolve <code>NULL</code>. Por isso a categoria Salário, com <code>limite NULL</code>, não quebraria a versão 6; ela ficaria com <code>usado</code> vazio (e lá ela nem aparece, porque o <code>WHERE l.valor &lt; 0</code> tira as entradas).</p>
+<p><strong>Como consertar:</strong> decida o que mostrar: <code>COALESCE(…, 'sem limite')</code> troca o <code>NULL</code> por um texto (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>). E não conte com esse comportamento nos outros bancos (veja abaixo).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>Os bancos com servidor têm um tipo <strong>decimal exato</strong> para dinheiro: <code>DECIMAL(10,2)</code> ou <code>NUMERIC(10,2)</code> (PostgreSQL, MySQL, SQL Server). Lá, <code>385.90 + 92.35 + 412.70 = 890.95</code> é verdadeiro, e guardar em centavos é opcional. O SQLite aceita escrever <code>DECIMAL(10,2)</code> no <code>CREATE TABLE</code>, mas guarda o valor como <code>REAL</code> do mesmo jeito: o nome do tipo não muda a matemática (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</p>
+<p>Divisão por zero também muda: o PostgreSQL e o SQL Server param com erro (<code>division by zero</code>); o MySQL, no modo padrão, devolve <code>NULL</code> com um aviso, como o SQLite. E o <code>printf</code> é do SQLite; para formatar números, o PostgreSQL usa <code>to_char</code>, o MySQL <code>FORMAT</code> e o SQL Server <code>FORMAT</code>. Mais em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa do controle de gastos</th><th>SQL</th></tr>
+<tr><td>Dinheiro exato no SQLite</td><td><code>valor INTEGER NOT NULL</code> (em centavos)</td></tr>
+<tr><td>Mostrar em reais</td><td><code>valor / 100.0</code> ou <code>printf('%.2f', valor / 100.0)</code></td></tr>
+<tr><td>Saldo (convenção do sinal)</td><td><code>SUM(valor)</code></td></tr>
+<tr><td>Só as entradas</td><td><code>SUM(CASE WHEN valor &gt; 0 THEN valor ELSE 0 END)</code></td></tr>
+<tr><td>Gasto positivo</td><td><code>-SUM(valor) … WHERE valor &lt; 0</code></td></tr>
+<tr><td>Por mês</td><td><code>strftime('%Y-%m', data) AS mes … GROUP BY mes</code></td></tr>
+<tr><td>Porcentagem sem divisão inteira</td><td><code>ROUND(100.0 * parte / todo, 1)</code></td></tr>
+<tr><td>Saldo acumulado</td><td><code>SUM(valor) OVER (ORDER BY data, id)</code></td></tr>
+<tr><td>Acumulado que recomeça todo mês</td><td><code>SUM(…) OVER (PARTITION BY strftime('%Y-%m', data) ORDER BY data, id)</code></td></tr>
+<tr><td>Estourou o orçamento</td><td><code>GROUP BY mes, c.id HAVING -SUM(l.valor) &gt; c.limite</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Em centavos</h3>
+<p>Como fica R$ 47,89 guardado em centavos, numa saída?</p>
+<div class="ex-code">INSERT INTO lancamentos (data, descricao, categoria_id, valor) VALUES ('2026-09-20', 'Farmácia', 6, <input data-answer="-4789" aria-label="valor">);</div>
+</div>
+
+<div class="exercise">
+<h3>2. De volta a reais</h3>
+<p>Complete para mostrar o valor em reais sem perder os centavos:</p>
+<div class="ex-code">SELECT valor / <input data-answer="100.0|100." aria-label="divisor"> FROM lancamentos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. <code>SELECT 0.1 + 0.2 = 0.3;</code> devolve 0. Por quê?</p>
+<label><input type="radio" name="q3"> Porque o SQLite arredonda 0.3 para 0</label>
+<label><input type="radio" name="q3"> Porque REAL guarda uma aproximação em binário, e a soma fica um pouquinho diferente de 0.3</label>
+<label><input type="radio" name="q3"> Porque faltou o ROUND no 0.3</label>
+<label><input type="radio" name="q3"> Porque o = não funciona com números</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Na convenção do sinal, qual consulta dá o saldo?</p>
+<label><input type="radio" name="q4"> <code>SELECT SUM(valor) FROM lancamentos WHERE valor &gt; 0;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT COUNT(valor) FROM lancamentos;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT SUM(valor) FROM lancamentos;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT MAX(valor) - MIN(valor) FROM lancamentos;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. O que muda quando o <code>SUM(valor)</code> ganha <code>OVER (ORDER BY data, id)</code>?</p>
+<label><input type="radio" name="q5"> Cada linha continua na saída, com a soma acumulada até ela</label>
+<label><input type="radio" name="q5"> A consulta passa a devolver uma linha só</label>
+<label><input type="radio" name="q5"> Os valores saem ordenados, mas a soma é a mesma em todas as linhas</label>
+<label><input type="radio" name="q5"> Dá erro sem GROUP BY</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Em outubro a Ana não gastou nada com Lazer. O que a consulta do fechamento (versão 6) mostra para o Lazer em outubro?</p>
+<label><input type="radio" name="q6"> Uma linha com gasto 0</label>
+<label><input type="radio" name="q6"> Uma linha com gasto NULL</label>
+<label><input type="radio" name="q6"> Um erro</label>
+<label><input type="radio" name="q6"> Nada: sem lançamentos, o grupo não existe</label>
+</div>
+
+<h3>Desafio: o maior gasto de cada mês</h3>
+
+<div class="trysql" data-goal="linhas:2;;contem:2026-09|Aluguel|1100.0;;contem:2026-10|Aluguel|1100.0">
+<p class="try-task"><strong>Missão:</strong> qual foi o maior gasto de cada mês? Uma linha por mês, com <code>mes</code>, <code>descricao</code> e <code>gasto</code> (em reais). Dica: <code>RANK() OVER (PARTITION BY … ORDER BY valor)</code> dentro de um <code>WITH</code>, e filtre a posição 1 por fora (aula <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>). Lembre-se: o maior gasto é o valor <strong>mais negativo</strong>.</p>
+<pre class="script" data-file="desafio.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+SELECT strftime('%Y-%m', data) AS mes, descricao, -valor / 100.0 AS gasto
+FROM lancamentos
+WHERE valor &lt; 0;
+</pre>
+<pre class="solucao" data-file="desafio.sql">-- montagem (igual em toda caixa)
+CREATE TABLE categorias_gasto (
+    id     INTEGER PRIMARY KEY,
+    nome   TEXT NOT NULL UNIQUE,
+    limite INTEGER                    -- orçamento do mês, em centavos
+);
+INSERT INTO categorias_gasto VALUES
+(1, 'Salário', NULL),     (2, 'Moradia', 120000), (3, 'Mercado', 80000),
+(4, 'Transporte', 30000), (5, 'Lazer', 20000),    (6, 'Saúde', 15000);
+CREATE TABLE lancamentos (
+    id           INTEGER PRIMARY KEY,
+    data         TEXT NOT NULL,
+    descricao    TEXT NOT NULL,
+    categoria_id INTEGER NOT NULL REFERENCES categorias_gasto(id),
+    valor        INTEGER NOT NULL     -- centavos: + entra, - sai
+);
+INSERT INTO lancamentos VALUES
+(1,  '2026-09-01', 'Salário',                1,  350000),
+(2,  '2026-09-05', 'Aluguel',                2, -110000),
+(3,  '2026-09-06', 'Supermercado',           3,  -38590),
+(4,  '2026-09-10', 'Recarga do ônibus',      4,  -15000),
+(5,  '2026-09-13', 'Cinema',                 5,   -6400),
+(6,  '2026-09-18', 'Feira',                  3,   -9235),
+(7,  '2026-09-20', 'Farmácia',               6,   -4789),
+(8,  '2026-09-22', 'Supermercado',           3,  -41270),
+(9,  '2026-09-27', 'Show',                   5,  -18000),
+(10, '2026-10-01', 'Salário',                1,  350000),
+(11, '2026-10-05', 'Aluguel',                2, -110000),
+(12, '2026-10-07', 'Supermercado',           3,  -45320),
+(13, '2026-10-09', 'Recarga do ônibus',      4,  -15000),
+(14, '2026-10-11', 'Corrida por aplicativo', 4,   -2875),
+(15, '2026-10-14', 'Consulta médica',        6,  -25000),
+(16, '2026-10-16', 'Feira',                  3,   -8790);
+-- a consulta
+WITH ranking AS (
+    SELECT strftime('%Y-%m', data) AS mes, descricao, -valor / 100.0 AS gasto,
+           RANK() OVER (PARTITION BY strftime('%Y-%m', data) ORDER BY valor) AS posicao
+    FROM lancamentos
+    WHERE valor &lt; 0
+)
+SELECT mes, descricao, gasto
+FROM ranking
+WHERE posicao = 1;
+</pre>
+</div>
+
+<p>O aluguel, nos dois meses. Sem surpresa, mas agora a Ana sabe o que vem depois: tire o aluguel (<code>AND categoria_id &lt;&gt; 2</code>) e o maior gasto de setembro passa a ser o supermercado do dia 22.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Dinheiro no SQLite vai em <code>INTEGER</code>, em <strong>centavos</strong>. <code>REAL</code> guarda aproximações: <code>0.1 + 0.2 = 0.3</code> é falso, e um total "890.95" pode não ser 890.95.</li>
+  <li>Calcule em centavos e divida por <code>100.0</code> (com ponto) só para mostrar; <code>printf('%.2f', …)</code> garante as duas casas.</li>
+  <li>Com entradas positivas e saídas negativas, o saldo é <code>SUM(valor)</code>; <code>CASE</code> dentro do <code>SUM</code> separa entradas e saídas.</li>
+  <li>Categorias com <code>limite</code> numa tabela própria permitem comparar gasto e orçamento com <code>GROUP BY mes, c.id</code> e <code>HAVING</code>.</li>
+  <li><code>SUM() OVER (ORDER BY …)</code> dá o saldo acumulado; com <code>PARTITION BY</code>, ele recomeça a cada mês.</li>
+  <li>No SQLite, dividir inteiros corta a parte decimal e dividir por zero dá <code>NULL</code>, sem erro. Comece porcentagens por <code>100.0 *</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
