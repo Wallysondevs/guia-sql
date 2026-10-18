@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL UNION ALL — empilhar resultados sem tirar repetições | Guia SQL</title>
+<meta name="description" content="UNION ALL em SQL para quem está começando: empilhar consultas mantendo as linhas repetidas, por que isso importa para contar e somar, a linha de TOTAL num relatório, UNION × UNION ALL, misturar os dois e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">UNION ALL</span></h1>
+
+<p class="intro">Na aula anterior, o <a href="union.html">UNION</a> juntou duas listas e riscou as repetições. Às vezes, riscar é exatamente o que você <strong>não</strong> quer. Se a Ana quer saber quantos contatos a loja tem em cada cidade, cada cliente e cada fornecedor tem de contar, mesmo que vários morem em Teresina. O <code>UNION ALL</code> ("união de tudo") empilha as consultas <strong>sem tirar nada</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A diferença entre <code>UNION</code> e <code>UNION ALL</code>, com os mesmos dados lado a lado.</li>
+  <li>Por que contar e somar em cima de um <code>UNION</code> dá números errados, sem erro nenhum.</li>
+  <li>Como pôr uma linha de <strong>TOTAL</strong> no fim de um relatório.</li>
+  <li>Por que o <code>UNION ALL</code> dá menos trabalho ao banco.</li>
+  <li>O que acontece quando você mistura <code>UNION</code> e <code>UNION ALL</code> no mesmo comando.</li>
+  <li>Os erros reais do SQLite com <code>UNION ALL</code>.</li>
+</ul>
+</div>
+
+<p>As regras de colunas são as mesmas do <code>UNION</code>: o mesmo número de colunas em todas as consultas, encaixadas pela posição, com os nomes da primeira consulta e o <code>ORDER BY</code> só no fim. Se ainda não leu, comece pela aula <a href="union.html">UNION</a>.</p>
+
+<hr>
+
+<h2>A ideia: a lista de convidados × a lista de compras</h2>
+<p>Na lista de convidados da festa, ninguém precisa aparecer duas vezes: um convite por pessoa. Isso é o <code>UNION</code>.</p>
+<p>Agora pense na lista de compras. A Ana anotou "2 pacotes de café" e o irmão, na lista dele, também anotou "2 pacotes de café". Se ela juntar as duas listas riscando o repetido, vai comprar 2 pacotes em vez de 4. Na lista de compras, <strong>cada linha conta</strong>. Isso é o <code>UNION ALL</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>UNION</code></th><th><code>UNION ALL</code></th></tr>
+<tr><td>Linhas repetidas</td><td>Tira</td><td>Mantém</td></tr>
+<tr><td>Número de linhas</td><td>Menor ou igual à soma das partes</td><td>Sempre a soma exata das partes</td></tr>
+<tr><td>Trabalho do banco</td><td>Precisa comparar as linhas para achar as repetidas</td><td>Só empilha</td></tr>
+<tr><td>Na vida real</td><td>Lista de convidados</td><td>Lista de compras</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Os mesmos dados, com e sem ALL</h2>
+<p>A consulta da aula anterior, agora com <code>ALL</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM clientes
+UNION ALL
+SELECT cidade FROM fornecedores;
+</pre>
+
+<dl class="anatomy">
+  <dt>UNION ALL</dt><dd>"Empilhe o resultado da próxima consulta embaixo deste, do jeito que vier." São duas palavras, nessa ordem: o <code>ALL</code> vem logo depois do <code>UNION</code>.</dd>
+</dl>
+
+<p>Agora são <strong>36</strong> linhas: as 30 cidades dos 30 clientes, seguidas das 6 cidades dos 6 fornecedores. Teresina aparece 12 vezes. Com <code>UNION</code>, a mesma consulta dava 10 linhas, uma por cidade.</p>
+
+<p>Repare também na ordem: o <code>UNION ALL</code> não mexeu em nada, e as linhas dos clientes vieram primeiro, na ordem em que estão na tabela, e as dos fornecedores depois. Mesmo assim, se a ordem importa, peça com <code>ORDER BY</code> no fim: nenhum banco promete ordem sem ele.</p>
+
+<hr>
+
+<h2>2. Contando: aqui o ALL faz falta</h2>
+<p>A Ana quer saber quantos contatos (clientes e fornecedores) a loja tem em cada cidade. A ideia é juntar as duas listas de cidades e contar com <code>GROUP BY</code> (aula <a href="group-by.html">GROUP BY</a>). A lista unida vai entre parênteses, no lugar de uma tabela, no <code>FROM</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade, COUNT(*) AS contatos
+FROM (
+  SELECT cidade FROM clientes
+  UNION ALL
+  SELECT cidade FROM fornecedores
+)
+GROUP BY cidade
+ORDER BY contatos DESC, cidade;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM ( … )</dt><dd>O resultado do <code>UNION ALL</code> vira uma "tabela" temporária, de onde a consulta de fora lê. Uma consulta dentro de outra se chama <strong>subconsulta</strong> e tem aula própria: <a href="subconsultas.html">Subconsultas</a>.</dd>
+  <dt>GROUP BY cidade</dt><dd>Agrupa as 36 linhas por cidade.</dd>
+  <dt>COUNT(*) AS contatos</dt><dd>Conta quantas linhas caíram em cada grupo.</dd>
+</dl>
+
+<p>Teresina tem 12 contatos (10 clientes e 2 fornecedores), Fortaleza e São Paulo têm 8 cada uma. A soma da coluna dá 36, um para cada pessoa ou empresa. Agora troque o <code>UNION ALL</code> por <code>UNION</code> e veja o estrago:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade, COUNT(*) AS contatos
+FROM (
+  SELECT cidade FROM clientes
+  UNION
+  SELECT cidade FROM fornecedores
+)
+GROUP BY cidade
+ORDER BY contatos DESC, cidade;
+</pre>
+
+<p>Todas as cidades com 1 contato. O <code>UNION</code> deixou uma linha por cidade <strong>antes</strong> de o <code>COUNT</code> contar, e o banco não deu nenhum aviso. A consulta está "certa" para o SQL e errada para a Ana.</p>
+
+<div class="trysql" data-goal="contem:Teresina|12;;linhas:10">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo diz que Teresina tem 1 contato só, e a loja tem 12 lá. Conserte-a para que cada cliente e cada fornecedor seja contado.</p>
+<pre class="script" data-file="consulta.sql">SELECT cidade, COUNT(*) AS contatos
+FROM (
+  SELECT cidade FROM clientes
+  UNION
+  SELECT cidade FROM fornecedores
+)
+GROUP BY cidade
+ORDER BY contatos DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT cidade, COUNT(*) AS contatos
+FROM (
+  SELECT cidade FROM clientes
+  UNION ALL
+  SELECT cidade FROM fornecedores
+)
+GROUP BY cidade
+ORDER BY contatos DESC;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Somando: o frete que sumiu</h2>
+<p>O mesmo perigo vale para <code>SUM</code> (aula <a href="sum.html">SUM()</a>). A Ana quer o total de frete cobrado em 2024 e em 2025. Ela juntou os fretes dos dois anos e somou:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT SUM(frete) AS total_frete
+FROM (
+  SELECT frete FROM pedidos WHERE data LIKE '2024%'
+  UNION
+  SELECT frete FROM pedidos WHERE data LIKE '2025%'
+);
+</pre>
+
+<p>Deu 116.25. Parece pouco para 64 pedidos, e é: a loja cobra poucos valores de frete diferentes (9.9, 15.5, 0.0…), e o <code>UNION</code> deixou <strong>um de cada</strong>. Sobraram só 8 linhas para somar. Com <code>UNION ALL</code>, cada pedido conta:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT SUM(frete) AS total_frete
+FROM (
+  SELECT frete FROM pedidos WHERE data LIKE '2024%'
+  UNION ALL
+  SELECT frete FROM pedidos WHERE data LIKE '2025%'
+);
+</pre>
+
+<p>930.0, o valor certo. Para conferir, a mesma soma direto na tabela, sem <code>UNION</code> nenhum:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT SUM(frete) AS total_frete
+FROM pedidos
+WHERE data &lt; '2026';
+</pre>
+
+<div class="warning">
+<strong>Regra de ouro</strong>
+<p>Se o resultado de um <code>UNION</code> vai ser <strong>contado ou somado</strong>, ele quase sempre tem de ser <code>UNION ALL</code>. O <code>UNION</code> compara as linhas pelo <strong>valor</strong>; ele não sabe que dois fretes de 9.9 são de pedidos diferentes.</p>
+</div>
+
+<hr>
+
+<h2>4. A linha de TOTAL no fim do relatório</h2>
+<p>Um uso clássico do <code>UNION ALL</code>: o relatório com uma linha por categoria e, embaixo, uma linha de total. A primeira consulta faz as linhas de cada categoria (com <a href="inner-join.html">INNER JOIN</a> e <code>GROUP BY</code>); a segunda faz uma linha só, com a soma de tudo:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome AS categoria, SUM(p.estoque) AS estoque
+FROM produtos AS p
+INNER JOIN categorias AS c ON c.id = p.categoria_id
+GROUP BY c.id, c.nome
+UNION ALL
+SELECT 'TOTAL', SUM(estoque)
+FROM produtos;
+</pre>
+
+<p>Oito categorias e o <code>TOTAL</code> de 3301 unidades em estoque. As duas consultas têm 2 colunas: na segunda, o texto fixo <code>'TOTAL'</code> ocupa o lugar do nome da categoria. Por que <code>ALL</code> aqui? Porque não existe repetição possível, e o <code>UNION ALL</code> poupa o banco de procurar repetições à toa.</p>
+
+<p>Se você quiser ordenar as categorias, cuidado: um <code>ORDER BY estoque DESC</code> no fim jogaria o <code>TOTAL</code> lá para cima, porque ele é o maior número. O truque é uma coluna a mais só para a ordem:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT 1 AS parte, c.nome AS categoria, SUM(p.estoque) AS estoque
+FROM produtos AS p
+INNER JOIN categorias AS c ON c.id = p.categoria_id
+GROUP BY c.id, c.nome
+UNION ALL
+SELECT 2, 'TOTAL', SUM(estoque)
+FROM produtos
+ORDER BY parte, estoque DESC;
+</pre>
+
+<p>Primeiro todas as linhas da parte 1 (as categorias, da maior para a menor), depois a parte 2 (o total).</p>
+
+<hr>
+
+<h2>5. UNION ALL dá menos trabalho ao banco</h2>
+<p>Para tirar repetições, o <code>UNION</code> precisa guardar as linhas e compará-las. O <code>UNION ALL</code> só empilha. Dá para ver isso no plano que o SQLite monta antes de rodar, com <code>EXPLAIN QUERY PLAN</code> (aula <a href="explain.html">EXPLAIN QUERY PLAN</a>, no Nível 3). Compare a penúltima linha de cada um:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT cidade FROM clientes
+UNION
+SELECT cidade FROM fornecedores;
+</pre>
+
+<pre class="file" data-file="consulta.sql" data-resultado>EXPLAIN QUERY PLAN
+SELECT cidade FROM clientes
+UNION ALL
+SELECT cidade FROM fornecedores;
+</pre>
+
+<p>Com <code>UNION</code>, aparece <code>UNION USING TEMP B-TREE</code>: o SQLite monta uma estrutura temporária (uma "árvore B") para descobrir as repetidas. Com <code>UNION ALL</code>, só <code>UNION ALL</code>. No terminal do <code>sqlite3</code>, o mesmo plano aparece desenhado como uma árvore, em vez de tabela:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; EXPLAIN QUERY PLAN SELECT cidade FROM clientes UNION SELECT cidade FROM fornecedores;
+QUERY PLAN
+`--COMPOUND QUERY
+   |--LEFT-MOST SUBQUERY
+   |  `--SCAN clientes
+   `--UNION USING TEMP B-TREE
+      `--SCAN fornecedores</pre>
+
+<p>Com 36 linhas, a diferença não se sente; com milhões, sente. Por isso, muita gente experiente escreve <code>UNION ALL</code> por padrão e só usa <code>UNION</code> quando precisa mesmo tirar repetições.</p>
+
+<hr>
+
+<h2>6. Qual usar</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th><th>Por quê</th></tr>
+<tr><td>Uma lista de nomes ou cidades, cada um uma vez</td><td><code>UNION</code></td><td>Você quer as repetições fora</td></tr>
+<tr><td>O resultado vai ser contado (<code>COUNT</code>) ou somado (<code>SUM</code>, <code>AVG</code>)</td><td><code>UNION ALL</code></td><td>Cada linha tem de contar</td></tr>
+<tr><td>Linha de TOTAL, contagem de cada tabela, partes que nunca se repetem</td><td><code>UNION ALL</code></td><td>Não há o que tirar, e ele é mais leve</td></tr>
+<tr><td>Uma lista com coluna de origem (<code>'cliente'</code>, <code>'fornecedor'</code>)</td><td>Qualquer um</td><td>A coluna de origem já deixa as linhas diferentes; <code>UNION ALL</code> é mais leve</td></tr>
+</table>
+</div>
+
+<p>Mais um exemplo do terceiro caso, um "raio X" do banco com o número de linhas de cada tabela:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT 'clientes' AS tabela, COUNT(*) AS linhas FROM clientes
+UNION ALL
+SELECT 'produtos', COUNT(*) FROM produtos
+UNION ALL
+SELECT 'pedidos', COUNT(*) FROM pedidos;
+</pre>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Contou ou somou em cima de um <code>UNION</code></strong>
+<p>É o erro das seções 2 e 3, e o mais perigoso, porque não aparece mensagem nenhuma: as cidades com 1 contato cada, o frete de 116.25 em vez de 930.0.</p>
+<p><strong>Como perceber:</strong> desconfie de números pequenos demais e confira por outro caminho (como o <code>SUM</code> direto na tabela da seção 3).</p>
+<p><strong>Como consertar:</strong> <code>UNION ALL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Número de colunas diferente</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome FROM clientes
+UNION ALL
+SELECT nome, cidade FROM fornecedores;
+</pre>
+<p><strong>A mensagem:</strong> <code>SELECTs to the left and right of UNION ALL do not have the same number of result columns</code>, a mesma do <code>UNION</code>, agora com o nome <code>UNION ALL</code>: "os SELECTs à esquerda e à direita do UNION ALL não têm o mesmo número de colunas".</p>
+<p><strong>Como consertar:</strong> o mesmo número de colunas em todas as consultas.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ORDER BY</code> no meio</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome FROM clientes
+ORDER BY nome
+UNION ALL
+SELECT nome FROM fornecedores;
+</pre>
+<p><strong>A mensagem:</strong> <code>ORDER BY clause should come after UNION ALL not before</code>, "a cláusula ORDER BY deve vir depois do UNION ALL, não antes".</p>
+<p><strong>Como consertar:</strong> um <code>ORDER BY</code> só, depois da última consulta.</p>
+</div>
+
+<div class="cenario">
+<strong>Misturou <code>UNION ALL</code> e <code>UNION</code></strong>
+<p>A Ana começou com <code>UNION ALL</code> e, no fim, acrescentou mais uma parte com <code>UNION</code>:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM clientes
+UNION ALL
+SELECT cidade FROM fornecedores
+UNION
+SELECT 'Teresina';
+</pre>
+<p><strong>O que acontece:</strong> as 36 linhas viraram 10. O SQLite resolve os operadores da esquerda para a direita: primeiro empilhou tudo (36 linhas), depois aplicou o <code>UNION</code> com a última parte, e esse <code>UNION</code> tirou as repetições do resultado <strong>inteiro</strong>, não só da última parte. Um único <code>UNION</code> no fim desfaz todos os <code>ALL</code> antes dele.</p>
+<p><strong>Como consertar:</strong> não misture. Se é para manter as repetições, use <code>UNION ALL</code> em todas as junções.</p>
+</div>
+
+<div class="cenario">
+<strong><code>UNION DISTINCT</code></strong>
+<p>Em alguns tutoriais você vai ver <code>UNION DISTINCT</code>, para deixar explícito que as repetições saem.</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT cidade FROM clientes
+UNION DISTINCT
+SELECT cidade FROM fornecedores;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "DISTINCT": syntax error</code>. O SQLite não conhece essa escrita.</p>
+<p><strong>Como consertar:</strong> escreva só <code>UNION</code>: ele já tira as repetições.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>UNION ALL</code> é igual no MySQL, no PostgreSQL e no SQL Server: mantém as repetições, com as mesmas regras de colunas. O MySQL e o PostgreSQL aceitam também <code>UNION DISTINCT</code>, que é o mesmo que <code>UNION</code>. Sobre a mistura dos dois, o manual do MySQL diz o mesmo que você viu acima: um <code>UNION</code> (sem <code>ALL</code>) vale por cima de todos os <code>UNION ALL</code> à esquerda dele.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT … UNION ALL SELECT …</code></td><td>Empilha os resultados sem tirar nada; o total de linhas é a soma das partes</td></tr>
+<tr><td><code>SELECT … FROM (… UNION ALL …) GROUP BY …</code></td><td>Conta ou soma em cima da lista unida</td></tr>
+<tr><td><code>… UNION ALL SELECT 'TOTAL', SUM(…) FROM …</code></td><td>Linha de total no fim do relatório</td></tr>
+<tr><td><code>SELECT 1 AS parte, … UNION ALL SELECT 2, … ORDER BY parte</code></td><td>Mantém o total por último ao ordenar</td></tr>
+<tr><td><code>… UNION ALL … UNION …</code></td><td>Cuidado: o <code>UNION</code> do fim tira as repetições de tudo</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>SELECTs to the left and right of UNION ALL do not have the same number of result columns</code></td><td>As consultas têm números de colunas diferentes</td></tr>
+<tr><td><code>ORDER BY clause should come after UNION ALL not before</code></td><td>O <code>ORDER BY</code> está no meio; mova para o fim</td></tr>
+<tr><td><code>near "DISTINCT": syntax error</code></td><td><code>UNION DISTINCT</code> não existe no SQLite; use <code>UNION</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sem tirar nada</h3>
+<p>Complete para empilhar as cidades mantendo as repetições:</p>
+<div class="ex-code">SELECT cidade FROM clientes UNION <input data-answer="ALL|all" aria-label="palavra que falta"> SELECT cidade FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantas linhas?</h3>
+<p>A loja tem 30 clientes e 6 fornecedores. Quantas linhas saem de <code>SELECT cidade FROM clientes UNION ALL SELECT cidade FROM fornecedores</code>?</p>
+<div class="ex-code"><input data-answer="36" aria-label="número de linhas"> linhas</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana somou os fretes de 2024 e de 2025 com <code>SUM</code> em cima de um <code>UNION</code> e achou o valor baixo. Por quê?</p>
+<label><input type="radio" name="q3"> Porque o <code>SUM</code> não funciona com <code>UNION</code></label>
+<label><input type="radio" name="q3"> Porque o <code>UNION</code> deixou só um de cada valor de frete, e os fretes iguais de pedidos diferentes sumiram</label>
+<label><input type="radio" name="q3"> Porque faltou o <code>ORDER BY</code></label>
+<label><input type="radio" name="q3"> Porque o SQLite arredonda as somas</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual é a vantagem do <code>UNION ALL</code> quando as partes nunca se repetem (como uma linha de TOTAL)?</p>
+<label><input type="radio" name="q4"> O resultado sai em ordem alfabética</label>
+<label><input type="radio" name="q4"> Ele aceita números de colunas diferentes</label>
+<label><input type="radio" name="q4"> Nenhuma: os dois são iguais em tudo</label>
+<label><input type="radio" name="q4"> O banco não precisa procurar repetições, então dá menos trabalho</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Quantas linhas saem de <code>SELECT cidade FROM clientes UNION ALL SELECT cidade FROM fornecedores UNION SELECT 'Teresina'</code>?</p>
+<label><input type="radio" name="q5"> 10, porque o <code>UNION</code> do fim tira as repetições do resultado inteiro</label>
+<label><input type="radio" name="q5"> 37, porque o <code>ALL</code> vem primeiro</label>
+<label><input type="radio" name="q5"> 36, porque Teresina já estava na lista</label>
+<label><input type="radio" name="q5"> Dá erro, porque não se pode misturar os dois</label>
+</div>
+
+<h3>Missão final: o relatório com total</h3>
+
+<div class="trysql" data-goal="linhas:9;;contem:TOTAL|3301">
+<p class="try-task"><strong>Missão:</strong> o relatório abaixo mostra o estoque de cada categoria. A Ana quer, embaixo, uma linha a mais com o texto <code>TOTAL</code> e a soma do estoque de todos os produtos. Acrescente essa linha com <code>UNION ALL</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.nome AS categoria, SUM(p.estoque) AS estoque
+FROM produtos AS p
+INNER JOIN categorias AS c ON c.id = p.categoria_id
+GROUP BY c.id, c.nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.nome AS categoria, SUM(p.estoque) AS estoque
+FROM produtos AS p
+INNER JOIN categorias AS c ON c.id = p.categoria_id
+GROUP BY c.id, c.nome
+UNION ALL
+SELECT 'TOTAL', SUM(estoque)
+FROM produtos;
+</pre>
+</div>
+
+<div class="trysql">
+<p class="try-task"><strong>Livre:</strong> complete o "raio X" do banco com as tabelas que faltam (<code>itens_pedido</code>, <code>funcionarios</code>, <code>categorias</code>, <code>fornecedores</code>), uma linha para cada, com <code>UNION ALL</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT 'clientes' AS tabela, COUNT(*) AS linhas FROM clientes
+UNION ALL
+SELECT 'produtos', COUNT(*) FROM produtos
+UNION ALL
+SELECT 'pedidos', COUNT(*) FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>UNION ALL</code> empilha os resultados <strong>sem tirar as repetições</strong>: o total de linhas é sempre a soma das partes.</li>
+  <li>Use <code>UNION ALL</code> sempre que o resultado for <strong>contado ou somado</strong>. Com <code>UNION</code>, valores iguais de linhas diferentes somem e o número sai errado, sem aviso.</li>
+  <li>Ele é ótimo para linhas de <strong>TOTAL</strong> e para juntar partes que nunca se repetem; e dá menos trabalho ao banco, porque não procura repetições.</li>
+  <li>As regras de colunas e do <code>ORDER BY</code> são as mesmas do <a href="union.html">UNION</a>.</li>
+  <li>Não misture: um <code>UNION</code> no fim tira as repetições do resultado inteiro e desfaz os <code>ALL</code> anteriores.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
