@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL LEFT JOIN — todas as linhas da esquerda, com ou sem par | Guia SQL</title>
+<meta name="description" content="LEFT JOIN para quem está começando: todos os clientes, inclusive os que nunca compraram; achar quem não tem par com IS NULL (clientes sem pedido, produtos nunca vendidos); contar com zero usando COUNT(coluna); a diferença entre o filtro no ON e no WHERE; LEFT JOIN com três tabelas e as armadilhas que dão resultado errado sem nenhum erro.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">LEFT JOIN</span></h1>
+
+<p class="intro">O <a href="inner-join.html">INNER JOIN</a> só mostra os pares que combinam. Por isso, numa lista de clientes com os seus pedidos, os quatro clientes da Loja Aurora que nunca compraram (Paulo Sérgio, Tainá, Elias e Rosângela) simplesmente não aparecem. Mas a Ana precisa justamente deles: quer mandar um cupom de boas-vindas para quem se cadastrou e ainda não fez o primeiro pedido. Para isso existe o <code>LEFT JOIN</code>, a "junção pela esquerda": ele mostra <strong>todas</strong> as linhas da tabela da esquerda, tenham par ou não.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>LEFT JOIN</code> faz com as linhas que não têm par: elas entram com <code>NULL</code> do outro lado.</li>
+  <li>Como achar <strong>só</strong> quem não tem par: clientes sem pedido e produtos nunca vendidos, com <code>WHERE … IS NULL</code>.</li>
+  <li>Como contar <strong>com zero</strong>, e por que <code>COUNT(*)</code> dá 1 para quem não tem nada.</li>
+  <li>Por que, no <code>LEFT JOIN</code>, um filtro no <code>ON</code> e no <code>WHERE</code> dão resultados <strong>diferentes</strong>.</li>
+  <li>O <code>LEFT JOIN</code> com três tabelas, e o <code>JOIN</code> comum que, colocado depois, apaga o efeito dele.</li>
+  <li>As outras formas de achar "quem não tem": <code>NOT IN</code> e <code>NOT EXISTS</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: a lista de chamada</h2>
+<p>Pense na lista de chamada de uma turma. A professora lê <strong>todos</strong> os nomes, um por um, e ao lado de cada um anota a nota da prova. Quem faltou à prova continua na lista, só que com o espaço da nota em branco. Ninguém some da lista por não ter feito a prova.</p>
+
+<p>O <code>LEFT JOIN</code> é essa lista: a tabela da <strong>esquerda</strong> (a do <code>FROM</code>) é a lista de chamada, e todas as linhas dela aparecem. Ao lado, as colunas da tabela da direita, quando há par; quando não há, o espaço em branco, que em SQL é o <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>).</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:16px 0">
+<svg viewBox="0 0 200 120" role="img" aria-label="LEFT JOIN: o círculo da esquerda, clientes, está todo pintado" style="width:200px;height:auto;flex:0 0 auto">
+<circle cx="75" cy="60" r="48" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+<text x="152" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">pedidos</text>
+</svg>
+<div class="table-wrap" style="flex:1 1 260px;margin:0">
+<table class="ref">
+<tr><th>c.id</th><th>c.nome</th><th>p.id</th></tr>
+<tr><td>26</td><td>Mirela Pontes</td><td>26</td></tr>
+<tr><td>26</td><td>Mirela Pontes</td><td>52</td></tr>
+<tr><td>26</td><td>Mirela Pontes</td><td>78</td></tr>
+<tr><td>27</td><td>Paulo Sérgio Andrade</td><td style="background:var(--note-bg)"><em>NULL</em></td></tr>
+<tr><td>28</td><td>Tainá Soares</td><td style="background:var(--note-bg)"><em>NULL</em></td></tr>
+</table>
+</div>
+</div>
+
+<hr>
+
+<h2>1. O primeiro LEFT JOIN</h2>
+<p>Todos os clientes, cada um com os seus pedidos. São muitas linhas, então a Ana olha só os clientes a partir do 25:</p>
+
+<pre class="file" data-file="primeiro-left.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 25
+ORDER BY c.id, p.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM clientes c</dt><dd>A tabela da <strong>esquerda</strong>: a "lista de chamada". Todas as linhas dela vão aparecer.</dd>
+  <dt>LEFT JOIN pedidos p</dt><dd><em>Left join</em> = "junção pela esquerda". Pode escrever também <code>LEFT OUTER JOIN</code> ("junção externa pela esquerda"): é a mesma coisa.</dd>
+  <dt>ON p.cliente_id = c.id</dt><dd>A regra do par, igual à do <code>INNER JOIN</code>.</dd>
+  <dt>pedido = NULL</dt><dd>Para os clientes 27 a 30, nenhum pedido combinou. Eles entram uma vez, com todas as colunas de <code>pedidos</code> em <code>NULL</code>.</dd>
+</dl>
+
+<p>Em resumo, o <code>LEFT JOIN</code> faz o mesmo que o <code>INNER JOIN</code> e depois <strong>devolve</strong> ao resultado as linhas da esquerda que ficaram sem par. Na loja inteira, são os 90 pares pedido-cliente mais os 4 clientes sem pedido: 94 linhas.</p>
+
+<pre class="file" data-file="conta-left.sql" data-resultado>SELECT COUNT(*)
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id;
+</pre>
+
+<hr>
+
+<h2>2. Só quem não tem par: o IS NULL depois do LEFT JOIN</h2>
+<p>A Ana não quer a lista toda: quer <strong>só</strong> os clientes sem pedido, para o cupom. São exatamente as linhas em que o lado do pedido veio vazio. Basta filtrar por elas:</p>
+
+<pre class="file" data-file="sem-pedido.sql" data-resultado>SELECT c.id, c.nome, c.email
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>LEFT JOIN pedidos p ON …</dt><dd>Primeiro, todos os clientes, com ou sem pedido.</dd>
+  <dt>WHERE p.id IS NULL</dt><dd>Depois, só as linhas em que <code>p.id</code> ficou vazio. Como todo pedido de verdade tem <code>id</code> (é a chave primária), um <code>p.id</code> vazio só pode significar "não houve par".</dd>
+</dl>
+
+<p>Os quatro: Paulo Sérgio Andrade, Tainá Soares, Elias Furtado e Rosângela Dias, com os emails para o cupom. Esse padrão, <strong><code>LEFT JOIN</code> + <code>WHERE</code> chave-da-direita <code>IS NULL</code></strong>, é um dos mais úteis do SQL: serve para qualquer pergunta do tipo "quem nunca…".</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:Tesoura de Poda">
+<p class="try-task"><strong>Experimente:</strong> a mesma pergunta, do outro lado do banco: quais produtos <strong>nunca foram vendidos</strong>? A consulta abaixo lista os produtos com os itens vendidos de cada um. Acrescente o filtro que deixa só os produtos sem nenhum item.</p>
+<pre class="script" data-file="consulta.sql">SELECT pr.id, pr.nome, i.pedido_id
+FROM produtos pr
+LEFT JOIN itens_pedido i ON i.produto_id = pr.id;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT pr.id, pr.nome, i.pedido_id
+FROM produtos pr
+LEFT JOIN itens_pedido i ON i.produto_id = pr.id
+WHERE i.produto_id IS NULL;
+</pre>
+</div>
+
+<p>Devem sair os produtos 43, 44 e 45: o Vaso de Cerâmica Médio, a Tesoura de Poda e as Luvas de Jardinagem. Repare que a coluna testada foi <code>i.produto_id</code>, a própria coluna da ligação: ela nunca é vazia num item de verdade, então também serve.</p>
+
+<hr>
+
+<h2>3. Contando com zero</h2>
+<p>Quantos pedidos cada cliente fez, <strong>incluindo</strong> quem fez zero? A primeira tentativa da Ana:</p>
+
+<pre class="file" data-file="count-estrela.sql" data-resultado>SELECT c.nome, COUNT(*) AS pedidos
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 24
+GROUP BY c.id, c.nome;
+</pre>
+
+<p>Errado! O Paulo Sérgio aparece com <strong>1</strong> pedido, mas ele nunca comprou. O <code>COUNT(*)</code> conta <strong>linhas</strong>, e o <code>LEFT JOIN</code> deu ao Paulo uma linha (aquela com o pedido em <code>NULL</code>). A correção é contar uma coluna do lado direito: <code>COUNT(coluna)</code> pula os <code>NULL</code> (aula <a href="count.html">COUNT()</a>).</p>
+
+<pre class="file" data-file="count-coluna.sql" data-resultado>SELECT c.nome, COUNT(p.id) AS pedidos
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 24
+GROUP BY c.id, c.nome;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>Para o Paulo (sem pedido)</th><th>Por quê</th></tr>
+<tr><td><code>COUNT(*)</code></td><td>1</td><td>Conta a linha, mesmo com o lado direito vazio</td></tr>
+<tr><td><code>COUNT(p.id)</code></td><td>0</td><td>Conta só os valores que não são <code>NULL</code></td></tr>
+</table>
+</div>
+
+<p>Regra prática: <strong>com <code>LEFT JOIN</code>, conte uma coluna da tabela da direita</strong>, de preferência a chave primária dela. O mesmo vale para os produtos: quantas vezes cada produto de jardinagem (categoria 8) foi vendido?</p>
+
+<pre class="file" data-file="vendas-jardim.sql" data-resultado>SELECT pr.nome AS produto, COUNT(i.pedido_id) AS vendas
+FROM produtos pr
+LEFT JOIN itens_pedido i ON i.produto_id = pr.id
+WHERE pr.categoria_id = 8
+GROUP BY pr.id, pr.nome;
+</pre>
+
+<p>A categoria Jardim tem 5 produtos, e 3 deles nunca venderam. Não é à toa que ela foi a categoria com menos unidades vendidas na aula de <a href="inner-join.html">INNER JOIN</a>.</p>
+
+<hr>
+
+<h2>4. A ordem das tabelas importa</h2>
+<p>No <code>INNER JOIN</code>, tanto faz qual tabela vem primeiro. No <code>LEFT JOIN</code>, não: a da esquerda é a que fica inteira. Invertendo, com <code>pedidos</code> à esquerda:</p>
+
+<pre class="file" data-file="invertido.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos p
+LEFT JOIN clientes c ON p.cliente_id = c.id;
+</pre>
+
+<p>90 linhas, como num <code>INNER JOIN</code>. Agora a "lista de chamada" é a dos pedidos, e todo pedido tem cliente (a chave estrangeira garante, como você viu em <a href="relacionamentos.html">Tabelas que se Relacionam</a>). Ninguém fica sem par, e os clientes sem pedido, que estão do lado direito, não têm vaga. Pergunte-se sempre: <strong>de qual tabela eu quero todas as linhas?</strong> Essa vai no <code>FROM</code>.</p>
+
+<hr>
+
+<h2>5. O filtro no ON ou no WHERE muda tudo</h2>
+<p>A Ana quer a lista de <strong>todos</strong> os clientes, com quantos pedidos cada um fez em 2026. Primeira tentativa, com o filtro da data no <code>WHERE</code>:</p>
+
+<pre class="file" data-file="filtro-where.sql" data-resultado>SELECT c.id, c.nome, COUNT(p.id) AS pedidos_2026
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE c.id &gt;= 24
+  AND p.data &gt;= '2026-01-01'
+GROUP BY c.id, c.nome;
+</pre>
+
+<p>Só 3 clientes: os 4 sem pedido sumiram, como se fosse um <code>INNER JOIN</code>. O que aconteceu? O <code>WHERE</code> roda <strong>depois</strong> do JOIN. Nas linhas dos clientes sem pedido, <code>p.data</code> é <code>NULL</code>, e <code>NULL &gt;= '2026-01-01'</code> não é verdadeiro. O <code>WHERE</code> jogou essas linhas fora. Agora com o filtro da data dentro do <code>ON</code>:</p>
+
+<pre class="file" data-file="filtro-on.sql" data-resultado>SELECT c.id, c.nome, COUNT(p.id) AS pedidos_2026
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+                   AND p.data &gt;= '2026-01-01'
+WHERE c.id &gt;= 24
+GROUP BY c.id, c.nome;
+</pre>
+
+<p>Os 7 clientes, e os 4 sem pedido aparecem com 0. Dentro do <code>ON</code>, a data faz parte da <strong>regra do par</strong>: "combine o cliente com os pedidos dele <em>de 2026</em>". Quem não tem par com essa regra continua na lista, com <code>NULL</code> do lado direito, porque é isso que o <code>LEFT JOIN</code> garante.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde está o filtro</th><th>O que ele faz num <code>LEFT JOIN</code></th></tr>
+<tr><td>No <code>ON</code></td><td>Escolhe <strong>quais linhas da direita</strong> podem formar par. As linhas da esquerda ficam todas.</td></tr>
+<tr><td>No <code>WHERE</code></td><td>Filtra o <strong>resultado final</strong>. Um filtro numa coluna da direita apaga as linhas sem par (elas têm <code>NULL</code> ali), e o <code>LEFT JOIN</code> vira, na prática, um <code>INNER JOIN</code>.</td></tr>
+</table>
+</div>
+
+<p>Filtros sobre a tabela da <strong>esquerda</strong> (como <code>c.id &gt;= 24</code>) vão no <code>WHERE</code> sem problema. A pegadinha é só com colunas da tabela da direita. A exceção é justamente o <code>WHERE p.id IS NULL</code> da seção 2: ali, você <strong>quer</strong> ficar só com as linhas sem par.</p>
+
+<hr>
+
+<h2>6. LEFT JOIN com três tabelas</h2>
+<p>Todos os clientes, com os pedidos e o vendedor de cada pedido. Clientes a partir do 26:</p>
+
+<pre class="file" data-file="tres-left.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido, f.nome AS vendedor
+FROM clientes c
+LEFT JOIN pedidos p      ON p.cliente_id = c.id
+LEFT JOIN funcionarios f ON p.funcionario_id = f.id
+WHERE c.id &gt;= 26
+ORDER BY c.id, p.id;
+</pre>
+
+<p>Os dois JOINs são <code>LEFT</code>. O segundo também precisa ser: para os clientes sem pedido, <code>p.funcionario_id</code> é <code>NULL</code>, não há vendedor que combine, e só um <code>LEFT JOIN</code> mantém essas linhas. Veja o que acontece se o segundo for um <code>JOIN</code> comum:</p>
+
+<pre class="file" data-file="tres-misturado.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido, f.nome AS vendedor
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+JOIN funcionarios f ON p.funcionario_id = f.id
+WHERE c.id &gt;= 26
+ORDER BY c.id, p.id;
+</pre>
+
+<p>Os clientes 27 a 30 sumiram de novo. Os JOINs são processados da esquerda para a direita: o <code>LEFT JOIN</code> trouxe os clientes sem pedido, e logo depois o <code>JOIN</code> comum, que só guarda pares, os descartou. Regra: <strong>depois de um <code>LEFT JOIN</code>, as tabelas penduradas no lado direito também entram com <code>LEFT JOIN</code></strong>.</p>
+
+<hr>
+
+<h2>Formas diferentes de achar "quem nunca…"</h2>
+<p>Os produtos nunca vendidos, de três jeitos que dão o mesmo resultado:</p>
+
+<pre class="file" data-file="com-left-join.sql" data-resultado>SELECT pr.id, pr.nome
+FROM produtos pr
+LEFT JOIN itens_pedido i ON i.produto_id = pr.id
+WHERE i.produto_id IS NULL;
+</pre>
+
+<pre class="file" data-file="com-not-in.sql" data-resultado>SELECT id, nome
+FROM produtos
+WHERE id NOT IN (SELECT produto_id FROM itens_pedido);
+</pre>
+
+<pre class="file" data-file="com-not-exists.sql" data-resultado>SELECT pr.id, pr.nome
+FROM produtos pr
+WHERE NOT EXISTS (SELECT 1 FROM itens_pedido i WHERE i.produto_id = pr.id);
+</pre>
+
+<p>As duas últimas usam uma <strong>subconsulta</strong>, uma consulta dentro da outra, assunto das aulas <a href="subconsultas.html">Subconsultas</a> e <a href="exists.html">EXISTS</a>. Por enquanto, basta saber que elas existem e que dão o mesmo resultado.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>LEFT JOIN … WHERE direita.chave IS NULL</code></td><td>Quando você também quer mostrar colunas das duas tabelas, ou já está montando um JOIN. Funciona em qualquer banco.</td></tr>
+<tr><td><code>NOT IN (subconsulta)</code></td><td>Leitura fácil ("o id não está na lista"). Cuidado: se a lista da subconsulta tiver algum <code>NULL</code>, o <code>NOT IN</code> não devolve nada (a aula de subconsultas explica).</td></tr>
+<tr><td><code>NOT EXISTS (subconsulta)</code></td><td>A forma mais segura com <code>NULL</code>; muito usada por quem já tem prática.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Quase nenhum erro de <code>LEFT JOIN</code> gera mensagem: a consulta roda e o resultado sai errado. Por isso vale conhecer cada armadilha.</p>
+
+<div class="cenario">
+<strong>Contou com <code>COUNT(*)</code> e quem não tem nada ficou com 1</strong>
+<p>Visto na seção 3: com <code>LEFT JOIN</code>, <code>COUNT(*)</code> conta a linha do <code>NULL</code>. <strong>Como consertar:</strong> <code>COUNT(p.id)</code>, uma coluna da tabela da direita.</p>
+</div>
+
+<div class="cenario">
+<strong>O filtro da direita no <code>WHERE</code> transformou o LEFT em INNER</strong>
+<p>Visto na seção 5: <code>WHERE p.data &gt;= '2026-01-01'</code> apaga as linhas sem par. <strong>Como consertar:</strong> leve o filtro para o <code>ON</code>: <code>LEFT JOIN pedidos p ON p.cliente_id = c.id AND p.data &gt;= '2026-01-01'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Testou o <code>IS NULL</code> numa coluna que pode ser vazia de verdade</strong>
+<p>A Ana quis os clientes sem pedido e testou a data de entrega em vez da chave:</p>
+<pre class="file" data-file="is-null-errado.sql" data-resultado>SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.entregue_em IS NULL;
+</pre>
+<p><strong>O que acontece:</strong> 9 clientes em vez de 4. Os 5 a mais (Fernanda, Antônio Carlos, Juliana, Marcos Vinícius e Patrícia) <strong>têm</strong> pedido: é que os pedidos 86 a 90 ainda não foram entregues, e a coluna <code>entregue_em</code> deles é <code>NULL</code> de verdade. O <code>IS NULL</code> não tem como saber se o vazio veio do <code>LEFT JOIN</code> ou da própria tabela.</p>
+<p><strong>Como consertar:</strong> teste uma coluna que <strong>nunca</strong> é vazia na tabela da direita: a chave primária (<code>p.id</code>) ou a coluna da ligação (<code>p.cliente_id</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Escreveu <code>= NULL</code> em vez de <code>IS NULL</code></strong>
+<pre class="file" data-file="igual-null.sql" data-resultado>SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.id = NULL;
+</pre>
+<p><strong>O que acontece:</strong> nenhuma linha, e nenhum erro. Qualquer comparação com <code>NULL</code> usando <code>=</code> dá "desconhecido", nunca verdadeiro, nem quando o valor é <code>NULL</code> (aula <a href="is-null.html">IS NULL e IS NOT NULL</a>).</p>
+<p><strong>Como consertar:</strong> <code>WHERE p.id IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um <code>JOIN</code> comum depois do <code>LEFT JOIN</code></strong>
+<p>Visto na seção 6: o <code>JOIN</code> seguinte descarta as linhas sem par que o <code>LEFT JOIN</code> tinha trazido. <strong>Como consertar:</strong> <code>LEFT JOIN</code> também nas tabelas que dependem do lado direito.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>ON</code></strong>
+<pre class="file" data-file="left-sem-on.sql" data-resultado>SELECT COUNT(*)
+FROM clientes c
+LEFT JOIN pedidos p;
+</pre>
+<p><strong>O que acontece:</strong> 2.700 linhas, sem erro. Como no <code>JOIN</code> comum, o SQLite aceita o <code>LEFT JOIN</code> sem condição e junta cada cliente com cada pedido. <strong>Como consertar:</strong> <code>LEFT JOIN pedidos p ON p.cliente_id = c.id</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:4;;contem:Elias Furtado">
+<p class="try-task"><strong>Missão:</strong> a Ana queria só os clientes que nunca fizeram pedido, mas esta consulta devolve 9 clientes. Descubra o erro e conserte (devem sair 4).</p>
+<pre class="script" data-file="consulta.sql">SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.entregue_em IS NULL;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>LEFT JOIN</code> e <code>LEFT OUTER JOIN</code> funcionam do mesmo jeito no MySQL, no PostgreSQL e no SQL Server, inclusive a diferença entre o filtro no <code>ON</code> e no <code>WHERE</code>: a documentação do SQL Server avisa que, nas junções externas, uma condição no <code>ON</code> e a mesma condição no <code>WHERE</code> podem dar resultados diferentes. A única diferença que você vai notar é o <code>LEFT JOIN</code> sem <code>ON</code>: pela gramática de cada um, o MySQL, o PostgreSQL e o SQL Server exigem a condição e dão erro, em vez de juntar tudo com tudo.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>a LEFT JOIN b ON …</code></td><td>Todas as linhas de <code>a</code>; as que não têm par em <code>b</code> vêm com <code>NULL</code> nas colunas de <code>b</code></td></tr>
+<tr><td><code>LEFT OUTER JOIN</code></td><td>O mesmo que <code>LEFT JOIN</code></td></tr>
+<tr><td><code>… WHERE b.chave IS NULL</code></td><td>Só as linhas de <code>a</code> sem par ("quem nunca…")</td></tr>
+<tr><td><code>COUNT(b.chave)</code></td><td>Conta os pares; dá 0 para quem não tem par</td></tr>
+<tr><td><code>LEFT JOIN b ON a.x = b.y AND b.z …</code></td><td>Filtro que só limita quem pode ser par; as linhas de <code>a</code> ficam todas</td></tr>
+<tr><td><code>a LEFT JOIN b … LEFT JOIN c …</code></td><td>Cadeia de LEFT JOINs; um <code>JOIN</code> comum no meio desfaz o efeito</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Sintoma (sem mensagem de erro)</th><th>Causa provável</th></tr>
+<tr><td>Quem não tem nada aparece com 1</td><td><code>COUNT(*)</code> em vez de <code>COUNT(b.chave)</code></td></tr>
+<tr><td>As linhas sem par sumiram</td><td>Filtro numa coluna de <code>b</code> no <code>WHERE</code>, ou <code>JOIN</code> comum depois do <code>LEFT JOIN</code></td></tr>
+<tr><td>Vieram linhas a mais no "quem nunca…"</td><td><code>IS NULL</code> testado numa coluna que pode ser vazia de verdade</td></tr>
+<tr><td>Não veio nenhuma linha</td><td><code>= NULL</code> em vez de <code>IS NULL</code></td></tr>
+<tr><td>Milhares de linhas</td><td>Faltou o <code>ON</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Quem nunca comprou</h3>
+<p>Complete para listar só os clientes sem pedido:</p>
+<div class="ex-code">SELECT c.nome FROM clientes c <input data-answer="LEFT JOIN|left join|LEFT OUTER JOIN|left outer join" aria-label="tipo de junção"> pedidos p ON p.cliente_id = c.id WHERE p.id <input data-answer="IS NULL|is null" aria-label="condição">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Contando certo</h3>
+<p>Complete para que os clientes sem pedido apareçam com 0:</p>
+<div class="ex-code">SELECT c.nome, COUNT(<input data-answer="p.id|p.cliente_id" aria-label="o que contar">) FROM clientes c LEFT JOIN pedidos p ON p.cliente_id = c.id GROUP BY c.id, c.nome;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. <code>SELECT COUNT(*) FROM clientes c LEFT JOIN pedidos p ON p.cliente_id = c.id;</code> devolve 94. De onde vêm as 4 linhas a mais que os 90 pedidos?</p>
+<label><input type="radio" name="q3"> De pedidos sem cliente</label>
+<label><input type="radio" name="q3"> Dos 4 clientes sem pedido, que entram uma vez cada, com <code>NULL</code> do lado dos pedidos</label>
+<label><input type="radio" name="q3"> De pedidos repetidos</label>
+<label><input type="radio" name="q3"> Dos funcionários</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A Ana quer todos os clientes, com os pedidos de 2026. Onde deve ir <code>p.data &gt;= '2026-01-01'</code>?</p>
+<label><input type="radio" name="q4"> No <code>WHERE</code>, porque é um filtro</label>
+<label><input type="radio" name="q4"> No <code>GROUP BY</code></label>
+<label><input type="radio" name="q4"> Em lugar nenhum: <code>LEFT JOIN</code> não aceita filtro</label>
+<label><input type="radio" name="q4"> No <code>ON</code>, junto com a ligação, para não apagar os clientes sem pedido</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. <code>FROM pedidos p LEFT JOIN clientes c ON p.cliente_id = c.id</code> mostra os clientes que nunca compraram?</p>
+<label><input type="radio" name="q5"> Não: a tabela que fica inteira é <code>pedidos</code>, e os clientes sem pedido estão do lado direito</label>
+<label><input type="radio" name="q5"> Sim, com <code>NULL</code> no lado dos pedidos</label>
+<label><input type="radio" name="q5"> Sim, mas só com <code>SELECT *</code></label>
+<label><input type="radio" name="q5"> Dá erro, porque a ordem está invertida</label>
+</div>
+
+<h3>Missão final: todos os funcionários</h3>
+
+<div class="trysql" data-goal="linhas:8;;contem:Marta Lustosa|0;;contem:Davi Nunes|0">
+<p class="try-task"><strong>Missão:</strong> na aula de <a href="inner-join.html">INNER JOIN</a>, a lista de pedidos por vendedor mostrou só 6 pessoas. A gerente quer ver os <strong>8</strong> funcionários, inclusive quem não atendeu nenhum pedido, com 0. Troque o tipo de JOIN e conserte a contagem.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome AS funcionario, COUNT(*) AS pedidos
+FROM funcionarios f
+JOIN pedidos p ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome AS funcionario, COUNT(p.id) AS pedidos
+FROM funcionarios f
+LEFT JOIN pedidos p ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+</pre>
+</div>
+
+<p>A gerente Marta Lustosa e o estoquista Davi Nunes aparecem com 0. Se você trocou só o JOIN e deixou <code>COUNT(*)</code>, eles saíram com 1: é a armadilha da seção 3. Para mostrar um texto como "sem pedidos" no lugar de um <code>NULL</code>, existe o <code>COALESCE</code>, da aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>LEFT JOIN</code> mostra <strong>todas</strong> as linhas da tabela da esquerda; as que não têm par entram com <code>NULL</code> nas colunas da direita.</li>
+  <li><code>LEFT JOIN … WHERE direita.chave IS NULL</code> encontra quem não tem par: clientes sem pedido (27 a 30), produtos nunca vendidos (43 a 45). Teste a chave, nunca uma coluna que pode ser vazia de verdade.</li>
+  <li>Para contar com zero, use <code>COUNT(direita.chave)</code>. <code>COUNT(*)</code> dá 1 para quem não tem nada.</li>
+  <li>A ordem importa: a tabela de que você quer todas as linhas vai no <code>FROM</code>.</li>
+  <li>Filtro numa coluna da direita: no <code>ON</code>, limita os pares; no <code>WHERE</code>, apaga as linhas sem par e transforma o LEFT em INNER.</li>
+  <li>Depois de um <code>LEFT JOIN</code>, use <code>LEFT JOIN</code> também nas tabelas penduradas no lado direito.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
