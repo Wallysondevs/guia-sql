@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL FULL JOIN — tudo dos dois lados, e como imitá-lo onde não existe | Guia SQL</title>
+<meta name="description" content="FULL JOIN (FULL OUTER JOIN) para quem está começando: todas as linhas das duas tabelas, com NULL onde falta par; cidades com clientes, com fornecedores ou com os dois na Loja Aurora; só as linhas sem par; FULL JOIN com USING; a forma antiga com LEFT JOIN + UNION ALL para o MySQL e para SQLite anterior à 3.39; e as armadilhas com NULL e chave estrangeira.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">FULL JOIN</span></h1>
+
+<p class="intro">O <a href="left-join.html">LEFT JOIN</a> guarda tudo da tabela da esquerda; o <a href="right-join.html">RIGHT JOIN</a>, tudo da direita. O <code>FULL JOIN</code> (ou <code>FULL OUTER JOIN</code>, a "junção externa completa") guarda <strong>tudo dos dois lados</strong>: os pares que combinam, as linhas da esquerda que ficaram sozinhas e as da direita que ficaram sozinhas. A Ana vai usá-lo para responder a uma pergunta do gerente da Loja Aurora: em quais cidades a loja tem clientes, em quais tem fornecedores e em quais tem os dois? E vai aprender a fazer o mesmo sem <code>FULL JOIN</code>, porque o MySQL não tem esse JOIN.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>FULL JOIN</code> devolve: <code>INNER JOIN</code> + quem sobrou da esquerda + quem sobrou da direita.</li>
+  <li>Um caso real com sobras dos <strong>dois</strong> lados: as cidades dos clientes e dos fornecedores.</li>
+  <li>Como ficar só com as linhas sem par, de qualquer um dos lados.</li>
+  <li>Por que um <code>FULL JOIN</code> entre clientes e pedidos dá o mesmo que um <code>LEFT JOIN</code>.</li>
+  <li>O <code>FULL JOIN</code> com <code>USING</code>, que junta as duas colunas numa só.</li>
+  <li>A forma antiga, com <code>LEFT JOIN</code> + <code>UNION ALL</code>, para bancos que não têm <code>FULL JOIN</code>.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>. O <code>FULL JOIN</code> existe no SQLite desde a versão 3.39.0 (de 2022, a mesma que trouxe o <code>RIGHT JOIN</code>); o editor usa a 3.50.4.</p>
+
+<hr>
+
+<h2>A ideia: duas listas de convidados</h2>
+<p>A Ana e o irmão vão fazer uma festa juntos, e cada um tem a sua lista de convidados. Para montar a lista final, eles põem as duas lado a lado: quem está nas duas listas aparece uma vez, com o nome dos dois lados; quem só está na lista da Ana aparece com o lado do irmão em branco; quem só está na lista do irmão aparece com o lado da Ana em branco. <strong>Ninguém de nenhuma das listas fica de fora.</strong> Esse é o <code>FULL JOIN</code>.</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;margin:16px 0">
+<svg viewBox="0 0 200 120" role="img" aria-label="FULL JOIN: os dois círculos, clientes e fornecedores, estão inteiros pintados" style="width:200px;height:auto;flex:0 0 auto">
+<g style="opacity:.5"><circle cx="75" cy="60" r="48" style="fill:var(--accent)"/><circle cx="125" cy="60" r="48" style="fill:var(--accent)"/></g>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+<text x="154" y="64" text-anchor="middle" style="fill:currentColor;font-size:11px">fornec.</text>
+</svg>
+<div class="table-wrap" style="flex:1 1 280px;margin:0">
+<table class="ref">
+<tr><th>Parte do resultado</th><th>De onde vem</th></tr>
+<tr><td>Os pares que combinam</td><td>o mesmo que o <code>INNER JOIN</code></td></tr>
+<tr><td>+ as linhas da esquerda sem par</td><td>o que o <code>LEFT JOIN</code> acrescenta (direita em <code>NULL</code>)</td></tr>
+<tr><td>+ as linhas da direita sem par</td><td>o que o <code>RIGHT JOIN</code> acrescenta (esquerda em <code>NULL</code>)</td></tr>
+</table>
+</div>
+</div>
+
+<hr>
+
+<h2>1. Um caso com sobras dos dois lados: as cidades</h2>
+<p>Os clientes da Loja Aurora moram em 8 cidades; os fornecedores ficam em 5. Algumas cidades aparecem nas duas listas, outras não. Para ver o mapa completo, a Ana junta as duas tabelas pela cidade, e usa <code>DISTINCT</code> (aula <a href="select-distinct.html">SELECT DISTINCT</a>) para mostrar cada combinação de cidades uma vez só:</p>
+
+<pre class="file" data-file="cidades.sql" data-resultado>SELECT DISTINCT c.cidade AS cidade_cliente,
+                f.cidade AS cidade_fornecedor
+FROM clientes c
+FULL JOIN fornecedores f ON c.cidade = f.cidade;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM clientes c</dt><dd>A tabela da esquerda.</dd>
+  <dt>FULL JOIN fornecedores f</dt><dd><em>Full join</em> = "junção completa". As duas tabelas ficam inteiras. Também se escreve <code>FULL OUTER JOIN</code>.</dd>
+  <dt>ON c.cidade = f.cidade</dt><dd>A regra do par: cliente e fornecedor da mesma cidade. (Não é uma chave estrangeira; um JOIN pode ligar por qualquer condição que faça sentido.)</dd>
+  <dt>SELECT DISTINCT …</dt><dd>Sem o <code>DISTINCT</code>, Teresina apareceria 20 vezes (10 clientes × 2 fornecedores). Com ele, cada combinação aparece uma vez.</dd>
+</dl>
+
+<p>As três partes do <code>FULL JOIN</code> estão todas aí:</p>
+<ol class="passo">
+  <li><strong>Teresina, São Paulo e Fortaleza</strong> têm clientes <strong>e</strong> fornecedores: são os pares.</li>
+  <li><strong>Parnaíba, Recife, Picos, Oeiras e Floriano</strong> só têm clientes: a coluna do fornecedor veio em <code>NULL</code>.</li>
+  <li><strong>Porto e Buenos Aires</strong> só têm fornecedores (os dois estrangeiros): a coluna do cliente veio em <code>NULL</code>.</li>
+</ol>
+
+<div class="trysql" data-goal="linhas:10;;contem:|Porto;;contem:|Buenos Aires">
+<p class="try-task"><strong>Experimente:</strong> esta versão usa <code>LEFT JOIN</code> e devolve só 8 linhas: Porto e Buenos Aires ficaram de fora, porque estão do lado direito sem par. Troque o tipo de JOIN para que as cidades dos dois lados apareçam.</p>
+<pre class="script" data-file="consulta.sql">SELECT DISTINCT c.cidade AS cidade_cliente,
+                f.cidade AS cidade_fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT DISTINCT c.cidade AS cidade_cliente,
+                f.cidade AS cidade_fornecedor
+FROM clientes c
+FULL JOIN fornecedores f ON c.cidade = f.cidade;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Só quem ficou sem par</h2>
+<p>O gerente quer os <strong>nomes</strong>: quais clientes moram numa cidade sem fornecedor, e quais fornecedores ficam numa cidade sem cliente? São as linhas em que <strong>um dos lados</strong> veio vazio:</p>
+
+<pre class="file" data-file="sem-par.sql" data-resultado>SELECT c.nome AS cliente, c.cidade AS cidade_cliente,
+       f.nome AS fornecedor, f.cidade AS cidade_fornecedor
+FROM clientes c
+FULL JOIN fornecedores f ON c.cidade = f.cidade
+WHERE c.id IS NULL OR f.id IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>f.id IS NULL</dt><dd>Linha da esquerda sem par: um cliente cuja cidade não tem fornecedor.</dd>
+  <dt>c.id IS NULL</dt><dd>Linha da direita sem par: um fornecedor cuja cidade não tem cliente.</dd>
+  <dt>OR</dt><dd>Qualquer um dos dois casos (aula <a href="or.html">OR</a>). Os pares completos têm os dois <code>id</code> preenchidos e ficam de fora.</dd>
+</dl>
+
+<p>Seis clientes do interior (e de Recife) e dois fornecedores estrangeiros. É a parte "de fora" dos dois círculos, sem o meio:</p>
+
+<div style="overflow-x:auto;margin:16px 0">
+<svg viewBox="0 0 200 120" role="img" aria-label="Só as partes de fora: os dois círculos pintados, menos a parte comum" style="width:200px;height:auto;display:block;margin:0 auto">
+<defs>
+<mask id="fora-do-meio"><rect width="200" height="120" fill="#fff"/><circle cx="75" cy="60" r="48" fill="#000" clip-path="url(#so-dir)"/></mask>
+<clipPath id="so-dir"><circle cx="125" cy="60" r="48"/></clipPath>
+</defs>
+<g mask="url(#fora-do-meio)" style="opacity:.5"><circle cx="75" cy="60" r="48" style="fill:var(--accent)"/><circle cx="125" cy="60" r="48" style="fill:var(--accent)"/></g>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+<text x="154" y="64" text-anchor="middle" style="fill:currentColor;font-size:11px">fornec.</text>
+</svg>
+</div>
+
+<p>Quantas linhas tem o <code>FULL JOIN</code> inteiro, sem filtro nem <code>DISTINCT</code>? Os pares do <code>INNER JOIN</code> são 34 (Teresina: 10 clientes × 2 fornecedores = 20; São Paulo: 7; Fortaleza: 7). Somando as 6 sobras da esquerda e as 2 da direita: 34 + 6 + 2 = 42.</p>
+
+<pre class="file" data-file="conta-full.sql" data-resultado>SELECT COUNT(*) AS full_join
+FROM clientes c
+FULL JOIN fornecedores f ON c.cidade = f.cidade;
+SELECT COUNT(*) AS inner_join
+FROM clientes c
+JOIN fornecedores f ON c.cidade = f.cidade;
+</pre>
+
+<hr>
+
+<h2>3. Quando um lado nunca sobra</h2>
+<p>E um <code>FULL JOIN</code> entre clientes e pedidos?</p>
+
+<pre class="file" data-file="clientes-pedidos.sql" data-resultado>SELECT COUNT(*)
+FROM clientes c
+FULL JOIN pedidos p ON p.cliente_id = c.id;
+</pre>
+
+<p>94 linhas, exatamente o mesmo que o <code>LEFT JOIN</code> da aula passada. Sobram os 4 clientes sem pedido (do lado esquerdo), mas <strong>nenhum pedido sem cliente</strong>: a chave estrangeira <code>pedidos.cliente_id</code> não deixa existir pedido de um cliente que não está no cadastro (aula <a href="relacionamentos.html">Tabelas que se Relacionam</a>). Quando as tabelas são ligadas por uma chave estrangeira bem cuidada, o lado da chave nunca sobra, e o <code>FULL JOIN</code> vira um <code>LEFT JOIN</code> (ou um <code>RIGHT JOIN</code>, conforme a ordem).</p>
+
+<p>Por isso o <code>FULL JOIN</code> é o menos usado dos quatro. Ele aparece quando as duas tabelas são <strong>independentes</strong> e você quer comparar uma com a outra: as cidades de clientes e de fornecedores, o estoque do sistema com o estoque contado na prateleira, a lista de alunos com a lista de presença, os dados de dois sistemas que deveriam bater.</p>
+
+<hr>
+
+<h2>4. FULL JOIN com USING: as duas colunas viram uma</h2>
+<p>Com <code>USING</code> (aula <a href="inner-join.html">INNER JOIN</a>), a coluna da ligação aparece uma vez só. No <code>FULL JOIN</code> isso tem um efeito especial: a documentação do SQLite diz que, num <code>FULL JOIN</code> com <code>USING</code>, a coluna do resultado é o primeiro valor não vazio entre os dois lados (o mesmo que <code>coalesce(esquerda.x, direita.x)</code>). Na prática, a lista de <strong>todas</strong> as cidades, sem buracos:</p>
+
+<pre class="file" data-file="todas-as-cidades.sql" data-resultado>SELECT DISTINCT cidade
+FROM clientes
+FULL JOIN fornecedores USING (cidade);
+</pre>
+
+<p>As 10 cidades, de clientes ou de fornecedores. Para Porto, o lado dos clientes estava vazio, então veio a cidade do fornecedor; para Picos, o contrário. A função <code>coalesce</code> ("unir", "juntar") tem aula própria: <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>.</p>
+
+<hr>
+
+<h2>5. A forma antiga: LEFT JOIN + UNION ALL</h2>
+<p>Até a versão 3.39.0, o SQLite não tinha <code>FULL JOIN</code>, e o MySQL não tem até hoje. A solução clássica é montar o <code>FULL JOIN</code> com as peças que todo banco tem: um <code>LEFT JOIN</code> para os pares e as sobras da esquerda, mais um segundo <code>LEFT JOIN</code>, com as tabelas trocadas, para as sobras da direita. As duas partes são empilhadas com <code>UNION ALL</code> ("união de tudo"), que põe o resultado de uma consulta embaixo do da outra (aula <a href="union-all.html">UNION ALL</a>).</p>
+
+<p>As linhas sem par da seção 2, sem <code>FULL JOIN</code>:</p>
+
+<pre class="file" data-file="sem-full-join.sql" data-resultado>SELECT c.nome AS cliente, c.cidade AS cidade_cliente,
+       f.nome AS fornecedor, f.cidade AS cidade_fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+WHERE f.id IS NULL
+UNION ALL
+SELECT c.nome, c.cidade, f.nome, f.cidade
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade
+WHERE c.id IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>Primeira parte: clientes LEFT JOIN fornecedores … WHERE f.id IS NULL</dt><dd>Os clientes sem fornecedor na cidade (as sobras da esquerda).</dd>
+  <dt>UNION ALL</dt><dd>Empilha a segunda parte embaixo da primeira. As duas partes precisam ter o <strong>mesmo número de colunas</strong>, na mesma ordem; os nomes das colunas vêm da primeira.</dd>
+  <dt>Segunda parte: fornecedores LEFT JOIN clientes … WHERE c.id IS NULL</dt><dd>As tabelas trocadas de lugar: os fornecedores sem cliente na cidade (as sobras da direita). O <code>SELECT</code> lista as colunas na <strong>mesma ordem</strong> da primeira parte: cliente primeiro, fornecedor depois.</dd>
+</dl>
+
+<p>As mesmas 8 linhas da seção 2. Para o <code>FULL JOIN</code> <strong>completo</strong> (pares + as duas sobras), tire o <code>WHERE</code> da primeira parte e deixe o da segunda:</p>
+
+<pre class="file" data-file="full-join-completo.sql" data-resultado>-- o FULL JOIN inteiro, sem FULL JOIN (42 linhas)
+SELECT c.nome AS cliente, f.nome AS fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade   -- pares + sobras da esquerda
+UNION ALL
+SELECT c.nome, f.nome
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade
+WHERE c.id IS NULL;                               -- só as sobras da direita
+</pre>
+
+<p>O <code>WHERE c.id IS NULL</code> da segunda parte é o que impede os pares de aparecerem duas vezes: eles já vieram na primeira parte. É por isso que se usa <code>UNION ALL</code>, que empilha tudo sem mexer, e não <code>UNION</code>, que apaga linhas repetidas (aula <a href="union.html">UNION</a>): duas linhas iguais de verdade (por exemplo, dois clientes com o mesmo nome) seriam fundidas numa só, e o resultado ficaria diferente do de um <code>FULL JOIN</code>.</p>
+
+<div class="trysql" data-goal="colunas:cidade_cliente,cidade_fornecedor;;linhas:10;;contem:|Porto">
+<p class="try-task"><strong>Experimente:</strong> o mapa de cidades da seção 1, sem <code>FULL JOIN</code>. A primeira parte já está pronta. Acrescente <code>UNION</code> e uma segunda parte com as tabelas trocadas (<code>FROM fornecedores f LEFT JOIN clientes c …</code>), que traga as cidades só de fornecedores. Aqui o <code>UNION</code> sem <code>ALL</code> serve, porque com <code>DISTINCT</code> as repetições já não interessam.</p>
+<pre class="script" data-file="consulta.sql">SELECT DISTINCT c.cidade AS cidade_cliente, f.cidade AS cidade_fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT DISTINCT c.cidade AS cidade_cliente, f.cidade AS cidade_fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+UNION
+SELECT DISTINCT c.cidade, f.cidade
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade;
+</pre>
+</div>
+
+<p>Repare que, com <code>UNION</code>, as linhas podem sair em outra ordem: para achar as repetidas, o banco reorganiza o resultado. Se a ordem importa, termine com um <code>ORDER BY</code>.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>FULL JOIN … ON</code></td><td><strong>No SQLite 3.39.0 ou mais novo, no PostgreSQL e no SQL Server.</strong> Curto e claro.</td></tr>
+<tr><td><code>FULL JOIN … USING (x)</code></td><td>Quando a ligação é por colunas de mesmo nome e você quer uma coluna só, sem buracos. Não existe no SQL Server.</td></tr>
+<tr><td><code>LEFT JOIN</code> + <code>UNION ALL</code> + <code>LEFT JOIN</code> trocado com <code>WHERE … IS NULL</code></td><td>No <strong>MySQL</strong>, em SQLite antigo, ou quando a consulta precisa rodar em qualquer banco.</td></tr>
+<tr><td><code>LEFT JOIN</code> só</td><td>Quando um dos lados nunca sobra (chave estrangeira): dá o mesmo resultado, e é mais simples.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>PostgreSQL e SQL Server</strong> têm <code>FULL JOIN</code> e <code>FULL OUTER JOIN</code>, como o SQLite. O SQL Server não tem <code>USING</code>, então lá só vale a forma com <code>ON</code>.</li>
+  <li><strong>MySQL não tem <code>FULL JOIN</code>.</strong> Na gramática do <code>JOIN</code> do MySQL 8.4, as junções externas são só <code>LEFT</code> e <code>RIGHT</code>. Use a forma da seção 5. Ilustrativo, a mesma consulta no MySQL:</li>
+</ul>
+<pre class="file" data-file="mysql-full-join.sql (ilustrativo)">SELECT c.nome AS cliente, f.nome AS fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+UNION ALL
+SELECT c.nome, f.nome
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade
+WHERE c.id IS NULL;
+</pre>
+<p>(Essa consulta também roda no SQLite; ela é "ilustrativa" aqui só porque a ideia é mostrar o que se escreve no MySQL.)</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Filtro no <code>WHERE</code>: o FULL virou LEFT (ou INNER)</strong>
+<p>A Ana quis o <code>FULL JOIN</code> das cidades, mas só com os clientes VIP:</p>
+<pre class="file" data-file="full-where.sql" data-resultado>SELECT DISTINCT c.cidade AS cidade_cliente, f.cidade AS cidade_fornecedor
+FROM clientes c
+FULL JOIN fornecedores f ON c.cidade = f.cidade
+WHERE c.vip = 1;
+</pre>
+<p><strong>O que acontece:</strong> sobraram só 3 linhas, as cidades com par. Porto e Buenos Aires sumiram: nas sobras da direita, <code>c.vip</code> é <code>NULL</code>, e o <code>WHERE</code> as jogou fora. E as cidades só de clientes também sumiram, porque nenhum cliente VIP mora nelas. Na prática, o <code>FULL JOIN</code> virou um <code>INNER JOIN</code>.</p>
+<p><strong>E no <code>ON</code>?</strong> Com <code>FULL JOIN fornecedores f ON c.cidade = f.cidade AND c.vip = 1</code>, Porto e Buenos Aires voltam, mas saem 13 linhas confusas: os clientes que não são VIP continuam no resultado, como sobras sem par (aparece até "Teresina | NULL", como se Teresina não tivesse fornecedor), porque num <code>FULL JOIN</code> a tabela da esquerda também fica inteira.</p>
+<p><strong>Como consertar:</strong> o que a Ana quer é "as cidades dos clientes VIP" de um lado e "as cidades dos fornecedores" do outro. Para isso, o filtro tem de agir nos clientes <strong>antes</strong> do JOIN, com uma consulta dentro do <code>FROM</code>, assunto da aula <a href="subconsultas.html">Subconsultas</a>. A lição: num <code>FULL JOIN</code>, pense duas vezes antes de filtrar qualquer um dos lados.</p>
+</div>
+
+<div class="cenario">
+<strong>Os NULL que nunca formam par</strong>
+<p>A Ana tentou o mesmo mapa pelo <strong>estado</strong>:</p>
+<pre class="file" data-file="estados.sql" data-resultado>SELECT DISTINCT c.estado AS estado_cliente, f.estado AS estado_fornecedor
+FROM clientes c
+FULL JOIN fornecedores f ON c.estado = f.estado;
+</pre>
+<p><strong>O que acontece:</strong> aparece uma linha <code>NULL | NULL</code>, que parece não fazer sentido. Ela vem dos dois fornecedores estrangeiros, que têm <code>estado</code> vazio. Um <code>NULL</code> nunca é igual a nada, nem a outro <code>NULL</code>, então eles não formam par com ninguém e entram como sobras da direita: com o lado do cliente vazio <strong>e</strong> o próprio estado vazio. Os dois viraram uma linha só por causa do <code>DISTINCT</code>.</p>
+<p><strong>Como evitar a confusão:</strong> mostre uma coluna que nunca é vazia (o nome ou o país do fornecedor) ou o <code>id</code> de cada lado, para saber de onde vem cada linha.</p>
+</div>
+
+<div class="cenario">
+<strong><code>UNION ALL</code> com as colunas em ordem diferente</strong>
+<p>Na forma antiga, se a segunda parte listar as colunas em outra ordem (<code>SELECT f.nome, c.nome</code> em vez de <code>SELECT c.nome, f.nome</code>), o SQLite não reclama: ele empilha por <strong>posição</strong>, e os nomes dos fornecedores vão parar na coluna <code>cliente</code>. <strong>Como evitar:</strong> copie a lista de colunas da primeira parte para a segunda, sem mudar a ordem.</p>
+</div>
+
+<div class="cenario">
+<strong><code>UNION ALL</code> com número diferente de colunas</strong>
+<pre class="file" data-file="union-colunas.sql" data-resultado data-erro>SELECT c.nome, f.nome
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+UNION ALL
+SELECT f.nome
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade
+WHERE c.id IS NULL;
+</pre>
+<p><strong>A mensagem:</strong> <code>SELECTs to the left and right of UNION ALL do not have the same number of result columns</code>, "os SELECTs à esquerda e à direita do UNION ALL não têm o mesmo número de colunas". <strong>Como consertar:</strong> as duas partes precisam ter as mesmas colunas: <code>SELECT c.nome, f.nome</code> nas duas.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>a FULL JOIN b ON …</code></td><td>Os pares + as linhas de <code>a</code> sem par + as linhas de <code>b</code> sem par</td></tr>
+<tr><td><code>FULL OUTER JOIN</code></td><td>O mesmo que <code>FULL JOIN</code></td></tr>
+<tr><td><code>… WHERE a.chave IS NULL OR b.chave IS NULL</code></td><td>Só as linhas sem par, dos dois lados</td></tr>
+<tr><td><code>a FULL JOIN b USING (x)</code></td><td>A coluna <code>x</code> vem uma vez só, com o valor do lado que não estiver vazio</td></tr>
+<tr><td><code>a LEFT JOIN b … UNION ALL b LEFT JOIN a … WHERE a.chave IS NULL</code></td><td>O <code>FULL JOIN</code> sem <code>FULL JOIN</code> (MySQL, SQLite antes da 3.39.0)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Os quatro JOINs na Loja Aurora</th><th><code>clientes c … pedidos p</code></th><th><code>clientes c … fornecedores f</code> (por cidade)</th></tr>
+<tr><td><code>INNER JOIN</code></td><td>90</td><td>34</td></tr>
+<tr><td><code>LEFT JOIN</code></td><td>94</td><td>40</td></tr>
+<tr><td><code>RIGHT JOIN</code></td><td>90</td><td>36</td></tr>
+<tr><td><code>FULL JOIN</code></td><td>94</td><td>42</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o FULL JOIN</h3>
+<div class="ex-code">SELECT c.cidade, f.cidade FROM clientes c <input data-answer="FULL JOIN|FULL OUTER JOIN|full join|full outer join" aria-label="tipo de junção"> fornecedores f ON c.cidade = f.cidade;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Quantas linhas?</h3>
+<p>Um <code>INNER JOIN</code> devolve 34 linhas. Do lado esquerdo sobram 6 linhas sem par, e do direito, 2. Quantas linhas devolve o <code>FULL JOIN</code>?</p>
+<div class="ex-code">Linhas: <input data-answer="42" aria-label="número de linhas"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Por que <code>clientes FULL JOIN pedidos</code> dá o mesmo resultado que <code>clientes LEFT JOIN pedidos</code> na Loja Aurora?</p>
+<label><input type="radio" name="q3"> Porque o SQLite troca FULL por LEFT sozinho</label>
+<label><input type="radio" name="q3"> Porque não há clientes sem pedido</label>
+<label><input type="radio" name="q3"> Porque a chave estrangeira garante que não existe pedido sem cliente: o lado dos pedidos nunca sobra</label>
+<label><input type="radio" name="q3"> Porque o <code>FULL JOIN</code> só funciona com <code>USING</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Num banco sem <code>FULL JOIN</code> (como o MySQL), qual é a forma clássica de obtê-lo?</p>
+<label><input type="radio" name="q4"> Dois <code>INNER JOIN</code> seguidos</label>
+<label><input type="radio" name="q4"> Um <code>LEFT JOIN</code>, mais <code>UNION ALL</code>, mais um <code>LEFT JOIN</code> com as tabelas trocadas e <code>WHERE … IS NULL</code></label>
+<label><input type="radio" name="q4"> Um <code>CROSS JOIN</code> com <code>DISTINCT</code></label>
+<label><input type="radio" name="q4"> Não há como</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Na forma antiga, para que serve o <code>WHERE c.id IS NULL</code> da segunda parte?</p>
+<label><input type="radio" name="q5"> Para não repetir os pares, que já vieram na primeira parte</label>
+<label><input type="radio" name="q5"> Para tirar os fornecedores estrangeiros</label>
+<label><input type="radio" name="q5"> Para o <code>UNION ALL</code> não dar erro</label>
+<label><input type="radio" name="q5"> Para ordenar o resultado</label>
+</div>
+
+<h3>Missão final: os sem par, sem FULL JOIN</h3>
+
+<div class="trysql" data-goal="linhas:8;;contem:Lusitana Comércio;;contem:Sebastião Moura">
+<p class="try-task"><strong>Missão:</strong> imagine que este banco fosse um MySQL, sem <code>FULL JOIN</code>. A consulta abaixo já encontra os clientes que moram numa cidade sem fornecedor (6 linhas). Complete-a com <code>UNION ALL</code> e uma segunda parte que traga também os fornecedores numa cidade sem cliente, para chegar às 8 linhas da seção 2.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.nome AS cliente, f.nome AS fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+WHERE f.id IS NULL;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.nome AS cliente, f.nome AS fornecedor
+FROM clientes c
+LEFT JOIN fornecedores f ON c.cidade = f.cidade
+WHERE f.id IS NULL
+UNION ALL
+SELECT c.nome, f.nome
+FROM fornecedores f
+LEFT JOIN clientes c ON c.cidade = f.cidade
+WHERE c.id IS NULL;
+</pre>
+</div>
+
+<p>Com isso você conhece os quatro tipos de JOIN. Falta um caso especial: juntar uma tabela com <strong>ela mesma</strong>, para mostrar cada funcionário ao lado do nome do chefe. É a próxima aula, <a href="self-join.html">Self Join</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>FULL JOIN</code> (ou <code>FULL OUTER JOIN</code>) devolve os pares que combinam e <strong>todas</strong> as linhas sem par, dos dois lados, com <code>NULL</code> no lado que faltou.</li>
+  <li>Ele brilha quando as duas tabelas são independentes e podem ter sobras dos dois lados, como as cidades de clientes e de fornecedores. Ligadas por chave estrangeira, um dos lados nunca sobra, e o <code>LEFT JOIN</code> basta.</li>
+  <li><code>WHERE a.chave IS NULL OR b.chave IS NULL</code> deixa só as sobras.</li>
+  <li>Com <code>USING (x)</code>, a coluna <code>x</code> vem uma vez só, preenchida com o lado que tiver valor.</li>
+  <li>O SQLite tem <code>FULL JOIN</code> desde a 3.39.0; o MySQL não tem. A forma antiga é <code>LEFT JOIN</code> + <code>UNION ALL</code> + <code>LEFT JOIN</code> trocado com <code>WHERE … IS NULL</code>.</li>
+  <li>Um filtro no <code>WHERE</code> sobre uma das tabelas apaga as sobras do outro lado: o <code>FULL JOIN</code> deixa de ser completo.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
