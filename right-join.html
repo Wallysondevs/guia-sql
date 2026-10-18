@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL RIGHT JOIN — todas as linhas da direita, e como trocar por LEFT JOIN | Guia SQL</title>
+<meta name="description" content="RIGHT JOIN para quem está começando: o espelho do LEFT JOIN, todas as linhas da tabela da direita; clientes sem pedido e produtos nunca vendidos com RIGHT JOIN; a forma antiga (trocar a ordem das tabelas e usar LEFT JOIN), por que o MySQL recomenda o LEFT, o RIGHT JOIN no SQLite desde a 3.39 e os erros reais, inclusive o erro de digitação que vira apelido.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">RIGHT JOIN</span></h1>
+
+<p class="intro">Na aula <a href="left-join.html">LEFT JOIN</a>, a tabela da esquerda ficava inteira. O <code>RIGHT JOIN</code>, a "junção pela direita", é o espelho dele: a tabela que fica inteira é a da <strong>direita</strong>, a que vem depois da palavra <code>JOIN</code>. Ele não faz nada que o <code>LEFT JOIN</code> não faça (basta trocar as tabelas de lugar), e por isso muita gente nunca o usa. Mas você vai encontrá-lo em consultas de outras pessoas, e há situações em que ele deixa a consulta mais simples de escrever. Nesta aula, a Ana usa os dois e aprende a converter um no outro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>RIGHT JOIN</code> guarda: todas as linhas da tabela da <strong>direita</strong>.</li>
+  <li>Os clientes sem pedido e os produtos nunca vendidos, agora com <code>RIGHT JOIN</code>.</li>
+  <li>A forma antiga, que funciona em qualquer banco: <strong>trocar a ordem</strong> das tabelas e usar <code>LEFT JOIN</code>.</li>
+  <li>Quando o <code>RIGHT JOIN</code> ajuda: pendurar, no fim de uma consulta pronta, uma tabela da qual você quer todas as linhas.</li>
+  <li>Desde quando o SQLite tem <code>RIGHT JOIN</code> (3.39.0) e o que os outros bancos recomendam.</li>
+  <li>As armadilhas, inclusive o erro de digitação que o SQLite aceita calado.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: a mesma lista, lida do outro lado</h2>
+<p>Volte à lista de chamada da aula passada: todos os alunos, com a nota ao lado, e espaço em branco para quem faltou. Agora imagine que a professora escreveu a lista ao contrário, com as notas na coluna da esquerda e os nomes na da direita. A lista é a mesma; só mudou o lado em que estão os nomes. No <code>RIGHT JOIN</code>, a "lista de chamada" (a tabela que aparece inteira) fica do lado <strong>direito</strong>.</p>
+
+<div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:center;margin:16px 0">
+<figure style="margin:0;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="clientes LEFT JOIN pedidos: o círculo da esquerda, clientes, está pintado" style="width:200px;height:auto">
+<circle cx="75" cy="60" r="48" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+<text x="152" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">pedidos</text>
+</svg>
+<figcaption><code>clientes LEFT JOIN pedidos</code></figcaption>
+</figure>
+<figure style="margin:0;text-align:center">
+<svg viewBox="0 0 200 120" role="img" aria-label="pedidos RIGHT JOIN clientes: o círculo da direita, clientes, está pintado" style="width:200px;height:auto">
+<circle cx="125" cy="60" r="48" style="fill:var(--accent);opacity:.5"/>
+<circle cx="75" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<circle cx="125" cy="60" r="48" style="fill:none;stroke:currentColor;stroke-width:1.5"/>
+<text x="48" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">pedidos</text>
+<text x="152" y="64" text-anchor="middle" style="fill:currentColor;font-size:12px">clientes</text>
+</svg>
+<figcaption><code>pedidos RIGHT JOIN clientes</code></figcaption>
+</figure>
+</div>
+
+<p>Nos dois desenhos, o círculo pintado é o dos clientes: os dois JOINs guardam todos os clientes. O que mudou foi só o lado em que <code>clientes</code> foi escrito.</p>
+
+<hr>
+
+<h2>1. O primeiro RIGHT JOIN</h2>
+<p>Todos os clientes, com os seus pedidos, começando a consulta pela tabela de pedidos. Clientes a partir do 26:</p>
+
+<pre class="file" data-file="primeiro-right.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id
+WHERE c.id &gt;= 26
+ORDER BY c.id, p.id;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM pedidos p</dt><dd>A tabela da <strong>esquerda</strong>. Desta vez, é ela que pode ficar com buracos (<code>NULL</code>).</dd>
+  <dt>RIGHT JOIN clientes c</dt><dd><em>Right join</em> = "junção pela direita". A tabela da direita, <code>clientes</code>, aparece <strong>inteira</strong>. Também se escreve <code>RIGHT OUTER JOIN</code>.</dd>
+  <dt>ON p.cliente_id = c.id</dt><dd>A regra do par, a mesma de sempre. No <code>ON</code>, a ordem dos dois lados do <code>=</code> não importa.</dd>
+</dl>
+
+<p>O resultado é idêntico ao do <code>clientes LEFT JOIN pedidos</code> da aula passada: a Mirela com os 3 pedidos dela, e os clientes 27 a 30 com <code>pedido</code> em <code>NULL</code>. Na loja inteira, também são 94 linhas:</p>
+
+<pre class="file" data-file="conta-right.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id;
+</pre>
+
+<p>Com <code>SELECT *</code>, dá para ver bem onde ficam os buracos: as colunas de <code>pedidos</code> vêm <strong>primeiro</strong> (a tabela do <code>FROM</code>), todas em <code>NULL</code> para o Paulo, e as de <code>clientes</code> depois:</p>
+
+<pre class="file" data-file="asterisco-right.sql" data-resultado>SELECT *
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id
+WHERE c.id = 27;
+</pre>
+
+<hr>
+
+<h2>2. Quem não tem par, com RIGHT JOIN</h2>
+<p>O padrão "quem nunca…" funciona igual, com o teste de <code>NULL</code> agora na tabela da <strong>esquerda</strong>:</p>
+
+<pre class="file" data-file="sem-pedido-right.sql" data-resultado>SELECT c.id, c.nome
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+
+<p>Os mesmos quatro clientes sem pedido. E os produtos nunca vendidos:</p>
+
+<pre class="file" data-file="nunca-vendidos-right.sql" data-resultado>SELECT pr.id, pr.nome
+FROM itens_pedido i
+RIGHT JOIN produtos pr ON i.produto_id = pr.id
+WHERE i.produto_id IS NULL;
+</pre>
+
+<div class="trysql" data-goal="linhas:4;;contem:Rosângela Dias">
+<p class="try-task"><strong>Experimente:</strong> esta consulta procura clientes sem pedido, mas usa um <code>JOIN</code> comum e por isso não acha ninguém. Troque o tipo de JOIN para que os clientes (a tabela da <strong>direita</strong>) apareçam todos, e o filtro encontre os 4 que nunca compraram. Não mude a ordem das tabelas.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.id, c.nome
+FROM pedidos p
+JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.id, c.nome
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. A forma antiga: trocar a ordem e usar LEFT JOIN</h2>
+<p>Todo <code>RIGHT JOIN</code> pode ser reescrito como <code>LEFT JOIN</code>: basta <strong>trocar as duas tabelas de lugar</strong>. A regra do <code>ON</code> continua a mesma.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Com RIGHT JOIN</th><th>A mesma coisa com LEFT JOIN</th></tr>
+<tr><td><code>FROM pedidos p<br>RIGHT JOIN clientes c ON p.cliente_id = c.id</code></td><td><code>FROM clientes c<br>LEFT JOIN pedidos p ON p.cliente_id = c.id</code></td></tr>
+<tr><td><code>FROM itens_pedido i<br>RIGHT JOIN produtos pr ON i.produto_id = pr.id</code></td><td><code>FROM produtos pr<br>LEFT JOIN itens_pedido i ON i.produto_id = pr.id</code></td></tr>
+</table>
+</div>
+
+<p>Confira, com a primeira linha da tabela:</p>
+
+<pre class="file" data-file="convertido.sql" data-resultado>SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+
+<p>O mesmo resultado do <code>RIGHT JOIN</code> da seção 2. Essa troca era a <strong>única</strong> forma de fazer um "RIGHT JOIN" no SQLite até 2022: o <code>RIGHT JOIN</code> e o <code>FULL JOIN</code> só chegaram na versão <strong>3.39.0</strong>, de 25 de junho de 2022. As notas daquela versão dizem, em inglês, "acrescenta o suporte (há muito esperado) a RIGHT e FULL OUTER JOIN". O editor do guia e o terminal da Ana usam uma versão bem mais nova:</p>
+
+<pre class="file" data-file="versao.sql" data-resultado>SELECT sqlite_version();
+</pre>
+
+<pre class="term">$ sqlite3 --version
+3.50.4 2025-07-30 19:33:53 4d8adfb30e03f9cf27f800a2c1ba3c48fb4ca1b08b0f5ed59a4d5ecbf45e20a3 (64-bit)</pre>
+
+<p>Se você for usar um SQLite mais antigo que a 3.39.0 (em sistemas antigos, ou dentro de programas que trazem o SQLite embutido), o <code>RIGHT JOIN</code> não vai funcionar lá. A troca de ordem funciona em qualquer versão de qualquer banco.</p>
+
+<hr>
+
+<h2>4. Quando o RIGHT JOIN ajuda</h2>
+<p>O caso em que o <code>RIGHT JOIN</code> brilha é quando você <strong>já tem</strong> uma consulta montada e quer pendurar no fim uma tabela da qual precisa de todas as linhas. A Ana tem esta consulta, que junta os itens com os pedidos de 2026:</p>
+
+<pre class="file" data-file="itens-2026.sql">FROM itens_pedido i
+JOIN pedidos p ON i.pedido_id = p.id AND p.data &gt;= '2026-01-01'
+</pre>
+
+<p>Agora ela quer saber quantas vezes cada produto de jardinagem foi vendido em 2026, <strong>inclusive os que não venderam nada</strong>. Em vez de reorganizar a consulta toda, ela pendura <code>produtos</code> no fim com <code>RIGHT JOIN</code>:</p>
+
+<pre class="file" data-file="jardim-2026.sql" data-resultado>SELECT pr.nome AS produto, COUNT(i.pedido_id) AS vendas_2026
+FROM itens_pedido i
+JOIN pedidos p ON i.pedido_id = p.id AND p.data &gt;= '2026-01-01'
+RIGHT JOIN produtos pr ON i.produto_id = pr.id
+WHERE pr.categoria_id = 8
+GROUP BY pr.id, pr.nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM itens_pedido i JOIN pedidos p ON … AND p.data &gt;= '2026-01-01'</dt><dd>Primeiro passo: só os itens de pedidos de 2026.</dd>
+  <dt>RIGHT JOIN produtos pr ON i.produto_id = pr.id</dt><dd>Segundo passo: o resultado do primeiro (à esquerda) junta-se com <strong>todos</strong> os produtos (à direita). Produto sem item em 2026 fica com <code>NULL</code> do lado dos itens.</dd>
+  <dt>COUNT(i.pedido_id)</dt><dd>Conta só os itens de verdade, então quem não vendeu fica com 0 (a regra do <code>COUNT</code> da aula <a href="left-join.html">LEFT JOIN</a>).</dd>
+</dl>
+
+<p>Em 2026, o regador e o kit de sementes venderam uma vez cada; os outros três, nenhuma. Com <code>LEFT JOIN</code>, a mesma consulta precisaria começar por <code>produtos</code>, encadear dois <code>LEFT JOIN</code> (itens e pedidos, com a data no <code>ON</code> do segundo) e contar <code>p.id</code> em vez de <code>i.pedido_id</code>. Os dois jeitos estão certos; o <code>RIGHT JOIN</code>, aqui, só poupou trabalho.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>FROM a LEFT JOIN b</code></td><td><strong>O padrão.</strong> Quase todo mundo lê consultas da esquerda para a direita, com a tabela principal no <code>FROM</code>. Funciona em todos os bancos e em qualquer versão do SQLite.</td></tr>
+<tr><td><code>FROM b RIGHT JOIN a</code></td><td>Quando você pendura, no fim de uma consulta pronta, a tabela da qual quer todas as linhas. Exige SQLite 3.39.0 ou mais novo.</td></tr>
+<tr><td>Misturar <code>LEFT</code> e <code>RIGHT</code> na mesma consulta</td><td>Evite: fica difícil saber qual tabela fica inteira. Reescreva tudo como <code>LEFT JOIN</code>.</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>MySQL, PostgreSQL e SQL Server têm <code>RIGHT JOIN</code> e <code>RIGHT OUTER JOIN</code>, com o mesmo comportamento. A documentação do MySQL diz que o <code>RIGHT JOIN</code> funciona de forma análoga ao <code>LEFT JOIN</code> e <strong>recomenda</strong>: "para manter o código portável entre bancos de dados, é recomendado usar <code>LEFT JOIN</code> em vez de <code>RIGHT JOIN</code>". Ou seja, a própria documentação aconselha a forma antiga, a troca de ordem.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>O filtro da tabela da esquerda no <code>WHERE</code></strong>
+<p>A mesma armadilha do <code>LEFT JOIN</code>, só que espelhada: agora o lado com buracos é o da <strong>esquerda</strong>. A Ana quer todos os clientes a partir do 26, com os pedidos de 2026:</p>
+<pre class="file" data-file="filtro-errado.sql" data-resultado>SELECT c.id, c.nome, p.id AS pedido
+FROM pedidos p
+RIGHT JOIN clientes c ON p.cliente_id = c.id
+WHERE c.id &gt;= 26
+  AND p.data &gt;= '2026-01-01';
+</pre>
+<p><strong>O que acontece:</strong> só a Mirela. Os clientes 27 a 30 têm <code>p.data</code> em <code>NULL</code>, e o <code>WHERE</code> os jogou fora: o <code>RIGHT JOIN</code> virou, na prática, um <code>INNER JOIN</code>.</p>
+<p><strong>Como consertar:</strong> o filtro da tabela que pode ficar vazia (aqui, <code>pedidos</code>) vai para o <code>ON</code>: <code>RIGHT JOIN clientes c ON p.cliente_id = c.id AND p.data &gt;= '2026-01-01'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Testou o <code>IS NULL</code> do lado errado</strong>
+<p>No <code>RIGHT JOIN</code>, os buracos ficam na tabela da <strong>esquerda</strong>. <code>WHERE c.id IS NULL</code> (na tabela que fica inteira) nunca é verdadeiro e devolve 0 linhas, sem erro. <strong>Como consertar:</strong> teste a chave da tabela do <code>FROM</code>: <code>WHERE p.id IS NULL</code>. Se você se pega confundindo os lados, reescreva com <code>LEFT JOIN</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Escreveu errado e o SQLite entendeu um apelido</strong>
+<p>A Ana digitou <code>RIGTH</code> em vez de <code>RIGHT</code>, e escreveu a coluna do <code>ON</code> sem a tabela:</p>
+<pre class="file" data-file="rigth.sql" data-resultado>SELECT COUNT(*)
+FROM pedidos RIGTH JOIN clientes ON cliente_id = clientes.id;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, e 90 linhas, não 94. O SQLite leu <code>pedidos RIGTH</code> como "a tabela <code>pedidos</code> com o apelido <code>RIGTH</code>" (lembre: o <code>AS</code> do apelido é opcional), seguido de um <code>JOIN</code> comum. A consulta virou um <code>INNER JOIN</code>, e os clientes sem pedido sumiram.</p>
+<p>Se a tabela já tem apelido, o mesmo erro de digitação gera mensagem, porque não cabe um segundo apelido:</p>
+<pre class="file" data-file="rigth-com-apelido.sql" data-resultado data-erro>SELECT COUNT(*)
+FROM pedidos p RIGTH JOIN clientes c ON p.cliente_id = c.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "RIGTH": syntax error</code>. E se a consulta usar o nome da tabela no <code>ON</code> (<code>pedidos.cliente_id</code>) sem apelido, a mensagem é <code>no such column: pedidos.cliente_id</code>, porque a tabela passou a se chamar <code>RIGTH</code>.</p>
+<p><strong>Como evitar:</strong> dê apelido a toda tabela num JOIN e escreva toda coluna com o apelido na frente. Assim, um erro de digitação no tipo de JOIN vira mensagem, em vez de resultado errado.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a palavra <code>JOIN</code></strong>
+<pre class="file" data-file="sem-join.sql" data-resultado data-erro>SELECT COUNT(*)
+FROM pedidos p RIGHT clientes c ON p.cliente_id = c.id;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "ON": syntax error</code>. Sem a palavra <code>JOIN</code>, o SQLite não reconhece a junção e se perde ao chegar no <code>ON</code>. <strong>Como consertar:</strong> <code>RIGHT JOIN clientes c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>ON</code></strong>
+<p>Como nos outros JOINs, o SQLite aceita <code>FROM pedidos p RIGHT JOIN clientes c</code> sem condição e devolve todos os pares: 2.700 linhas. No MySQL, no PostgreSQL e no SQL Server, um <code>RIGHT JOIN</code> sem condição dá erro de sintaxe.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>a RIGHT JOIN b ON …</code></td><td>Todas as linhas de <code>b</code>; as que não têm par em <code>a</code> vêm com <code>NULL</code> nas colunas de <code>a</code></td></tr>
+<tr><td><code>RIGHT OUTER JOIN</code></td><td>O mesmo que <code>RIGHT JOIN</code></td></tr>
+<tr><td><code>a RIGHT JOIN b</code> = <code>b LEFT JOIN a</code></td><td>Trocar a ordem das tabelas converte um no outro (o <code>ON</code> fica igual)</td></tr>
+<tr><td><code>… WHERE a.chave IS NULL</code></td><td>Só as linhas de <code>b</code> sem par</td></tr>
+<tr><td><code>SELECT sqlite_version();</code></td><td>Mostra a versão do SQLite (o <code>RIGHT JOIN</code> exige 3.39.0 ou mais)</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td><code>near "RIGTH": syntax error</code></td><td>Erro de digitação no tipo de JOIN (com apelido na tabela)</td></tr>
+<tr><td>(nenhuma) linhas de menos com <code>RIGTH JOIN</code></td><td>Sem apelido, a palavra errada virou apelido, e o JOIN virou <code>INNER</code></td></tr>
+<tr><td><code>near "ON": syntax error</code></td><td>Faltou a palavra <code>JOIN</code> depois de <code>RIGHT</code></td></tr>
+<tr><td>(nenhuma) as linhas sem par sumiram</td><td>Filtro na tabela da esquerda no <code>WHERE</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Converta para LEFT JOIN</h3>
+<p>Reescreva <code>FROM pedidos p RIGHT JOIN clientes c ON p.cliente_id = c.id</code> com <code>LEFT JOIN</code>:</p>
+<div class="ex-code">FROM <input data-answer="clientes c|clientes AS c" aria-label="primeira tabela"> LEFT JOIN <input data-answer="pedidos p|pedidos AS p" aria-label="segunda tabela"> ON p.cliente_id = c.id</div>
+</div>
+
+<div class="exercise">
+<h3>2. A versão</h3>
+<p>A partir de qual versão o SQLite aceita <code>RIGHT JOIN</code>?</p>
+<div class="ex-code"><input data-answer="3.39.0|3.39" aria-label="versão"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Em <code>FROM itens_pedido i RIGHT JOIN produtos pr ON i.produto_id = pr.id</code>, qual tabela aparece inteira?</p>
+<label><input type="radio" name="q3"> <code>itens_pedido</code>, porque vem primeiro</label>
+<label><input type="radio" name="q3"> As duas</label>
+<label><input type="radio" name="q3"> <code>produtos</code>, a tabela da direita</label>
+<label><input type="radio" name="q3"> Nenhuma: só os pares que combinam</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que a documentação do MySQL recomenda sobre <code>RIGHT JOIN</code>?</p>
+<label><input type="radio" name="q4"> Usar sempre <code>RIGHT JOIN</code>, porque é mais rápido</label>
+<label><input type="radio" name="q4"> Preferir <code>LEFT JOIN</code>, para o código funcionar em outros bancos</label>
+<label><input type="radio" name="q4"> Nunca usar <code>LEFT JOIN</code></label>
+<label><input type="radio" name="q4"> Que o MySQL não tem <code>RIGHT JOIN</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. <code>SELECT COUNT(*) FROM pedidos RIGTH JOIN clientes ON cliente_id = clientes.id;</code> (com o erro de digitação) devolve 90, sem erro. Por quê?</p>
+<label><input type="radio" name="q5"> O SQLite corrige o erro de digitação sozinho</label>
+<label><input type="radio" name="q5"> <code>RIGTH JOIN</code> é outro nome do <code>RIGHT JOIN</code></label>
+<label><input type="radio" name="q5"> O SQLite ignorou a linha inteira</label>
+<label><input type="radio" name="q5"> <code>RIGTH</code> virou o apelido de <code>pedidos</code>, e sobrou um <code>JOIN</code> comum</label>
+</div>
+
+<h3>Missão final: todos os funcionários, pela direita</h3>
+
+<div class="trysql" data-goal="linhas:8;;contem:Marta Lustosa|0;;contem:Davi Nunes|0">
+<p class="try-task"><strong>Missão:</strong> mostre os 8 funcionários com quantos pedidos cada um atendeu, inclusive os que atenderam 0. A consulta deve continuar começando por <code>FROM pedidos p</code>: use <code>RIGHT JOIN</code> para que <code>funcionarios</code> fique inteira, e conte de forma que quem não atendeu ninguém fique com 0.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome AS funcionario, COUNT(*) AS pedidos
+FROM pedidos p
+JOIN funcionarios f ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome AS funcionario, COUNT(p.id) AS pedidos
+FROM pedidos p
+RIGHT JOIN funcionarios f ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+</pre>
+</div>
+
+<p>É o mesmo resultado da missão final do <a href="left-join.html">LEFT JOIN</a>, por outro caminho. E se você quisesse, numa consulta só, todos os clientes <strong>e</strong> todos os pedidos, sobrando gente dos dois lados? Aí nem o LEFT nem o RIGHT bastam: é o <a href="full-join.html">FULL JOIN</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>RIGHT JOIN</code> mostra <strong>todas</strong> as linhas da tabela da direita (a que vem depois de <code>JOIN</code>); as sem par vêm com <code>NULL</code> nas colunas da esquerda.</li>
+  <li><code>a RIGHT JOIN b</code> dá o mesmo que <code>b LEFT JOIN a</code>. Trocar a ordem é a forma antiga, que funciona em qualquer banco e versão.</li>
+  <li>O SQLite tem <code>RIGHT JOIN</code> desde a versão 3.39.0 (junho de 2022). O guia usa a 3.50.4.</li>
+  <li>O MySQL recomenda <code>LEFT JOIN</code> no lugar de <code>RIGHT JOIN</code>, por portabilidade. Use o <code>RIGHT</code> quando ele poupar trabalho, como ao pendurar uma tabela no fim de uma consulta pronta.</li>
+  <li>As armadilhas são as do <code>LEFT JOIN</code>, espelhadas: o filtro da tabela da esquerda vai no <code>ON</code>, e o <code>IS NULL</code> testa a chave da esquerda.</li>
+  <li>Dê apelido a toda tabela: assim, um <code>RIGTH</code> digitado errado vira mensagem de erro, e não um apelido.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
