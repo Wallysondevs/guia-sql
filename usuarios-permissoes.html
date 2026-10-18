@@ -52,9 +52,9 @@
 <p>Por isso, no SQLite, <strong>quem manda é o sistema operacional</strong>, não o banco. A permissão de ler e escrever é a permissão do <strong>arquivo</strong> <code>loja.db</code> (dona Ana, no computador dela). No Linux, você a vê e a muda com as ferramentas do sistema:</p>
 
 <pre class="term" data-cwd="~">$ ls -l loja.db
--rw-r--r-- 1 ana ana 196608 loja.db      « a Ana lê e escreve; os outros só leem</pre>
+-rw-r--r-- 1 ana ana 45056 out 18 11:14 loja.db      « a Ana lê e escreve; os outros só leem</pre>
 
-<p>Como o SQLite nasceu para ficar <strong>dentro</strong> de um programa (um aplicativo de celular, um navegador, um joguinho), um sistema de usuários dentro dele não faria sentido: o controle de quem usa o aplicativo é do próprio aplicativo e do sistema. A documentação do SQLite é explícita sobre isso ser uma escolha de projeto, não uma falta.</p>
+<p>Como o SQLite nasceu para ficar <strong>dentro</strong> de um programa (um aplicativo de celular, um navegador, um joguinho), um sistema de usuários dentro dele não faria sentido: o controle de quem usa o aplicativo é do próprio aplicativo e do sistema.</p>
 
 <div class="note">
 <strong>Banco embutido × banco com servidor</strong>

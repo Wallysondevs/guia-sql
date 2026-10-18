@@ -323,7 +323,7 @@ Email do cliente: SQL enviado: SELECT nome, email FROM clientes WHERE email = ?
 
 <div class="cenario">
 <strong>As aspas duplas não resolvem</strong>
-<p>Pode parecer que trocar <code>'</code> por <code>"</code> em volta do texto resolveria. No SQLite do guia, aspas duplas são para <strong>nomes de coluna</strong>, não para texto. Procurar um email assim dá erro de coluna:</p>
+<p>Pode parecer que trocar <code>'</code> por <code>"</code> em volta do texto resolveria. No editor do guia, aspas duplas são para <strong>nomes de coluna</strong>, não para texto. Procurar um email assim dá erro de coluna:</p>
 <pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE email = "ana.beatriz@exemplo.com.br";
 </pre>
 <p>A mensagem é <code>no such column: "ana.beatriz@exemplo.com.br" - should this be a string literal in single-quotes?</code> ("não existe essa coluna… isto não deveria ser um texto entre aspas simples?"): o banco achou que você citou uma coluna com esse nome enorme e ainda sugeriu a correção. Texto vai sempre entre aspas <strong>simples</strong> — e, melhor ainda, por parâmetro.</p>

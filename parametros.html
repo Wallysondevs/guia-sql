@@ -225,16 +225,28 @@ for linha in con.execute(sql):
 <strong>Número de valores diferente do número de espaços</strong>
 <p>Num programa, se a consulta tem dois <code>?</code> e você passa um valor só, a biblioteca reclama antes mesmo de ir ao banco:</p>
 <pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute(
-    'SELECT nome FROM clientes WHERE estado = ? AND vip = ?', ('PI',))"
+&gt;     'SELECT nome FROM clientes WHERE estado = ? AND vip = ?', ('PI',))"
+Traceback (most recent call last):
+  File "&lt;string&gt;", line 1, in &lt;module&gt;
+    import sqlite3; sqlite3.connect('loja.db').execute(
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        'SELECT nome FROM clientes WHERE estado = ? AND vip = ?', ('PI',))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 sqlite3.ProgrammingError: Incorrect number of bindings supplied. The current statement uses 2, and there are 1 supplied.</pre>
-<p>"Número incorreto de valores: o comando usa 2 e foram passados 1." Conte os <code>?</code> e os valores: têm de bater.</p>
+<p>O Python mostra primeiro o caminho do erro (o <em>traceback</em>) e, na última linha, a mensagem. "Número incorreto de valores: o comando usa 2 e foram passados 1." Conte os <code>?</code> e os valores: têm de bater.</p>
 </div>
 
 <div class="cenario">
 <strong>Pôr o <code>?</code> entre aspas</strong>
 <p>Um erro comum é escrever <code>'?'</code>, com aspas, achando que "é texto". Aí o <code>?</code> deixa de ser espaço reservado e vira a <strong>letra</strong> ponto de interrogação; não sobra nenhum espaço para o valor, e a biblioteca avisa que recebeu um valor a mais:</p>
 <pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute(
-    \"SELECT nome FROM clientes WHERE estado = '?'\", ('PI',))"
+&gt;     \"SELECT nome FROM clientes WHERE estado = '?'\", ('PI',))"
+Traceback (most recent call last):
+  File "&lt;string&gt;", line 1, in &lt;module&gt;
+    import sqlite3; sqlite3.connect('loja.db').execute(
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        "SELECT nome FROM clientes WHERE estado = '?'", ('PI',))
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 sqlite3.ProgrammingError: Incorrect number of bindings supplied. The current statement uses 0, and there are 1 supplied.</pre>
 <p>"O comando usa 0 espaços reservados e foi passado 1 valor." A regra: o espaço reservado vai <strong>sem aspas</strong>, mesmo para texto. Quem cuida das aspas é a biblioteca.</p>
 </div>

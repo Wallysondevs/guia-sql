@@ -218,6 +218,10 @@ while (reader.Read())
 </pre>
 <p>A mensagem do SQLite é <code>no such table: produto</code> ("não existe a tabela produto"). Num programa, essa mesma mensagem chega <strong>dentro</strong> de um erro da linguagem. Em Python, por exemplo:</p>
 <pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute('SELECT * FROM produto')"
+Traceback (most recent call last):
+  File "&lt;string&gt;", line 1, in &lt;module&gt;
+    import sqlite3; sqlite3.connect('loja.db').execute('SELECT * FROM produto')
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
 sqlite3.OperationalError: no such table: produto</pre>
 <p>Em PHP seria uma <code>PDOException</code>, em Java uma <code>SQLException</code>, em C# uma <code>SqliteException</code> — mas o texto do banco, <code>no such table: produto</code>, é o mesmo em todas. Por isso vale aprender a ler as mensagens do SQLite: elas aparecem igual em qualquer linguagem.</p>
 </div>
