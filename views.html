@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Views — consultas salvas com CREATE VIEW | Guia SQL</title>
+<meta name="description" content="Views em SQL para quem está começando: CREATE VIEW, a consulta salva que se usa como tabela, por que ela está sempre atualizada, views com JOIN e GROUP BY, renomear colunas, DROP VIEW, por que no SQLite não dá para fazer INSERT numa view, e as mensagens reais do SQLite quando algo dá errado, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Views</span></h1>
+
+<p class="intro">Toda manhã a Ana abre o banco da Loja Aurora e digita a mesma consulta comprida: junta pedidos, clientes e itens, soma os itens, soma o frete e arredonda, para ver quanto deu cada pedido. São oito linhas de SQL, e um erro de digitação estraga tudo. Não seria bom salvar essa consulta com um nome e depois só escrever <code>SELECT * FROM v_pedidos_total</code>? É isso que uma <strong>view</strong> faz. Nesta aula você vai criar views com <code>CREATE VIEW</code>, usá-las como se fossem tabelas, apagá-las com <code>DROP VIEW</code> e entender o que uma view <strong>não</strong> é.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma view: uma consulta salva com nome, que se usa como uma tabela.</li>
+  <li>Criar views com <code>CREATE VIEW … AS SELECT …</code> e consultá-las com <code>WHERE</code>, <code>ORDER BY</code>, <code>GROUP BY</code> e <code>JOIN</code>.</li>
+  <li>Por que uma view <strong>não guarda dados</strong> e por isso está sempre atualizada.</li>
+  <li>Dar nomes às colunas da view, ver as views do banco e trocar uma view por outra com <code>DROP VIEW</code>.</li>
+  <li>Para que servem as views: encurtar consultas, esconder colunas e dar nomes claros.</li>
+  <li>View × <code>WITH</code> × tabela criada de uma consulta: qual usar.</li>
+  <li>As mensagens reais do SQLite quando uma view dá errado, incluindo o <code>INSERT</code> numa view.</li>
+</ul>
+</div>
+
+<p>Os exemplos rodam <strong>de verdade</strong> no seu navegador, num SQLite com o banco da <a href="banco-do-guia.html">Loja Aurora</a>. Cada exemplo parte do banco limpo, então a view que um exemplo cria não existe no seguinte: por isso quase todo exemplo começa com o seu <code>CREATE VIEW</code>. As sessões de terminal saíram do <code>sqlite3</code> 3.50.4 no computador fictício da Ana.</p>
+
+<hr>
+
+<h2>A ideia: um filtro salvo na planilha</h2>
+<p>Imagine a planilha de clientes da loja, com 30 linhas. A Ana vive filtrando "só os do Piauí". Em vez de refazer o filtro toda vez, ela cria uma <strong>aba nova</strong> chamada "Clientes PI", que não tem dados próprios: ela só <strong>mostra</strong> as linhas da aba principal que passam no filtro. Quando um cliente novo do Piauí entra na aba principal, ele aparece sozinho na aba "Clientes PI".</p>
+
+<p>Uma <strong>view</strong> (em português, "visão" ou "vista") é essa aba. Ela é uma consulta <code>SELECT</code> guardada no banco com um nome. Toda vez que alguém consulta a view, o banco roda o <code>SELECT</code> guardado, naquele momento, nos dados de agora. Por isso as views também são chamadas de <strong>tabelas virtuais</strong>: parecem tabelas, mas não guardam nenhuma linha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>Tabela</th><th>View</th></tr>
+<tr><td>Guarda linhas?</td><td>Sim, no arquivo do banco</td><td>Não: guarda só o texto do <code>SELECT</code></td></tr>
+<tr><td>Consulta com <code>SELECT … FROM</code></td><td>Sim</td><td>Sim, igualzinho</td></tr>
+<tr><td>Atualizada?</td><td>Tem o que foi gravado nela</td><td>Sempre: roda a consulta de novo a cada uso</td></tr>
+<tr><td><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code></td><td>Sim</td><td>No SQLite, não (seção 6)</td></tr>
+<tr><td>Cria com</td><td><code>CREATE TABLE</code></td><td><code>CREATE VIEW</code></td></tr>
+<tr><td>Apaga com</td><td><code>DROP TABLE</code> (some com os dados)</td><td><code>DROP VIEW</code> (os dados ficam nas tabelas)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A primeira view: <code>CREATE VIEW</code></h2>
+<p>A aba "Clientes PI" da planilha, em SQL:</p>
+
+<pre class="file" data-file="view.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+</pre>
+
+<dl class="anatomy">
+  <dt>CREATE VIEW</dt><dd>"Crie uma view". Guarda a consulta no banco.</dd>
+  <dt>v_clientes_pi</dt><dd>O nome da view. Ele não pode repetir o nome de uma tabela, índice ou outra view. O prefixo <code>v_</code> é um costume (não uma regra) que avisa, a quem lê, que aquilo é uma view e não uma tabela.</dd>
+  <dt>AS</dt><dd>"Como". Separa o nome da consulta que a view vai guardar.</dd>
+  <dt>SELECT … WHERE estado = 'PI'</dt><dd>Uma consulta comum, como as que você já escreve. É ela que roda toda vez que a view for usada.</dd>
+</dl>
+
+<p>O resultado foi só um "ok". Criar a view <strong>não</strong> rodou a consulta nem copiou cliente nenhum: só guardou o texto. A consulta roda quando você usa a view, no <code>FROM</code>, como se ela fosse uma tabela:</p>
+
+<pre class="file" data-file="usar.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+
+SELECT * FROM v_clientes_pi;
+</pre>
+
+<p>Os 14 clientes do Piauí, só com as três colunas que a view escolheu. E dá para usar a view com tudo que você já sabe: <code>WHERE</code>, <code>ORDER BY</code>, <code>LIMIT</code>, <code>COUNT</code>…</p>
+
+<pre class="file" data-file="filtrar.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+
+SELECT nome, cidade
+FROM v_clientes_pi
+WHERE cidade &lt;&gt; 'Teresina'
+ORDER BY cidade;
+</pre>
+
+<p>O banco junta as duas coisas: o <code>WHERE estado = 'PI'</code> da view e o <code>WHERE cidade &lt;&gt; 'Teresina'</code> da consulta. Vieram os 4 clientes do interior do Piauí.</p>
+
+<div class="trysql" data-goal="linhas:6;;colunas:nome,preco">
+<p class="try-task"><strong>Experimente:</strong> a vendedora da papelaria quer uma "tabela" só com os produtos dela. Na linha vazia, crie a view <code>v_papelaria</code> com as colunas <code>nome</code> e <code>preco</code> dos produtos da categoria 1 (<code>categoria_id = 1</code>). A consulta de baixo já usa a view; hoje ela dá erro, porque a view ainda não existe.</p>
+<pre class="script" data-file="consulta.sql">-- crie a view aqui:
+
+
+SELECT * FROM v_papelaria;
+</pre>
+<pre class="solucao" data-file="consulta.sql">-- crie a view aqui:
+CREATE VIEW v_papelaria AS
+SELECT nome, preco FROM produtos WHERE categoria_id = 1;
+
+SELECT * FROM v_papelaria;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A view está sempre atualizada</h2>
+<p>Como a view não guarda linhas, ela nunca fica velha. Veja: a Ana cria a view, cadastra uma cliente nova de Teresina e conta os clientes da view antes e depois:</p>
+
+<pre class="file" data-file="atualizada.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade
+FROM clientes
+WHERE estado = 'PI';
+
+SELECT COUNT(*) AS antes FROM v_clientes_pi;
+
+INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Ana Lúcia Reis', 'Teresina', 'PI');
+
+SELECT COUNT(*) AS depois FROM v_clientes_pi;
+</pre>
+
+<p>Eram 14, viraram 15, e ninguém mexeu na view. O <code>INSERT</code> foi na tabela <code>clientes</code>; a view só olhou de novo. O mesmo vale para <code>UPDATE</code> e <code>DELETE</code>: qualquer mudança nas tabelas aparece na view na próxima consulta.</p>
+
+<h3>No terminal, a view fica gravada</h3>
+<p>No editor do guia, cada Rodar começa do banco limpo. No terminal, a view fica no arquivo, como as tabelas. Repare que o <code>.tables</code> lista a view junto com as tabelas, e que o <code>.schema</code> mostra o comando que a criou, com um comentário que o próprio <code>sqlite3</code> acrescenta com as colunas da view:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; CREATE VIEW v_clientes_pi AS SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+sqlite&gt; .tables
+categorias     fornecedores   itens_pedido   produtos
+clientes       funcionarios   pedidos        v_clientes_pi
+sqlite&gt; .schema v_clientes_pi
+CREATE VIEW v_clientes_pi AS SELECT id, nome, cidade FROM clientes WHERE estado = 'PI'
+/* v_clientes_pi(id,nome,cidade) */;
+sqlite&gt; .quit
+$ sqlite3 loja.db "SELECT nome, cidade FROM v_clientes_pi LIMIT 3;"     « no dia seguinte, a view continua lá
+José Ribamar Silva|Teresina
+Maria Clara Mendes|Teresina
+Conceição Prado|Teresina</pre>
+
+<hr>
+
+<h2>3. Uma view que poupa trabalho de verdade</h2>
+<p>A view de clientes do Piauí é curta, e talvez nem valesse a pena. O ganho aparece com consultas grandes, como a da Ana todas as manhãs: o total de cada pedido. Ela precisa de três tabelas (<a href="inner-join.html">INNER JOIN</a>), de <a href="group-by.html">GROUP BY</a> para somar os itens de cada pedido e de <code>ROUND</code> para arredondar (aula <a href="funcoes-numericas.html">Funções Numéricas</a>). Escrita uma vez, dentro de uma view:</p>
+
+<pre class="file" data-file="pedidos-total.sql" data-resultado>CREATE VIEW v_pedidos_total AS
+SELECT p.id,
+       p.data,
+       c.nome AS cliente,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS subtotal,
+       p.frete,
+       ROUND(SUM(i.quantidade * i.preco_unitario) + p.frete, 2) AS total
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+GROUP BY p.id, p.data, c.nome, p.frete;
+
+SELECT * FROM v_pedidos_total LIMIT 4;
+</pre>
+
+<dl class="anatomy">
+  <dt>c.nome AS cliente</dt><dd>O apelido vira o <strong>nome da coluna</strong> da view. Quem usar a view vai escrever <code>cliente</code>, e não <code>c.nome</code>.</dd>
+  <dt>… AS subtotal</dt><dd>A soma dos itens do pedido (quantidade × preço de cada item). Sem o <code>AS</code>, a coluna da view se chamaria <code>ROUND(SUM(i.quantidade * i.preco_unitario), 2)</code>: um nome horrível de usar.</dd>
+  <dt>… AS total</dt><dd>Os itens mais o frete: o que o cliente pagou. O pedido 1 deu 30.94 de itens + 9.9 de frete = 40.84.</dd>
+  <dt>GROUP BY p.id, …</dt><dd>Uma linha por pedido.</dd>
+</dl>
+
+<p>Agora as perguntas do dia viram consultas curtinhas, sem nenhum JOIN à vista:</p>
+
+<pre class="file" data-file="perguntas.sql" data-resultado>CREATE VIEW v_pedidos_total AS
+SELECT p.id, p.data, c.nome AS cliente,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS subtotal,
+       p.frete,
+       ROUND(SUM(i.quantidade * i.preco_unitario) + p.frete, 2) AS total
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+GROUP BY p.id, p.data, c.nome, p.frete;
+
+-- os 3 maiores pedidos
+SELECT id, cliente, total FROM v_pedidos_total ORDER BY total DESC LIMIT 3;
+
+-- quem mais gastou na loja
+SELECT cliente, COUNT(*) AS pedidos, ROUND(SUM(total), 2) AS gasto
+FROM v_pedidos_total
+GROUP BY cliente
+ORDER BY gasto DESC
+LIMIT 3;
+</pre>
+
+<p>A Conceição Prado é a cliente que mais gastou: 4 pedidos, 1398.03 no total. O maior pedido da loja é o 3, da Ana Beatriz Sousa: 660.0.</p>
+
+<h3>View dentro de view</h3>
+<p>Uma view pode usar outra. A tela "pedidos grandes" da gerente é só um filtro em cima da <code>v_pedidos_total</code>:</p>
+
+<pre class="file" data-file="view-de-view.sql" data-resultado>CREATE VIEW v_pedidos_total AS
+SELECT p.id, p.data, c.nome AS cliente,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS subtotal,
+       p.frete,
+       ROUND(SUM(i.quantidade * i.preco_unitario) + p.frete, 2) AS total
+FROM pedidos AS p
+JOIN clientes AS c ON c.id = p.cliente_id
+JOIN itens_pedido AS i ON i.pedido_id = p.id
+GROUP BY p.id, p.data, c.nome, p.frete;
+
+CREATE VIEW v_pedidos_grandes AS
+SELECT * FROM v_pedidos_total WHERE total &gt;= 500;
+
+SELECT id, data, cliente, total FROM v_pedidos_grandes;
+</pre>
+
+<p>Seis pedidos passaram de 500. Se um dia a regra do total mudar (por exemplo, descontar um cupom), basta corrigir a <code>v_pedidos_total</code>: a <code>v_pedidos_grandes</code> e todas as consultas que usam as duas passam a usar a regra nova.</p>
+
+<hr>
+
+<h2>4. Os nomes das colunas da view</h2>
+<p>As colunas da view herdam os nomes do <code>SELECT</code>: o nome da coluna original ou o apelido do <code>AS</code>. Também dá para escrever a lista de nomes logo depois do nome da view, entre parênteses:</p>
+
+<pre class="file" data-file="nomes.sql" data-resultado>CREATE VIEW v_contatos (cliente, uf, correio) AS
+SELECT nome, estado, email
+FROM clientes;
+
+SELECT * FROM v_contatos LIMIT 3;
+</pre>
+
+<p>A primeira coluna do <code>SELECT</code> ganha o primeiro nome da lista, a segunda ganha o segundo, e assim por diante. As duas formas dão no mesmo; escolha uma e não misture.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Exemplo</th><th>Quando usar</th></tr>
+<tr><td>Apelidos no <code>SELECT</code></td><td><code>CREATE VIEW v AS SELECT nome AS cliente, …</code></td><td>A mais comum: cada nome fica ao lado da sua expressão.</td></tr>
+<tr><td>Lista depois do nome</td><td><code>CREATE VIEW v (cliente, …) AS SELECT nome, …</code></td><td>Quando você quer ver todos os nomes da view de uma vez, no alto.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. Vendo, trocando e apagando views</h2>
+<h3>Quais views o banco tem</h3>
+<p>As views ficam na mesma tabela especial dos índices e das tabelas, a <code>sqlite_schema</code>, com <code>type = 'view'</code>:</p>
+
+<pre class="file" data-file="ver-views.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+SELECT type, name, sql
+FROM sqlite_schema
+WHERE type = 'view';
+</pre>
+
+<p>A coluna <code>sql</code> mostra que o banco guardou só o texto da consulta. No terminal, <code>.tables</code> e <code>.schema</code> fazem o mesmo serviço (seção 2).</p>
+
+<h3><code>DROP VIEW</code></h3>
+<p>Para apagar uma view, use <code>DROP VIEW</code> ("descarte a view"). Só a view some; as tabelas e os dados continuam lá, intocados:</p>
+
+<pre class="file" data-file="drop-view.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+DROP VIEW v_clientes_pi;
+
+SELECT COUNT(*) AS clientes FROM clientes;
+</pre>
+
+<h3>Trocar a consulta de uma view</h3>
+<p>O SQLite não tem um comando para alterar uma view. Para mudar a consulta, apague e crie de novo. Em scripts que rodam várias vezes, use as formas "se":</p>
+
+<pre class="file" data-file="trocar.sql" data-resultado>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+-- a Ana quer também o email: apaga e cria de novo
+DROP VIEW IF EXISTS v_clientes_pi;
+CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade, email FROM clientes WHERE estado = 'PI';
+
+SELECT * FROM v_clientes_pi LIMIT 3;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz se a view já existe</th><th>Se não existe</th></tr>
+<tr><td><code>CREATE VIEW v AS …</code></td><td>Erro: <code>view v already exists</code></td><td>Cria</td></tr>
+<tr><td><code>CREATE VIEW IF NOT EXISTS v AS …</code></td><td>Não faz nada (a view antiga continua, com a consulta antiga!)</td><td>Cria</td></tr>
+<tr><td><code>DROP VIEW v</code></td><td>Apaga</td><td>Erro: <code>no such view: v</code></td></tr>
+<tr><td><code>DROP VIEW IF EXISTS v</code></td><td>Apaga</td><td>Não faz nada</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Cuidado com o <code>CREATE VIEW IF NOT EXISTS</code></strong>
+<p>Ele <strong>não troca</strong> uma view que já existe. Se você mudou a consulta e rodou de novo com <code>IF NOT EXISTS</code>, a view continua com a consulta velha, sem erro nenhum. Para trocar, o certo é <code>DROP VIEW IF EXISTS</code> seguido de <code>CREATE VIEW</code>.</p>
+</div>
+
+<h3>View temporária</h3>
+<p><code>CREATE TEMP VIEW</code> (de <em>temporary</em>, "temporária") cria uma view que só existe enquanto o banco estiver aberto. Ao fechar o <code>sqlite3</code>, ela some sozinha. Serve para uma análise rápida, sem deixar lixo no arquivo da loja.</p>
+
+<hr>
+
+<h2>6. Uma view não aceita <code>INSERT</code> (no SQLite)</h2>
+<p>A view parece uma tabela, e a Ana tentou cadastrar um cliente por ela:</p>
+
+<pre class="file" data-file="insert-view.sql" data-resultado data-erro>CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+INSERT INTO v_clientes_pi (nome, cidade)
+VALUES ('Ana Lúcia Reis', 'Teresina');
+</pre>
+
+<p><code>cannot modify v_clientes_pi because it is a view</code>: "não posso modificar v_clientes_pi porque é uma view". No SQLite, as views são <strong>só de leitura</strong>: <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code> numa view dão esse mesmo erro. Faz sentido: a view não tem linhas próprias, e o banco teria de adivinhar em que tabela gravar (e que <code>estado</code> pôr no cliente novo). Grave sempre na tabela de verdade, <code>clientes</code>; a view mostra o resultado na hora.</p>
+
+<p>No terminal, a mesma mensagem vem com o prefixo <code>Parse error:</code>, porque o SQLite recusa o comando antes de rodá-lo:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; INSERT INTO v_clientes_pi (nome) VALUES ('Ana Lúcia Reis');
+Parse error: cannot modify v_clientes_pi because it is a view</pre>
+
+<div class="tip">
+<strong>E se eu quiser mesmo gravar "pela view"?</strong>
+<p>O SQLite tem os <em>triggers</em> <code>INSTEAD OF</code> ("em vez de"): um comando que roda no lugar do <code>INSERT</code> na view e grava na tabela certa. É assunto avançado, fora deste curso; o que importa agora é saber que, sem isso, a view só serve para ler.</p>
+</div>
+
+<div class="trysql" data-goal="mudou:clientes=31">
+<p class="try-task"><strong>Missão:</strong> o script tenta cadastrar a cliente <code>Ana Lúcia Reis</code>, de Teresina (PI), pela view, e dá erro. Conserte o <code>INSERT</code> para gravar na tabela <code>clientes</code>, sem esquecer o <code>estado</code>. O <code>SELECT</code> do fim prova que ela aparece na view.</p>
+<pre class="script" data-file="consulta.sql">CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+INSERT INTO v_clientes_pi (nome, cidade)
+VALUES ('Ana Lúcia Reis', 'Teresina');
+
+SELECT * FROM v_clientes_pi WHERE nome LIKE 'Ana%';
+</pre>
+<pre class="solucao" data-file="consulta.sql">CREATE VIEW v_clientes_pi AS
+SELECT id, nome, cidade FROM clientes WHERE estado = 'PI';
+
+INSERT INTO clientes (nome, cidade, estado)
+VALUES ('Ana Lúcia Reis', 'Teresina', 'PI');
+
+SELECT * FROM v_clientes_pi WHERE nome LIKE 'Ana%';
+</pre>
+</div>
+
+<hr>
+
+<h2>7. Para que servem as views</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Uso</th><th>Exemplo na Loja Aurora</th></tr>
+<tr><td><strong>Encurtar</strong> consultas compridas que se repetem</td><td><code>v_pedidos_total</code>: o JOIN de três tabelas vira <code>SELECT * FROM v_pedidos_total</code>.</td></tr>
+<tr><td><strong>Uma regra num lugar só</strong></td><td>"Total = itens + frete" está escrito uma vez. Todo relatório que usa a view segue a mesma conta.</td></tr>
+<tr><td><strong>Esconder colunas</strong></td><td>Uma view da equipe sem a coluna <code>salario</code> dos funcionários (exemplo abaixo).</td></tr>
+<tr><td><strong>Nomes claros</strong></td><td>Colunas como <code>cliente</code> e <code>total</code> no lugar de <code>c.nome</code> e de uma fórmula.</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="equipe.sql" data-resultado>CREATE VIEW v_equipe AS
+SELECT id, nome, cargo
+FROM funcionarios;
+
+SELECT * FROM v_equipe;
+</pre>
+
+<p>A lista da equipe para o mural da loja, sem o salário de ninguém. Quem usar a <code>v_equipe</code> simplesmente não enxerga a coluna <code>salario</code>: pedir por ela dá <code>no such column: salario</code>. Num banco com servidor (MySQL, PostgreSQL, SQL Server), dá para ir além: permitir que um usuário leia a view, mas não a tabela, e aí a view vira uma proteção de verdade (aula <a href="usuarios-permissoes.html">Usuários e Permissões</a>). No SQLite, que não tem usuários, ela é uma organização: quem abre o arquivo continua podendo ler a tabela.</p>
+
+<div class="note">
+<strong>View é rápida?</strong>
+<p>Uma view roda exatamente a consulta que ela guarda, com os índices que as tabelas tiverem. Ela não é mais rápida nem mais lenta que digitar a consulta inteira. Se a <code>v_pedidos_total</code> ficar lenta com milhões de pedidos, a solução está nas tabelas (veja <a href="indices.html">Índices</a>), não na view.</p>
+</div>
+
+<hr>
+
+<h2>8. View × <code>WITH</code> × tabela copiada</h2>
+<p>Há três jeitos de dar um nome a uma consulta. Todos eles produzem o mesmo resultado aqui, mas vivem por tempos diferentes:</p>
+
+<pre class="file" data-file="tres-formas.sql" data-resultado>-- 1. view: guardada no banco, roda a consulta a cada uso
+CREATE VIEW v_pi AS SELECT nome FROM clientes WHERE estado = 'PI';
+SELECT COUNT(*) AS pela_view FROM v_pi;
+
+-- 2. WITH (CTE): vale só para este SELECT
+WITH pi AS (SELECT nome FROM clientes WHERE estado = 'PI')
+SELECT COUNT(*) AS pelo_with FROM pi;
+
+-- 3. tabela copiada: guarda uma FOTO das linhas de agora
+CREATE TABLE copia_pi AS SELECT nome FROM clientes WHERE estado = 'PI';
+SELECT COUNT(*) AS pela_copia FROM copia_pi;
+</pre>
+
+<p>Os três deram 14. A diferença aparece quando os dados mudam: um cliente novo do Piauí aparece na view (seção 2) e num <code>WITH</code> rodado de novo, mas <strong>não</strong> na <code>copia_pi</code>, que é uma tabela de verdade com as 14 linhas copiadas naquele instante.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Dura</th><th>Está sempre atualizada?</th><th>Quando usar</th></tr>
+<tr><td><code>CREATE VIEW</code></td><td>Até um <code>DROP VIEW</code></td><td>Sim</td><td>Uma consulta que muita gente (ou muitos relatórios) usa todo dia.</td></tr>
+<tr><td><code>WITH nome AS (…)</code></td><td>Só aquele comando</td><td>Sim</td><td>Organizar uma consulta grande, de uso único (aula <a href="with-cte.html">CTE (WITH)</a>).</td></tr>
+<tr><td><code>CREATE TABLE … AS SELECT</code></td><td>Até um <code>DROP TABLE</code></td><td>Não: é uma cópia</td><td>Guardar uma foto: o fechamento do mês, um backup antes de mexer (aula <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>).</td></tr>
+<tr><td>Digitar a consulta toda vez</td><td>—</td><td>Sim</td><td>Consulta curta ou de uma vez só.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Criou a mesma view duas vezes</strong>
+<pre class="file" data-file="duas-vezes.sql" data-resultado data-erro>CREATE VIEW v_clientes_pi AS
+SELECT id, nome FROM clientes WHERE estado = 'PI';
+
+CREATE VIEW v_clientes_pi AS
+SELECT id, nome, email FROM clientes WHERE estado = 'PI';
+</pre>
+<p><strong>O que aconteceu:</strong> <code>view v_clientes_pi already exists</code>, "a view já existe". O SQLite não troca a view sozinho.</p>
+<p><strong>Como consertar:</strong> <code>DROP VIEW IF EXISTS v_clientes_pi;</code> antes do segundo <code>CREATE VIEW</code> (seção 5).</p>
+</div>
+
+<div class="cenario">
+<strong>Deu à view o nome de uma tabela</strong>
+<pre class="file" data-file="nome-de-tabela.sql" data-resultado data-erro>CREATE VIEW clientes AS
+SELECT nome FROM clientes WHERE estado = 'PI';
+</pre>
+<p><strong>O que aconteceu:</strong> <code>table clientes already exists</code>, "a tabela clientes já existe". Tabelas, views e índices dividem a mesma lista de nomes.</p>
+<p><strong>Como consertar:</strong> outro nome, de preferência com o prefixo <code>v_</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apagou a view com <code>DROP TABLE</code> (ou o contrário)</strong>
+<pre class="file" data-file="drop-errado.sql" data-resultado data-erro>CREATE VIEW v_clientes_pi AS
+SELECT id, nome FROM clientes WHERE estado = 'PI';
+
+DROP TABLE v_clientes_pi;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>use DROP VIEW to delete view v_clientes_pi</code>, "use DROP VIEW para apagar a view". O contrário também é protegido: <code>DROP VIEW clientes;</code> dá <code>use DROP TABLE to delete table clientes</code>. Ainda bem: um <code>DROP VIEW</code> nunca apaga uma tabela por engano.</p>
+<p><strong>Como consertar:</strong> view se apaga com <code>DROP VIEW</code>; tabela, com <code>DROP TABLE</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apagou uma view que não existe</strong>
+<pre class="file" data-file="drop-nada.sql" data-resultado data-erro>DROP VIEW v_clientes_pi;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>no such view: v_clientes_pi</code>. Aqui o banco está limpo; no terminal, acontece quando o nome foi digitado errado.</p>
+<p><strong>Como consertar:</strong> confira o nome (<code>.tables</code> no terminal) ou use <code>DROP VIEW IF EXISTS</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A view foi criada, mas quebra na hora de usar</strong>
+<pre class="file" data-file="view-quebrada.sql" data-resultado data-erro>CREATE VIEW v_vendas AS
+SELECT nome FROM vendas;
+
+SELECT * FROM v_vendas;
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>CREATE VIEW</code> deu "ok", mesmo com uma tabela <code>vendas</code> que não existe! O SQLite só guarda o texto; ele confere a consulta quando a view é <strong>usada</strong>. Aí veio o erro: <code>no such table: main.vendas</code>. O mesmo acontece se a tabela existia e depois foi apagada com <code>DROP TABLE</code>: a view fica órfã e quebra no próximo uso.</p>
+<p><strong>Como consertar:</strong> logo depois de criar uma view, rode um <code>SELECT * FROM … LIMIT 1</code> nela para ter certeza de que funciona.</p>
+</div>
+
+<div class="cenario">
+<strong>A lista de nomes não bate com o <code>SELECT</code></strong>
+<pre class="file" data-file="lista-errada.sql" data-resultado data-erro>CREATE VIEW v_contatos (cliente, uf, correio) AS
+SELECT nome, email
+FROM clientes;
+
+SELECT * FROM v_contatos;
+</pre>
+<p><strong>O que aconteceu:</strong> de novo, o <code>CREATE</code> passou e o erro só veio no uso: <code>expected 3 columns for 'v_contatos' but got 2</code>, "esperava 3 colunas para v_contatos, mas recebeu 2". A lista tem três nomes e o <code>SELECT</code>, duas colunas (faltou o <code>estado</code>).</p>
+<p><strong>Como consertar:</strong> a lista de nomes e o <code>SELECT</code> precisam ter o mesmo número de colunas.</p>
+</div>
+
+<div class="cenario">
+<strong>Tentou apagar uma coluna que uma view usa</strong>
+<pre class="file" data-file="drop-column.sql" data-resultado data-erro>CREATE VIEW v_contatos AS
+SELECT nome, email FROM clientes;
+
+ALTER TABLE clientes DROP COLUMN email;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>error in view v_contatos after drop column: no such column: email</code>. Antes de apagar a coluna (aula <a href="alter-table.html">ALTER TABLE</a>), o SQLite confere se alguma view ia quebrar, e recusa. A coluna continua lá.</p>
+<p><strong>Como consertar:</strong> apague (ou recrie sem a coluna) a view primeiro; depois apague a coluna.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>CREATE VIEW nome AS SELECT …</code> e o <code>DROP VIEW</code> são iguais no MySQL, no PostgreSQL e no SQL Server. As diferenças principais:</p>
+<ul>
+  <li><strong>Trocar uma view:</strong> PostgreSQL e MySQL têm <code>CREATE OR REPLACE VIEW</code> ("crie ou substitua"); o SQL Server tem <code>CREATE OR ALTER VIEW</code> (desde o SQL Server 2016 SP1). No PostgreSQL, a consulta nova precisa manter as colunas da antiga, podendo só acrescentar outras no fim.</li>
+  <li><strong>Gravar pela view:</strong> nos três, views simples (de uma tabela só, sem <code>GROUP BY</code>, <code>DISTINCT</code> nem funções agregadas) aceitam <code>INSERT</code>, <code>UPDATE</code> e <code>DELETE</code>, que vão parar na tabela. Eles também têm <code>WITH CHECK OPTION</code>, que recusa gravar pela view uma linha que a view não mostraria.</li>
+  <li><strong>View materializada:</strong> o PostgreSQL tem <code>CREATE MATERIALIZED VIEW</code>, que guarda as linhas (como a tabela copiada da seção 8) e lembra a consulta; para atualizar, roda-se <code>REFRESH MATERIALIZED VIEW</code>.</li>
+</ul>
+<pre class="file" data-file="outros-bancos.sql (ilustrativo)">-- PostgreSQL e MySQL
+CREATE OR REPLACE VIEW v_clientes_pi AS
+SELECT id, nome, cidade, email FROM clientes WHERE estado = 'PI';
+
+-- SQL Server
+CREATE OR ALTER VIEW v_clientes_pi AS
+SELECT id, nome, cidade, email FROM clientes WHERE estado = 'PI';
+</pre>
+<p>Esses trechos não rodam no SQLite, que não tem <code>OR REPLACE</code> para views.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>CREATE VIEW nome AS SELECT …;</code></td><td>Guarda a consulta com um nome</td></tr>
+<tr><td><code>CREATE VIEW nome (col1, col2) AS SELECT …;</code></td><td>Idem, dando nome às colunas</td></tr>
+<tr><td><code>CREATE VIEW IF NOT EXISTS nome AS …;</code></td><td>Cria só se não existir (não troca a que existe)</td></tr>
+<tr><td><code>CREATE TEMP VIEW nome AS …;</code></td><td>View que some quando o banco é fechado</td></tr>
+<tr><td><code>SELECT … FROM nome_da_view …;</code></td><td>Usa a view como tabela (com <code>WHERE</code>, <code>JOIN</code>, <code>GROUP BY</code>…)</td></tr>
+<tr><td><code>DROP VIEW nome;</code></td><td>Apaga a view (os dados ficam)</td></tr>
+<tr><td><code>DROP VIEW IF EXISTS nome;</code></td><td>Apaga só se existir</td></tr>
+<tr><td><code>SELECT name, sql FROM sqlite_schema WHERE type = 'view';</code></td><td>Lista as views e suas consultas</td></tr>
+<tr><td><code>.tables</code> / <code>.schema nome</code></td><td>No terminal do <code>sqlite3</code>: lista / mostra a view</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>view X already exists</code></td><td>Já existe uma view com esse nome</td></tr>
+<tr><td><code>table X already exists</code></td><td>O nome da view é o de uma tabela</td></tr>
+<tr><td><code>cannot modify X because it is a view</code></td><td><code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> numa view: grave na tabela</td></tr>
+<tr><td><code>use DROP VIEW to delete view X</code></td><td>Usou <code>DROP TABLE</code> numa view</td></tr>
+<tr><td><code>use DROP TABLE to delete table X</code></td><td>Usou <code>DROP VIEW</code> numa tabela</td></tr>
+<tr><td><code>no such view: X</code></td><td>O <code>DROP VIEW</code> não achou a view</td></tr>
+<tr><td><code>expected N columns for 'X' but got M</code></td><td>A lista de nomes da view e o <code>SELECT</code> não batem</td></tr>
+<tr><td><code>error in view X after drop column: …</code></td><td>Uma view usa a coluna que você quis apagar</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Complete o comando</h3>
+<p>Crie a view <code>v_vips</code> com os clientes VIP:</p>
+<div class="ex-code"><input data-answer="CREATE VIEW|create view" aria-label="comando"> v_vips <input data-answer="AS|as" aria-label="palavra-chave"> SELECT nome FROM clientes WHERE vip = 1;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Apague a view</h3>
+<p>Complete para apagar a view <code>v_vips</code> só se ela existir:</p>
+<div class="ex-code">DROP VIEW <input data-answer="IF EXISTS|if exists" aria-label="condição"> v_vips;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana criou a view <code>v_clientes_pi</code> e, depois, cadastrou na tabela <code>clientes</code> um cliente novo de Picos (PI). O que acontece na próxima consulta à view?</p>
+<label><input type="radio" name="q3"> O cliente novo só aparece depois de recriar a view</label>
+<label><input type="radio" name="q3"> O cliente novo já aparece, porque a view roda a consulta a cada uso</label>
+<label><input type="radio" name="q3"> A view dá erro, porque a tabela mudou</label>
+<label><input type="radio" name="q3"> O cliente aparece duas vezes</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O que uma view guarda no banco?</p>
+<label><input type="radio" name="q4"> Uma cópia das linhas da consulta</label>
+<label><input type="radio" name="q4"> Um índice das tabelas usadas</label>
+<label><input type="radio" name="q4"> As linhas e a consulta</label>
+<label><input type="radio" name="q4"> Só o texto da consulta <code>SELECT</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">5. No SQLite, <code>UPDATE v_equipe SET cargo = 'Vendedora' WHERE id = 3;</code> dá…</p>
+<label><input type="radio" name="q5"> uma linha afetada, na tabela <code>funcionarios</code></label>
+<label><input type="radio" name="q5"> uma linha afetada, só na view</label>
+<label><input type="radio" name="q5"> o erro <code>cannot modify v_equipe because it is a view</code></label>
+<label><input type="radio" name="q5"> o erro <code>no such table: v_equipe</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana precisa guardar os totais de setembro <strong>como estavam</strong> no dia do fechamento, mesmo que alguém corrija um pedido depois. O que ela deve usar?</p>
+<label><input type="radio" name="q6"> <code>CREATE TABLE fechamento_setembro AS SELECT …</code></label>
+<label><input type="radio" name="q6"> <code>CREATE VIEW v_fechamento_setembro AS SELECT …</code></label>
+<label><input type="radio" name="q6"> <code>WITH fechamento AS (…)</code></label>
+<label><input type="radio" name="q6"> <code>CREATE TEMP VIEW</code></label>
+</div>
+
+<h3>Missão final: a view dos atendimentos</h3>
+
+<div class="trysql" data-goal="colunas:vendedor,pedidos;;linhas:6;;contem:Caio Teles|15">
+<p class="try-task"><strong>Missão:</strong> a gerente quer ver, a qualquer hora, quantos pedidos cada vendedor atendeu. Crie a view <code>v_atendimentos</code> com duas colunas: <code>vendedor</code> (o nome do funcionário) e <code>pedidos</code> (quantos pedidos ele atendeu). Junte <code>funcionarios</code> e <code>pedidos</code> pelo <code>funcionario_id</code> e agrupe por funcionário. Só entra quem atendeu pelo menos um pedido.</p>
+<pre class="script" data-file="consulta.sql">-- crie a view aqui:
+
+
+SELECT * FROM v_atendimentos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">-- crie a view aqui:
+CREATE VIEW v_atendimentos AS
+SELECT f.nome AS vendedor, COUNT(*) AS pedidos
+FROM funcionarios AS f
+JOIN pedidos AS p ON p.funcionario_id = f.id
+GROUP BY f.id, f.nome;
+
+SELECT * FROM v_atendimentos;
+</pre>
+</div>
+
+<p>Os seis vendedores atenderam 15 pedidos cada. A gerente Marta e o estoquista Davi não atendem pedidos, por isso ficaram de fora (com <a href="left-join.html">LEFT JOIN</a> eles apareceriam com 0). Agora, quando entrar um pedido novo, a contagem da view sobe sozinha.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>view</strong> é uma consulta <code>SELECT</code> guardada no banco com um nome: <code>CREATE VIEW nome AS SELECT …;</code>.</li>
+  <li>Ela se usa como uma tabela, no <code>FROM</code>, com <code>WHERE</code>, <code>ORDER BY</code>, <code>GROUP BY</code>, <code>JOIN</code> e até dentro de outra view.</li>
+  <li>A view <strong>não guarda linhas</strong>: roda a consulta a cada uso, então está sempre atualizada. Uma cópia que não muda se faz com <code>CREATE TABLE … AS SELECT</code>.</li>
+  <li>As colunas da view levam os nomes do <code>SELECT</code> (use <code>AS</code>) ou de uma lista: <code>CREATE VIEW v (a, b) AS …</code>.</li>
+  <li><code>DROP VIEW nome;</code> apaga só a view. Para trocar a consulta no SQLite: <code>DROP VIEW IF EXISTS</code> + <code>CREATE VIEW</code>.</li>
+  <li>No SQLite, a view é <strong>só de leitura</strong>: <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> dão <code>cannot modify … because it is a view</code>. Grave na tabela.</li>
+  <li>O SQLite só confere a consulta da view quando ela é usada: teste a view logo depois de criar.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
