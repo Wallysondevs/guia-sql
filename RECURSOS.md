@@ -4,7 +4,7 @@
 
 | Onde | O que fica lá |
 |---|---|
-| **VPS** (Debian 13, 8 núcleos, 31 GB) | O guia **de verdade**: `~/guia-sql` (git), o laboratório `~/guia-sql-lab/lab` (Debian 13 + sqlite3 3.50.6) e o Node 24. |
+| **VPS** (Debian 13, 8 núcleos, 31 GB) | O guia **de verdade**: `~/guia-sql` (git), o laboratório `~/guia-sql-lab/lab` (Debian 13 + sqlite3 3.50.4) e o Node 24. |
 | **Notebook** | Só o seu rascunho (`SCRATCH/SEU-NOME/`) e o modelo de estrutura das páginas, para leitura: `~/guia-c`. |
 
 ## Os comandos (rodam no notebook, o trabalho acontece na VPS)

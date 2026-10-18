@@ -114,7 +114,7 @@ node tools/sim.js consulta.sql                        # roda um .sql como o edit
 - `sim.js` serve para colher a saída real que você vai citar no texto da aula.
 
 ## 6. Fidelidade: o laboratório (`~/guia-sql-lab/lab`, na VPS)
-É a máquina da Ana (usuária `ana`, computador `notebook`, `/home/ana`, pt_BR) com o **sqlite3 3.50.6 de verdade** e o banco `~/loja.db` pronto. Toda saída de terminal mostrada numa aula vem de lá:
+É a máquina da Ana (usuária `ana`, computador `notebook`, `/home/ana`, pt_BR) com o **sqlite3 3.50.4 de verdade** e o banco `~/loja.db` pronto. Toda saída de terminal mostrada numa aula vem de lá:
 - o prompt interativo precisa de `-t` (tty): `~/guia-sql-lab/lab -n SEUNOME -t`;
 - sessões roteirizadas: mande os comandos pelo stdin com `-i` (transcrição);
 - **as mensagens de erro do SQLite saem em inglês** (`Parse error: no such table: cliente`): copie como saíram e explique em português;
