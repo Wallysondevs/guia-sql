@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL UNION — juntar resultados de várias consultas | Guia SQL</title>
+<meta name="description" content="UNION em SQL para quem está começando: empilhar o resultado de duas ou mais consultas numa lista só, sem repetições, as regras das colunas, o ORDER BY no fim, uma coluna de origem, UNION × OR, e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">UNION</span></h1>
+
+<p class="intro">A Ana quer saber em quais cidades a Loja Aurora tem alguém: um cliente <strong>ou</strong> um fornecedor. Os clientes estão numa tabela, os fornecedores em outra. Ela poderia rodar duas consultas e juntar as listas à mão, riscando as cidades repetidas. O <code>UNION</code> (em inglês, "união") faz isso por ela: <strong>empilha</strong> o resultado de duas consultas numa lista só e tira as linhas repetidas.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que o <code>UNION</code> faz e como ele é diferente de um <code>JOIN</code>.</li>
+  <li>As regras: o <strong>mesmo número de colunas</strong>, na mesma ordem, e os nomes vindos do primeiro <code>SELECT</code>.</li>
+  <li>Por que o <code>UNION</code> tira as repetições, até as de dentro de uma mesma consulta.</li>
+  <li>Onde vai o <code>ORDER BY</code> (só no fim) e o <code>LIMIT</code>.</li>
+  <li>Como marcar de onde veio cada linha com uma coluna de "origem".</li>
+  <li>Quando um <code>OR</code> resolve e quando só o <code>UNION</code> resolve.</li>
+  <li>Os erros reais do SQLite: colunas a mais, <code>ORDER BY</code> no meio, parênteses.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora (veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>).</p>
+
+<hr>
+
+<h2>A ideia: duas listas de convidados</h2>
+<p>A Ana e o irmão vão dar uma festa e cada um fez a sua lista de convidados. Para mandar os convites, ela põe uma folha <strong>embaixo</strong> da outra e passa a limpo, escrevendo cada nome uma vez só: quem estava nas duas listas não ganha dois convites. Isso é o <code>UNION</code>.</p>
+
+<p>Repare na diferença para o <a href="joins.html">JOIN</a>, que você viu nas aulas anteriores:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>JOIN</th><th>UNION</th></tr>
+<tr><td>O que junta</td><td>Tabelas, <strong>lado a lado</strong></td><td>Resultados de consultas, <strong>um embaixo do outro</strong></td></tr>
+<tr><td>O resultado ganha</td><td>Mais <strong>colunas</strong></td><td>Mais <strong>linhas</strong></td></tr>
+<tr><td>Precisa de</td><td>Uma regra de ligação (<code>ON</code>)</td><td>O mesmo número de colunas nas duas consultas</td></tr>
+<tr><td>Na festa</td><td>Pôr ao lado de cada convidado o telefone dele</td><td>Juntar as duas listas de convidados numa só</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. As duas listas</h2>
+<p>Primeiro, cada lista sozinha. As cidades dos clientes, sem repetir (aula <a href="select-distinct.html">SELECT DISTINCT</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT DISTINCT cidade FROM clientes;
+</pre>
+
+<p>E as cidades dos fornecedores:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM fornecedores;
+</pre>
+
+<p>São 8 cidades de clientes e 6 linhas de fornecedores, com Teresina duas vezes (a loja tem dois fornecedores lá). Algumas cidades estão nas duas listas: Teresina, Fortaleza e São Paulo.</p>
+
+<hr>
+
+<h2>2. O primeiro UNION</h2>
+<p>Agora as duas listas numa só:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM clientes
+UNION
+SELECT cidade FROM fornecedores;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT cidade FROM clientes</dt><dd>A primeira consulta: uma consulta completa, que funcionaria sozinha.</dd>
+  <dt>UNION</dt><dd>"Junte com o resultado da próxima consulta e tire as linhas repetidas." Ele fica <strong>entre</strong> as duas consultas, sem ponto e vírgula antes: é tudo um comando só.</dd>
+  <dt>SELECT cidade FROM fornecedores</dt><dd>A segunda consulta, também completa. O <code>;</code> vem só no fim de tudo.</dd>
+</dl>
+
+<p>O resultado tem <strong>10</strong> cidades. Faça a conta: 8 de clientes + 6 de fornecedores = 14 linhas, menos as repetidas. Teresina, Fortaleza e São Paulo, que estavam nas duas listas, aparecem uma vez só, e o Teresina repetido dos fornecedores também sumiu. As duas cidades novas vêm dos fornecedores estrangeiros: Porto e Buenos Aires.</p>
+
+<div class="tip">
+<strong>A ordem do resultado</strong>
+<p>Aqui as cidades saíram em ordem alfabética, mas isso foi efeito do jeito como o SQLite tirou as repetições, e não uma promessa. Sem <code>ORDER BY</code>, nenhum banco garante a ordem. Quer em ordem? Peça (seção 4).</p>
+</div>
+
+<hr>
+
+<h2>3. As regras das colunas</h2>
+<p>O <code>UNION</code> empilha linhas, então as linhas das duas consultas precisam "encaixar" uma embaixo da outra:</p>
+
+<ol class="passo">
+  <li><strong>O mesmo número de colunas.</strong> Se a primeira consulta tem 2 colunas, a segunda também tem de ter 2. Senão o SQLite recusa (veja <a href="#errado">Quando dá errado</a>).</li>
+  <li><strong>Na mesma ordem.</strong> A 1ª coluna de uma vai embaixo da 1ª coluna da outra, a 2ª embaixo da 2ª. O banco não olha os nomes, só a posição.</li>
+  <li><strong>Os nomes vêm da primeira consulta.</strong> O cabeçalho do resultado é o da primeira consulta; os nomes (e os <code>AS</code>) das outras são ignorados.</li>
+</ol>
+
+<p>Um exemplo com duas colunas. A Ana quer a lista de contatos de Teresina: clientes e fornecedores. Para saber quem é quem, ela cria uma coluna com um texto fixo:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, 'cliente' AS tipo
+FROM clientes
+WHERE cidade = 'Teresina'
+UNION
+SELECT nome, 'fornecedor'
+FROM fornecedores
+WHERE cidade = 'Teresina'
+ORDER BY nome;
+</pre>
+
+<dl class="anatomy">
+  <dt>'cliente' AS tipo</dt><dd>Um texto fixo, que se repete em toda linha dessa consulta. Ele vira a 2ª coluna, com o nome <code>tipo</code>.</dd>
+  <dt>'fornecedor'</dt><dd>A 2ª coluna da segunda consulta. Não precisa de <code>AS</code>: o nome <code>tipo</code> já veio da primeira.</dd>
+  <dt>WHERE … em cada parte</dt><dd>Cada consulta tem o seu próprio <code>WHERE</code>. O primeiro filtra os clientes; o segundo, os fornecedores.</dd>
+  <dt>ORDER BY nome</dt><dd>Ordena a lista <strong>inteira</strong>, já unida. Ele vem uma vez só, no fim.</dd>
+</dl>
+
+<p>São 10 clientes de Teresina e 2 fornecedores, 12 contatos misturados em ordem alfabética. Essa coluna de "origem" com texto fixo é um truque muito usado com <code>UNION</code>, porque sem ela não dá para saber de qual tabela veio cada linha.</p>
+
+<hr>
+
+<h2>4. ORDER BY e LIMIT: só no fim</h2>
+<p>O <code>ORDER BY</code> e o <code>LIMIT</code> valem para o resultado <strong>já unido</strong>, por isso só podem aparecer uma vez, depois da última consulta. Você pode ordenar pelo nome da coluna (o nome da primeira consulta) ou pelo número da posição:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome FROM funcionarios
+UNION
+SELECT nome FROM fornecedores
+ORDER BY 1
+LIMIT 3;
+</pre>
+
+<p><code>ORDER BY 1</code> quer dizer "pela 1ª coluna". O <code>LIMIT 3</code> (aula <a href="limit.html">LIMIT e OFFSET</a>) pegou as 3 primeiras da lista toda, e não 3 de cada tabela: funcionários e fornecedores estão misturados.</p>
+
+<div class="trysql" data-goal="linhas:14;;out:^Atlântico Importados">
+<p class="try-task"><strong>Missão:</strong> a Ana quer uma lista só com os nomes de <strong>todos</strong> os funcionários e de <strong>todos</strong> os fornecedores, em ordem alfabética. Hoje a consulta só tem os funcionários. Acrescente os fornecedores com <code>UNION</code> e mantenha a ordem alfabética da lista inteira.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM funcionarios
+ORDER BY nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome FROM funcionarios
+UNION
+SELECT nome FROM fornecedores
+ORDER BY nome;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O UNION tira toda repetição</h2>
+<p>O <code>UNION</code> não tira só o que se repete <strong>entre</strong> as consultas. Ele tira qualquer linha igual a outra no resultado final, mesmo que as duas tenham vindo da mesma consulta. Veja o caso extremo, a mesma tabela duas vezes:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM clientes
+UNION
+SELECT cidade FROM clientes;
+</pre>
+
+<p>Saíram as 8 cidades, sem repetição, igual ao <code>SELECT DISTINCT cidade FROM clientes</code> da seção 1. Os 30 clientes, duas vezes, viraram 8 linhas.</p>
+
+<p>"Linha repetida" quer dizer <strong>todas as colunas iguais</strong>. Na lista de contatos de Teresina, se existisse um fornecedor chamado "Tiago Fontes", ele <strong>não</strong> seria repetição do cliente Tiago Fontes, porque a coluna <code>tipo</code> é diferente (<code>fornecedor</code> × <code>cliente</code>).</p>
+
+<p>Às vezes você quer as repetições: para contar, por exemplo. Para isso existe o <code>UNION ALL</code>, que empilha tudo sem tirar nada. Ele tem aula própria, a próxima: <a href="union-all.html">UNION ALL</a>.</p>
+
+<hr>
+
+<h2>6. Três consultas ou mais</h2>
+<p>Dá para encadear quantos <code>UNION</code> você quiser. Aqui, uma lista com três origens diferentes: os clientes de Recife, os fornecedores estrangeiros e a funcionária que não tem chefe (a gerente):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, 'cliente' AS origem
+FROM clientes WHERE cidade = 'Recife'
+UNION
+SELECT nome, 'fornecedor'
+FROM fornecedores WHERE pais &lt;&gt; 'Brasil'
+UNION
+SELECT nome, 'funcionária'
+FROM funcionarios WHERE chefe_id IS NULL
+ORDER BY origem, nome;
+</pre>
+
+<p>Três tabelas diferentes, uma lista só, ordenada primeiro pela origem e depois pelo nome. As três consultas têm 2 colunas cada uma, e o <code>ORDER BY</code> continua uma vez só, no fim.</p>
+
+<hr>
+
+<h2>7. UNION × OR</h2>
+<p>Quando as duas listas vêm da <strong>mesma tabela</strong>, um <code>OR</code> (aula <a href="or.html">OR</a>) costuma dar o mesmo resultado. Os clientes de Pernambuco <strong>ou</strong> VIP, dos dois jeitos:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome FROM clientes WHERE estado = 'PE'
+UNION
+SELECT nome FROM clientes WHERE vip = 1;
+</pre>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome FROM clientes
+WHERE estado = 'PE' OR vip = 1;
+</pre>
+
+<p>Os mesmos 7 clientes, em ordem diferente. Com uma tabela só, o <code>OR</code> é mais simples e o banco lê a tabela uma vez. Mas o <code>OR</code> não sabe juntar <strong>duas tabelas diferentes</strong> numa lista; aí só o <code>UNION</code> resolve.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer…</th><th>Use</th></tr>
+<tr><td>Linhas da mesma tabela que atendem a uma condição <strong>ou</strong> a outra</td><td><code>WHERE … OR …</code> (ou <code>IN</code>)</td></tr>
+<tr><td>Uma lista só com linhas de tabelas <strong>diferentes</strong>, sem repetição</td><td><code>UNION</code></td></tr>
+<tr><td>A mesma coisa, mas mantendo as repetições (para contar, somar)</td><td><a href="union-all.html"><code>UNION ALL</code></a></td></tr>
+<tr><td>Colunas de outra tabela ao lado de cada linha</td><td><a href="joins.html"><code>JOIN</code></a>, não <code>UNION</code></td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Os parentes do UNION: INTERSECT e EXCEPT</strong>
+<p>O SQL tem mais dois operadores que juntam consultas do mesmo jeito. <code>INTERSECT</code> ("interseção") mostra só o que está nas <strong>duas</strong> listas; <code>EXCEPT</code> ("exceto") mostra o que está na primeira e <strong>não</strong> está na segunda. As mesmas regras de colunas valem para eles.</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM clientes
+INTERSECT
+SELECT cidade FROM fornecedores;
+</pre>
+<p>Teresina, Fortaleza e São Paulo: as cidades que têm cliente <strong>e</strong> fornecedor. E as cidades que só têm fornecedor:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cidade FROM fornecedores
+EXCEPT
+SELECT cidade FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Número de colunas diferente</strong>
+<p>A primeira consulta tem 2 colunas e a segunda, 1:</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, cidade FROM clientes
+UNION
+SELECT nome FROM fornecedores;
+</pre>
+<p><strong>A mensagem:</strong> <code>SELECTs to the left and right of UNION do not have the same number of result columns</code>, "os SELECTs à esquerda e à direita do UNION não têm o mesmo número de colunas no resultado". É o erro mais comum com <code>UNION</code>. No terminal do <code>sqlite3</code>, a mesma mensagem vem com um prefixo:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; SELECT nome, cidade FROM clientes UNION SELECT nome FROM fornecedores;
+Parse error: SELECTs to the left and right of UNION do not have the same number of result columns</pre>
+<p><strong>Como consertar:</strong> conte as colunas de cada consulta e deixe iguais: acrescente a coluna que falta (<code>SELECT nome, cidade FROM fornecedores</code>) ou tire a que sobra.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ORDER BY</code> no meio</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome FROM clientes
+ORDER BY nome
+UNION
+SELECT nome FROM fornecedores;
+</pre>
+<p><strong>A mensagem:</strong> <code>ORDER BY clause should come after UNION not before</code>, "a cláusula ORDER BY deve vir depois do UNION, não antes". O SQLite até explica o que fazer.</p>
+<p><strong>Como consertar:</strong> mova o <code>ORDER BY</code> para depois da última consulta. Ele vai ordenar a lista inteira, que é quase sempre o que você queria.</p>
+</div>
+
+<div class="cenario">
+<strong>Ordenar por uma coluna que não está no resultado</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT cidade FROM clientes
+UNION
+SELECT cidade FROM fornecedores
+ORDER BY nome;
+</pre>
+<p><strong>A mensagem:</strong> <code>1st ORDER BY term does not match any column in the result set</code>, "o 1º termo do ORDER BY não corresponde a nenhuma coluna do resultado". Numa consulta simples, você pode ordenar por uma coluna que não mostra; com <code>UNION</code>, não: o <code>ORDER BY</code> só enxerga as colunas do resultado unido.</p>
+<p><strong>Como consertar:</strong> ordene por uma coluna que está no <code>SELECT</code> (<code>ORDER BY cidade</code>) ou pela posição (<code>ORDER BY 1</code>).</p>
+</div>
+
+<div class="cenario">
+<strong>Parênteses em volta de cada consulta</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>(SELECT nome FROM funcionarios)
+UNION
+(SELECT nome FROM fornecedores);
+</pre>
+<p><strong>A mensagem:</strong> <code>near "(": syntax error</code>, "erro de sintaxe perto de <code>(</code>". Em outros bancos essa escrita é aceita (veja a nota abaixo), por isso ela aparece em muito tutorial; o SQLite não aceita.</p>
+<p><strong>Como consertar:</strong> tire os parênteses. Se você queria um <code>ORDER BY</code> ou <code>LIMIT</code> só numa das partes, ponha essa parte como subconsulta no <code>FROM</code>:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome FROM (SELECT nome FROM funcionarios ORDER BY salario DESC LIMIT 2)
+UNION
+SELECT nome FROM fornecedores WHERE pais &lt;&gt; 'Brasil';
+</pre>
+<p>Os 2 funcionários de maior salário (Marta e Luana) e os 2 fornecedores estrangeiros. Subconsultas têm aula própria: <a href="subconsultas.html">Subconsultas</a>.</p>
+</div>
+
+<div class="cenario">
+<strong>Colunas na ordem trocada: sem erro, mas errado</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, cidade FROM clientes WHERE cidade = 'Recife'
+UNION
+SELECT cidade, nome FROM fornecedores WHERE pais &lt;&gt; 'Brasil';
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, mas "Buenos Aires" e "Porto" foram parar na coluna <code>nome</code>, e os nomes dos fornecedores na coluna <code>cidade</code>. O <code>UNION</code> encaixa por <strong>posição</strong>, não por nome. E o SQLite não confere se o tipo combina: ele aceita até empilhar um número embaixo de um texto.</p>
+<p><strong>Como consertar:</strong> escreva as colunas na mesma ordem em todas as consultas: <code>SELECT nome, cidade FROM fornecedores</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>No MySQL, no PostgreSQL e no SQL Server o <code>UNION</code> funciona do mesmo jeito: mesmo número de colunas, repetições removidas, nomes vindos da primeira consulta e <code>ORDER BY</code> no fim. Duas diferenças:</p>
+<ul>
+  <li><strong>Tipos.</strong> O PostgreSQL e o SQL Server exigem que as colunas de mesma posição tenham <strong>tipos compatíveis</strong>; o SQLite não confere.</li>
+  <li><strong>Parênteses.</strong> O MySQL e o PostgreSQL aceitam cada consulta entre parênteses, e é assim que eles põem um <code>ORDER BY</code> ou <code>LIMIT</code> numa parte só. Este trecho é <strong>ilustrativo</strong> (não roda no SQLite):</li>
+</ul>
+<pre class="file" data-file="MySQL / PostgreSQL (ilustrativo)">(SELECT nome FROM funcionarios ORDER BY salario DESC LIMIT 2)
+UNION
+(SELECT nome FROM fornecedores WHERE pais &lt;&gt; 'Brasil');
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT … UNION SELECT …</code></td><td>Empilha os dois resultados e tira as linhas repetidas</td></tr>
+<tr><td><code>SELECT … UNION SELECT … UNION SELECT …</code></td><td>Três ou mais consultas numa lista só</td></tr>
+<tr><td><code>'cliente' AS origem</code></td><td>Coluna de texto fixo para saber de onde veio cada linha</td></tr>
+<tr><td><code>… ORDER BY nome</code> / <code>ORDER BY 1</code></td><td>Ordena a lista inteira; só no fim, uma vez</td></tr>
+<tr><td><code>… LIMIT 3</code></td><td>Limita a lista inteira; só no fim</td></tr>
+<tr><td><code>UNION ALL</code></td><td>Empilha sem tirar repetições (<a href="union-all.html">próxima aula</a>)</td></tr>
+<tr><td><code>INTERSECT</code> / <code>EXCEPT</code></td><td>O que está nas duas listas / o que está só na primeira</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>SELECTs to the left and right of UNION do not have the same number of result columns</code></td><td>As consultas têm números de colunas diferentes</td></tr>
+<tr><td><code>ORDER BY clause should come after UNION not before</code></td><td>O <code>ORDER BY</code> está no meio; mova para o fim</td></tr>
+<tr><td><code>1st ORDER BY term does not match any column in the result set</code></td><td>O <code>ORDER BY</code> usa uma coluna que não está no resultado</td></tr>
+<tr><td><code>near "(": syntax error</code></td><td>Parênteses em volta das consultas: o SQLite não aceita</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A palavra que junta</h3>
+<p>Complete para empilhar os nomes dos clientes e dos fornecedores, sem repetição:</p>
+<div class="ex-code">SELECT nome FROM clientes <input data-answer="UNION|union" aria-label="operador"> SELECT nome FROM fornecedores;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Contando colunas</h3>
+<p>A primeira consulta é <code>SELECT nome, cidade, estado FROM clientes</code>. Quantas colunas a segunda consulta do <code>UNION</code> precisa ter?</p>
+<div class="ex-code"><input data-answer="3|três|tres" aria-label="número de colunas"> colunas</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Onde vai o <code>ORDER BY</code> num <code>UNION</code>?</p>
+<label><input type="radio" name="q3"> Em cada consulta, antes do <code>UNION</code></label>
+<label><input type="radio" name="q3"> Só na primeira consulta</label>
+<label><input type="radio" name="q3"> Uma vez só, depois da última consulta, e vale para a lista inteira</label>
+<label><input type="radio" name="q3"> O <code>UNION</code> não aceita <code>ORDER BY</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Os clientes estão em 8 cidades e os fornecedores em 5 cidades diferentes; 3 cidades aparecem nas duas listas. Quantas linhas saem do <code>SELECT cidade FROM clientes UNION SELECT cidade FROM fornecedores</code>?</p>
+<label><input type="radio" name="q4"> 13</label>
+<label><input type="radio" name="q4"> 10</label>
+<label><input type="radio" name="q4"> 14</label>
+<label><input type="radio" name="q4"> 3</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. De onde vêm os nomes das colunas do resultado de um <code>UNION</code>?</p>
+<label><input type="radio" name="q5"> Da última consulta</label>
+<label><input type="radio" name="q5"> O banco inventa nomes novos</label>
+<label><input type="radio" name="q5"> De qualquer consulta, desde que os nomes sejam iguais</label>
+<label><input type="radio" name="q5"> Da primeira consulta</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. A Ana quer, numa lista só, os clientes VIP e os funcionários. O que ela deve usar?</p>
+<label><input type="radio" name="q6"> <code>UNION</code>, porque são duas tabelas diferentes e ela quer mais linhas</label>
+<label><input type="radio" name="q6"> <code>WHERE vip = 1 OR …</code>, numa consulta só</label>
+<label><input type="radio" name="q6"> Um <code>INNER JOIN</code> entre clientes e funcionários</label>
+<label><input type="radio" name="q6"> Não dá para juntar tabelas diferentes</label>
+</div>
+
+<h3>Missão final: os contatos de Fortaleza</h3>
+
+<div class="trysql" data-goal="colunas:nome,origem;;linhas:8;;contem:Loja D'Água|fornecedor">
+<p class="try-task"><strong>Missão:</strong> a Ana vai visitar Fortaleza e quer a lista de todos os contatos de lá: os clientes <strong>e</strong> os fornecedores, com a coluna <code>origem</code> dizendo quem é quem, tudo em ordem alfabética de nome. A consulta abaixo só traz os clientes. Complete-a.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, 'cliente' AS origem
+FROM clientes
+WHERE cidade = 'Fortaleza'
+ORDER BY nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, 'cliente' AS origem
+FROM clientes
+WHERE cidade = 'Fortaleza'
+UNION
+SELECT nome, 'fornecedor'
+FROM fornecedores
+WHERE cidade = 'Fortaleza'
+ORDER BY nome;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>UNION</code> empilha o resultado de duas ou mais consultas numa lista só e <strong>tira as linhas repetidas</strong> (todas as colunas iguais), até as de dentro de uma mesma consulta.</li>
+  <li><code>JOIN</code> acrescenta colunas; <code>UNION</code> acrescenta linhas.</li>
+  <li>Todas as consultas precisam do <strong>mesmo número de colunas</strong>, na mesma ordem. O encaixe é pela posição; os nomes vêm da primeira consulta.</li>
+  <li><code>ORDER BY</code> e <code>LIMIT</code> vêm uma vez só, no fim, e valem para a lista inteira.</li>
+  <li>Uma coluna de texto fixo (<code>'cliente' AS origem</code>) mostra de onde veio cada linha.</li>
+  <li>Na mesma tabela, um <code>OR</code> costuma bastar; para juntar tabelas diferentes, use <code>UNION</code>. Para manter as repetições, <a href="union-all.html">UNION ALL</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
