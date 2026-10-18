@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL AVG() — a média de uma coluna | Guia SQL</title>
+<meta name="description" content="AVG em SQL para quem nunca usou um banco: a média dos preços, dos fretes e dos salários da Loja Aurora; as dízimas longas que o SQLite mostra e o ROUND, AVG = SUM ÷ COUNT, a divisão inteira que engana, zero × NULL na média, média simples × ponderada e os resultados estranhos com texto, rodando no seu navegador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">AVG()</span></h1>
+
+<p class="intro">Quanto custa, em média, um produto da Loja Aurora? Quantos dias uma entrega leva? Qual é o salário médio da equipe? A média é a conta da escola: some tudo e divida pela quantidade. Em SQL, ela se chama <code>AVG()</code>, do inglês <em>average</em>, "média". A conta é simples, mas o resultado costuma sair com uma fila de casas decimais, e a média tem pegadinhas com o zero, com o <code>NULL</code> e com a divisão de números inteiros. Esta aula mostra todas, com os números reais da loja.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Calcular a média de uma coluna, ou de um grupo de linhas com <code>WHERE</code>.</li>
+  <li>Por que o SQLite mostra <code>48.2053333333333</code> e como arredondar com <code>ROUND()</code>.</li>
+  <li>Que <code>AVG</code> é <code>SUM ÷ COUNT</code>, e a armadilha da divisão de inteiros (<code>3301 / 45 = 73</code>).</li>
+  <li>A diferença entre um <strong>zero</strong> e um <strong><code>NULL</code></strong> na média.</li>
+  <li>Média simples × média ponderada: duas respostas certas para perguntas diferentes.</li>
+  <li>O que o <code>AVG</code> faz com textos e datas (sem dar erro).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a média do boletim</h2>
+<p>No boletim, a média de quatro provas com notas 7, 8, 6 e 9 é (7 + 8 + 6 + 9) ÷ 4 = 7,5. São dois passos: <strong>somar</strong> e <strong>dividir pela quantidade</strong>. O <code>AVG()</code> faz os dois de uma vez, com todas as linhas da coluna. E, assim como o professor não conta uma prova que o aluno não fez, o <code>AVG()</code> não conta os <code>NULL</code>: eles saem da soma <strong>e</strong> da quantidade.</p>
+
+<hr>
+
+<h2>1. A primeira média</h2>
+
+<pre class="file" data-file="preco-medio.sql" data-resultado>SELECT AVG(preco) AS preco_medio
+FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>AVG</dt><dd>A função de média.</dd>
+  <dt>(preco)</dt><dd>A coluna cuja média você quer. Como no <code>SUM</code>, vai uma coluna (ou uma conta), nunca <code>*</code>.</dd>
+  <dt>AS preco_medio</dt><dd>O apelido da coluna do resultado.</dd>
+</dl>
+
+<p>O preço médio é 48.2053333333333. Essa fila de 3 é uma <strong>dízima</strong>: a soma dos preços (2169.24) dividida por 45 não dá um número "redondo". O SQLite mostra até 15 algarismos e para ali; a conta de verdade continuaria para sempre.</p>
+
+<h3>Arredondar com ROUND</h3>
+<p>Ninguém escreve um preço com 13 casas. Embrulhe a média em <code>ROUND(…, 2)</code> para ficar com 2 casas, os centavos:</p>
+
+<pre class="file" data-file="preco-medio-round.sql" data-resultado>SELECT ROUND(AVG(preco), 2) AS preco_medio
+FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>ROUND( … , 2)</dt><dd>"Arredondar", com 2 casas decimais. Primeiro o <code>AVG</code> calcula 48.2053333333333; depois o <code>ROUND</code> arredonda para 48.21. Com 1 casa, daria 48.2; sem o segundo número, <code>ROUND(AVG(preco))</code> dá 48.0.</dd>
+</dl>
+
+<p>Com <code>WHERE</code>, a média é só das linhas que passaram. O salário médio de quem trabalha nas vendas:</p>
+
+<pre class="file" data-file="salario-vendas.sql" data-resultado>SELECT AVG(salario) AS media_vendas
+FROM funcionarios
+WHERE cargo LIKE 'Vendedor%';
+</pre>
+
+<p>Aqui a média saiu "redonda", 3131.51, porque a conta fechou em duas casas. Repare que o SQLite não escreve zeros sobrando: se fosse 3131.50, ele escreveria 3131.5.</p>
+
+<div class="trysql" data-goal="out:^14\.49$">
+<p class="try-task"><strong>Experimente:</strong> a consulta calcula o frete médio dos 90 pedidos, com todas as casas. Arredonde o resultado para centavos (2 casas).</p>
+<pre class="script" data-file="consulta.sql">SELECT AVG(frete) AS frete_medio
+FROM pedidos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT ROUND(AVG(frete), 2) AS frete_medio
+FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. AVG é SUM dividido por COUNT</h2>
+<p>Você pode conferir a conta do <code>AVG</code> fazendo os dois passos à mão:</p>
+
+<pre class="file" data-file="conferir.sql" data-resultado>SELECT SUM(preco)                AS soma,
+       COUNT(preco)              AS quantos,
+       SUM(preco) / COUNT(preco) AS na_mao,
+       AVG(preco)                AS com_avg
+FROM produtos;
+</pre>
+
+<p>Deu igual. Agora faça a mesma coisa com o <code>estoque</code>, que é uma coluna de inteiros:</p>
+
+<pre class="file" data-file="divisao-inteira.sql" data-resultado>SELECT AVG(estoque)                 AS com_avg,
+       SUM(estoque) / COUNT(*)       AS na_mao,
+       SUM(estoque) * 1.0 / COUNT(*) AS na_mao_com_1_0
+FROM produtos;
+</pre>
+
+<p>O <code>na_mao</code> deu <strong>73</strong>, e não 73.36! Quando os dois lados de uma divisão são inteiros (3301 e 45), o SQLite faz <strong>divisão inteira</strong>: joga fora tudo depois da vírgula, como a divisão "com resto" da escola. Multiplicar por <code>1.0</code> transforma a soma num número com decimais, e aí a divisão sai completa. O <code>AVG</code> não tem esse problema: ele sempre devolve um número com decimais (<code>REAL</code>), mesmo quando todos os valores são inteiros.</p>
+
+<div class="tip">
+<strong>Divisão inteira</strong>
+<p><code>SELECT 10 / 4</code> dá <code>2</code>; <code>SELECT 10 / 4.0</code> dá <code>2.5</code>. Basta um dos lados ter decimal para a conta sair completa. Sempre que for dividir duas colunas de inteiros, lembre do <code>* 1.0</code>, ou use <code>AVG</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Zero entra na média; NULL não</h2>
+<p>Onze pedidos tiveram frete grátis: o <code>frete</code> deles é <strong>0</strong>, um valor conhecido. Ele entra na média e a puxa para baixo:</p>
+
+<pre class="file" data-file="frete-todos.sql" data-resultado>SELECT AVG(frete) AS todos_os_pedidos
+FROM pedidos;
+</pre>
+
+<pre class="file" data-file="frete-pagos.sql" data-resultado>SELECT AVG(frete) AS so_fretes_pagos, COUNT(*) AS pedidos
+FROM pedidos
+WHERE frete &gt; 0;
+</pre>
+
+<p>Com os zeros, a média dos 90 pedidos é 14.49; só dos 79 fretes pagos, 16.51. As duas estão certas: respondem perguntas diferentes ("quanto o cliente paga de frete, em média?" e "quanto custa um frete, quando é cobrado?").</p>
+
+<p>Já o <code>NULL</code> fica de fora sozinho. Quantos dias, em média, uma entrega leva? Os 5 pedidos que ainda não chegaram têm <code>entregue_em</code> <code>NULL</code>:</p>
+
+<pre class="file" data-file="dias-entrega.sql" data-resultado>SELECT COUNT(*)           AS pedidos,
+       COUNT(entregue_em) AS entregues,
+       AVG(julianday(entregue_em) - julianday(data)) AS dias
+FROM pedidos;
+</pre>
+
+<dl class="anatomy">
+  <dt>julianday(…)</dt><dd>Transforma uma data num número de dias, para dar para fazer conta. <code>julianday('2024-01-10') - julianday('2024-01-05')</code> dá 5.0. Ela tem aula própria: <a href="funcoes-data.html">Funções de Data</a>.</dd>
+  <dt>julianday(entregue_em) - julianday(data)</dt><dd>Quantos dias cada pedido levou. Nos 5 pedidos pendentes, <code>entregue_em</code> é <code>NULL</code>, e qualquer conta com <code>NULL</code> dá <code>NULL</code>.</dd>
+  <dt>AVG( … )</dt><dd>A média só dos 85 pedidos entregues: 6.0 dias. Os <code>NULL</code> saíram da soma e da contagem, sem você pedir.</dd>
+</dl>
+
+<p>Se o <code>AVG</code> contasse os pedidos pendentes como zero dias, a média cairia e a loja pareceria mais rápida do que é. Por isso a regra existe: <strong>desconhecido não é zero</strong>.</p>
+
+<hr>
+
+<h2>4. Média simples × média ponderada</h2>
+<p>"Qual é o preço médio dos itens vendidos?" parece uma pergunta só, mas tem duas respostas:</p>
+
+<pre class="file" data-file="ponderada.sql" data-resultado>SELECT AVG(preco_unitario) AS media_simples,
+       SUM(quantidade * preco_unitario) / SUM(quantidade) AS media_por_unidade
+FROM itens_pedido;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>O que calcula</th><th>Resultado</th></tr>
+<tr><td><code>AVG(preco_unitario)</code></td><td>A média das 220 linhas de item. Um item com 3 unidades conta igual a um item com 1</td><td>50.88</td></tr>
+<tr><td><code>SUM(quantidade * preco_unitario) / SUM(quantidade)</code></td><td>Quanto custou, em média, <strong>cada unidade</strong> vendida: o faturamento dividido pelas unidades. Um item com 3 unidades pesa 3 vezes</td><td>49.43</td></tr>
+</table>
+</div>
+
+<p>A segunda é uma média <strong>ponderada</strong> (cada valor tem um "peso", aqui a quantidade). Ela saiu mais baixa porque os itens comprados em 2 ou 3 unidades são, em geral, de produtos mais baratos, que agora pesam mais na conta. Não existe uma "certa": escolha pela pergunta.</p>
+
+<h3>Mais um truque: média de uma coluna 0/1</h3>
+<p>Na coluna <code>vip</code>, que só tem 0 e 1, a média é a <strong>proporção</strong> de VIPs:</p>
+
+<pre class="file" data-file="proporcao-vip.sql" data-resultado>SELECT AVG(vip)                  AS proporcao,
+       ROUND(AVG(vip) * 100, 1)  AS porcentagem
+FROM clientes;
+</pre>
+
+<p>5 VIPs em 30 clientes: 0.166666666666667, ou 16.7%.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Para…</th><th>Use</th></tr>
+<tr><td>A média de uma coluna</td><td><code>AVG(coluna)</code></td></tr>
+<tr><td>Mostrar a média em centavos</td><td><code>ROUND(AVG(coluna), 2)</code></td></tr>
+<tr><td>Dividir duas somas de inteiros</td><td><code>SUM(a) * 1.0 / SUM(b)</code> (ou <code>AVG</code>, quando for o caso)</td></tr>
+<tr><td>A média pesando pela quantidade</td><td><code>SUM(peso * valor) / SUM(peso)</code></td></tr>
+<tr><td>A média sem os zeros</td><td><code>AVG(coluna) … WHERE coluna &gt; 0</code></td></tr>
+<tr><td>A porcentagem de "sim" numa coluna 0/1</td><td><code>AVG(coluna) * 100</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>A média de uma data</strong>
+<p>A Ana quer a data de nascimento média dos clientes:</p>
+<pre class="file" data-file="media-data.sql" data-resultado>SELECT AVG(nascimento) FROM clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> nenhum erro, e o resultado é 1987.75, que não é data nenhuma. As datas estão guardadas como texto (<code>'1985-03-12'</code>). Para fazer conta, o SQLite lê o começo do texto que parece número, <code>1985</code>, e para no primeiro <code>-</code>. Ou seja, ele calculou a média dos <strong>anos</strong> dos 28 clientes com data (os 2 <code>NULL</code> ficaram de fora). Funcionou por acidente; com outro formato de data, daria lixo.</p>
+<p><strong>Como consertar:</strong> faça a conta com números de verdade: <code>AVG(julianday(nascimento))</code> dá a média em dias, e as funções de data (aula <a href="funcoes-data.html">Funções de Data</a>) transformam o resultado de volta numa data.</p>
+</div>
+
+<div class="cenario">
+<strong>A média de um texto</strong>
+<pre class="file" data-file="media-texto.sql" data-resultado>SELECT AVG(nome) FROM clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> 0.0. Um texto que não começa com número vale 0 numa conta, e a média de trinta zeros é zero. Assim como no <code>SUM</code>, o SQLite não avisa.</p>
+</div>
+
+<div class="cenario">
+<strong>A média no WHERE</strong>
+<p>"Os produtos acima da média":</p>
+<pre class="file" data-file="acima-media.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; AVG(preco);
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate function AVG()</code>, "uso indevido da função agregada <code>AVG()</code>". O <code>WHERE</code> decide linha por linha, e a média só existe depois de olhar todas as linhas.</p>
+<p><strong>Como consertar:</strong> por enquanto, em dois passos: rode <code>SELECT AVG(preco) FROM produtos;</code>, veja que dá cerca de 48.21, e use <code>WHERE preco &gt; 48.21</code>. Numa consulta só, com uma subconsulta: <code>WHERE preco &gt; (SELECT AVG(preco) FROM produtos)</code> (aula <a href="subconsultas.html">Subconsultas</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>AVG com duas colunas</strong>
+<pre class="file" data-file="avg-duas.sql" data-resultado data-erro>SELECT AVG(preco, estoque) FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function AVG()</code>. Um <code>AVG</code> por coluna: <code>AVG(preco), AVG(estoque)</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O que muda é o <strong>tipo</strong> do resultado, e isso afeta a divisão inteira da seção 2:</p>
+<ul>
+  <li><strong>SQL Server</strong>: <code>AVG</code> de uma coluna <code>int</code> devolve <code>int</code>. A média do estoque daria <strong>73</strong>, sem as casas decimais! Para ter a média completa, converta antes: <code>AVG(estoque * 1.0)</code>.</li>
+  <li><strong>PostgreSQL</strong>: <code>AVG</code> de inteiros devolve <code>numeric</code> (decimal exato), com as casas.</li>
+  <li><strong>MySQL</strong>: <code>AVG</code> de inteiros ou <code>DECIMAL</code> devolve <code>DECIMAL</code>; de <code>FLOAT</code>/<code>DOUBLE</code>, devolve <code>DOUBLE</code>.</li>
+</ul>
+<pre class="file" data-file="sql-server (ilustrativo, não roda no SQLite)">SELECT AVG(estoque * 1.0) AS media FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>AVG(coluna)</code></td><td>Média dos valores não <code>NULL</code></td><td><code>AVG(preco)</code> = 48.2053333333333</td></tr>
+<tr><td><code>ROUND(AVG(coluna), 2)</code></td><td>A média com 2 casas</td><td>48.21</td></tr>
+<tr><td><code>SUM(x) / COUNT(x)</code></td><td>O mesmo que <code>AVG(x)</code>, mas com divisão inteira se <code>x</code> for inteiro</td><td><code>SUM(estoque) / COUNT(*)</code> = 73</td></tr>
+<tr><td><code>AVG(DISTINCT coluna)</code></td><td>Média dos valores diferentes</td><td><code>AVG(DISTINCT frete)</code> = 14.53125</td></tr>
+<tr><td>Sem nenhuma linha</td><td><code>NULL</code></td><td></td></tr>
+<tr><td>Tipo do resultado no SQLite</td><td>Sempre <code>REAL</code>, mesmo com inteiros</td><td><code>AVG(estoque)</code> = 73.3555555555556</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate function AVG()</code></td><td><code>AVG</code> dentro do <code>WHERE</code></td></tr>
+<tr><td><code>wrong number of arguments to function AVG()</code></td><td>Mais de uma coluna (ou <code>*</code>) dentro do <code>AVG</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O estoque médio</h3>
+<p>Complete para calcular a média da coluna <code>estoque</code>:</p>
+<div class="ex-code">SELECT <input data-answer="AVG" aria-label="função">(estoque) FROM produtos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Em centavos</h3>
+<p>Complete para mostrar o salário médio com 2 casas decimais:</p>
+<div class="ex-code">SELECT <input data-answer="ROUND" aria-label="função">(AVG(salario), 2) FROM funcionarios;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Quanto o SQLite devolve em <code>SELECT 7 / 2;</code>?</p>
+<label><input type="radio" name="q3"> 3.5</label>
+<label><input type="radio" name="q3"> 3</label>
+<label><input type="radio" name="q3"> 4</label>
+<label><input type="radio" name="q3"> 3.0</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Uma coluna tem os valores 10, 20 e <em>NULL</em>. Quanto dá o <code>AVG</code> dela?</p>
+<label><input type="radio" name="q4"> 10.0</label>
+<label><input type="radio" name="q4"> NULL</label>
+<label><input type="radio" name="q4"> 15.0</label>
+<label><input type="radio" name="q4"> 30.0</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. E se a coluna tivesse 10, 20 e <strong>0</strong>?</p>
+<label><input type="radio" name="q5"> 10.0</label>
+<label><input type="radio" name="q5"> 15.0</label>
+<label><input type="radio" name="q5"> NULL</label>
+<label><input type="radio" name="q5"> 0.0</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. O que o SQLite faz com <code>AVG(nascimento)</code>, se as datas estão guardadas como texto <code>'1985-03-12'</code>?</p>
+<label><input type="radio" name="q6"> Dá erro, porque não dá para fazer média de texto</label>
+<label><input type="radio" name="q6"> Devolve a data média, no formato AAAA-MM-DD</label>
+<label><input type="radio" name="q6"> Devolve NULL</label>
+<label><input type="radio" name="q6"> Lê só o ano (o começo que parece número) e faz a média dos anos</label>
+</div>
+
+<h3>Missão final: o preço médio dos eletrônicos</h3>
+
+<div class="trysql" data-goal="out:^82\.71$">
+<p class="try-task"><strong>Missão:</strong> a consulta calcula a média de preço de <strong>todos</strong> os produtos, com todas as casas. A gerente quer o preço médio só dos Eletrônicos (categoria 2), em centavos.</p>
+<pre class="script" data-file="consulta.sql">SELECT AVG(preco) AS preco_medio
+FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT ROUND(AVG(preco), 2) AS preco_medio
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>AVG(coluna)</code> soma os valores e divide pela quantidade, ignorando os <code>NULL</code> nas duas contas.</li>
+  <li>O resultado sai em <code>REAL</code>, muitas vezes com dízima (<code>48.2053333333333</code>). Arredonde com <code>ROUND(AVG(x), 2)</code>.</li>
+  <li>Divisão de dois inteiros no SQLite é <strong>inteira</strong>: <code>3301 / 45 = 73</code>. Use <code>* 1.0</code>.</li>
+  <li><strong>Zero entra</strong> na média e a puxa para baixo; <strong><code>NULL</code> não entra</strong>. Escolha o filtro pela pergunta.</li>
+  <li>Média simples (<code>AVG</code>) e ponderada (<code>SUM(peso * valor) / SUM(peso)</code>) respondem perguntas diferentes.</li>
+  <li><code>AVG</code> de texto não dá erro: vale o número do começo do texto, ou 0. Não confie nesse resultado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
