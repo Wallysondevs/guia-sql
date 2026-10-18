@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL DROP TABLE — apagar uma tabela inteira | Guia SQL</title>
+<meta name="description" content="DROP TABLE para quem nunca mexeu num banco: apagar a tabela inteira (estrutura e dados), IF EXISTS, a ordem certa quando há chaves estrangeiras, o que some junto (índices) e o que quebra (views), como se proteger com transação e backup, e os erros reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">DROP TABLE</span></h1>
+
+<p class="intro">Às vezes uma tabela não serve mais: era um teste, uma cópia temporária, uma ideia que não deu certo. Para jogá-la fora <strong>inteira</strong>, com a estrutura e todas as linhas, existe o <code>DROP TABLE</code> ("solte", "largue a tabela"). É um dos comandos mais curtos do SQL e um dos mais perigosos: o banco não pergunta "tem certeza?" e não existe lixeira. Nesta aula você vai apagar tabelas da Loja Aurora (no editor, cada Rodar traz tudo de volta), ver por que o banco às vezes se recusa e aprender a se proteger.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como apagar uma tabela com <code>DROP TABLE</code>, e a diferença para o <code>DELETE</code>.</li>
+  <li><code>DROP TABLE IF EXISTS</code>: apagar só se existir, sem erro.</li>
+  <li>Por que o SQLite recusa apagar uma tabela que outras referenciam, e a ordem certa de apagar.</li>
+  <li>O que some junto (os índices) e o que fica quebrado (as views).</li>
+  <li>Como se proteger: transação, cópia e backup.</li>
+  <li>Os erros reais: <code>no such table</code>, <code>FOREIGN KEY constraint failed</code>, <code>use DROP VIEW</code>…</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: jogar fora a gaveta</h2>
+<p>Imagine o fichário da loja, com uma gaveta para cada assunto: clientes, produtos, pedidos. Há duas coisas bem diferentes que você pode fazer com uma gaveta:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No fichário</th><th>No SQL</th><th>Depois</th></tr>
+<tr><td>Tirar todas as fichas e deixar a gaveta vazia no lugar</td><td><code>DELETE FROM tabela;</code></td><td>A tabela existe, com as colunas, e tem 0 linhas. Dá para pôr fichas novas.</td></tr>
+<tr><td>Arrancar a gaveta do móvel e jogar fora, com fichas e tudo</td><td><code>DROP TABLE tabela;</code></td><td>A tabela não existe mais. Para usar de novo, é preciso criá-la do zero.</td></tr>
+</table>
+</div>
+
+<p>Esvaziar a tabela tem aula própria: <a href="esvaziar-tabela.html">Esvaziar uma Tabela</a>. Esta aula é sobre jogar a gaveta fora.</p>
+
+<hr>
+
+<h2>1. O primeiro DROP TABLE</h2>
+<p>A Ana criou uma tabela de rascunho para testar os cupons, e agora não precisa mais dela:</p>
+
+<pre class="file" data-file="drop.sql" data-resultado>CREATE TABLE rascunho (
+    id     INTEGER PRIMARY KEY,
+    codigo TEXT
+);
+INSERT INTO rascunho (codigo) VALUES ('TESTE1'), ('TESTE2');
+
+DROP TABLE rascunho;
+</pre>
+
+<dl class="anatomy">
+  <dt>DROP TABLE</dt><dd>"Jogue fora a tabela". Apaga a tabela inteira: as colunas, as regras e todas as linhas.</dd>
+  <dt>rascunho</dt><dd>O nome da tabela. Um só por comando, no SQLite.</dd>
+</dl>
+
+<p>O quadro diz só "DROP TABLE: ok". Não diz quantas linhas foram embora, nem pede confirmação. E se a Ana tentar usar a tabela depois?</p>
+
+<pre class="file" data-file="depois.sql" data-resultado data-erro>CREATE TABLE rascunho (
+    id     INTEGER PRIMARY KEY,
+    codigo TEXT
+);
+INSERT INTO rascunho (codigo) VALUES ('TESTE1'), ('TESTE2');
+
+DROP TABLE rascunho;
+
+SELECT * FROM rascunho;
+</pre>
+
+<p><code>no such table: rascunho</code>, "não existe a tabela rascunho". Para o banco, é como se ela nunca tivesse existido.</p>
+
+<h3>No terminal</h3>
+<p>No banco da Ana, no computador dela, o efeito aparece no <code>.tables</code>. Repare que o <code>DROP TABLE</code> não mostra nada quando dá certo:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .tables
+categorias    fornecedores  itens_pedido  produtos
+clientes      funcionarios  pedidos
+sqlite&gt; DROP TABLE itens_pedido;
+sqlite&gt; .tables
+categorias    fornecedores  pedidos
+clientes      funcionarios  produtos
+sqlite&gt; SELECT COUNT(*) FROM itens_pedido;
+Parse error: no such table: itens_pedido
+sqlite&gt; .quit</pre>
+
+<p>Os 220 itens de pedido foram embora. Ao contrário do editor, aqui é o arquivo <code>loja.db</code> de verdade: não volta mais. (Para a Ana, a sorte é que esse banco é uma cópia de estudo.)</p>
+
+<hr>
+
+<h2>2. DROP TABLE IF EXISTS</h2>
+<p>Apagar uma tabela que não existe é erro:</p>
+
+<pre class="file" data-file="nao-existe.sql" data-resultado data-erro>DROP TABLE cupons;
+</pre>
+
+<p>Num roteiro que recria as tabelas do zero, esse erro atrapalha: na primeira vez, a tabela ainda não existe, e o roteiro para no primeiro comando. Para isso há o <code>IF EXISTS</code> ("se existir"):</p>
+
+<pre class="file" data-file="if-exists.sql" data-resultado>DROP TABLE IF EXISTS cupons;
+
+CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto) VALUES ('NATAL', 15);
+
+SELECT * FROM cupons;
+</pre>
+
+<dl class="anatomy">
+  <dt>IF EXISTS</dt><dd>"Se existir": se a tabela existe, apaga; se não existe, não faz nada e <strong>não dá erro</strong>. O roteiro segue em frente.</dd>
+</dl>
+
+<p>Esse roteiro pode rodar quantas vezes você quiser: cada vez, ele joga fora a tabela velha (se houver) e cria uma nova, limpinha. É exatamente o que faz o arquivo que monta a Loja Aurora (o <code>aurora.sql</code>): ele começa com sete linhas <code>DROP TABLE IF EXISTS</code>, uma por tabela, antes dos <code>CREATE TABLE</code>.</p>
+
+<div class="tip">
+<strong>O par do IF EXISTS</strong>
+<p>O contrário também existe: <code>CREATE TABLE IF NOT EXISTS cupons (…)</code> cria a tabela só se ela ainda não existir (aula <a href="create-table.html">CREATE TABLE</a>). Sem ele, criar uma tabela que já existe dá <code>table cupons already exists</code>.</p>
+</div>
+
+<hr>
+
+<h2>3. Quando o banco se recusa: as chaves estrangeiras</h2>
+<p>A Ana tenta apagar a tabela de pedidos:</p>
+
+<pre class="file" data-file="pedidos.sql" data-resultado data-erro>DROP TABLE pedidos;
+</pre>
+
+<p><code>FOREIGN KEY constraint failed</code>. A tabela <code>itens_pedido</code> tem uma chave estrangeira apontando para <code>pedidos</code> (aula <a href="foreign-key.html">FOREIGN KEY</a>). Com a regra ligada, como no editor, o <code>DROP TABLE</code> primeiro apaga todas as linhas da tabela, e isso deixaria 220 itens apontando para pedidos que não existem. O banco recusa, e a tabela <code>pedidos</code> continua inteira. O <code>IF EXISTS</code> não ajuda aqui: <code>DROP TABLE IF EXISTS pedidos;</code> dá o mesmo erro, porque a tabela existe.</p>
+
+<h3>A ordem certa: dos filhos para as mães</h3>
+<p>Para apagar várias tabelas ligadas, comece pela que <strong>ninguém</strong> referencia e vá subindo:</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>DROP TABLE itens_pedido;   -- ninguém aponta para os itens
+DROP TABLE pedidos;        -- agora ninguém aponta para os pedidos
+DROP TABLE clientes;       -- nem para os clientes
+
+SELECT name
+FROM sqlite_schema
+WHERE type = 'table';
+</pre>
+
+<p>Sobraram quatro tabelas. Na Loja Aurora, as setas das chaves estrangeiras são estas (a filha à esquerda, as mães à direita):</p>
+
+<pre class="file" data-file="quem aponta para quem">itens_pedido  →  pedidos, produtos
+pedidos       →  clientes, funcionarios
+produtos      →  categorias, fornecedores
+funcionarios  →  funcionarios (o chefe)
+</pre>
+
+<p>Para apagar tudo, comece por quem está só à esquerda (<code>itens_pedido</code>) e termine pelas que só aparecem à direita (<code>clientes</code>, <code>categorias</code>, <code>fornecedores</code>).</p>
+
+<div class="trysql" data-goal="erro:no such table: pedidos">
+<p class="try-task"><strong>Experimente:</strong> o código tenta apagar <code>pedidos</code> e depois <code>itens_pedido</code>, e para no primeiro comando com <code>FOREIGN KEY constraint failed</code>. Troque a ordem dos dois <code>DROP TABLE</code>. O <code>SELECT</code> do fim vai dar erro, e esse erro é a prova de que deu certo: <code>no such table: pedidos</code>.</p>
+<pre class="script" data-file="ordem.sql">DROP TABLE pedidos;
+DROP TABLE itens_pedido;
+
+SELECT COUNT(*) FROM pedidos;
+</pre>
+<pre class="solucao" data-file="ordem.sql">DROP TABLE itens_pedido;
+DROP TABLE pedidos;
+
+SELECT COUNT(*) FROM pedidos;
+</pre>
+</div>
+
+<h3>No terminal, a regra vem desligada</h3>
+<p>Lembra que, no programa <code>sqlite3</code>, as chaves estrangeiras vêm desligadas (aula <a href="foreign-key.html">FOREIGN KEY</a>)? Então lá o <code>DROP TABLE</code> de uma tabela mãe passa sem reclamar, e deixa os filhos órfãos:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; DROP TABLE clientes;
+sqlite&gt; SELECT COUNT(*) FROM pedidos;
+90
+sqlite&gt; SELECT COUNT(*) FROM clientes;
+Parse error: no such table: clientes
+sqlite&gt; .quit</pre>
+
+<p>Os 90 pedidos continuam lá, apontando para clientes que não existem mais. Mais um motivo para começar toda sessão com <code>PRAGMA foreign_keys = ON;</code>.</p>
+
+<hr>
+
+<h2>4. O que vai junto e o que fica quebrado</h2>
+
+<h3>Os índices vão junto</h3>
+<p>Um índice (aula <a href="indices.html">Índices</a>) pertence a uma tabela. Quando a tabela vai embora, os índices dela também:</p>
+
+<pre class="file" data-file="indice.sql" data-resultado>CREATE INDEX idx_quantidade ON itens_pedido (quantidade);
+
+DROP TABLE itens_pedido;
+
+SELECT name, type
+FROM sqlite_schema
+WHERE name = 'idx_quantidade';
+</pre>
+
+<p>Nenhuma linha: o índice sumiu junto. O mesmo vale para os gatilhos (<em>triggers</em>) da tabela.</p>
+
+<h3>As views ficam quebradas</h3>
+<p>Uma view (aula <a href="views.html">Views</a>) é uma consulta salva com nome. Ela não pertence a uma tabela; ela só <strong>usa</strong> a tabela. Por isso o SQLite não a apaga junto, e ela fica quebrada:</p>
+
+<pre class="file" data-file="view.sql" data-resultado data-erro>CREATE VIEW v_itens AS
+SELECT pedido_id, quantidade FROM itens_pedido;
+
+DROP TABLE itens_pedido;
+
+SELECT * FROM v_itens;
+</pre>
+
+<p>O <code>DROP TABLE</code> funcionou sem aviso; o erro só apareceu ao usar a view: <code>no such table: main.itens_pedido</code> (<code>main</code> é o nome do banco aberto). Antes de apagar uma tabela, confira quem a usa: <code>SELECT name, type FROM sqlite_schema WHERE sql LIKE '%itens_pedido%';</code>.</p>
+
+<hr>
+
+<h2>5. Como se proteger</h2>
+<p>Não existe "desfazer" para um <code>DROP TABLE</code> confirmado. Mas existem três redes de segurança, da mais rápida para a mais completa:</p>
+
+<h3>Dentro de uma transação</h3>
+<p>Entre um <code>BEGIN</code> e um <code>COMMIT</code>, nada é definitivo (aula <a href="transacoes.html">Transações</a>). Se você se arrepender antes do <code>COMMIT</code>, o <code>ROLLBACK</code> ("volte atrás") desfaz tudo, inclusive o <code>DROP TABLE</code>:</p>
+
+<pre class="file" data-file="rollback.sql" data-resultado>BEGIN;
+
+DROP TABLE itens_pedido;
+
+ROLLBACK;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+
+<p>Os 220 itens estão de volta. No SQLite, até os comandos que mudam a estrutura (<code>CREATE</code>, <code>ALTER</code>, <code>DROP</code>) respeitam a transação; em alguns outros bancos, não (veja a nota no fim).</p>
+
+<h3>Uma cópia antes</h3>
+<p>Se a tabela pode fazer falta, guarde uma cópia numa tabela nova antes de apagar: <code>CREATE TABLE itens_pedido_copia AS SELECT * FROM itens_pedido;</code> (aula <a href="create-table-as.html">Criar Tabela a partir de Consulta</a>).</p>
+
+<h3>Um backup do arquivo</h3>
+<p>A proteção completa é uma cópia do banco inteiro, feita antes de qualquer mudança grande. No SQLite, o banco é um arquivo, e o <code>sqlite3</code> tem comandos próprios para isso (aula <a href="dump-backup.html">Backup</a>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Rede de segurança</th><th>Protege contra</th><th>Quando usar</th></tr>
+<tr><td><code>BEGIN</code> … <code>ROLLBACK</code></td><td>Arrependimento dentro da mesma sessão, antes do <code>COMMIT</code></td><td>Roteiros com vários passos, como a recriação de tabela da aula <a href="alter-table.html">ALTER TABLE</a></td></tr>
+<tr><td><code>CREATE TABLE … AS SELECT</code></td><td>Precisar dos dados de uma tabela depois</td><td>Antes de apagar uma tabela que você "acha" que não serve mais</td></tr>
+<tr><td>Backup do arquivo</td><td>Qualquer coisa, inclusive o que você não previu</td><td>Sempre, antes de mexer num banco que tem dados de verdade</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>6. DROP TABLE, DELETE ou DROP COLUMN?</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Use</th><th>O que sobra</th></tr>
+<tr><td>Jogar fora a tabela inteira</td><td><code>DROP TABLE t;</code></td><td>Nada.</td></tr>
+<tr><td>Apagar algumas linhas</td><td><code>DELETE FROM t WHERE …;</code> (aula <a href="delete.html">DELETE</a>)</td><td>A tabela e as outras linhas.</td></tr>
+<tr><td>Apagar todas as linhas, mantendo a tabela</td><td><code>DELETE FROM t;</code> (aula <a href="esvaziar-tabela.html">Esvaziar uma Tabela</a>)</td><td>A tabela vazia, com as colunas e regras.</td></tr>
+<tr><td>Tirar uma coluna</td><td><code>ALTER TABLE t DROP COLUMN c;</code> (aula <a href="alter-table.html">ALTER TABLE</a>)</td><td>A tabela, sem aquela coluna.</td></tr>
+<tr><td>Apagar uma view</td><td><code>DROP VIEW v;</code></td><td>As tabelas que ela usava.</td></tr>
+<tr><td>Apagar um índice</td><td><code>DROP INDEX i;</code></td><td>A tabela e os dados.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>no such table</strong>
+<p>A tabela não existe, ou o nome está errado, ou ela já foi apagada (por exemplo, rodando o mesmo roteiro duas vezes). Veja o exemplo da seção 2.</p>
+<p><strong>Como consertar:</strong> confira o nome com <code>SELECT name FROM sqlite_schema WHERE type = 'table';</code> (ou <code>.tables</code>, no terminal). Se o roteiro precisa rodar várias vezes, use <code>DROP TABLE IF EXISTS</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>FOREIGN KEY constraint failed</strong>
+<p>Outra tabela aponta para esta (seção 3).</p>
+<p><strong>Como consertar:</strong> apague antes as tabelas filhas (as que têm <code>REFERENCES</code> para esta). Para ver quem aponta para quem, use <code>PRAGMA foreign_key_list(itens_pedido);</code> em cada tabela.</p>
+</div>
+
+<div class="cenario">
+<strong>Várias tabelas num comando só</strong>
+<pre class="file" data-file="lista.sql" data-resultado data-erro>DROP TABLE itens_pedido, pedidos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near ",": syntax error</code>. O SQLite apaga uma tabela por comando. (O MySQL e o PostgreSQL aceitam a lista; veja a nota abaixo.)</p>
+<p><strong>Como consertar:</strong> um <code>DROP TABLE</code> para cada tabela, na ordem certa.</p>
+</div>
+
+<div class="cenario">
+<strong>Tentou apagar uma view com DROP TABLE</strong>
+<pre class="file" data-file="drop-view.sql" data-resultado data-erro>CREATE VIEW clientes_pi AS
+SELECT nome FROM clientes WHERE estado = 'PI';
+
+DROP TABLE clientes_pi;
+</pre>
+<p><strong>A mensagem:</strong> <code>use DROP VIEW to delete view clientes_pi</code>, "use DROP VIEW para apagar a view clientes_pi". O SQLite até ensina o comando certo.</p>
+</div>
+
+<div class="cenario">
+<strong>Tentou apagar a tabela interna do SQLite</strong>
+<pre class="file" data-file="interna.sql" data-resultado data-erro>DROP TABLE sqlite_schema;
+</pre>
+<p><strong>A mensagem:</strong> <code>table sqlite_master may not be dropped</code>, "a tabela sqlite_master não pode ser apagada". <code>sqlite_schema</code> e <code>sqlite_master</code> são dois nomes para a mesma tabela interna, a que guarda a descrição de todas as outras. Sem ela, o banco não saberia o que tem dentro.</p>
+</div>
+
+<div class="cenario">
+<strong>DROP TABLES, no plural</strong>
+<pre class="file" data-file="plural.sql" data-resultado data-erro>DROP TABLES rascunho;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "TABLES": syntax error</code>. É sempre <code>TABLE</code>, no singular, mesmo que a tabela tenha um nome no plural.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>DROP TABLE</code> e <code>DROP TABLE IF EXISTS</code> existem no MySQL, no PostgreSQL e no SQL Server (neste, o <code>IF EXISTS</code> chegou na versão 2016). Algumas diferenças (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- MySQL e PostgreSQL: várias tabelas num comando
+DROP TABLE IF EXISTS itens_pedido, pedidos;
+
+-- PostgreSQL: CASCADE apaga junto o que depende da tabela
+-- (views e as chaves estrangeiras de outras tabelas, não as outras tabelas)
+DROP TABLE pedidos CASCADE;
+</pre>
+<p>E um cuidado importante: no MySQL, um <code>DROP TABLE</code> confirma sozinho a transação aberta; um <code>ROLLBACK</code> depois dele <strong>não</strong> traz a tabela de volta. No PostgreSQL e no SQL Server, assim como no SQLite, o <code>DROP TABLE</code> dentro de uma transação pode ser desfeito.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>DROP TABLE t;</code></td><td>Apaga a tabela inteira: estrutura, regras, linhas, índices e gatilhos.</td></tr>
+<tr><td><code>DROP TABLE IF EXISTS t;</code></td><td>Apaga se existir; se não existir, não faz nada e não dá erro.</td></tr>
+<tr><td><code>BEGIN; DROP TABLE t; ROLLBACK;</code></td><td>Desfaz o <code>DROP</code> antes de confirmar.</td></tr>
+<tr><td><code>DROP VIEW v;</code> / <code>DROP INDEX i;</code></td><td>Apagam uma view ou um índice.</td></tr>
+<tr><td>Ordem com chaves estrangeiras</td><td>Primeiro as filhas, depois as mães: <code>itens_pedido</code> → <code>pedidos</code> → <code>clientes</code>.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>no such table: cupons</code></td><td>A tabela não existe (use <code>IF EXISTS</code> se isso for normal).</td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Outra tabela aponta para esta: apague a filha antes.</td></tr>
+<tr><td><code>near ",": syntax error</code></td><td>O SQLite não aceita lista de tabelas no <code>DROP TABLE</code>.</td></tr>
+<tr><td><code>use DROP VIEW to delete view clientes_pi</code></td><td>É uma view: use <code>DROP VIEW</code>.</td></tr>
+<tr><td><code>table sqlite_master may not be dropped</code></td><td>A tabela interna do SQLite não pode ser apagada.</td></tr>
+<tr><td><code>no such table: main.itens_pedido</code> (ao usar uma view)</td><td>A view usa uma tabela que foi apagada.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sem erro se não existir</h3>
+<p>Complete para apagar a tabela <code>rascunho</code> só se ela existir:</p>
+<div class="ex-code">DROP TABLE <input data-answer="IF EXISTS" aria-label="cláusula"> rascunho;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A view</h3>
+<p>Complete o comando que apaga a view <code>clientes_pi</code>:</p>
+<div class="ex-code">DROP <input data-answer="VIEW" aria-label="tipo de objeto"> clientes_pi;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é a diferença entre <code>DELETE FROM cupons;</code> e <code>DROP TABLE cupons;</code>?</p>
+<label><input type="radio" name="q3"> Nenhuma: os dois apagam a tabela</label>
+<label><input type="radio" name="q3"> O <code>DELETE</code> deixa a tabela vazia, que ainda existe; o <code>DROP TABLE</code> faz a tabela deixar de existir</label>
+<label><input type="radio" name="q3"> O <code>DROP TABLE</code> só apaga as linhas</label>
+<label><input type="radio" name="q3"> O <code>DELETE</code> apaga também as colunas</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. No editor do guia, <code>DROP TABLE clientes;</code> dá <code>FOREIGN KEY constraint failed</code>. Por quê?</p>
+<label><input type="radio" name="q4"> Porque a tabela <code>clientes</code> não existe</label>
+<label><input type="radio" name="q4"> Porque falta o <code>IF EXISTS</code></label>
+<label><input type="radio" name="q4"> Porque os pedidos apontam para os clientes, e a regra das chaves estrangeiras está ligada</label>
+<label><input type="radio" name="q4"> Porque o SQLite não deixa apagar tabelas com mais de 10 linhas</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A Ana rodou <code>BEGIN; DROP TABLE itens_pedido; ROLLBACK;</code>. Quantos itens existem depois?</p>
+<label><input type="radio" name="q5"> 220, porque o <code>ROLLBACK</code> desfez o <code>DROP TABLE</code></label>
+<label><input type="radio" name="q5"> 0, porque a tabela ficou vazia</label>
+<label><input type="radio" name="q5"> Nenhum: a tabela não existe mais</label>
+<label><input type="radio" name="q5"> Dá erro, porque não se pode apagar tabela dentro de transação</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Existe uma view <code>v_itens</code> que usa <code>itens_pedido</code>. O que acontece com ela depois de <code>DROP TABLE itens_pedido;</code>?</p>
+<label><input type="radio" name="q6"> É apagada junto, como os índices</label>
+<label><input type="radio" name="q6"> O <code>DROP TABLE</code> é recusado por causa dela</label>
+<label><input type="radio" name="q6"> Ela continua mostrando os dados antigos</label>
+<label><input type="radio" name="q6"> Continua existindo, mas usá-la dá <code>no such table: main.itens_pedido</code></label>
+</div>
+
+<h3>Missão final: um roteiro que roda sempre</h3>
+
+<div class="trysql" data-goal="contem:NATAL|15.0">
+<p class="try-task"><strong>Missão:</strong> este roteiro deveria recriar a tabela de cupons do zero, mas para logo no primeiro comando, porque a tabela ainda não existe. Conserte <strong>só a primeira linha</strong> para que o roteiro funcione sempre: exista a tabela ou não.</p>
+<pre class="script" data-file="cupons.sql">DROP TABLE cupons;
+
+CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto) VALUES ('NATAL', 15);
+
+SELECT codigo, desconto FROM cupons;
+</pre>
+<pre class="solucao" data-file="cupons.sql">DROP TABLE IF EXISTS cupons;
+
+CREATE TABLE cupons (
+    id       INTEGER PRIMARY KEY,
+    codigo   TEXT NOT NULL,
+    desconto REAL NOT NULL
+);
+INSERT INTO cupons (codigo, desconto) VALUES ('NATAL', 15);
+
+SELECT codigo, desconto FROM cupons;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>DROP TABLE t;</code> joga fora a tabela inteira: estrutura, regras, linhas, índices e gatilhos. Não pede confirmação e não tem lixeira.</li>
+  <li><code>DROP TABLE IF EXISTS t;</code> não dá erro se a tabela não existir: ideal para roteiros que recriam tabelas.</li>
+  <li>Com as chaves estrangeiras ligadas, apagar uma tabela que outras referenciam dá <code>FOREIGN KEY constraint failed</code>: apague das filhas para as mães. No terminal, com a regra desligada, o <code>DROP</code> passa e deixa órfãos.</li>
+  <li>Views que usavam a tabela não somem: ficam quebradas, com <code>no such table: main.…</code>.</li>
+  <li>Proteja-se com transação (<code>BEGIN</code> … <code>ROLLBACK</code>), cópia (<code>CREATE TABLE … AS SELECT</code>) e backup.</li>
+  <li>Para esvaziar sem jogar fora, use <code>DELETE FROM t;</code> (próxima aula).</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
