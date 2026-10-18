@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL SUM() — somar uma coluna ou uma conta | Guia SQL</title>
+<meta name="description" content="SUM em SQL para quem nunca usou um banco: somar o estoque, o faturamento (quantidade × preço) e os fretes da Loja Aurora; o jeito que o SQLite escreve os decimais, ROUND, a soma de nada que dá NULL, total() × sum() no SQLite, SUM(DISTINCT) e os erros reais, rodando no seu navegador.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">SUM()</span></h1>
+
+<p class="intro">Quanto a Loja Aurora já vendeu? Quantas unidades estão paradas no depósito? Quanto a loja gastou com frete? Toda pergunta que começa com "quanto dá tudo junto" é uma <strong>soma</strong>, e em SQL quem soma é a função <code>SUM()</code> (do inglês <em>sum</em>, "soma"). Nesta aula você soma colunas, soma contas feitas linha a linha (quantidade × preço), aprende a ler os decimais do jeito que o SQLite os escreve e descobre por que a soma de nada não dá zero.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Somar uma coluna inteira, ou só as linhas de um <code>WHERE</code>.</li>
+  <li>Somar uma <strong>conta</strong>: <code>SUM(quantidade * preco_unitario)</code>, o faturamento.</li>
+  <li>Como o SQLite escreve os decimais (<code>18537.4</code>, e não <code>18537.40</code>) e quando usar <code>ROUND()</code>.</li>
+  <li>Por que a soma de nenhuma linha dá <code>NULL</code>, e como trocar por 0.</li>
+  <li>A diferença entre <code>sum()</code> e <code>total()</code>, uma função só do SQLite.</li>
+  <li>As armadilhas: <code>SUM(DISTINCT …)</code>, somar texto e o estouro de inteiro.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a fita da calculadora</h2>
+<p>Na Loja Aurora antiga, a Ana somava as vendas do dia numa calculadora de fita: digitava cada valor, apertava <strong>+</strong>, e no fim a fita mostrava o total. A <code>SUM()</code> é essa calculadora: ela passa por todas as linhas, pega o valor da coluna (ou da conta) que você pediu e vai somando. No fim, devolve um número só.</p>
+
+<p>Duas regras que valem em toda a aula:</p>
+<ul>
+  <li>A <code>SUM()</code> soma <strong>números</strong>. Use-a em colunas como <code>estoque</code>, <code>preco</code>, <code>frete</code>, <code>salario</code>.</li>
+  <li>Um <code>NULL</code> é <strong>pulado</strong>: ele não conta como zero, ele simplesmente não entra na fita.</li>
+</ul>
+
+<hr>
+
+<h2>1. Somar uma coluna</h2>
+<p>Quantas unidades a loja tem no estoque, somando todos os produtos?</p>
+
+<pre class="file" data-file="estoque.sql" data-resultado>SELECT SUM(estoque) AS unidades
+FROM produtos;
+</pre>
+
+<dl class="anatomy">
+  <dt>SUM</dt><dd>A função de somar.</dd>
+  <dt>(estoque)</dt><dd>A coluna cujos valores vão ser somados, um de cada linha. Ao contrário do <code>COUNT</code>, o <code>SUM</code> não aceita <code>*</code>: ele precisa saber <strong>o que</strong> somar.</dd>
+  <dt>AS unidades</dt><dd>O apelido da coluna do resultado.</dd>
+  <dt>FROM produtos</dt><dd>As 45 linhas que entram na soma.</dd>
+</dl>
+
+<p>Com <code>WHERE</code>, só as linhas escolhidas entram na fita. Quanto a loja gasta por mês com os salários dos vendedores e vendedoras?</p>
+
+<pre class="file" data-file="vendedores.sql" data-resultado>SELECT SUM(salario) AS folha_vendas
+FROM funcionarios
+WHERE cargo LIKE 'Vendedor%';
+</pre>
+
+<p>O <code>LIKE 'Vendedor%'</code> (aula <a href="like.html">LIKE</a>) pega "Vendedor" e "Vendedora": cinco pessoas. A soma dos cinco salários é 15657.55.</p>
+
+<hr>
+
+<h2>2. Como o SQLite escreve os números</h2>
+<p>Agora some uma coluna com decimais e compare com a soma do estoque:</p>
+
+<pre class="file" data-file="tipos.sql" data-resultado>SELECT SUM(estoque), typeof(SUM(estoque)),
+       SUM(preco),   typeof(SUM(preco))
+FROM produtos;
+</pre>
+
+<p>A função <code>typeof()</code> diz o <strong>tipo</strong> do valor (os tipos têm aula própria: <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Repare:</p>
+<ul>
+  <li><code>estoque</code> só tem números inteiros, então a soma é um inteiro, <code>integer</code>: 3301, sem vírgula nenhuma.</li>
+  <li><code>preco</code> tem decimais (é <code>REAL</code>), então a soma também é <code>real</code>: 2169.24.</li>
+</ul>
+
+<p>E o jeito de escrever os decimais tem três detalhes que pegam quem vem da planilha:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você talvez espere</th><th>O SQLite escreve</th><th>Por quê</th></tr>
+<tr><td><code>2.169,24</code></td><td><code>2169.24</code></td><td>O separador decimal é o <strong>ponto</strong>, como em inglês, e não existe separador de milhar</td></tr>
+<tr><td><code>18537,40</code></td><td><code>18537.4</code></td><td>Ele não completa zeros à direita: 18537.4 e 18537.40 são o mesmo número</td></tr>
+<tr><td><code>9800</code></td><td><code>9800.0</code></td><td>Um <code>REAL</code> sem parte decimal ganha <code>.0</code>, para mostrar que não é inteiro</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>3. Somar uma conta: o faturamento</h2>
+<p>A tabela <code>itens_pedido</code> guarda, para cada produto de cada pedido, a <code>quantidade</code> e o <code>preco_unitario</code> (o preço do dia da compra). Ela <strong>não</strong> tem uma coluna "subtotal". Veja os três itens do pedido 1, com a conta feita linha a linha:</p>
+
+<pre class="file" data-file="itens-pedido-1.sql" data-resultado>SELECT quantidade, preco_unitario,
+       quantidade * preco_unitario AS subtotal
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+
+<p>Dentro do <code>SUM</code> pode ir uma <strong>conta</strong>, e não só uma coluna. O SQLite faz a conta em cada linha e soma os resultados:</p>
+
+<pre class="file" data-file="total-pedido-1.sql" data-resultado>SELECT SUM(quantidade * preco_unitario) AS produtos
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+
+<dl class="anatomy">
+  <dt>quantidade * preco_unitario</dt><dd>A conta de cada linha: 2 × 12.35 = 24.7; 1 × 2.79 = 2.79; 3 × 1.15 = 3.45.</dd>
+  <dt>SUM( … )</dt><dd>Soma os três subtotais: 24.7 + 2.79 + 3.45 = 30.94, o valor dos produtos do pedido 1 (o frete fica à parte, na tabela <code>pedidos</code>).</dd>
+</dl>
+
+<p>Sem o <code>WHERE</code>, você tem o faturamento da loja inteira, com todos os 220 itens vendidos:</p>
+
+<pre class="file" data-file="faturamento.sql" data-resultado>SELECT SUM(quantidade * preco_unitario) AS faturamento
+FROM itens_pedido;
+</pre>
+
+<p>Atenção ao parêntese: é <code>SUM(quantidade * preco_unitario)</code>, a soma das multiplicações. <code>SUM(quantidade) * SUM(preco_unitario)</code> seria outra coisa (o total de unidades vezes a soma de todos os preços), um número enorme e sem sentido.</p>
+
+<div class="trysql" data-goal="out:^24383\.67$">
+<p class="try-task"><strong>Experimente:</strong> a consulta soma as <strong>unidades</strong> de Eletrônicos (categoria 2). A gerente quer o <strong>valor</strong> desse estoque em reais: o preço de cada produto vezes as unidades dele, tudo somado. Troque o que vai dentro do <code>SUM</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT SUM(estoque) AS valor_estoque
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT SUM(preco * estoque) AS valor_estoque
+FROM produtos
+WHERE categoria_id = 2;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. ROUND: o número que você vê e o número guardado</h2>
+<p>O computador guarda os números com decimais em binário, e muitos decimais "redondos" para nós, como 0.1 ou 1.15, não têm uma forma exata em binário. O SQLite esconde isso ao <strong>mostrar</strong> o número (ele escreve no máximo 15 algarismos), mas o valor guardado pode ter uma sobrinha minúscula lá no fim. Veja o pedido 1 de novo:</p>
+
+<pre class="file" data-file="comparar.sql" data-resultado>SELECT SUM(quantidade * preco_unitario) AS soma,
+       SUM(quantidade * preco_unitario) = 30.94 AS igual,
+       SUM(quantidade * preco_unitario) - 30.94 AS diferenca,
+       ROUND(SUM(quantidade * preco_unitario), 2) = 30.94 AS igual_com_round
+FROM itens_pedido
+WHERE pedido_id = 1;
+</pre>
+
+<p>A soma aparece como 30.94, mas a comparação <code>= 30.94</code> dá <strong>0</strong> (falso)! A coluna <code>diferenca</code> mostra por quê: o valor guardado fica um tiquinho abaixo de 30.94. O <code>e-15</code> quer dizer "vezes 10 elevado a −15": a diferença é de 0,0000000000000036, invisível na tela, mas suficiente para o <code>=</code> dizer "não é igual". Com <code>ROUND(…, 2)</code> ("arredondar", em inglês), o valor é arredondado para 2 casas e a comparação dá <strong>1</strong> (verdadeiro).</p>
+
+<dl class="anatomy">
+  <dt>ROUND(valor, 2)</dt><dd>Arredonda o valor para 2 casas decimais. O segundo número é quantas casas manter: <code>ROUND(2169.24, 1)</code> dá 2169.2; sem ele, <code>ROUND(2169.24)</code> arredonda para o inteiro e dá 2169.0.</dd>
+</dl>
+
+<p>A regra prática: <strong>dinheiro somado, arredonde com <code>ROUND(…, 2)</code></strong> antes de comparar, de guardar ou de mostrar para alguém. O <code>ROUND</code> não acrescenta zeros: <code>ROUND(18537.4, 2)</code> continua 18537.4. Se você precisa do texto com duas casas, para um relatório, use <code>printf('%.2f', …)</code>, que devolve o <strong>texto</strong> <code>18537.40</code> (mais em <a href="funcoes-numericas.html">Funções Numéricas</a>):</p>
+
+<pre class="file" data-file="duas-casas.sql" data-resultado>SELECT ROUND(SUM(quantidade * preco_unitario), 2) AS numero,
+       printf('%.2f', SUM(quantidade * preco_unitario)) AS texto
+FROM itens_pedido;
+</pre>
+
+<hr>
+
+<h2>5. A soma de nada é NULL</h2>
+<p>Quanto a loja vendeu de produtos acima de R$ 1000? Nenhum produto custa isso:</p>
+
+<pre class="file" data-file="soma-vazia.sql" data-resultado>SELECT SUM(estoque) AS soma
+FROM produtos
+WHERE preco &gt; 1000;
+</pre>
+
+<p>O resultado é <code>NULL</code>, e não 0. Para o SQL, a soma de nenhum valor é "desconhecida". Isso atrapalha num relatório ("vendemos <em>NULL</em> reais?") e em contas: <code>NULL + 10</code> dá <code>NULL</code>. Para trocar por zero, embrulhe a soma em <code>COALESCE</code> ou <code>IFNULL</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>): eles devolvem o segundo valor quando o primeiro é <code>NULL</code>.</p>
+
+<pre class="file" data-file="soma-zero.sql" data-resultado>SELECT COALESCE(SUM(estoque), 0) AS com_coalesce,
+       IFNULL(SUM(estoque), 0)   AS com_ifnull
+FROM produtos
+WHERE preco &gt; 1000;
+</pre>
+
+<hr>
+
+<h2>6. total(): a soma do SQLite que nunca dá NULL</h2>
+<p>O SQLite tem uma segunda função de soma, <code>total()</code>, que <strong>não existe</strong> nos outros bancos. Ela soma igualzinho, com duas diferenças:</p>
+
+<pre class="file" data-file="sum-total.sql" data-resultado>SELECT SUM(estoque), TOTAL(estoque)
+FROM produtos;
+</pre>
+
+<pre class="file" data-file="sum-total-vazio.sql" data-resultado>SELECT SUM(estoque), TOTAL(estoque)
+FROM produtos
+WHERE preco &gt; 1000;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>SUM()</code></th><th><code>TOTAL()</code></th></tr>
+<tr><td>Sem nenhuma linha (ou só <code>NULL</code>)</td><td><code>NULL</code></td><td><code>0.0</code></td></tr>
+<tr><td>Soma de inteiros</td><td>Inteiro: <code>3301</code></td><td>Sempre <code>REAL</code>: <code>3301.0</code></td></tr>
+<tr><td>Inteiros grandes demais</td><td>Erro <code>integer overflow</code></td><td>Nunca dá erro</td></tr>
+<tr><td>Existe em outros bancos?</td><td>Sim, é do padrão SQL</td><td>Não, só no SQLite</td></tr>
+</table>
+</div>
+
+<p><strong>Qual usar?</strong> <code>SUM()</code>, quase sempre: ela funciona em qualquer banco, e o <code>NULL</code> da soma vazia se resolve com <code>COALESCE(SUM(x), 0)</code>, que também funciona em qualquer banco. A <code>total()</code> é um atalho para quando você sabe que o SQL vai rodar só no SQLite.</p>
+
+<hr>
+
+<h2>7. Formas diferentes de somar o frete</h2>
+<p>Quanto a loja pagou de frete nos pedidos de 2026? A coluna <code>data</code> está no formato <code>AAAA-MM-DD</code>, então "começa com 2026" serve de filtro:</p>
+
+<pre class="file" data-file="frete-like.sql" data-resultado>SELECT SUM(frete) AS frete_2026
+FROM pedidos
+WHERE data LIKE '2026%';
+</pre>
+
+<pre class="file" data-file="frete-between.sql" data-resultado>SELECT SUM(frete) AS frete_2026
+FROM pedidos
+WHERE data BETWEEN '2026-01-01' AND '2026-12-31';
+</pre>
+
+<p>As duas dão 374.15. E uma terceira forma, que parece igual mas não é:</p>
+
+<pre class="file" data-file="frete-distinct.sql" data-resultado>SELECT SUM(frete)          AS todos,
+       SUM(DISTINCT frete) AS distintos
+FROM pedidos;
+</pre>
+
+<p>O <code>SUM(DISTINCT frete)</code> soma cada valor de frete <strong>uma vez só</strong>: o 9.9, que aparece em vários pedidos, entra uma vez. Isso quase nunca é o que você quer num total de dinheiro: dois pedidos com o mesmo frete são dois pagamentos.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>SUM(coluna)</code></td><td>O total de verdade. É quase sempre esta.</td></tr>
+<tr><td><code>SUM(conta)</code></td><td>Quando o valor de cada linha é uma conta, como <code>quantidade * preco_unitario</code></td></tr>
+<tr><td><code>ROUND(SUM(…), 2)</code></td><td>Dinheiro: antes de comparar, guardar ou mostrar</td></tr>
+<tr><td><code>COALESCE(SUM(…), 0)</code></td><td>Quando o filtro pode não deixar passar nada e você quer 0, e não <code>NULL</code></td></tr>
+<tr><td><code>SUM(DISTINCT coluna)</code></td><td>Raramente: somar os valores <strong>diferentes</strong>, não as linhas</td></tr>
+<tr><td><code>TOTAL(coluna)</code></td><td>Só no SQLite, quando quer 0.0 em vez de <code>NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Somar uma coluna de texto</strong>
+<p>A Ana queria contar os clientes e escreveu <code>SUM</code> no lugar de <code>COUNT</code>:</p>
+<pre class="file" data-file="soma-texto.sql" data-resultado>SELECT SUM(nome) FROM clientes;
+</pre>
+<p><strong>O que aconteceu:</strong> nenhum erro, e o resultado é 0.0. O SQLite tenta transformar cada texto em número; um texto que não parece número, como "José Ribamar Silva", vale 0. Trinta zeros somados dão 0.0. O SQLite não reclama, então quem tem de perceber é você.</p>
+<p><strong>Como consertar:</strong> para contar, <code>COUNT</code>. <code>SUM</code> é só para colunas de números.</p>
+</div>
+
+<div class="cenario">
+<strong>SUM(*)</strong>
+<pre class="file" data-file="soma-asterisco.sql" data-resultado data-erro>SELECT SUM(*) FROM itens_pedido;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function SUM()</code>, "número errado de argumentos para a função <code>SUM()</code>". O <code>*</code> só vale dentro do <code>COUNT</code>.</p>
+<p><strong>Como consertar:</strong> diga o que somar: <code>SUM(quantidade)</code>, ou <code>SUM(quantidade * preco_unitario)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Duas colunas dentro do SUM</strong>
+<pre class="file" data-file="soma-duas.sql" data-resultado data-erro>SELECT SUM(quantidade, preco_unitario) FROM itens_pedido;
+</pre>
+<p><strong>A mensagem:</strong> a mesma, <code>wrong number of arguments to function SUM()</code>. A vírgula separa <strong>argumentos</strong>, e o <code>SUM</code> aceita um só.</p>
+<p><strong>Como consertar:</strong> se você quer a soma das multiplicações, escreva a conta: <code>SUM(quantidade * preco_unitario)</code>. Se quer duas somas, use dois <code>SUM</code>: <code>SUM(quantidade), SUM(preco_unitario)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Inteiros grandes demais: <code>integer overflow</code></strong>
+<p>O maior inteiro que o SQLite guarda é 9223372036854775807 (mais de 9 quintilhões). Somar além disso com <code>SUM</code> dá erro. Para ver, a consulta abaixo usa uma tabelinha de duas linhas criada na hora com <code>VALUES</code> (a coluna dela se chama <code>column1</code>):</p>
+<pre class="file" data-file="estouro.sql" data-resultado data-erro>SELECT SUM(column1)
+FROM (VALUES (9223372036854775807), (1));
+</pre>
+<p><strong>A mensagem:</strong> <code>integer overflow</code>, "estouro de inteiro": o resultado não cabe. A <code>TOTAL(column1)</code> não dá erro, porque soma em <code>REAL</code>; ela devolve <code>9.22337203685478e+18</code> (9,22 × 10<sup>18</sup>), um número aproximado. Na Loja Aurora isso nunca acontece, mas é bom saber que a mensagem existe.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong><code>total()</code></strong> é só do SQLite. Nos outros, use <code>COALESCE(SUM(x), 0)</code>, que funciona em todos. A documentação do PostgreSQL avisa o mesmo que você viu aqui: a soma de nenhuma linha é <code>NULL</code>, e não zero.</li>
+  <li><strong>PostgreSQL</strong>: <code>SUM</code> de uma coluna <code>integer</code> devolve <code>bigint</code>, um inteiro maior, e de <code>numeric</code> devolve <code>numeric</code>, um decimal exato, sem a sobrinha binária da seção 4.</li>
+  <li><strong>MySQL</strong>: <code>SUM</code> de inteiros ou de <code>DECIMAL</code> devolve <code>DECIMAL</code> (exato); de <code>FLOAT</code> ou <code>DOUBLE</code>, devolve <code>DOUBLE</code>.</li>
+  <li>Nesses bancos, dinheiro costuma ficar em colunas <code>DECIMAL</code>/<code>NUMERIC</code>, que guardam os centavos exatos. O SQLite não tem esse tipo; por isso o <code>ROUND(…, 2)</code> é tão importante aqui (veja <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th><th>Na Loja Aurora</th></tr>
+<tr><td><code>SUM(coluna)</code></td><td>Soma os valores, pulando <code>NULL</code></td><td><code>SUM(estoque)</code> = 3301</td></tr>
+<tr><td><code>SUM(a * b)</code></td><td>Faz a conta em cada linha e soma</td><td>faturamento = 18537.4</td></tr>
+<tr><td><code>ROUND(SUM(x), 2)</code></td><td>Arredonda a soma para 2 casas</td><td></td></tr>
+<tr><td><code>COALESCE(SUM(x), 0)</code></td><td>0 em vez de <code>NULL</code> quando não há linhas</td><td></td></tr>
+<tr><td><code>SUM(DISTINCT x)</code></td><td>Soma cada valor diferente uma vez</td><td><code>SUM(DISTINCT frete)</code> = 116.25</td></tr>
+<tr><td><code>TOTAL(x)</code></td><td>Só SQLite: soma em <code>REAL</code>, 0.0 sem linhas, nunca estoura</td><td><code>TOTAL(estoque)</code> = 3301.0</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>wrong number of arguments to function SUM()</code></td><td><code>SUM(*)</code> ou mais de um valor dentro do <code>SUM</code></td></tr>
+<tr><td><code>integer overflow</code></td><td>A soma de inteiros passou de 9223372036854775807</td></tr>
+<tr><td><code>misuse of aggregate function SUM()</code></td><td><code>SUM</code> dentro do <code>WHERE</code> (veja <a href="having.html">HAVING</a>)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Unidades vendidas</h3>
+<p>Complete para somar todas as unidades vendidas (a coluna <code>quantidade</code> de <code>itens_pedido</code>):</p>
+<div class="ex-code">SELECT <input data-answer="SUM" aria-label="função">(quantidade) FROM itens_pedido;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Duas casas</h3>
+<p>Complete para arredondar a soma dos fretes para 2 casas decimais:</p>
+<div class="ex-code">SELECT <input data-answer="ROUND" aria-label="função">(SUM(frete), <input data-answer="2" aria-label="casas" size="2">) FROM pedidos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Nenhum pedido tem frete acima de 100. O que devolve <code>SELECT SUM(frete) FROM pedidos WHERE frete &gt; 100;</code>?</p>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> NULL</label>
+<label><input type="radio" name="q3"> 0.0</label>
+<label><input type="radio" name="q3"> Nenhuma linha</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Como o SQLite escreve a soma de 9000.25 com 9000.15?</p>
+<label><input type="radio" name="q4"> 18.000,40</label>
+<label><input type="radio" name="q4"> 18000,4</label>
+<label><input type="radio" name="q4"> 18000.40</label>
+<label><input type="radio" name="q4"> 18000.4</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual consulta dá o faturamento (o valor de todos os itens vendidos)?</p>
+<label><input type="radio" name="q5"> <code>SELECT SUM(quantidade * preco_unitario) FROM itens_pedido;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT SUM(quantidade) * SUM(preco_unitario) FROM itens_pedido;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT SUM(quantidade, preco_unitario) FROM itens_pedido;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT SUM(DISTINCT preco_unitario) FROM itens_pedido;</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Qual a diferença entre <code>SUM(estoque)</code> e <code>TOTAL(estoque)</code> na tabela inteira de produtos?</p>
+<label><input type="radio" name="q6"> Nenhuma: as duas dão 3301</label>
+<label><input type="radio" name="q6"> <code>TOTAL</code> soma só os produtos ativos</label>
+<label><input type="radio" name="q6"> <code>SUM</code> dá o inteiro 3301 e <code>TOTAL</code> dá o real 3301.0</label>
+<label><input type="radio" name="q6"> <code>TOTAL</code> dá erro, porque não existe</label>
+</div>
+
+<h3>Missão final: o faturamento de 2025</h3>
+
+<div class="trysql" data-goal="out:^5464\.52$">
+<p class="try-task"><strong>Missão:</strong> os pedidos de 2025 são os de <code>id</code> 33 a 64. A consulta soma as <strong>unidades</strong> vendidas nesses pedidos. A gerente quer o <strong>faturamento</strong> deles em reais: a soma de quantidade × preço unitário de todos os itens desses pedidos. Se quiser, arredonde para 2 casas.</p>
+<pre class="script" data-file="consulta.sql">SELECT SUM(quantidade) AS faturamento_2025
+FROM itens_pedido
+WHERE pedido_id BETWEEN 33 AND 64;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT ROUND(SUM(quantidade * preco_unitario), 2) AS faturamento_2025
+FROM itens_pedido
+WHERE pedido_id BETWEEN 33 AND 64;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>SUM(coluna)</code> soma os valores de todas as linhas (ou só as do <code>WHERE</code>), pulando os <code>NULL</code>.</li>
+  <li>Dentro do <code>SUM</code> pode ir uma conta: <code>SUM(quantidade * preco_unitario)</code> faz a conta linha a linha e soma.</li>
+  <li>O SQLite escreve <code>18537.4</code>: ponto decimal, sem separador de milhar, sem zeros à direita. Soma de inteiros dá inteiro; de <code>REAL</code>, dá <code>REAL</code>.</li>
+  <li>O decimal guardado pode ter uma sobrinha binária: arredonde dinheiro com <code>ROUND(…, 2)</code> antes de comparar.</li>
+  <li>A soma de nenhuma linha é <code>NULL</code>. Troque por zero com <code>COALESCE(SUM(x), 0)</code>.</li>
+  <li><code>TOTAL()</code> é a soma do SQLite que dá 0.0 em vez de <code>NULL</code> e sempre devolve <code>REAL</code>; não existe nos outros bancos.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
