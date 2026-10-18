@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL EXISTS — existe ou não existe? | Guia SQL</title>
+<meta name="description" content="EXISTS e NOT EXISTS em SQL para quem está começando: perguntar se existe pelo menos uma linha ligada a cada registro, a subconsulta correlacionada, SELECT 1, EXISTS como valor 0/1, NOT EXISTS × NOT IN com NULL, EXISTS × IN × JOIN e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">EXISTS</span></h1>
+
+<p class="intro">Muitas perguntas do dia a dia da Loja Aurora são de "sim ou não": este cliente <strong>já comprou alguma vez</strong>? Este produto <strong>já foi vendido</strong>? Este funcionário <strong>atendeu algum pedido</strong>? Não importa quantas vezes, nem quando: só importa se existe pelo menos um. Para isso o SQL tem o <code>EXISTS</code> ("existe"): ele recebe uma subconsulta e responde verdadeiro se ela encontrar <strong>pelo menos uma linha</strong>.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como o <code>EXISTS</code> funciona e por que ele quase sempre usa uma subconsulta <strong>correlacionada</strong>.</li>
+  <li>O <code>NOT EXISTS</code>, para achar quem <strong>não</strong> tem nada ligado.</li>
+  <li>Por que se escreve <code>SELECT 1</code> dentro do <code>EXISTS</code>.</li>
+  <li>O <code>EXISTS</code> como coluna, com resposta 0 ou 1.</li>
+  <li>Por que o <code>NOT EXISTS</code> não cai na armadilha do <code>NOT IN</code> com <code>NULL</code>.</li>
+  <li><code>EXISTS</code> × <code>IN</code> × <code>JOIN</code>, e os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Esta aula continua a de <a href="subconsultas.html">Subconsultas</a>; leia aquela primeiro, principalmente a parte da subconsulta correlacionada. Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora.</p>
+
+<hr>
+
+<h2>A ideia: abrir a gaveta e olhar</h2>
+<p>No escritório da loja, cada cliente tem uma gaveta com os pedidos dele. Para saber se a Rosângela já comprou, a Ana não precisa contar os pedidos: ela abre a gaveta e olha. Achou <strong>um</strong> papel? Pronto, a resposta é "sim", e ela fecha a gaveta sem ler o resto. Gaveta vazia? "Não".</p>
+
+<p>O <code>EXISTS</code> faz exatamente isso, para cada cliente: abre a "gaveta" (a subconsulta), olha se tem alguma linha e responde sim ou não. Não importa <strong>o que</strong> está escrito nos papéis, só se eles existem.</p>
+
+<hr>
+
+<h2>1. O primeiro EXISTS: quem já comprou</h2>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.id, c.nome
+FROM clientes AS c
+WHERE EXISTS (SELECT 1
+              FROM pedidos AS pe
+              WHERE pe.cliente_id = c.id);
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM clientes AS c</dt><dd>A consulta de fora passa pelos clientes, um por um. O apelido <code>c</code> é importante: a subconsulta vai usá-lo.</dd>
+  <dt>WHERE EXISTS ( … )</dt><dd>"Fica com o cliente se a subconsulta encontrar pelo menos uma linha." Os parênteses são obrigatórios.</dd>
+  <dt>FROM pedidos AS pe</dt><dd>A gaveta: a tabela onde procurar.</dd>
+  <dt>WHERE pe.cliente_id = c.id</dt><dd>A ligação: só os pedidos <strong>deste</strong> cliente. Ela usa o <code>c.id</code> da consulta de fora, então a subconsulta é <strong>correlacionada</strong> e roda de novo para cada cliente.</dd>
+  <dt>SELECT 1</dt><dd>O que a subconsulta mostra não importa, porque o <code>EXISTS</code> só olha se veio alguma linha. Por costume, escreve-se <code>SELECT 1</code> ("um", qualquer coisa) para deixar isso claro. <code>SELECT *</code> funciona igual.</dd>
+</dl>
+
+<p>São 26 clientes: todos menos os 4 que nunca pediram. Siga dois deles:</p>
+<ol class="passo">
+  <li>José Ribamar (id 1): a subconsulta procura pedidos com <code>cliente_id = 1</code>. Acha (ele tem pedidos). <code>EXISTS</code> é verdadeiro: o José entra.</li>
+  <li>Rosângela (id 30): a subconsulta procura pedidos com <code>cliente_id = 30</code>. Não acha nenhum. <code>EXISTS</code> é falso: a Rosângela fica de fora.</li>
+</ol>
+
+<hr>
+
+<h2>2. NOT EXISTS: quem não tem nada</h2>
+<p>Ponha um <code>NOT</code> (aula <a href="not.html">NOT</a>) na frente e a pergunta vira o contrário: os clientes cuja gaveta está <strong>vazia</strong>.</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.id, c.nome
+FROM clientes AS c
+WHERE NOT EXISTS (SELECT 1
+                  FROM pedidos AS pe
+                  WHERE pe.cliente_id = c.id);
+</pre>
+
+<p>Os clientes 27 a 30. O mesmo molde serve para qualquer "nunca": os produtos que nunca foram vendidos, procurando na gaveta <code>itens_pedido</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT p.nome
+FROM produtos AS p
+WHERE NOT EXISTS (SELECT 1
+                  FROM itens_pedido AS i
+                  WHERE i.produto_id = p.id);
+</pre>
+
+<div class="trysql" data-goal="linhas:2;;contem:Davi Nunes;;contem:Marta Lustosa">
+<p class="try-task"><strong>Missão:</strong> quais funcionários <strong>nunca atenderam</strong> um pedido? A tabela <code>pedidos</code> guarda quem atendeu na coluna <code>funcionario_id</code>. Acrescente um <code>WHERE NOT EXISTS (…)</code> à consulta abaixo.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome, f.cargo
+FROM funcionarios AS f;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT f.nome, f.cargo
+FROM funcionarios AS f
+WHERE NOT EXISTS (SELECT 1
+                  FROM pedidos AS pe
+                  WHERE pe.funcionario_id = f.id);
+</pre>
+</div>
+
+<p>Faz sentido: a Marta é a gerente e o Davi é o estoquista. Nenhum dos dois fica no balcão.</p>
+
+<hr>
+
+<h2>3. Mais condições dentro da gaveta</h2>
+<p>A subconsulta do <code>EXISTS</code> pode ter quantas condições você quiser. Os clientes que têm algum pedido <strong>ainda não entregue</strong>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome, c.cidade
+FROM clientes AS c
+WHERE EXISTS (SELECT 1
+              FROM pedidos AS pe
+              WHERE pe.cliente_id = c.id
+                AND pe.entregue_em IS NULL);
+</pre>
+
+<p>A primeira condição liga o pedido ao cliente; a segunda (aula <a href="is-null.html">IS NULL</a>) exige que ele esteja pendente. São os 5 clientes dos pedidos 86 a 90. A subconsulta pode ter até <code>JOIN</code> dentro. Os clientes que já compraram algum produto de Eletrônicos (categoria 2):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome
+FROM clientes AS c
+WHERE EXISTS (SELECT 1
+              FROM pedidos AS pe
+              INNER JOIN itens_pedido AS i ON i.pedido_id = pe.id
+              WHERE pe.cliente_id = c.id
+                AND i.produto_id IN (SELECT id FROM produtos WHERE categoria_id = 2))
+ORDER BY c.nome;
+</pre>
+
+<p>Dezoito clientes. A Ana não quer saber <strong>quantos</strong> eletrônicos cada um comprou, só <strong>se</strong> comprou: pergunta de <code>EXISTS</code>.</p>
+
+<hr>
+
+<h2>4. EXISTS como coluna: 0 ou 1</h2>
+<p>O <code>EXISTS</code> não serve só no <code>WHERE</code>. Ele é uma expressão que vale verdadeiro ou falso, e o SQLite, que não tem um tipo especial para isso, escreve <strong>1</strong> para verdadeiro e <strong>0</strong> para falso. Uma pergunta solta, sem tabela de fora: "tem algum pedido pendente?"</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT EXISTS (SELECT 1 FROM pedidos WHERE entregue_em IS NULL) AS tem_pendente;
+</pre>
+
+<p>1: sim. E "algum frete passou de 100?":</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT EXISTS (SELECT 1 FROM pedidos WHERE frete &gt; 100) AS tem_frete_caro;
+</pre>
+
+<p>0: não. Como coluna, ao lado de cada cliente de Fortaleza:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome,
+       EXISTS (SELECT 1 FROM pedidos AS pe WHERE pe.cliente_id = c.id) AS ja_comprou
+FROM clientes AS c
+WHERE c.cidade = 'Fortaleza';
+</pre>
+
+<p>Todo mundo de Fortaleza já comprou, menos a Rosângela. Quer escrever "sim" e "não" no lugar de 1 e 0? Isso é trabalho do <a href="case.html">CASE</a>, duas aulas adiante.</p>
+
+<div class="tip">
+<strong>O que tem dentro não importa mesmo</strong>
+<p>Prova: uma subconsulta que devolve uma linha com <code>NULL</code> ainda é uma linha, e o <code>EXISTS</code> diz que existe:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT EXISTS (SELECT NULL) AS resposta;
+</pre>
+<p>1. O <code>EXISTS</code> não olha os valores, só conta se veio pelo menos uma linha.</p>
+</div>
+
+<hr>
+
+<h2>5. NOT EXISTS não cai na armadilha do NULL</h2>
+<p>Na aula de <a href="subconsultas.html">Subconsultas</a>, a Ana procurou os clientes de estados onde a loja não tem fornecedor com <code>NOT IN</code> e recebeu zero linhas, porque a lista tinha um <code>NULL</code> (os fornecedores estrangeiros não têm estado). Com <code>NOT EXISTS</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome, c.estado
+FROM clientes AS c
+WHERE NOT EXISTS (SELECT 1
+                  FROM fornecedores AS fo
+                  WHERE fo.estado = c.estado);
+</pre>
+
+<p>A Juliana e o Bruno, de Pernambuco, de primeira. Por quê? Para a Juliana, a subconsulta procura fornecedores com <code>estado = 'PE'</code>. Os de estado <code>NULL</code> não passam nessa comparação, então simplesmente não aparecem; não há nenhum, a gaveta está vazia, e <code>NOT EXISTS</code> é verdadeiro. O <code>NULL</code> não "contamina" a resposta como no <code>NOT IN</code>.</p>
+
+<div class="warning">
+<strong>Regra prática</strong>
+<p>Para "quem não tem…", prefira <code>NOT EXISTS</code> a <code>NOT IN</code>. Os dois dão o mesmo resultado quando não há <code>NULL</code>, mas só o <code>NOT EXISTS</code> continua certo quando aparece um.</p>
+</div>
+
+<hr>
+
+<h2>6. Formas diferentes: EXISTS × IN × JOIN</h2>
+<p>"Os clientes com pedido pendente", da seção 3, de mais dois jeitos. Com <code>IN</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE id IN (SELECT cliente_id FROM pedidos WHERE entregue_em IS NULL);
+</pre>
+
+<p>Com <code>JOIN</code> (o <code>DISTINCT</code> tira o cliente repetido, se ele tiver dois pedidos pendentes):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT DISTINCT c.nome
+FROM clientes AS c
+INNER JOIN pedidos AS pe ON pe.cliente_id = c.id
+WHERE pe.entregue_em IS NULL;
+</pre>
+
+<p>Os mesmos 5 clientes nas três formas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Bom para</th><th>Cuidado</th></tr>
+<tr><td><code>EXISTS (SELECT 1 … WHERE ligação)</code></td><td>"Tem pelo menos um?", com várias condições na ligação</td><td>Não esqueça a ligação com a consulta de fora</td></tr>
+<tr><td><code>NOT EXISTS (…)</code></td><td>"Não tem nenhum?", mesmo com <code>NULL</code> por perto</td><td>O mesmo: a ligação</td></tr>
+<tr><td><code>IN (SELECT …)</code></td><td>Listas simples de uma coluna; fácil de ler</td><td>—</td></tr>
+<tr><td><code>NOT IN (SELECT …)</code></td><td>Listas sem <code>NULL</code></td><td>Um <code>NULL</code> na lista zera o resultado</td></tr>
+<tr><td><code>JOIN</code></td><td>Quando você também quer <strong>mostrar</strong> colunas da outra tabela</td><td>Repete linhas; pode precisar de <code>DISTINCT</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu a ligação: todo mundo ou ninguém</strong>
+<p>A Ana queria os clientes com pedido pendente, mas esqueceu de ligar o pedido ao cliente:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT COUNT(*) AS clientes
+FROM clientes
+WHERE EXISTS (SELECT 1 FROM pedidos WHERE entregue_em IS NULL);
+</pre>
+<p><strong>O que acontece:</strong> 30, todos os clientes, sem erro. Sem a ligação, a subconsulta pergunta "existe algum pedido pendente na loja?" e a resposta é sempre a mesma, sim, para qualquer cliente. Um <code>EXISTS</code> sem ligação deixa passar <strong>todas</strong> as linhas ou <strong>nenhuma</strong>.</p>
+<p><strong>Como consertar:</strong> dentro da subconsulta, ligue à consulta de fora: <code>WHERE pe.cliente_id = c.id AND pe.entregue_em IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Ligação sem apelidos: o <code>id</code> errado</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE EXISTS (SELECT cliente_id FROM pedidos WHERE cliente_id = id);
+</pre>
+<p><strong>O que acontece:</strong> saem os 30 clientes, inclusive os 4 que nunca pediram. A Ana achou que <code>id</code> era o do cliente, mas, dentro da subconsulta, o banco procura o nome primeiro na tabela de dentro, e <code>pedidos</code> também tem uma coluna <code>id</code>. A condição virou "o <code>cliente_id</code> do pedido é igual ao <code>id</code> do <strong>próprio pedido</strong>", que não tem nada a ver com o cliente de fora. A subconsulta deixou de ser correlacionada.</p>
+<p><strong>Como consertar:</strong> use apelidos e escreva sempre de qual tabela é cada coluna: <code>pe.cliente_id = c.id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido que não existe</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE EXISTS (SELECT 1 FROM pedidos AS pe WHERE pe.cliente_id = c.id);
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: c.id</code>, "coluna c.id não existe". A subconsulta usa o apelido <code>c</code>, mas a consulta de fora não deu esse apelido à tabela <code>clientes</code>.</p>
+<p><strong>Como consertar:</strong> <code>FROM clientes AS c</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>EXISTS sem subconsulta</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE EXISTS pedidos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "pedidos": syntax error</code>. O <code>EXISTS</code> não aceita o nome de uma tabela: ele precisa de uma subconsulta entre parênteses.</p>
+<p><strong>Como consertar:</strong> <code>WHERE EXISTS (SELECT 1 FROM pedidos AS pe WHERE pe.cliente_id = c.id)</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>EXISTS</code> e <code>NOT EXISTS</code> são SQL padrão e se escrevem igual no MySQL, no PostgreSQL e no SQL Server. O manual do PostgreSQL diz o mesmo que esta aula: o resultado só depende de a subconsulta devolver alguma linha, não do conteúdo dela, e o costume é escrever <code>EXISTS(SELECT 1 WHERE …)</code>. Uma diferença de aparência: o PostgreSQL tem um tipo próprio para verdadeiro/falso (<code>boolean</code>), então lá o resultado de <code>SELECT EXISTS (…)</code> é um valor desse tipo (verdadeiro ou falso), e não o número 1 ou 0.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WHERE EXISTS (SELECT 1 FROM t WHERE t.x = fora.y)</code></td><td>Fica com a linha de fora se houver pelo menos uma linha ligada</td></tr>
+<tr><td><code>WHERE NOT EXISTS (…)</code></td><td>Fica com a linha de fora se não houver nenhuma linha ligada</td></tr>
+<tr><td><code>SELECT EXISTS (…) AS x</code></td><td>Uma coluna com 1 (existe) ou 0 (não existe)</td></tr>
+<tr><td><code>SELECT 1</code> dentro do <code>EXISTS</code></td><td>Costume: o conteúdo não importa, só se há linhas</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem ou sintoma</th><th>Quer dizer</th></tr>
+<tr><td>Vieram todas as linhas (ou nenhuma)</td><td>Faltou ligar a subconsulta à consulta de fora</td></tr>
+<tr><td><code>no such column: c.id</code></td><td>A consulta de fora não tem o apelido <code>c</code></td></tr>
+<tr><td><code>near "pedidos": syntax error</code></td><td><code>EXISTS</code> precisa de uma subconsulta entre parênteses</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Nenhum pedido</h3>
+<p>Complete para mostrar os clientes que nunca fizeram pedido:</p>
+<div class="ex-code">SELECT c.nome FROM clientes AS c WHERE <input data-answer="NOT EXISTS|not exists" aria-label="operador"> (SELECT 1 FROM pedidos AS pe WHERE pe.cliente_id = c.id);</div>
+</div>
+
+<div class="exercise">
+<h3>2. A ligação</h3>
+<p>Complete a ligação para achar os produtos que já foram vendidos:</p>
+<div class="ex-code">SELECT p.nome FROM produtos AS p WHERE EXISTS (SELECT 1 FROM itens_pedido AS i WHERE i.produto_id = <input data-answer="p.id" aria-label="coluna de fora">);</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Por que se escreve <code>SELECT 1</code> dentro do <code>EXISTS</code>?</p>
+<label><input type="radio" name="q3"> Porque o <code>EXISTS</code> só aceita o número 1</label>
+<label><input type="radio" name="q3"> Porque o <code>EXISTS</code> só verifica se há linhas; o que a subconsulta mostra não importa</label>
+<label><input type="radio" name="q3"> Para limitar a subconsulta a uma linha</label>
+<label><input type="radio" name="q3"> Porque <code>SELECT *</code> dá erro dentro do <code>EXISTS</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A Ana escreveu <code>WHERE EXISTS (SELECT 1 FROM pedidos WHERE frete = 0)</code>, sem ligação com o cliente. O que acontece?</p>
+<label><input type="radio" name="q4"> Saem só os clientes com frete grátis</label>
+<label><input type="radio" name="q4"> Dá erro de sintaxe</label>
+<label><input type="radio" name="q4"> Saem os clientes sem frete grátis</label>
+<label><input type="radio" name="q4"> Saem todos os clientes, porque existe algum pedido com frete grátis na loja</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para achar "quem não tem nenhum…" numa lista que pode ter <code>NULL</code>, o mais seguro é:</p>
+<label><input type="radio" name="q5"> <code>NOT EXISTS</code></label>
+<label><input type="radio" name="q5"> <code>NOT IN</code></label>
+<label><input type="radio" name="q5"> <code>IN</code></label>
+<label><input type="radio" name="q5"> <code>EXISTS</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. Quanto vale <code>SELECT EXISTS (SELECT 1 FROM pedidos WHERE frete &gt; 100)</code> na Loja Aurora?</p>
+<label><input type="radio" name="q6"> O número de pedidos com frete acima de 100</label>
+<label><input type="radio" name="q6"> NULL</label>
+<label><input type="radio" name="q6"> 0, porque nenhum frete passa de 100</label>
+<label><input type="radio" name="q6"> 1</label>
+</div>
+
+<h3>Missão final: quem compra eletrônicos</h3>
+
+<div class="trysql" data-goal="linhas:18;;contem:Sebastião Moura;;colunas:nome">
+<p class="try-task"><strong>Missão:</strong> a Ana vai mandar um folheto de eletrônicos e quer o nome dos clientes que <strong>já compraram algum produto de Eletrônicos</strong> (<code>categoria_id = 2</code>). A consulta abaixo pega todo mundo que já comprou qualquer coisa (26 clientes). Mude a subconsulta: ligue também os itens do pedido (<code>itens_pedido</code>) e os produtos, e exija a categoria 2.</p>
+<pre class="script" data-file="consulta.sql">SELECT c.nome
+FROM clientes AS c
+WHERE EXISTS (SELECT 1
+              FROM pedidos AS pe
+              WHERE pe.cliente_id = c.id);
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT c.nome
+FROM clientes AS c
+WHERE EXISTS (SELECT 1
+              FROM pedidos AS pe
+              INNER JOIN itens_pedido AS i ON i.pedido_id = pe.id
+              INNER JOIN produtos AS p ON p.id = i.produto_id
+              WHERE pe.cliente_id = c.id
+                AND p.categoria_id = 2);
+</pre>
+</div>
+
+<div class="trysql">
+<p class="try-task"><strong>Livre:</strong> esta consulta lista os funcionários que chefiam alguém (um <code>EXISTS</code> na própria tabela, como no <a href="self-join.html">Self Join</a>). Troque por <code>NOT EXISTS</code> e veja quem não chefia ninguém.</p>
+<pre class="script" data-file="consulta.sql">SELECT f.nome
+FROM funcionarios AS f
+WHERE EXISTS (SELECT 1 FROM funcionarios AS s WHERE s.chefe_id = f.id);
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>EXISTS (subconsulta)</code> é verdadeiro se a subconsulta devolver <strong>pelo menos uma linha</strong>; <code>NOT EXISTS</code>, se não devolver nenhuma.</li>
+  <li>Quase sempre a subconsulta é <strong>correlacionada</strong>: ela se liga à linha de fora (<code>pe.cliente_id = c.id</code>). Sem a ligação, passam todas as linhas ou nenhuma.</li>
+  <li>O conteúdo da subconsulta não importa: o costume é <code>SELECT 1</code>.</li>
+  <li>No <code>SELECT</code>, o <code>EXISTS</code> vira uma coluna com 1 ou 0.</li>
+  <li>Para "quem não tem…", prefira <code>NOT EXISTS</code>: ele não cai na armadilha do <code>NULL</code> do <code>NOT IN</code>.</li>
+  <li>Use apelidos e escreva a tabela antes de cada coluna; um <code>id</code> solto pode ser o da tabela errada.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
