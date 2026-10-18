@@ -44,6 +44,15 @@
     if (!m) return "";
     var v = m[1].toUpperCase();
     if (/^(CREATE|DROP|ALTER)$/.test(v) && m[3]) v += " " + m[3].toUpperCase();
+    if (v === "WITH") {
+      // WITH … DELETE/INSERT/UPDATE: o verbo de verdade é a primeira palavra fora dos parênteses das CTEs
+      var prof = 0, i = 0, re = /'(?:[^']|'')*'|"(?:[^"]|"")*"|\(|\)|[A-Za-z_]+|[\s\S]/g, t;
+      while ((t = re.exec(s))) {
+        if (t[0] === "(") prof++;
+        else if (t[0] === ")") prof--;
+        else if (prof === 0 && /^(SELECT|VALUES|INSERT|UPDATE|DELETE|REPLACE)$/i.test(t[0])) return t[0].toUpperCase();
+      }
+    }
     return v;
   }
   S.verboDe = verboDe;
