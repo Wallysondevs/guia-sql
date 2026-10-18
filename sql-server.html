@@ -540,7 +540,7 @@ GROUP BY estado;
 <p>No editor do guia, aspas duplas são sempre nome de coluna, e ele explica:</p>
 <pre class="file" data-file="aspas-duplas.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE cidade = "Teresina";
 </pre>
-<p>Já o <code>sqlite3</code> que vem com o Debian (e com muitas outras distribuições), no terminal, é mais tolerante: quando não acha uma coluna com aquele nome, ele trata <code>"Teresina"</code> como texto e roda calado:</p>
+<p>Já o <code>sqlite3</code> do Debian, no terminal (o da Ana), é mais tolerante: quando não acha uma coluna com aquele nome, ele trata <code>"Teresina"</code> como texto e roda calado:</p>
 <pre class="term">$ sqlite3 loja.db
 SQLite version 3.50.4 2025-07-30 19:33:53
 Enter ".help" for usage hints.
