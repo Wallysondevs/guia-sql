@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: da Planilha ao Banco — importar, limpar e exportar CSV | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: a planilha de produtos novos de um fornecedor, do arquivo CSV até a Loja Aurora, no terminal do sqlite3. Criar o CSV, .import --csv, tudo vira texto, limpar espaços, vírgula decimal, valores vazios e linhas repetidas, conferir categorias, converter os tipos, inserir com INSERT SELECT e exportar de volta com .mode csv e .once, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">da Planilha ao Banco</span></h1>
+
+<p class="intro">A Norte Suprimentos, fornecedora da Loja Aurora, mandou por email a planilha dos produtos que vai começar a vender: oito linhas, salvas como <strong>CSV</strong>. A Marta quer os produtos cadastrados no banco até o fim do dia. Digitar um por um? Nem pensar. Neste projeto a Ana leva a planilha <strong>do arquivo até a tabela <code>produtos</code></strong>, no terminal do <code>sqlite3</code>: importa, descobre que veio tudo bagunçado, limpa com SQL, converte os tipos, insere e, no fim, exporta um CSV de volta para conferência. É o trabalho mais comum do mundo com bancos de dados, e quase nunca dá certo de primeira.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um arquivo CSV e como criá-lo e conferi-lo no terminal.</li>
+  <li>A importar com <code>.import --csv</code>, e por que tudo chega como <strong>texto</strong>.</li>
+  <li>A limpar os problemas de toda planilha: espaços sobrando, vírgula decimal, células vazias, linhas repetidas, nomes que não batem.</li>
+  <li>A converter os tipos com <code>CAST</code>, <code>REPLACE</code>, <code>TRIM</code> e <code>NULLIF</code>.</li>
+  <li>A levar os dados limpos para a tabela de verdade com <code>INSERT INTO … SELECT</code>.</li>
+  <li>A exportar de volta para CSV com <code>.headers</code>, <code>.mode csv</code> e <code>.once</code>.</li>
+</ul>
+</div>
+
+<p>Este projeto acontece em dois lugares. A importação e a exportação são <strong>comandos de ponto</strong> do programa <code>sqlite3</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>), que só existem no terminal: os quadros pretos mostram a sessão real da Ana, no computador dela. A limpeza é SQL puro, e essa você pratica no editor do guia, em cada versão. A aula <a href="import-export.html">Importar e Exportar CSV</a> explica os comandos em detalhe; aqui eles trabalham juntos num caso real.</p>
+
+<hr>
+
+<h2>A ideia: CSV é uma planilha em texto puro</h2>
+<p><strong>CSV</strong> quer dizer <em>comma-separated values</em>, "valores separados por vírgula". É uma planilha sem cores nem fórmulas: cada linha do arquivo é uma linha da tabela, e as colunas são separadas por vírgula. A primeira linha, quase sempre, traz os nomes das colunas. Quando um valor tem vírgula dentro (como "6,90" ou "Caderno Brochura, 48 folhas"), ele vem entre aspas duplas, para a vírgula de dentro não ser confundida com a que separa colunas.</p>
+
+<p>Qualquer planilha (LibreOffice, Excel, Google Planilhas) salva e abre CSV. É por isso que ele é a "língua franca" entre planilhas e bancos de dados.</p>
+
+<hr>
+
+<h2>Versão 1: o arquivo</h2>
+<p>A Ana salvou o anexo do email. Para você poder repetir tudo no seu computador, aqui está o arquivo criado direto no terminal, com <code>cat</code> e um <em>here-document</em> (tudo entre <code>&lt;&lt; 'FIM'</code> e a linha <code>FIM</code> vai para o arquivo):</p>
+
+<pre class="term">$ cat &gt; novos-produtos.csv &lt;&lt; 'FIM'
+&gt; nome,categoria,fornecedor,preco,estoque
+&gt; Caneta Gel Preta,Papelaria,Norte Suprimentos,"3,49",200
+&gt;   Borracha Branca ,Papelaria,Norte Suprimentos,"1,20",350
+&gt; "Caderno Brochura, 48 folhas",Papelaria,Norte Suprimentos,"6,90",150
+&gt; Bola de Futebol,Esporte e Lazer,Norte Suprimentos,"59,90",
+&gt; Peteca,esporte e lazer,Norte Suprimentos,"12,50",40
+&gt; Pá de Jardinagem,Jardim,Norte Suprimentos,"24,00",25
+&gt; Caneta Gel Preta,Papelaria,Norte Suprimentos,"3,49",200
+&gt; Ioiô Colorido,Brinquedo,Norte Suprimentos,"8,75",60
+&gt; FIM
+$ wc -l novos-produtos.csv
+9 novos-produtos.csv                   « 1 cabeçalho + 8 produtos
+$ head -3 novos-produtos.csv
+nome,categoria,fornecedor,preco,estoque
+Caneta Gel Preta,Papelaria,Norte Suprimentos,"3,49",200
+  Borracha Branca ,Papelaria,Norte Suprimentos,"1,20",350</pre>
+
+<p>Olhe o arquivo com olhos de detetive antes de importar. Uma planilha feita por gente traz problemas que o banco não vai perdoar:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linha</th><th>O problema</th><th>Por que atrapalha</th></tr>
+<tr><td>todas</td><td>preço com <strong>vírgula</strong> decimal: <code>"3,49"</code></td><td>Para o SQL, o separador decimal é o ponto. <code>3,49</code> não é um número.</td></tr>
+<tr><td>Borracha</td><td><strong>espaços</strong> antes e depois do nome</td><td><code>'  Borracha Branca '</code> é diferente de <code>'Borracha Branca'</code> numa busca.</td></tr>
+<tr><td>Caderno</td><td><strong>vírgula dentro</strong> do nome, entre aspas</td><td>Só um leitor de CSV de verdade entende que é uma coluna só.</td></tr>
+<tr><td>Bola</td><td><strong>estoque vazio</strong></td><td>Vazio não é zero, nem <code>NULL</code>: é um texto vazio.</td></tr>
+<tr><td>Peteca</td><td>categoria em <strong>minúsculas</strong></td><td><code>'esporte e lazer'</code> não é igual a <code>'Esporte e Lazer'</code>.</td></tr>
+<tr><td>Caneta (2ª vez)</td><td>linha <strong>repetida</strong></td><td>Viraria dois produtos iguais.</td></tr>
+<tr><td>Ioiô</td><td>categoria <strong>que não existe</strong>: "Brinquedo"</td><td>Na Aurora, a categoria é "Brinquedos", no plural.</td></tr>
+</table>
+</div>
+
+<p>A estratégia profissional é sempre a mesma: <strong>importar primeiro para uma tabela de passagem</strong> (em inglês, <em>staging</em>), do jeito que vier; limpar e conferir lá, com SQL; e só então copiar para a tabela de verdade. A tabela <code>produtos</code> nunca vê a bagunça.</p>
+
+<hr>
+
+<h2>Versão 2: importar para a tabela de passagem</h2>
+<p>A Ana abre o banco da loja e importa:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; .import --csv novos-produtos.csv importados
+sqlite&gt; .schema importados
+CREATE TABLE IF NOT EXISTS "importados"(
+"nome" TEXT, "categoria" TEXT, "fornecedor" TEXT, "preco" TEXT,
+ "estoque" TEXT);
+sqlite&gt; SELECT COUNT(*) FROM importados;
+8</pre>
+
+<dl class="anatomy">
+  <dt>.import</dt><dd>Comando de ponto do <code>sqlite3</code>: lê um arquivo e põe as linhas numa tabela. Em silêncio: se deu certo, não escreve nada.</dd>
+  <dt>--csv</dt><dd>Lê o arquivo como CSV de verdade: vírgula separa colunas, aspas protegem vírgulas de dentro. Sem esta opção, o resultado é um desastre (veja <a href="#errado">Quando dá errado</a>).</dd>
+  <dt>novos-produtos.csv</dt><dd>O arquivo, na pasta atual.</dd>
+  <dt>importados</dt><dd>A tabela de destino. Como ela não existia, o <code>sqlite3</code> criou uma, usando a <strong>primeira linha</strong> do arquivo como nomes das colunas. Por isso vieram 8 linhas, não 9: o cabeçalho virou nome de coluna.</dd>
+  <dt>.schema importados</dt><dd>Mostra o <code>CREATE TABLE</code> que o <code>.import</code> escreveu. Repare: <strong>todas as colunas são <code>TEXT</code></strong>. O <code>.import</code> não adivinha tipos.</dd>
+</dl>
+
+<p>Agora, a tabela inteira. O modo <code>box</code> desenha uma moldura em volta de cada coluna, o que facilita ler tabelas no terminal:</p>
+
+<pre class="term">sqlite&gt; .mode box
+sqlite&gt; SELECT * FROM importados;
+┌─────────────────────────────┬─────────────────┬───────────────────┬───────┬─────────┐
+│            nome             │    categoria    │    fornecedor     │ preco │ estoque │
+├─────────────────────────────┼─────────────────┼───────────────────┼───────┼─────────┤
+│ Caneta Gel Preta            │ Papelaria       │ Norte Suprimentos │ 3,49  │ 200     │
+│   Borracha Branca           │ Papelaria       │ Norte Suprimentos │ 1,20  │ 350     │
+│ Caderno Brochura, 48 folhas │ Papelaria       │ Norte Suprimentos │ 6,90  │ 150     │
+│ Bola de Futebol             │ Esporte e Lazer │ Norte Suprimentos │ 59,90 │         │
+│ Peteca                      │ esporte e lazer │ Norte Suprimentos │ 12,50 │ 40      │
+│ Pá de Jardinagem            │ Jardim          │ Norte Suprimentos │ 24,00 │ 25      │
+│ Caneta Gel Preta            │ Papelaria       │ Norte Suprimentos │ 3,49  │ 200     │
+│ Ioiô Colorido               │ Brinquedo       │ Norte Suprimentos │ 8,75  │ 60      │
+└─────────────────────────────┴─────────────────┴───────────────────┴───────┴─────────┘
+sqlite&gt; SELECT nome, preco, typeof(preco), estoque, typeof(estoque) FROM importados WHERE rowid &lt;= 4;
+┌─────────────────────────────┬───────┬───────────────┬─────────┬─────────────────┐
+│            nome             │ preco │ typeof(preco) │ estoque │ typeof(estoque) │
+├─────────────────────────────┼───────┼───────────────┼─────────┼─────────────────┤
+│ Caneta Gel Preta            │ 3,49  │ text          │ 200     │ text            │
+│   Borracha Branca           │ 1,20  │ text          │ 350     │ text            │
+│ Caderno Brochura, 48 folhas │ 6,90  │ text          │ 150     │ text            │
+│ Bola de Futebol             │ 59,90 │ text          │         │ text            │
+└─────────────────────────────┴───────┴───────────────┴─────────┴─────────────────┘
+sqlite&gt; SELECT preco * 2 FROM importados WHERE rowid = 1;
+┌───────────┐
+│ preco * 2 │
+├───────────┤
+│ 6         │
+└───────────┘</pre>
+
+<p>O <code>--csv</code> fez o trabalho dele: o Caderno, com a vírgula no nome, ficou numa coluna só, e as aspas sumiram. Mas o <code>typeof</code> confirma: o preço <code>3,49</code> é <strong>texto</strong>, e o estoque <code>200</code> também. Nas contas, o SQLite aproveita só o começo do texto que parece número: <code>'3,49' * 2</code> deu <strong>6</strong>, porque ele leu o 3 e parou na vírgula (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Sem erro, sem aviso: é o tipo de coisa que só aparece no fechamento do caixa.</p>
+
+<div class="tip">
+<strong>No editor, a tabela de passagem já vem pronta</strong>
+<p>O editor do guia não tem comandos de ponto, então não roda <code>.import</code>. As caixas desta página criam a tabela <code>importados</code> exatamente como o <code>.import</code> a deixou: cinco colunas <code>TEXT</code>, com os textos do arquivo, espaços e vírgulas incluídos. O SQL de limpeza que você escrever ali funciona igual no terminal.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:1;;contem:Caneta Gel Preta|2">
+<p class="try-task"><strong>Missão:</strong> antes de limpar, a Ana quer saber se há produtos <strong>repetidos</strong> na planilha. Agrupe por nome e mostre só os que aparecem mais de uma vez, com o nome e quantas vezes (aulas <a href="group-by.html">GROUP BY</a> e <a href="having.html">HAVING</a>). Use <code>TRIM(nome)</code>, para que espaços sobrando não escondam uma repetição.</p>
+<pre class="script" data-file="repetidos.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT nome, categoria, preco FROM importados;
+</pre>
+<pre class="solucao" data-file="repetidos.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT TRIM(nome) AS nome, COUNT(*) AS vezes
+FROM importados
+GROUP BY TRIM(nome)
+HAVING COUNT(*) &gt; 1;
+</pre>
+</div>
+
+<p>A Caneta Gel Preta veio duas vezes, com todos os campos iguais: alguém copiou a linha duas vezes na planilha. A versão 5 resolve com <code>DISTINCT</code>.</p>
+
+<hr>
+
+<h2>Versão 3: limpar e converter</h2>
+<p>Cada problema da planilha tem uma função de texto que resolve (aula <a href="funcoes-texto.html">Funções de Texto</a>). A Ana testa uma de cada vez, no terminal, antes de mudar qualquer coisa. O <code>.nullvalue NULL</code> do começo faz o <code>NULL</code> aparecer escrito na tela, para não ser confundido com um texto vazio:</p>
+
+<pre class="term">sqlite&gt; .nullvalue NULL
+sqlite&gt; SELECT '[' || nome || ']' AS nome, '[' || TRIM(nome) || ']' AS limpo FROM importados WHERE rowid = 2;
+┌──────────────────────┬───────────────────┐
+│         nome         │       limpo       │
+├──────────────────────┼───────────────────┤
+│ [  Borracha Branca ] │ [Borracha Branca] │
+└──────────────────────┴───────────────────┘
+sqlite&gt; SELECT preco, REPLACE(preco, ',', '.') AS com_ponto, CAST(REPLACE(preco, ',', '.') AS REAL) AS numero FROM importados WHERE rowid &lt;= 3;
+┌───────┬───────────┬────────┐
+│ preco │ com_ponto │ numero │
+├───────┼───────────┼────────┤
+│ 3,49  │ 3.49      │ 3.49   │
+│ 1,20  │ 1.20      │ 1.2    │
+│ 6,90  │ 6.90      │ 6.9    │
+└───────┴───────────┴────────┘
+sqlite&gt; SELECT nome, estoque, typeof(estoque), NULLIF(estoque, '') AS sem_vazio FROM importados WHERE rowid = 4;
+┌─────────────────┬─────────┬─────────────────┬───────────┐
+│      nome       │ estoque │ typeof(estoque) │ sem_vazio │
+├─────────────────┼─────────┼─────────────────┼───────────┤
+│ Bola de Futebol │         │ text            │ NULL      │
+└─────────────────┴─────────┴─────────────────┴───────────┘</pre>
+
+<dl class="anatomy">
+  <dt>'[' || nome || ']'</dt><dd>O <code>||</code> junta textos. Os colchetes são um truque para <strong>ver</strong> espaços, que na tela são invisíveis: <code>[  Borracha Branca ]</code> mostra dois espaços antes e um depois.</dd>
+  <dt>TRIM(nome)</dt><dd>Tira os espaços do começo e do fim (do meio, não).</dd>
+  <dt>REPLACE(preco, ',', '.')</dt><dd>Troca a vírgula pelo ponto. O resultado ainda é texto: <code>'1.20'</code>, com o zero.</dd>
+  <dt>CAST(… AS REAL)</dt><dd>Converte o texto em número de verdade: <code>1.2</code>. Agora as contas funcionam.</dd>
+  <dt>NULLIF(estoque, '')</dt><dd>"Se for igual a <code>''</code>, devolva <code>NULL</code>." O texto vazio vira "sem valor", que é o que ele quer dizer (aula <a href="null.html">O Valor NULL</a>).</dd>
+</dl>
+
+<div class="trysql" data-goal="colunas:nome,preco,estoque;;linhas:8;;contem:Borracha Branca|1.2|350;;contem:Bola de Futebol|59.9|">
+<p class="try-task"><strong>Missão:</strong> escreva a consulta de limpeza completa: as 8 linhas com três colunas chamadas <code>nome</code> (sem os espaços), <code>preco</code> (número <code>REAL</code>, com ponto) e <code>estoque</code> (número <code>INTEGER</code>, ou <code>NULL</code> quando vier vazio). Junte as funções de dentro para fora: <code>CAST(NULLIF(TRIM(estoque), '') AS INTEGER)</code>.</p>
+<pre class="script" data-file="limpeza.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT nome, preco, estoque
+FROM importados;
+</pre>
+<pre class="solucao" data-file="limpeza.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT TRIM(nome)                               AS nome,
+       CAST(REPLACE(preco, ',', '.') AS REAL)     AS preco,
+       CAST(NULLIF(TRIM(estoque), '') AS INTEGER) AS estoque
+FROM importados;
+</pre>
+</div>
+
+<p>Por que não <code>CAST(estoque AS INTEGER)</code> direto? Porque <code>CAST('' AS INTEGER)</code> dá <strong>0</strong>, e um estoque "não informado" viraria "zero em estoque" sem ninguém decidir isso. Com o <code>NULLIF</code> antes, o vazio vira <code>NULL</code>, e a decisão fica para você (na versão 5, a Ana decide que é 0, de propósito, com <code>COALESCE</code>).</p>
+
+<hr>
+
+<h2>Versão 4: as categorias batem?</h2>
+<p>A tabela <code>produtos</code> não guarda o nome da categoria, e sim o <code>categoria_id</code>. Então cada texto da planilha tem de encontrar a sua categoria na tabela <code>categorias</code> da Aurora. Antes de inserir, a pergunta certa é: <strong>alguma não vai encontrar?</strong> É o <code>LEFT JOIN … IS NULL</code> de sempre (aula <a href="left-join.html">LEFT JOIN</a>):</p>
+
+<pre class="term">sqlite&gt; SELECT DISTINCT i.categoria FROM importados i LEFT JOIN categorias c ON c.nome = i.categoria WHERE c.id IS NULL;
+┌─────────────────┐
+│    categoria    │
+├─────────────────┤
+│ esporte e lazer │
+│ Brinquedo       │
+└─────────────────┘</pre>
+
+<p>Duas categorias sem par. A "esporte e lazer" é só a caixa das letras: comparando com <code>COLLATE NOCASE</code>, o SQLite ignora maiúsculas e minúsculas, e ela encontra a "Esporte e Lazer". O "Brinquedo" é outro problema: a palavra é diferente, e só um <code>UPDATE</code> na tabela de passagem resolve.</p>
+
+<pre class="term">sqlite&gt; SELECT DISTINCT i.categoria FROM importados i LEFT JOIN categorias c ON c.nome = i.categoria COLLATE NOCASE WHERE c.id IS NULL;
+┌───────────┐
+│ categoria │
+├───────────┤
+│ Brinquedo │
+└───────────┘
+sqlite&gt; UPDATE importados SET categoria = 'Brinquedos' WHERE categoria = 'Brinquedo';
+sqlite&gt; SELECT changes();
+┌───────────┐
+│ changes() │
+├───────────┤
+│ 1         │
+└───────────┘</pre>
+
+<p>O <code>changes()</code> conta as linhas que o último comando mudou: 1, o Ioiô. Corrigir na tabela de passagem é seguro: o arquivo original continua intacto, e a tabela <code>produtos</code> nem foi tocada.</p>
+
+<div class="trysql" data-goal="linhas:1;;contem:Brinquedo">
+<p class="try-task"><strong>Missão:</strong> no editor, a Aurora completa está carregada, com a tabela <code>categorias</code> de verdade. A consulta abaixo acusa duas categorias sem par. Faça a comparação ignorar maiúsculas e minúsculas, para sobrar só o problema de verdade.</p>
+<pre class="script" data-file="categorias.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT DISTINCT i.categoria
+FROM importados i
+LEFT JOIN categorias c ON c.nome = i.categoria
+WHERE c.id IS NULL;
+</pre>
+<pre class="solucao" data-file="categorias.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT DISTINCT i.categoria
+FROM importados i
+LEFT JOIN categorias c ON c.nome = i.categoria COLLATE NOCASE
+WHERE c.id IS NULL;
+</pre>
+</div>
+
+<p>Atenção: o <code>NOCASE</code> do SQLite só iguala as letras sem acento. Uma planilha com "ELETRÔNICOS" não encontraria "Eletrônicos" por causa do "Ô". Para esses casos, a saída é o <code>UPDATE</code>, como no Brinquedo.</p>
+
+<hr>
+
+<h2>Versão 5: para a tabela de verdade</h2>
+<p>Tudo conferido. Agora um único comando copia da tabela de passagem para <code>produtos</code>, limpando e convertendo no caminho: o <code>INSERT INTO … SELECT</code> (aula <a href="insert-select.html">INSERT INTO SELECT</a>). A Ana abre o banco de novo e, antes de tudo, liga as chaves estrangeiras, que no terminal vêm desligadas em cada conexão nova (aula <a href="pragma.html">PRAGMAs Úteis</a>):</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; PRAGMA foreign_keys = ON;
+sqlite&gt; INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+   ...&gt; SELECT DISTINCT TRIM(i.nome), c.id, f.id, CAST(REPLACE(i.preco, ',', '.') AS REAL), COALESCE(CAST(NULLIF(TRIM(i.estoque), '') AS INTEGER), 0)
+   ...&gt; FROM importados i
+   ...&gt; JOIN categorias c   ON c.nome = i.categoria COLLATE NOCASE
+   ...&gt; JOIN fornecedores f ON f.nome = i.fornecedor;
+sqlite&gt; SELECT changes();
+7
+sqlite&gt; .mode box
+sqlite&gt; SELECT p.id, p.nome, c.nome AS categoria, p.preco, typeof(p.preco) AS tipo, p.estoque FROM produtos p JOIN categorias c ON c.id = p.categoria_id WHERE p.id &gt; 45;
+┌────┬─────────────────────────────┬─────────────────┬───────┬──────┬─────────┐
+│ id │            nome             │    categoria    │ preco │ tipo │ estoque │
+├────┼─────────────────────────────┼─────────────────┼───────┼──────┼─────────┤
+│ 46 │ Caneta Gel Preta            │ Papelaria       │ 3.49  │ real │ 200     │
+│ 47 │ Borracha Branca             │ Papelaria       │ 1.2   │ real │ 350     │
+│ 48 │ Caderno Brochura, 48 folhas │ Papelaria       │ 6.9   │ real │ 150     │
+│ 49 │ Bola de Futebol             │ Esporte e Lazer │ 59.9  │ real │ 0       │
+│ 50 │ Peteca                      │ Esporte e Lazer │ 12.5  │ real │ 40      │
+│ 51 │ Pá de Jardinagem            │ Jardim          │ 24.0  │ real │ 25      │
+│ 52 │ Ioiô Colorido               │ Brinquedos      │ 8.75  │ real │ 60      │
+└────┴─────────────────────────────┴─────────────────┴───────┴──────┴─────────┘
+sqlite&gt; SELECT COUNT(*) FROM produtos;
+┌──────────┐
+│ COUNT(*) │
+├──────────┤
+│ 52       │
+└──────────┘
+sqlite&gt; DROP TABLE importados;</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO produtos (…) SELECT …</dt><dd>Em vez de <code>VALUES</code>, as linhas vêm de uma consulta. As colunas do <code>SELECT</code> entram, na ordem, nas colunas listadas.</dd>
+  <dt>SELECT DISTINCT</dt><dd>As duas Canetas Gel são idênticas depois da limpeza, então entram uma vez só. 8 linhas na planilha, <strong>7</strong> produtos novos.</dd>
+  <dt>JOIN categorias c ON … COLLATE NOCASE</dt><dd>Troca o nome da categoria pelo <code>id</code> dela.</dd>
+  <dt>JOIN fornecedores f ON f.nome = i.fornecedor</dt><dd>O mesmo para o fornecedor: Norte Suprimentos é o id 6.</dd>
+  <dt>COALESCE(…, 0)</dt><dd>A decisão sobre o estoque vazio: a Bola de Futebol entra com 0, porque o fornecedor ainda não mandou nenhuma (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>). A coluna <code>estoque</code> da Aurora é <code>NOT NULL</code>; sem o <code>COALESCE</code>, o <code>NULL</code> seria recusado.</dd>
+  <dt>o id</dt><dd>Não foi informado: o SQLite continuou a numeração, do 46 ao 52.</dd>
+  <dt>DROP TABLE importados</dt><dd>A tabela de passagem cumpriu o seu papel e vai embora.</dd>
+</dl>
+
+<p>Repare na coluna <code>tipo</code>: agora o preço é <code>real</code> de verdade. A Aurora passou de 45 para 52 produtos.</p>
+
+<div class="trysql" data-goal="mudou:produtos=52;;contem:Ioiô Colorido|Brinquedos|8.75">
+<p class="try-task"><strong>Missão:</strong> faça a importação inteira no editor. A caixa já tem a tabela de passagem e, no fim, a consulta de conferência. Falta o meio: corrija o "Brinquedo" com um <code>UPDATE</code> e escreva o <code>INSERT INTO produtos … SELECT</code> com a limpeza, o <code>DISTINCT</code> e os dois <code>JOIN</code>. Se a Aurora terminar com 52 produtos e o Ioiô estiver em Brinquedos, deu certo.</p>
+<pre class="script" data-file="importar.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- 1. corrigir a categoria que não existe
+
+
+-- 2. copiar para produtos, limpando no caminho
+
+
+-- conferência
+SELECT p.nome, c.nome AS categoria, p.preco, p.estoque
+FROM produtos p
+JOIN categorias c ON c.id = p.categoria_id
+WHERE p.id &gt; 45;
+</pre>
+<pre class="solucao" data-file="importar.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- 1. corrigir a categoria que não existe
+UPDATE importados SET categoria = 'Brinquedos' WHERE categoria = 'Brinquedo';
+
+-- 2. copiar para produtos, limpando no caminho
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+SELECT DISTINCT TRIM(i.nome),
+       c.id,
+       f.id,
+       CAST(REPLACE(i.preco, ',', '.') AS REAL),
+       COALESCE(CAST(NULLIF(TRIM(i.estoque), '') AS INTEGER), 0)
+FROM importados i
+JOIN categorias c   ON c.nome = i.categoria COLLATE NOCASE
+JOIN fornecedores f ON f.nome = i.fornecedor;
+
+-- conferência
+SELECT p.nome, c.nome AS categoria, p.preco, p.estoque
+FROM produtos p
+JOIN categorias c ON c.id = p.categoria_id
+WHERE p.id &gt; 45;
+</pre>
+</div>
+
+<p>Esqueça o <code>UPDATE</code> e rode: o Ioiô simplesmente <strong>não entra</strong>, sem erro, porque o <code>JOIN</code> com <code>categorias</code> não acha par para "Brinquedo" e descarta a linha. Entram 6 produtos, e a Aurora fica com 51. Por isso a conferência da versão 4 vem antes: um <code>JOIN</code> que descarta linhas em silêncio é o jeito mais fácil de perder dados numa importação.</p>
+
+<hr>
+
+<h2>Versão 6: exportar de volta para CSV</h2>
+<p>A Marta quer conferir na planilha o que entrou. O caminho de volta usa três comandos de ponto antes do <code>SELECT</code>:</p>
+
+<pre class="term">sqlite&gt; .headers on
+sqlite&gt; .mode csv
+sqlite&gt; .once produtos-novos.csv
+sqlite&gt; SELECT p.id, p.nome, c.nome AS categoria, printf('%.2f', p.preco) AS preco, p.estoque FROM produtos p JOIN categorias c ON c.id = p.categoria_id WHERE p.id &gt; 45;
+sqlite&gt; .quit
+$ cat produtos-novos.csv
+id,nome,categoria,preco,estoque
+46,"Caneta Gel Preta",Papelaria,3.49,200
+47,"Borracha Branca",Papelaria,1.20,350
+48,"Caderno Brochura, 48 folhas",Papelaria,6.90,150
+49,"Bola de Futebol","Esporte e Lazer",59.90,0
+50,Peteca,"Esporte e Lazer",12.50,40
+51,"Pá de Jardinagem",Jardim,24.00,25
+52,"Ioiô Colorido",Brinquedos,8.75,60</pre>
+
+<dl class="anatomy">
+  <dt>.headers on</dt><dd>A primeira linha do arquivo sai com os nomes das colunas.</dd>
+  <dt>.mode csv</dt><dd>A saída passa a ser CSV: vírgulas entre as colunas e aspas onde precisa. O <code>sqlite3</code> põe aspas em todo texto que tem espaço ou vírgula; "Peteca" e "Papelaria" saíram sem.</dd>
+  <dt>.once produtos-novos.csv</dt><dd>A saída do <strong>próximo</strong> comando vai para o arquivo, e não para a tela. Depois dele, tudo volta para a tela. (Para mandar vários comandos para um arquivo, existe o <code>.output arquivo</code>, que vale até um <code>.output</code> sem nome.)</dd>
+  <dt>printf('%.2f', p.preco)</dt><dd>Preço com 2 casas: <code>1.20</code>, e não <code>1.2</code>. Numa planilha de preços, fica mais legível.</dd>
+</dl>
+
+<p>Repare que a tela não mostrou nada depois do <code>SELECT</code>: a saída foi toda para o arquivo, e o <code>cat</code> confirma. Abra <code>produtos-novos.csv</code> numa planilha e as colunas se separam sozinhas.</p>
+
+<div class="tip">
+<strong>E a planilha em português?</strong>
+<p>O LibreOffice e o Excel configurados para o Brasil às vezes esperam <strong>ponto e vírgula</strong> como separador, porque a vírgula é o separador decimal. O LibreOffice pergunta o separador ao abrir o arquivo. Se precisar, troque o separador depois do <code>.mode csv</code>:</p>
+<pre class="term">sqlite&gt; .mode csv
+sqlite&gt; .separator ";"
+sqlite&gt; .headers on
+sqlite&gt; SELECT id, nome, printf('%.2f', preco) AS preco FROM produtos WHERE id IN (48, 52);
+id;nome;preco
+48;"Caderno Brochura, 48 folhas";6.90
+52;"Ioiô Colorido";8.75</pre>
+</div>
+
+<div class="trysql" data-goal="colunas:id,nome,categoria,preco,estoque;;linhas:7;;contem:48|Caderno Brochura, 48 folhas|Papelaria|6.90|150">
+<p class="try-task"><strong>Missão:</strong> o editor não grava arquivos, mas a consulta da exportação é SQL e pode ser preparada aqui. Depois da importação (já feita na caixa), escreva o <code>SELECT</code> da planilha de conferência: os 7 produtos novos com as colunas exatamente <code>id</code>, <code>nome</code>, <code>categoria</code> (o nome), <code>preco</code> (com 2 casas, via <code>printf</code>) e <code>estoque</code>.</p>
+<pre class="script" data-file="exportar.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+UPDATE importados SET categoria = 'Brinquedos' WHERE categoria = 'Brinquedo';
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+SELECT DISTINCT TRIM(i.nome), c.id, f.id,
+       CAST(REPLACE(i.preco, ',', '.') AS REAL),
+       COALESCE(CAST(NULLIF(TRIM(i.estoque), '') AS INTEGER), 0)
+FROM importados i
+JOIN categorias c   ON c.nome = i.categoria COLLATE NOCASE
+JOIN fornecedores f ON f.nome = i.fornecedor;
+
+-- a consulta da exportação
+SELECT * FROM produtos WHERE id &gt; 45;
+</pre>
+<pre class="solucao" data-file="exportar.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+UPDATE importados SET categoria = 'Brinquedos' WHERE categoria = 'Brinquedo';
+INSERT INTO produtos (nome, categoria_id, fornecedor_id, preco, estoque)
+SELECT DISTINCT TRIM(i.nome), c.id, f.id,
+       CAST(REPLACE(i.preco, ',', '.') AS REAL),
+       COALESCE(CAST(NULLIF(TRIM(i.estoque), '') AS INTEGER), 0)
+FROM importados i
+JOIN categorias c   ON c.nome = i.categoria COLLATE NOCASE
+JOIN fornecedores f ON f.nome = i.fornecedor;
+
+-- a consulta da exportação
+SELECT p.id, p.nome, c.nome AS categoria,
+       printf('%.2f', p.preco) AS preco, p.estoque
+FROM produtos p
+JOIN categorias c ON c.id = p.categoria_id
+WHERE p.id &gt; 45;
+</pre>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de importar</h2>
+<p>A Ana importou para uma tabela nova, toda <code>TEXT</code>. Outra ideia comum é criar antes uma tabela <strong>com tipos</strong> e importar direto nela. Veja o que acontece:</p>
+
+<pre class="term">sqlite&gt; CREATE TABLE tipada (nome TEXT, categoria TEXT, fornecedor TEXT, preco REAL, estoque INTEGER);
+sqlite&gt; .import --csv --skip 1 novos-produtos.csv tipada
+sqlite&gt; .mode box
+sqlite&gt; .nullvalue NULL
+sqlite&gt; SELECT nome, preco, typeof(preco), estoque, typeof(estoque) FROM tipada WHERE rowid IN (1, 4);
+┌──────────────────┬───────┬───────────────┬─────────┬─────────────────┐
+│       nome       │ preco │ typeof(preco) │ estoque │ typeof(estoque) │
+├──────────────────┼───────┼───────────────┼─────────┼─────────────────┤
+│ Caneta Gel Preta │ 3,49  │ text          │ 200     │ integer         │
+│ Bola de Futebol  │ 59,90 │ text          │         │ text            │
+└──────────────────┴───────┴───────────────┴─────────┴─────────────────┘</pre>
+
+<p>O <code>--skip 1</code> pula a linha do cabeçalho (a tabela já tem nomes de coluna). O estoque <code>200</code> virou <code>integer</code>: a coluna tipada converte o que <strong>parece</strong> número. Mas <code>3,49</code> não parece, e ficou texto numa coluna <code>REAL</code>; o estoque vazio ficou texto vazio numa coluna <code>INTEGER</code>. O SQLite guarda o que não consegue converter (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Ou seja: tipos não limpam dados. A limpeza continua sendo com você.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Comando</th><th>Quando usar</th></tr>
+<tr><td>Tabela nova, tudo texto</td><td><code>.import --csv arquivo.csv importados</code></td><td>Arquivo de fora, que você não conhece. Importa sem perder nada e limpa depois com SQL. A mais segura.</td></tr>
+<tr><td>Tabela já criada, com tipos</td><td><code>.import --csv --skip 1 arquivo.csv tabela</code></td><td>Arquivo que você mesmo exportou, já limpo (ponto decimal, sem vazios).</td></tr>
+<tr><td>Direto na tabela final</td><td><code>.import --csv --skip 1 arquivo.csv produtos</code></td><td>Quase nunca: o CSV precisaria ter exatamente as colunas da tabela, na ordem, e nenhum erro.</td></tr>
+<tr><td>Pela planilha</td><td>a planilha gera <code>INSERT</code>s com fórmulas</td><td>Pouca coisa, uma vez só. Frágil com aspas e vírgulas.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o <code>--csv</code></strong>
+<pre class="term">sqlite&gt; .import novos-produtos.csv teste
+novos-produtos.csv:4: unescaped " character
+novos-produtos.csv:4: unescaped " character
+novos-produtos.csv:4: unescaped " character
+novos-produtos.csv:5: unescaped " character
+novos-produtos.csv:5: unescaped " character
+novos-produtos.csv:6: unescaped " character
+novos-produtos.csv:6: unescaped " character
+novos-produtos.csv:7: unescaped " character
+novos-produtos.csv:7: unescaped " character
+novos-produtos.csv:8: unescaped " character
+novos-produtos.csv:8: unescaped " character
+novos-produtos.csv:9: unescaped " character
+novos-produtos.csv:9: unescaped " character
+novos-produtos.csv:4: unterminated "-quoted field
+sqlite&gt; .schema teste
+CREATE TABLE IF NOT EXISTS "teste"(
+"nome,categoria,fornecedor,preco,estoque" TEXT);
+sqlite&gt; SELECT COUNT(*) FROM teste;
+3</pre>
+<p><strong>O que aconteceu:</strong> sem <code>--csv</code>, o <code>.import</code> usa o modo atual do <code>sqlite3</code>, que por padrão separa colunas com <code>|</code>, e não com vírgula. Ele não achou nenhum <code>|</code>, então a linha inteira virou <strong>uma coluna só</strong>, com o nome esquisito <code>"nome,categoria,fornecedor,preco,estoque"</code>. As aspas no meio das linhas geraram uma chuva de avisos (<code>unescaped " character</code>: "caractere de aspas sem escape"; <code>unterminated "-quoted field</code>: "campo entre aspas que não termina"), e só 3 linhas entraram, embaralhadas.</p>
+<p><strong>Como consertar:</strong> <code>DROP TABLE teste;</code> e importe de novo com <code>--csv</code>. (Outra forma: <code>.mode csv</code> antes do <code>.import</code> faz o mesmo efeito.)</p>
+</div>
+
+<div class="cenario">
+<strong>Errou o nome do arquivo</strong>
+<pre class="term">sqlite&gt; .import --csv novos_produtos.csv importados
+Error: cannot open "novos_produtos.csv"</pre>
+<p><strong>O que aconteceu:</strong> "não consigo abrir": o arquivo se chama <code>novos-produtos.csv</code>, com hífen. O <code>sqlite3</code> procura o arquivo na pasta onde você abriu o programa.</p>
+<p><strong>Como consertar:</strong> confira o nome com <code>ls</code> antes de abrir o <code>sqlite3</code>, ou use o caminho completo: <code>.import --csv /home/ana/novos-produtos.csv importados</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O cabeçalho virou um produto</strong>
+<pre class="term">sqlite&gt; CREATE TABLE sem_skip (nome TEXT, categoria TEXT, fornecedor TEXT, preco REAL, estoque INTEGER);
+sqlite&gt; .import --csv novos-produtos.csv sem_skip
+sqlite&gt; SELECT nome, preco FROM sem_skip WHERE rowid = 1;
+┌──────┬───────┐
+│ nome │ preco │
+├──────┼───────┤
+│ nome │ preco │
+└──────┴───────┘</pre>
+<p><strong>O que aconteceu:</strong> quando a tabela <strong>já existe</strong>, o <code>.import</code> trata a primeira linha do arquivo como dado. Agora existe um "produto" chamado <code>nome</code>, com preço <code>preco</code>.</p>
+<p><strong>Como consertar:</strong> importe para tabela existente sempre com <code>--skip 1</code>. Se já aconteceu: <code>DELETE FROM sem_skip WHERE nome = 'nome';</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A vírgula decimal que virou número pela metade</strong>
+<p>Já visto na versão 2, mas é o erro mais caro de todos: <code>'3,49' * 2</code> dá 6. Se a Ana tivesse inserido os preços sem o <code>REPLACE</code>, a coluna <code>preco</code> teria textos, e cada conta usaria só a parte antes da vírgula. Teste no editor:</p>
+<pre class="file" data-file="virgula.sql" data-resultado>SELECT '3,49' * 2                                AS sem_limpar,
+       CAST(REPLACE('3,49', ',', '.') AS REAL) * 2 AS limpo,
+       typeof('3,49')                            AS tipo;
+</pre>
+<p><strong>Como consertar:</strong> <code>REPLACE(preco, ',', '.')</code> e <code>CAST(… AS REAL)</code>, sempre, antes de levar para a tabela final. E confira o resultado com <code>typeof</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O JOIN que engoliu uma linha</strong>
+<pre class="file" data-file="join-engoliu.sql" data-resultado>-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+SELECT COUNT(*) AS linhas_na_planilha FROM importados;
+
+SELECT COUNT(*) AS linhas_que_entrariam
+FROM (SELECT DISTINCT TRIM(i.nome)
+      FROM importados i
+      JOIN categorias c ON c.nome = i.categoria COLLATE NOCASE);
+</pre>
+<p><strong>O que aconteceu:</strong> 8 linhas na planilha, mas só 6 entrariam: uma é a Caneta repetida (essa é de propósito), e a outra é o Ioiô, cuja categoria "Brinquedo" não existe. O <code>JOIN</code> descarta, sem erro, a linha que não acha par.</p>
+<p><strong>Como consertar:</strong> antes de todo <code>INSERT … SELECT</code> com <code>JOIN</code>, conte: as linhas que vão entrar batem com as que você esperava? Se não, procure as órfãs com <code>LEFT JOIN … IS NULL</code> (versão 4).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>.import</code> é do programa <code>sqlite3</code>; cada banco tem o seu jeito de ler CSV, e a estratégia da tabela de passagem vale para todos. Trechos ilustrativos, que não rodam no editor:</p>
+<pre class="file" data-file="importar-outros-bancos.sql">-- PostgreSQL (no psql, o arquivo é lido do seu computador)
+\copy importados FROM 'novos-produtos.csv' WITH (FORMAT csv, HEADER true)
+
+-- MySQL / MariaDB
+LOAD DATA LOCAL INFILE 'novos-produtos.csv' INTO TABLE importados
+  FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED BY '"'
+  IGNORE 1 LINES;
+
+-- SQL Server
+BULK INSERT importados FROM 'C:\dados\novos-produtos.csv'
+  WITH (FORMAT = 'CSV', FIRSTROW = 2);
+</pre>
+<p>Nos três, a tabela de destino precisa existir antes. Mais em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>Comando</th></tr>
+<tr><td>Importar para tabela nova (cabeçalho vira nome de coluna)</td><td><code>.import --csv arquivo.csv importados</code></td></tr>
+<tr><td>Importar para tabela existente</td><td><code>.import --csv --skip 1 arquivo.csv tabela</code></td></tr>
+<tr><td>Ver o que o <code>.import</code> criou</td><td><code>.schema importados</code></td></tr>
+<tr><td>Ver o tipo guardado</td><td><code>SELECT typeof(coluna) …</code></td></tr>
+<tr><td>Ver espaços escondidos</td><td><code>'[' || coluna || ']'</code></td></tr>
+<tr><td>Tirar espaços</td><td><code>TRIM(coluna)</code></td></tr>
+<tr><td>Vírgula decimal → número</td><td><code>CAST(REPLACE(preco, ',', '.') AS REAL)</code></td></tr>
+<tr><td>Vazio → NULL</td><td><code>NULLIF(TRIM(coluna), '')</code></td></tr>
+<tr><td>Achar repetidos</td><td><code>GROUP BY TRIM(nome) HAVING COUNT(*) &gt; 1</code></td></tr>
+<tr><td>Achar nomes sem par</td><td><code>LEFT JOIN … ON … COLLATE NOCASE WHERE c.id IS NULL</code></td></tr>
+<tr><td>Copiar limpando</td><td><code>INSERT INTO produtos (…) SELECT DISTINCT …</code></td></tr>
+<tr><td>Exportar</td><td><code>.headers on</code> + <code>.mode csv</code> + <code>.once arquivo.csv</code> + <code>SELECT …</code></td></tr>
+<tr><td>Separador ponto e vírgula</td><td><code>.separator ";"</code> depois do <code>.mode csv</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Importar de verdade</h3>
+<p>Complete para importar o arquivo como CSV:</p>
+<div class="ex-code">.import <input data-answer="--csv" aria-label="opção"> novos-produtos.csv importados</div>
+</div>
+
+<div class="exercise">
+<h3>2. Vazio não é zero</h3>
+<p>Complete para transformar o texto vazio em <code>NULL</code>:</p>
+<div class="ex-code"><input data-answer="NULLIF|nullif" aria-label="função">(TRIM(estoque), '')</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Depois de <code>.import --csv novos-produtos.csv importados</code> (tabela nova), qual é o tipo das colunas?</p>
+<label><input type="radio" name="q3"> O <code>sqlite3</code> adivinha: números viram <code>INTEGER</code> ou <code>REAL</code></label>
+<label><input type="radio" name="q3"> Todas <code>TEXT</code></label>
+<label><input type="radio" name="q3"> Todas <code>REAL</code></label>
+<label><input type="radio" name="q3"> As colunas não têm tipo e dão erro nas consultas</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Quanto dá <code>SELECT '3,49' * 2;</code> no SQLite?</p>
+<label><input type="radio" name="q4"> 6.98</label>
+<label><input type="radio" name="q4"> Um erro de tipo</label>
+<label><input type="radio" name="q4"> 6, porque o SQLite só aproveita o "3" antes da vírgula</label>
+<label><input type="radio" name="q4"> NULL</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A planilha tinha 8 linhas, mas o <code>INSERT … SELECT</code> com <code>JOIN categorias</code> inseriu 6. O que é mais provável?</p>
+<label><input type="radio" name="q5"> O SQLite tem limite de 6 linhas por <code>INSERT</code></label>
+<label><input type="radio" name="q5"> O <code>.import</code> perdeu 2 linhas</label>
+<label><input type="radio" name="q5"> Duas linhas tinham preço com vírgula</label>
+<label><input type="radio" name="q5"> Linhas repetidas saíram no <code>DISTINCT</code>, ou alguma categoria não achou par no <code>JOIN</code> e a linha foi descartada</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Para que serve o <code>.once relatorio.csv</code>?</p>
+<label><input type="radio" name="q6"> Manda a saída do próximo comando para o arquivo, e depois volta para a tela</label>
+<label><input type="radio" name="q6"> Importa o arquivo uma vez só</label>
+<label><input type="radio" name="q6"> Abre o arquivo na planilha</label>
+<label><input type="radio" name="q6"> Grava todas as saídas daí em diante no arquivo</label>
+</div>
+
+<h3>Desafio: o relatório de preços da planilha</h3>
+
+<div class="trysql" data-goal="linhas:1;;contem:7|116.74">
+<p class="try-task"><strong>Missão:</strong> antes de importar, a Marta quer saber quantos produtos <strong>diferentes</strong> a planilha traz e quanto custaria comprar uma unidade de cada. Direto na tabela de passagem, mostre uma linha com <code>produtos</code> (a contagem dos nomes distintos, já sem espaços) e <code>total</code> (a soma dos preços convertidos, de cada produto uma vez, arredondada em 2 casas).</p>
+<pre class="script" data-file="desafio.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+SELECT COUNT(*) AS produtos, SUM(preco) AS total
+FROM importados;
+</pre>
+<pre class="solucao" data-file="desafio.sql">-- a tabela de passagem, igual à que o .import criou
+CREATE TABLE importados (nome TEXT, categoria TEXT, fornecedor TEXT, preco TEXT, estoque TEXT);
+INSERT INTO importados VALUES
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('  Borracha Branca ',          'Papelaria',       'Norte Suprimentos', '1,20',  '350'),
+('Caderno Brochura, 48 folhas', 'Papelaria',       'Norte Suprimentos', '6,90',  '150'),
+('Bola de Futebol',             'Esporte e Lazer', 'Norte Suprimentos', '59,90', ''),
+('Peteca',                      'esporte e lazer', 'Norte Suprimentos', '12,50', '40'),
+('Pá de Jardinagem',            'Jardim',          'Norte Suprimentos', '24,00', '25'),
+('Caneta Gel Preta',            'Papelaria',       'Norte Suprimentos', '3,49',  '200'),
+('Ioiô Colorido',               'Brinquedo',       'Norte Suprimentos', '8,75',  '60');
+-- a consulta
+WITH limpos AS (
+    SELECT DISTINCT TRIM(nome) AS nome,
+           CAST(REPLACE(preco, ',', '.') AS REAL) AS preco
+    FROM importados
+)
+SELECT COUNT(*) AS produtos, ROUND(SUM(preco), 2) AS total
+FROM limpos;
+</pre>
+</div>
+
+<p>Rode o código inicial antes de resolver: ele diz 8 produtos e um total de 116.0, porque conta a Caneta duas vezes e soma só a parte inteira de cada preço (3 + 1 + 6 + 59…). São 7 produtos e 116.74. A diferença parece pequena aqui; numa planilha de mil linhas, não seria.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>CSV é uma planilha em texto: vírgula separa colunas, aspas protegem as vírgulas de dentro, a primeira linha costuma ser o cabeçalho.</li>
+  <li>Importe com <code>.import --csv</code> para uma <strong>tabela de passagem</strong>. Numa tabela nova, o cabeçalho vira nome de coluna e <strong>tudo vira <code>TEXT</code></strong>; numa tabela existente, use <code>--skip 1</code>.</li>
+  <li>Limpe com SQL: <code>TRIM</code> para espaços, <code>REPLACE(…, ',', '.')</code> + <code>CAST(… AS REAL)</code> para a vírgula decimal, <code>NULLIF(…, '')</code> para células vazias, <code>DISTINCT</code> para linhas repetidas.</li>
+  <li>Confira antes de inserir: <code>typeof</code> para os tipos, <code>LEFT JOIN … IS NULL</code> para nomes sem par, <code>COUNT</code> para as linhas que vão entrar. Um <code>JOIN</code> descarta órfãs em silêncio.</li>
+  <li>Leve para a tabela final com <code>INSERT INTO … SELECT</code>, com <code>PRAGMA foreign_keys = ON</code> no terminal, e apague a tabela de passagem.</li>
+  <li>Exporte com <code>.headers on</code>, <code>.mode csv</code> e <code>.once arquivo.csv</code>; para planilhas em português, <code>.separator ";"</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
