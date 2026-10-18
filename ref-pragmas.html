@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Referência de PRAGMAs — os ajustes do SQLite | Guia SQL</title>
+<meta name="description" content="Referência dos PRAGMAs do SQLite 3.50: estrutura das tabelas (table_info, foreign_key_list), chaves estrangeiras e verificação (foreign_keys, integrity_check), o arquivo do banco (journal_mode, page_size, user_version) e a conexão, com a saída real no editor do guia (banco em memória) e no terminal da Ana (arquivo loja.db).">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Referência de PRAGMAs</span></h1>
+
+<p class="intro">Um <strong>PRAGMA</strong> é um comando do SQLite para <strong>consultar ou mudar um ajuste</strong> do próprio banco: ver as colunas de uma tabela, ligar as chaves estrangeiras, conferir se o arquivo está íntegro, saber o tamanho da página. Ao contrário dos comandos de ponto, ele é SQL (termina com <code>;</code> e roda no editor, no PHP, no Python), mas é SQL <strong>só do SQLite</strong>: os outros bancos têm ajustes parecidos com outros nomes. Esta página lista os PRAGMAs mais úteis do SQLite 3.50.4, com a saída real em dois lugares: o <strong>editor do guia</strong>, que usa um banco em memória, e o <strong>terminal da Ana</strong>, com o arquivo <code>loja.db</code>. A aula que ensina os principais com calma é <a href="pragma.html">PRAGMAs Úteis</a>.</p>
+
+<div class="note">
+<strong>As regras dos PRAGMAs</strong>
+<ul>
+  <li><strong>Ler</strong> um ajuste: <code>PRAGMA nome;</code>. <strong>Mudar</strong>: <code>PRAGMA nome = valor;</code>. Os que olham uma tabela levam o nome dela entre parênteses: <code>PRAGMA table_info(produtos);</code>.</li>
+  <li>Quase todo PRAGMA que só <strong>lê</strong> também existe como tabela, com o prefixo <code>pragma_</code>: <code>SELECT * FROM pragma_table_info('produtos');</code>. Assim dá para usar <code>WHERE</code>, <code>ORDER BY</code> e <code>COUNT</code> no resultado.</li>
+  <li><strong>Um PRAGMA com o nome errado não dá erro</strong>: o SQLite simplesmente ignora. Confira sempre se veio resposta.</li>
+  <li>Alguns ajustes ficam <strong>gravados no arquivo</strong> (<code>user_version</code>, <code>journal_mode = WAL</code>); outros valem só para <strong>a conexão</strong> e somem quando você fecha o banco (<code>foreign_keys</code>, <code>cache_size</code>).</li>
+</ul>
+</div>
+
+<hr>
+
+<h2 id="onde">Editor (memória) × terminal (arquivo)</h2>
+<p>No <a href="simulador.html">editor do guia</a>, cada Rodar cria um banco <strong>novo, em memória</strong>, e carrega a Loja Aurora com <code>PRAGMA foreign_keys = ON;</code> no começo. No terminal, a Ana abre o <strong>arquivo</strong> <code>loja.db</code> com <code>sqlite3 loja.db</code> (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>). Por isso alguns PRAGMAs dão respostas diferentes nos dois lugares:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>No editor</th><th>No terminal (<code>loja.db</code>)</th><th>Por quê</th></tr>
+<tr><td><code>foreign_keys</code></td><td><code>1</code></td><td><code>0</code></td><td>O editor liga ao carregar o banco; no terminal, toda conexão começa desligada</td></tr>
+<tr><td><code>journal_mode</code></td><td><code>memory</code></td><td><code>delete</code></td><td>Banco em memória não tem arquivo de diário no disco</td></tr>
+<tr><td><code>page_size</code></td><td><code>8192</code></td><td><code>4096</code></td><td>O <code>loja.db</code> foi criado com páginas de 4096 bytes; um banco novo usa o padrão desta compilação, 8192</td></tr>
+<tr><td><code>page_count</code></td><td><code>9</code></td><td><code>12</code></td><td>Os mesmos dados, em páginas de tamanhos diferentes</td></tr>
+<tr><td><code>auto_vacuum</code></td><td><code>0</code></td><td><code>1</code></td><td>Ajuste gravado no arquivo <code>loja.db</code></td></tr>
+<tr><td><code>database_list</code></td><td><code>0|main|</code> (sem arquivo)</td><td><code>0|main|/home/ana/loja.db</code></td><td>Em memória não há caminho de arquivo</td></tr>
+<tr><td><code>recursive_triggers</code></td><td><code>0</code></td><td><code>1</code></td><td>O programa <code>sqlite3</code> começa com outro valor</td></tr>
+<tr><td><code>trusted_schema</code></td><td><code>1</code></td><td><code>0</code></td><td>Idem: o programa <code>sqlite3</code> desliga</td></tr>
+</table>
+</div>
+
+<p>Os PRAGMAs marcados <strong>"só com arquivo"</strong> nas tabelas abaixo rodam no editor, mas só fazem sentido no terminal (ou num programa) com um arquivo de verdade, porque o banco do editor some a cada Rodar.</p>
+
+<hr>
+
+<h2 id="estrutura">Ver a estrutura das tabelas</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que mostra</th><th>Exemplo</th><th>Saída real (resumida)</th></tr>
+<tr><td><code>table_info(t)</code></td><td>Uma linha por coluna: posição (<code>cid</code>), nome, tipo, se é <code>NOT NULL</code>, o valor padrão e se faz parte da chave primária (<code>pk</code>)</td><td><code>PRAGMA table_info(categorias);</code></td><td><code>0|id|INTEGER|0|NULL|1</code><br><code>1|nome|TEXT|1|NULL|0</code><br><code>2|descricao|TEXT|0|NULL|0</code></td></tr>
+<tr><td><code>table_xinfo(t)</code></td><td>O mesmo, mais a coluna <code>hidden</code> (colunas escondidas e geradas)</td><td><code>PRAGMA table_xinfo(categorias);</code></td><td><code>0|id|INTEGER|0|NULL|1|0</code> …</td></tr>
+<tr><td><code>table_list</code></td><td>Todas as tabelas: esquema, nome, tipo, nº de colunas, <code>WITHOUT ROWID</code> (<code>wr</code>) e <code>STRICT</code></td><td><code>PRAGMA table_list;</code></td><td><code>main|produtos|table|7|0|0</code> … (9 linhas, contando as internas <code>sqlite_schema</code> e <code>sqlite_temp_schema</code>)</td></tr>
+<tr><td><code>index_list(t)</code></td><td>Os índices da tabela, se são únicos e a origem (<code>pk</code> = criado pela chave primária, <code>c</code> = <code>CREATE INDEX</code>, <code>u</code> = <code>UNIQUE</code>)</td><td><code>PRAGMA index_list(itens_pedido);</code></td><td><code>0|sqlite_autoindex_itens_pedido_1|1|pk|0</code></td></tr>
+<tr><td><code>index_info(i)</code></td><td>As colunas de um índice</td><td><code>PRAGMA index_info(sqlite_autoindex_itens_pedido_1);</code></td><td><code>0|0|pedido_id</code><br><code>1|1|produto_id</code></td></tr>
+<tr><td><code>index_xinfo(i)</code></td><td>O mesmo, com ordem (<code>desc</code>), collation e as colunas extras guardadas no índice</td><td><code>PRAGMA index_xinfo(sqlite_autoindex_itens_pedido_1);</code></td><td><code>0|0|pedido_id|0|BINARY|1</code> …</td></tr>
+<tr><td><code>foreign_key_list(t)</code></td><td>As chaves estrangeiras da tabela: tabela e coluna de destino, <code>ON UPDATE</code>, <code>ON DELETE</code></td><td><code>PRAGMA foreign_key_list(produtos);</code></td><td><code>0|0|fornecedores|fornecedor_id|id|NO ACTION|NO ACTION|NONE</code><br><code>1|0|categorias|categoria_id|id|NO ACTION|NO ACTION|NONE</code></td></tr>
+</table>
+</div>
+
+<p>Todos funcionam igual no editor e no terminal. Aqui, o <code>table_info</code> rodando de verdade no banco da loja:</p>
+
+<pre class="file" data-file="estrutura.sql" data-resultado>PRAGMA table_info(produtos);
+</pre>
+
+<p>Repare na coluna <code>dflt_value</code>: <code>estoque</code> e <code>descontinuado</code> têm o valor padrão <code>0</code> (aula <a href="default.html">DEFAULT</a>); nas outras, <em>NULL</em> quer dizer "sem padrão". No terminal, com <code>.headers on</code> (aula <a href="comandos-ponto.html">Comandos de Ponto</a>), a saída é a mesma, só que o <code>NULL</code> aparece vazio:</p>
+
+<pre class="term">sqlite> .headers on
+sqlite> PRAGMA table_info(categorias);
+cid|name|type|notnull|dflt_value|pk
+0|id|INTEGER|0||1
+1|nome|TEXT|1||0
+2|descricao|TEXT|0||0
+sqlite> .mode box
+sqlite> PRAGMA foreign_key_list(produtos);
+┌────┬─────┬──────────────┬───────────────┬────┬───────────┬───────────┬───────┐
+│ id │ seq │    table     │     from      │ to │ on_update │ on_delete │ match │
+├────┼─────┼──────────────┼───────────────┼────┼───────────┼───────────┼───────┤
+│ 0  │ 0   │ fornecedores │ fornecedor_id │ id │ NO ACTION │ NO ACTION │ NONE  │
+│ 1  │ 0   │ categorias   │ categoria_id  │ id │ NO ACTION │ NO ACTION │ NONE  │
+└────┴─────┴──────────────┴───────────────┴────┴───────────┴───────────┴───────┘</pre>
+
+<h3>Como tabela: pragma_table_info</h3>
+<p>Na forma de tabela, dá para filtrar e contar. Quantas colunas tem cada tabela da loja?</p>
+
+<pre class="file" data-file="colunas-por-tabela.sql" data-resultado>SELECT m.name AS tabela, COUNT(*) AS colunas
+FROM sqlite_schema AS m, pragma_table_info(m.name)
+WHERE m.type = 'table'
+GROUP BY m.name;
+</pre>
+
+<p>A <code>sqlite_schema</code> é a tabela interna onde o SQLite guarda a lista das tabelas; para cada uma, o <code>pragma_table_info(m.name)</code> devolve as colunas, e o <a href="group-by.html">GROUP BY</a> conta.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque <code>pedidos</code> pelo nome de outra tabela (<code>clientes</code>, <code>itens_pedido</code>…), ou troque <code>table_info</code> por <code>foreign_key_list</code> ou <code>index_list</code>.</p>
+<pre class="script" data-file="consulta.sql">PRAGMA table_info(pedidos);
+</pre>
+</div>
+
+<hr>
+
+<h2 id="fk">Chaves estrangeiras e verificação</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que faz</th><th>Exemplo</th><th>Saída real</th><th>Vale para</th></tr>
+<tr><td><code>foreign_keys</code></td><td>Liga (<code>ON</code>) ou desliga (<code>OFF</code>) a checagem das chaves estrangeiras (aula <a href="foreign-key.html">FOREIGN KEY</a>)</td><td><code>PRAGMA foreign_keys = ON;</code></td><td>Lendo: editor <code>1</code>, terminal <code>0</code></td><td>A conexão: some ao fechar</td></tr>
+<tr><td><code>foreign_key_check</code></td><td>Lista as linhas que apontam para uma linha que não existe</td><td><code>PRAGMA foreign_key_check;</code></td><td>Na Loja Aurora: nenhuma linha</td><td>—</td></tr>
+<tr><td><code>defer_foreign_keys</code></td><td>Deixa a checagem das chaves para o <code>COMMIT</code> da transação atual</td><td><code>PRAGMA defer_foreign_keys = ON;</code></td><td>Lendo: <code>0</code></td><td>A transação</td></tr>
+<tr><td><code>integrity_check</code></td><td>Confere o banco inteiro (páginas, índices, <code>NOT NULL</code>…) e responde <code>ok</code> ou a lista de problemas</td><td><code>PRAGMA integrity_check;</code></td><td><code>ok</code></td><td>Só com arquivo faz sentido de verdade</td></tr>
+<tr><td><code>quick_check</code></td><td>Uma versão mais rápida do <code>integrity_check</code> (não confere se os índices batem com as tabelas)</td><td><code>PRAGMA quick_check;</code></td><td><code>ok</code></td><td>Idem</td></tr>
+</table>
+</div>
+
+<p>No editor, as chaves estão ligadas: apagar a Papelaria, que tem produtos, dá erro.</p>
+
+<pre class="file" data-file="fk-ligada.sql" data-resultado data-erro>DELETE FROM categorias WHERE id = 1;
+</pre>
+
+<p>Desligando as chaves antes, o <code>DELETE</code> passa, e o <code>foreign_key_check</code> mostra o estrago: seis produtos apontando para uma categoria que não existe mais.</p>
+
+<pre class="file" data-file="fk-desligada.sql" data-resultado>PRAGMA foreign_keys = OFF;
+DELETE FROM categorias WHERE id = 1;
+PRAGMA foreign_key_check;
+</pre>
+
+<p>No terminal é o contrário: cada vez que a Ana abre o <code>loja.db</code>, as chaves começam <strong>desligadas</strong>, e ela precisa ligar de novo em toda sessão.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> PRAGMA foreign_keys;
+0
+sqlite> PRAGMA foreign_keys = ON;
+sqlite> PRAGMA foreign_keys;
+1
+sqlite> .quit
+$ sqlite3 loja.db "PRAGMA foreign_keys;"
+0                                  « nova conexão: desligada de novo</pre>
+
+<hr>
+
+<h2 id="arquivo">O arquivo do banco (só com arquivo)</h2>
+<p>Estes PRAGMAs falam do arquivo <code>.db</code>: como ele grava, de que tamanho são as páginas, quanto espaço sobra. No editor eles respondem (com os valores de um banco em memória), mas só fazem sentido no terminal ou num programa que abre um arquivo.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que faz</th><th>Exemplo</th><th>Terminal (<code>loja.db</code>)</th><th>Fica no arquivo?</th></tr>
+<tr><td><code>journal_mode</code></td><td>Como o SQLite protege as gravações: <code>delete</code> (o padrão), <code>wal</code>, <code>truncate</code>, <code>persist</code>, <code>memory</code>, <code>off</code></td><td><code>PRAGMA journal_mode = WAL;</code></td><td><code>delete</code></td><td><code>wal</code> fica; os outros, não</td></tr>
+<tr><td><code>synchronous</code></td><td>Quanto o SQLite espera o disco confirmar cada gravação: <code>0</code> OFF, <code>1</code> NORMAL, <code>2</code> FULL, <code>3</code> EXTRA</td><td><code>PRAGMA synchronous = NORMAL;</code></td><td><code>2</code></td><td>Não (conexão)</td></tr>
+<tr><td><code>page_size</code></td><td>O tamanho de cada página do arquivo, em bytes. Só muda num banco vazio ou com <code>VACUUM</code></td><td><code>PRAGMA page_size;</code></td><td><code>4096</code></td><td>Sim</td></tr>
+<tr><td><code>page_count</code></td><td>Quantas páginas o arquivo tem</td><td><code>PRAGMA page_count;</code></td><td><code>12</code></td><td>—</td></tr>
+<tr><td><code>freelist_count</code></td><td>Quantas páginas estão vazias, esperando reaproveitamento (aula <a href="vacuum.html">VACUUM e ANALYZE</a>)</td><td><code>PRAGMA freelist_count;</code></td><td><code>0</code></td><td>—</td></tr>
+<tr><td><code>auto_vacuum</code></td><td><code>0</code> NONE, <code>1</code> FULL, <code>2</code> INCREMENTAL: se o arquivo encolhe sozinho quando dados são apagados</td><td><code>PRAGMA auto_vacuum;</code></td><td><code>1</code></td><td>Sim</td></tr>
+<tr><td><code>incremental_vacuum</code></td><td>Devolve páginas vazias ao disco, no modo <code>auto_vacuum = 2</code></td><td><code>PRAGMA incremental_vacuum;</code></td><td>(sem saída)</td><td>—</td></tr>
+<tr><td><code>user_version</code></td><td>Um número livre, gravado no arquivo, para o <strong>seu</strong> programa saber a versão do banco</td><td><code>PRAGMA user_version = 3;</code></td><td><code>0</code></td><td>Sim</td></tr>
+<tr><td><code>application_id</code></td><td>Outro número livre, para marcar o arquivo como "do seu aplicativo"</td><td><code>PRAGMA application_id;</code></td><td><code>0</code></td><td>Sim</td></tr>
+<tr><td><code>encoding</code></td><td>A codificação dos textos do arquivo</td><td><code>PRAGMA encoding;</code></td><td><code>UTF-8</code> (no editor, só <code>PRAGMA: ok</code>)</td><td>Sim</td></tr>
+<tr><td><code>schema_version</code></td><td>Um contador que sobe a cada mudança de estrutura (<code>CREATE</code>, <code>ALTER</code>…). Só leia; nunca mude à mão</td><td><code>PRAGMA schema_version;</code></td><td><code>7</code></td><td>Sim</td></tr>
+<tr><td><code>database_list</code></td><td>Os bancos abertos na conexão e o arquivo de cada um</td><td><code>PRAGMA database_list;</code></td><td><code>0|main|/home/ana/loja.db</code></td><td>—</td></tr>
+<tr><td><code>wal_checkpoint</code></td><td>No modo WAL, passa as gravações do arquivo <code>-wal</code> para o banco</td><td><code>PRAGMA wal_checkpoint;</code></td><td><code>0|-1|-1</code> (não está em WAL)</td><td>—</td></tr>
+</table>
+</div>
+
+<h3>Página × tamanho do arquivo</h3>
+<p>O arquivo é feito de páginas do mesmo tamanho. Multiplicando um pelo outro, sai o tamanho do arquivo: 4096 × 12 = 49152 bytes, o mesmo que o <code>ls -l</code> mostra.</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> PRAGMA database_list;
+0|main|/home/ana/loja.db
+sqlite> PRAGMA page_size;
+4096
+sqlite> PRAGMA page_count;
+12
+sqlite> PRAGMA freelist_count;
+0
+sqlite> PRAGMA integrity_check;
+ok
+sqlite> .quit
+$ ls -l loja.db
+-rw-r--r-- 1 ana ana 49152 out 18 10:14 loja.db</pre>
+
+<h3>O que fica gravado no arquivo</h3>
+<p>O <code>user_version</code> e o <code>journal_mode = WAL</code> continuam valendo depois de fechar e abrir o banco:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> PRAGMA user_version;
+0
+sqlite> PRAGMA user_version = 3;
+sqlite> .quit
+$ sqlite3 loja.db "PRAGMA user_version;"
+3                                  « continuou 3: está no arquivo
+$ sqlite3 loja.db "PRAGMA user_version = 0;"
+$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> PRAGMA journal_mode;
+delete
+sqlite> PRAGMA journal_mode = WAL;
+wal
+sqlite> .quit
+$ sqlite3 loja.db "PRAGMA journal_mode;"
+wal                                « o modo WAL também ficou no arquivo
+$ sqlite3 loja.db "PRAGMA journal_mode = DELETE;"
+delete</pre>
+
+<p>Repare: <code>PRAGMA journal_mode = WAL;</code> responde com o modo que ficou valendo (<code>wal</code>), enquanto <code>PRAGMA user_version = 3;</code> não responde nada. No editor, o mesmo <code>journal_mode = WAL</code> responde <code>memory</code>: um banco em memória não tem para onde mudar.</p>
+
+<hr>
+
+<h2 id="conexao">A conexão: ajustes que valem até fechar</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que faz</th><th>Exemplo</th><th>Saída real (editor e terminal)</th></tr>
+<tr><td><code>cache_size</code></td><td>Quanta memória usar de cache. Número negativo = em KiB (−16384 = 16 MiB); positivo = em páginas</td><td><code>PRAGMA cache_size;</code></td><td><code>-16384</code></td></tr>
+<tr><td><code>busy_timeout</code></td><td>Quantos milissegundos esperar quando outro programa está gravando no mesmo arquivo, antes de dar <code>database is locked</code></td><td><code>PRAGMA busy_timeout = 5000;</code></td><td>Lendo: <code>0</code> (a coluna se chama <code>timeout</code>)</td></tr>
+<tr><td><code>temp_store</code></td><td>Onde guardar tabelas e índices temporários: <code>0</code> padrão, <code>1</code> arquivo, <code>2</code> memória</td><td><code>PRAGMA temp_store = MEMORY;</code></td><td><code>0</code></td></tr>
+<tr><td><code>case_sensitive_like</code></td><td>Faz o <code>LIKE</code> diferenciar maiúsculas de minúsculas (aula <a href="like.html">LIKE</a>). Só se muda; não dá para ler</td><td><code>PRAGMA case_sensitive_like = ON;</code></td><td>(sem saída)</td></tr>
+<tr><td><code>recursive_triggers</code></td><td>Deixa um gatilho disparar outros gatilhos em cadeia</td><td><code>PRAGMA recursive_triggers;</code></td><td>Editor <code>0</code>, terminal <code>1</code></td></tr>
+<tr><td><code>query_only</code></td><td>Com <code>ON</code>, a conexão só lê: qualquer <code>INSERT</code>, <code>UPDATE</code> ou <code>DELETE</code> dá <code>attempt to write a readonly database</code></td><td><code>PRAGMA query_only = ON;</code></td><td>Lendo: <code>0</code></td></tr>
+<tr><td><code>ignore_check_constraints</code></td><td>Com <code>ON</code>, ignora os <code>CHECK</code> (aula <a href="check.html">CHECK</a>). Perigoso</td><td><code>PRAGMA ignore_check_constraints;</code></td><td><code>0</code></td></tr>
+<tr><td><code>automatic_index</code></td><td>Deixa o SQLite criar índices temporários sozinho para acelerar uma consulta</td><td><code>PRAGMA automatic_index;</code></td><td><code>1</code></td></tr>
+<tr><td><code>trusted_schema</code></td><td>Se funções e tabelas virtuais podem ser usadas dentro de views e gatilhos guardados no arquivo</td><td><code>PRAGMA trusted_schema;</code></td><td>Editor <code>1</code>, terminal <code>0</code></td></tr>
+<tr><td><code>optimize</code></td><td>Atualiza as estatísticas que ajudam o planejador de consultas. Bom de rodar antes de fechar um banco usado por muito tempo (aula <a href="indices-na-pratica.html">Quando o Índice Ajuda</a>)</td><td><code>PRAGMA optimize;</code></td><td>(sem saída)</td></tr>
+</table>
+</div>
+
+<p>Um exemplo no editor: com <code>case_sensitive_like</code> ligado, <code>'ana%'</code> com <strong>a</strong> minúsculo não acha mais "Ana Beatriz" nem "Ana Carvalho".</p>
+
+<pre class="file" data-file="like-caixa.sql" data-resultado>PRAGMA case_sensitive_like = ON;
+SELECT COUNT(*) AS anas FROM clientes WHERE nome LIKE 'ana%';
+</pre>
+
+<hr>
+
+<h2 id="info">Informações sobre o próprio SQLite</h2>
+<p>Estes não mexem em nada; respondem "o que este SQLite sabe fazer". Os números mudam entre o editor e o terminal, porque o programa <code>sqlite3</code> traz extensões a mais (como <code>generate_series</code>, que não existe no editor).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>PRAGMA</th><th>O que lista</th><th>Editor</th><th>Terminal</th></tr>
+<tr><td><code>compile_options</code></td><td>As opções com que o SQLite foi compilado</td><td>55 linhas</td><td>50 linhas</td></tr>
+<tr><td><code>function_list</code></td><td>Todas as funções disponíveis (<code>s</code> = função comum; <code>w</code> = agregada ou de janela, porque toda agregada também serve como função de janela)</td><td>171 linhas</td><td>223 linhas</td></tr>
+<tr><td><code>pragma_list</code></td><td>Todos os PRAGMAs que existem</td><td>64 linhas</td><td>65 linhas</td></tr>
+<tr><td><code>module_list</code></td><td>Os módulos de tabela virtual</td><td>inclui <code>fts5</code>, <code>rtree</code>, <code>json_each</code></td><td>inclui também <code>generate_series</code>, <code>zipfile</code>, <code>fsdir</code></td></tr>
+<tr><td><code>collation_list</code></td><td>As regras de ordenação de texto</td><td><code>RTRIM</code>, <code>NOCASE</code>, <code>BINARY</code></td><td>também <code>decimal</code> e <code>uint</code></td></tr>
+</table>
+</div>
+
+<p>Para contar você mesmo, use a forma de tabela: <code>SELECT COUNT(*) FROM pragma_function_list;</code>. Rode no editor e compare com a tabela acima.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Nome errado: nenhum erro, nenhuma resposta</strong>
+<p>A Ana digitou <code>foreing</code> em vez de <code>foreign</code>:</p>
+<pre class="term">sqlite> PRAGMA foreing_keys;
+sqlite> PRAGMA table_info(produto);
+sqlite></pre>
+<p><strong>O que aconteceu:</strong> silêncio. Um PRAGMA desconhecido é ignorado, sem mensagem; no editor, ele aparece só como <code>PRAGMA: ok</code>. O mesmo com o nome de tabela errado no <code>table_info</code> (<code>produto</code> no lugar de <code>produtos</code>): o editor mostra uma tabela vazia, e o terminal, nada. Se um PRAGMA de leitura não respondeu, desconfie da grafia.</p>
+</div>
+
+<div class="cenario">
+<strong>Desligar as chaves dentro de uma transação</strong>
+<pre class="file" data-file="fk-transacao.sql" data-resultado>BEGIN;
+PRAGMA foreign_keys = OFF;
+PRAGMA foreign_keys;
+COMMIT;
+</pre>
+<p><strong>O que aconteceu:</strong> o <code>foreign_keys</code> continuou <code>1</code>. Com uma transação aberta (aula <a href="transacoes.html">Transações</a>), o SQLite ignora a mudança desse PRAGMA, de novo sem erro. Mude-o <strong>antes</strong> do <<div class="cenario">
+<strong>O <code>encoding</code> no editor</strong>
+<p>No terminal, o <code>encoding</code> responde nas duas formas:</p>
+<pre class="term">sqlite> PRAGMA encoding;
+UTF-8
+sqlite> SELECT * FROM pragma_encoding;
+UTF-8</pre>
+<p><strong>No editor do guia é diferente:</strong> <code>PRAGMA encoding;</code> aparece só como <code>PRAGMA: ok</code>, sem tabela, e <code>SELECT * FROM pragma_encoding;</code> dá o erro <code>no such table: pragma_encoding</code>. É uma diferença do SQLite do navegador; o texto do banco do editor também é UTF-8. Para conferir a codificação de um arquivo de verdade, use o terminal.</p>
+</div></code> no terminal.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p><code>PRAGMA</code> é só do SQLite. Nos outros, as mesmas informações vêm de outros lugares: o padrão SQL tem as views do <code>INFORMATION_SCHEMA</code> (por exemplo, <code>INFORMATION_SCHEMA.COLUMNS</code> para as colunas de uma tabela), que o MySQL, o PostgreSQL e o SQL Server oferecem; e os ajustes de conexão usam comandos próprios, como <code>SET</code>. O grupo <a href="dialetos.html">As Diferenças entre os Bancos</a> mostra cada um.</p>
+</div>
+
+<hr>
+
+<h2>Missão: as colunas que aceitam NULL</h2>
+
+<div class="trysql" data-goal="linhas:5;;contem:nascimento">
+<p class="try-task"><strong>Missão:</strong> a consulta lista as 7 colunas da tabela <code>clientes</code>. A Ana quer só as que <strong>aceitam</strong> <code>NULL</code>: as que têm <code>notnull</code> igual a 0. Dica: como <code>notnull</code> também é uma palavra do SQL, escreva o nome da coluna entre aspas duplas, <code>"notnull"</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT name
+FROM pragma_table_info('clientes');
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT name
+FROM pragma_table_info('clientes')
+WHERE "notnull" = 0;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>PRAGMA nome;</code> lê um ajuste; <code>PRAGMA nome = valor;</code> muda. A forma <code>SELECT … FROM pragma_nome(…)</code> deixa filtrar o resultado.</li>
+  <li>Estrutura: <code>table_info</code>, <code>table_list</code>, <code>index_list</code>, <code>index_info</code>, <code>foreign_key_list</code>. Funcionam igual no editor e no terminal.</li>
+  <li><code>foreign_keys</code> vale por conexão: ligado no editor, desligado em cada <code>sqlite3 loja.db</code>. <code>foreign_key_check</code> e <code>integrity_check</code> conferem o banco.</li>
+  <li><code>journal_mode</code>, <code>page_size</code>, <code>page_count</code>, <code>auto_vacuum</code>, <code>user_version</code>: só fazem sentido com arquivo. <code>user_version</code> e o modo WAL ficam gravados nele.</li>
+  <li>Nome errado não dá erro: o PRAGMA é ignorado. Mudar <code>foreign_keys</code> dentro de uma transação também.</li>
+  <li>PRAGMA é só do SQLite; nos outros bancos, procure o <code>INFORMATION_SCHEMA</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
