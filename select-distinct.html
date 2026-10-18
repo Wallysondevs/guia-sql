@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL SELECT DISTINCT — tirando as repetições do resultado | Guia SQL</title>
+<meta name="description" content="SELECT DISTINCT para quem está começando: como tirar as linhas repetidas do resultado, DISTINCT com uma e com várias colunas, o que acontece com o NULL, DISTINCT × GROUP BY, contar valores diferentes e os erros reais do SQLite, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">SELECT DISTINCT</span></h1>
+
+<p class="intro">A dona da Loja Aurora quer saber: "em quais cidades nós temos clientes?". A Ana pede a coluna <code>cidade</code> da tabela de clientes e recebe 30 linhas, com Teresina aparecendo dez vezes. A resposta está ali, mas escondida no meio das repetições. Para isso existe o <code>DISTINCT</code> (em inglês, "distinto", "diferente"): ele tira as linhas repetidas do resultado e deixa cada valor aparecer uma vez só.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que um <code>SELECT</code> comum mostra valores repetidos.</li>
+  <li>A usar <code>SELECT DISTINCT</code> para ver cada valor uma vez só.</li>
+  <li>Como o <code>DISTINCT</code> funciona com <strong>várias colunas</strong>: ele olha a linha inteira.</li>
+  <li>O que acontece com o <code>NULL</code> num <code>DISTINCT</code>.</li>
+  <li>Outras formas de chegar ao mesmo resultado, e os erros mais comuns.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>A ideia: a lista de cidades sem repetir</h2>
+<p>Imagine as 30 fichas de clientes da loja. Para responder "em quais cidades temos clientes?", você pegaria uma folha em branco, passaria ficha por ficha e anotaria a cidade, <strong>só se ela ainda não estiver na folha</strong>. No fim, a folha teria cada cidade uma vez.</p>
+
+<p>É exatamente o que o <code>DISTINCT</code> faz com o resultado de um <code>SELECT</code>: monta a resposta normalmente e, antes de mostrar, joga fora as linhas que são iguais a uma que já apareceu.</p>
+
+<hr>
+
+<h2>1. O problema: valores repetidos</h2>
+<p>Primeiro, a consulta sem <code>DISTINCT</code>:</p>
+
+<pre class="file" data-file="cidades.sql" data-resultado>SELECT cidade FROM clientes;
+</pre>
+
+<p>Vieram <strong>30 linhas</strong>, uma por cliente. Isso está certo: o <code>SELECT</code> mostra uma linha do resultado para cada linha da tabela. Como 10 clientes moram em Teresina, Teresina aparece 10 vezes; São Paulo e Fortaleza aparecem 7 vezes cada. Para a pergunta da dona da loja, essas repetições só atrapalham.</p>
+
+<hr>
+
+<h2>2. A solução: <code>SELECT DISTINCT</code></h2>
+<p>Basta escrever <code>DISTINCT</code> logo depois do <code>SELECT</code>:</p>
+
+<pre class="file" data-file="cidades-distintas.sql" data-resultado>SELECT DISTINCT cidade FROM clientes;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>"Selecione", como sempre.</dd>
+  <dt>DISTINCT</dt><dd>"Distintos": mostre cada linha do resultado <strong>uma vez só</strong>. Vem colado no <code>SELECT</code>, antes da lista de colunas.</dd>
+  <dt>cidade</dt><dd>A coluna que você quer ver.</dd>
+  <dt>FROM clientes;</dt><dd>De qual tabela, e o fim do comando.</dd>
+</dl>
+
+<p>Agora são <strong>8 linhas</strong>: a loja tem clientes em 8 cidades. A tabela <code>clientes</code> continua com os mesmos 30 clientes; o <code>DISTINCT</code> só mudou o que voltou para você.</p>
+
+<div class="warning">
+<strong>E a ordem?</strong>
+<p>As cidades vieram na ordem em que apareceram pela primeira vez na tabela (Teresina, do cliente 1; São Paulo, do cliente 3…). Mas o SQL <strong>não promete</strong> ordem nenhuma no resultado, com ou sem <code>DISTINCT</code>. Se a ordem importa (em ordem alfabética, por exemplo), peça com <code>ORDER BY</code>, assunto da aula <a href="order-by.html">ORDER BY</a>.</p>
+</div>
+
+<hr>
+
+<h2>3. Mais perguntas que o <code>DISTINCT</code> responde</h2>
+<p>Toda pergunta do tipo "<strong>quais são os … diferentes?</strong>" é um caso para o <code>DISTINCT</code>.</p>
+
+<h3>Quais cargos existem na loja?</h3>
+<pre class="file" data-file="cargos.sql" data-resultado>SELECT DISTINCT cargo FROM funcionarios;
+</pre>
+<p>São 8 funcionários e 5 cargos. Repare que <code>Vendedor</code> e <code>Vendedora</code> aparecem separados: para o banco, são dois textos diferentes. O <code>DISTINCT</code> compara os valores letra por letra; ele não sabe que as duas palavras querem dizer quase a mesma coisa. Pelo mesmo motivo, <code>'Teresina'</code> e <code>'teresina'</code> contariam como duas cidades: no SQLite, maiúsculas e minúsculas fazem diferença nos dados (mais sobre isso em <a href="where.html">WHERE</a>).</p>
+
+<h3>De quais países vêm os fornecedores?</h3>
+<pre class="file" data-file="paises.sql" data-resultado>SELECT DISTINCT pais FROM fornecedores;
+</pre>
+
+<h3>Quais clientes já fizeram pelo menos um pedido?</h3>
+<p>A tabela <code>pedidos</code> tem 90 pedidos, e a coluna <code>cliente_id</code> diz de qual cliente é cada um. Quem comprou várias vezes aparece várias vezes. Com <code>DISTINCT</code>, cada cliente aparece uma vez:</p>
+<pre class="file" data-file="compraram.sql" data-resultado>SELECT DISTINCT cliente_id FROM pedidos;
+</pre>
+<p>São 26 clientes, os de número 1 a 26. Como a loja tem 30 clientes, quatro deles (27, 28, 29 e 30) ainda não fizeram nenhum pedido. Descobrir quem são eles pelo nome é trabalho para a aula <a href="left-join.html">LEFT JOIN</a>.</p>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a loja manda catálogos por estado. De quais estados são os clientes? Mostre cada estado <strong>uma vez só</strong>.</p>
+<pre class="script" data-file="consulta.sql">SELECT estado FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT DISTINCT estado FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. <code>DISTINCT</code> com várias colunas</h2>
+<p>Esta é a parte que mais confunde. Com mais de uma coluna, o <code>DISTINCT</code> não olha cada coluna separada: ele olha a <strong>linha inteira</strong>. Duas linhas só são "repetidas" se forem iguais em <strong>todas</strong> as colunas pedidas.</p>
+
+<p>A Ana quer saber, em cada estado, se há clientes VIP (<code>vip = 1</code>), comuns (<code>vip = 0</code>) ou os dois:</p>
+
+<pre class="file" data-file="estado-vip.sql" data-resultado>SELECT DISTINCT estado, vip FROM clientes;
+</pre>
+
+<p>Vieram <strong>7 linhas</strong>. O PI aparece duas vezes, <code>PI|1</code> e <code>PI|0</code>, e não é repetição: as duas linhas são diferentes na coluna <code>vip</code>. Lendo o resultado: PI, SP e CE têm clientes VIP e comuns; PE só tem clientes comuns (por isso não há a linha <code>PE|1</code>, e são 7, não 8).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linhas do resultado sem <code>DISTINCT</code></th><th>São repetidas?</th></tr>
+<tr><td><code>PI|0</code> e <code>PI|0</code></td><td>Sim: iguais nas duas colunas. Fica uma.</td></tr>
+<tr><td><code>PI|0</code> e <code>PI|1</code></td><td>Não: o estado é igual, mas o <code>vip</code> é diferente. Ficam as duas.</td></tr>
+<tr><td><code>PI|0</code> e <code>CE|0</code></td><td>Não: o <code>vip</code> é igual, mas o estado é diferente. Ficam as duas.</td></tr>
+</table>
+</div>
+
+<h3>Quando o <code>DISTINCT</code> não tira nada</h3>
+<p>Se uma das colunas pedidas nunca se repete, nenhuma linha é igual a outra, e o <code>DISTINCT</code> não tem o que tirar. O <code>id</code> de cada cliente é único, então:</p>
+
+<pre class="file" data-file="com-id.sql" data-resultado>SELECT DISTINCT id, cidade FROM clientes;
+</pre>
+
+<p>Continuam as 30 linhas, com Teresina repetida, porque cada linha tem um <code>id</code> diferente. Para ver as cidades sem repetição, peça <strong>só</strong> a cidade.</p>
+
+<div class="trysql" data-goal="linhas:5">
+<p class="try-task"><strong>Missão:</strong> em quais cidades ficam os fornecedores da loja? Esta consulta trouxe uma cidade repetida (Teresina aparece duas vezes) porque pede também o nome. Mostre cada cidade uma vez só.</p>
+<pre class="script" data-file="consulta.sql">SELECT DISTINCT nome, cidade FROM fornecedores;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT DISTINCT cidade FROM fornecedores;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. <code>DISTINCT</code> e o <code>NULL</code></h2>
+<p>Lembra dos fornecedores estrangeiros, que não têm estado (<em>NULL</em>)? Veja o que o <code>DISTINCT</code> faz com eles:</p>
+
+<pre class="file" data-file="estados-fornecedores.sql" data-resultado>SELECT DISTINCT estado FROM fornecedores;
+</pre>
+
+<p>Os dois <em>NULL</em> (de Portugal e da Argentina) viraram <strong>uma linha só</strong>. Para o <code>DISTINCT</code>, todos os "sem valor" contam como iguais entre si. O mesmo acontece com os 3 clientes sem email:</p>
+
+<pre class="file" data-file="emails.sql" data-resultado>SELECT DISTINCT email FROM clientes;
+</pre>
+
+<p>São 28 linhas: os 27 emails diferentes e uma linha <em>NULL</em> no lugar dos três clientes sem email. Guarde isso: em outras partes do SQL o <code>NULL</code> se comporta de outro jeito, e a aula <a href="null.html">O Valor NULL</a> explica cada caso.</p>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+
+<h3><code>DISTINCT</code> × <code>GROUP BY</code></h3>
+<p>Mais adiante você vai aprender o <code>GROUP BY</code>, que junta as linhas em grupos. Pedir os grupos de cidade dá a mesma lista de cidades:</p>
+
+<pre class="file" data-file="group-by.sql" data-resultado>SELECT cidade FROM clientes GROUP BY cidade;
+</pre>
+
+<p>As mesmas 8 cidades (aqui, por acaso, em ordem alfabética; de novo, só o <code>ORDER BY</code> garante a ordem). O <code>GROUP BY</code> serve para muito mais coisas, como contar quantos clientes há em cada cidade; é a aula <a href="group-by.html">GROUP BY</a>.</p>
+
+<h3>Contar quantos são os diferentes</h3>
+<p>E se a pergunta for "<strong>quantas</strong> cidades?", e não "quais"? Dá para contar sem listar, com a função <code>COUNT</code> (aula <a href="count.html">COUNT()</a>). Uma prévia:</p>
+
+<pre class="file" data-file="contar.sql" data-resultado>SELECT COUNT(cidade), COUNT(DISTINCT cidade) FROM clientes;
+</pre>
+
+<p>A primeira conta conta as cidades com repetição (30, uma por cliente); a segunda conta só as diferentes (8).</p>
+
+<h3><code>ALL</code>: o contrário de <code>DISTINCT</code></h3>
+<p>Existe também <code>SELECT ALL</code> ("todos"), que mantém as repetições. Como esse já é o comportamento normal, quase ninguém escreve: <code>SELECT ALL cidade FROM clientes;</code> é igual a <code>SELECT cidade FROM clientes;</code>, com as 30 linhas.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Use</th></tr>
+<tr><td>Quais são os valores diferentes?</td><td><code>SELECT DISTINCT cidade FROM clientes;</code></td></tr>
+<tr><td>Quantos são os valores diferentes?</td><td><code>SELECT COUNT(DISTINCT cidade) FROM clientes;</code></td></tr>
+<tr><td>Quantos clientes há em cada cidade?</td><td><code>GROUP BY</code> (aula <a href="group-by.html">GROUP BY</a>)</td></tr>
+<tr><td>Quero todas as linhas, com repetição</td><td><code>SELECT cidade FROM clientes;</code> (o <code>ALL</code> é o normal)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>DISTINCT</code> no meio da lista</strong>
+<p>A Ana queria todas as cidades e, ao lado, os estados sem repetir:</p>
+<pre class="file" data-file="erro-meio.sql" data-resultado data-erro>SELECT cidade, DISTINCT estado FROM clientes;
+</pre>
+<p><code>near "DISTINCT": syntax error</code>. O <code>DISTINCT</code> não vale para uma coluna só: ele vale para a linha inteira, e por isso tem um lugar fixo, <strong>logo depois do <code>SELECT</code></strong>. No meio da lista, o banco não sabe o que fazer com ele. <strong>Como consertar:</strong> <code>SELECT DISTINCT cidade, estado FROM clientes;</code>, sabendo que o <code>DISTINCT</code> vai olhar as duas colunas juntas.</p>
+</div>
+
+<div class="cenario">
+<strong>Achar que os parênteses limitam o <code>DISTINCT</code></strong>
+<p>Outra tentativa comum é pôr a coluna entre parênteses, como se o <code>DISTINCT</code> fosse valer só para ela:</p>
+<pre class="file" data-file="parenteses.sql" data-resultado>SELECT DISTINCT (cidade), estado FROM clientes;
+</pre>
+<p>Não dá erro, mas também não faz o que parece. O parêntese em volta de <code>cidade</code> não muda nada (é como escrever <code>(2)</code> em vez de <code>2</code> numa conta), e o <code>DISTINCT</code> continua olhando a linha inteira, cidade e estado. O resultado é igual ao de <code>SELECT DISTINCT cidade, estado</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>DISTINCT</code> "não funcionou"</strong>
+<pre class="file" data-file="nao-funcionou.sql" data-resultado>SELECT DISTINCT nome, cidade FROM clientes;
+</pre>
+<p>Vieram as 30 linhas, e Teresina continua repetida. O <code>DISTINCT</code> funcionou, sim: não existem dois clientes com o mesmo nome <strong>e</strong> a mesma cidade, então não havia linha repetida para tirar. <strong>Como consertar:</strong> peça só as colunas que você quer sem repetição. Se o <code>DISTINCT</code> "não fez nada", olhe se a lista tem uma coluna que quase nunca se repete, como <code>id</code>, <code>nome</code> ou <code>email</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a coluna</strong>
+<pre class="file" data-file="erro-sem-coluna.sql" data-resultado data-erro>SELECT DISTINCT FROM clientes;
+</pre>
+<p><code>near "FROM": syntax error</code>, o mesmo erro de um <code>SELECT FROM</code> sem nada no meio: depois do <code>DISTINCT</code> o banco esperava a lista de colunas.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>SELECT DISTINCT</code> desta aula funciona igual no MySQL, no PostgreSQL e no SQL Server. O PostgreSQL tem, além dele, uma extensão própria, o <code>DISTINCT ON</code>, que não faz parte do SQL padrão e não existe no SQLite. Ele guarda só a primeira linha de cada grupo de valores iguais nas colunas entre parênteses, e é usado junto com <code>ORDER BY</code>. Um exemplo, só para ilustrar (não roda no SQLite):</p>
+<pre class="file" data-file="só no PostgreSQL (ilustrativo)">SELECT DISTINCT ON (cidade) cidade, nome
+FROM clientes
+ORDER BY cidade, nome;
+</pre>
+<p>No PostgreSQL, isso mostraria uma linha por cidade, com o primeiro nome em ordem alfabética de cada uma.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT DISTINCT coluna FROM tabela;</code></td><td>Cada valor da coluna uma vez só</td></tr>
+<tr><td><code>SELECT DISTINCT col1, col2 FROM tabela;</code></td><td>Cada <strong>combinação</strong> de <code>col1</code> e <code>col2</code> uma vez só</td></tr>
+<tr><td><code>SELECT ALL coluna FROM tabela;</code></td><td>Com repetições (o normal; o <code>ALL</code> é opcional)</td></tr>
+<tr><td><code>SELECT COUNT(DISTINCT coluna) FROM tabela;</code></td><td>Quantos valores diferentes existem</td></tr>
+<tr><td><code>NULL</code> no <code>DISTINCT</code></td><td>Todos os <code>NULL</code> viram uma linha só</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sem repetir</h3>
+<p>Complete para mostrar cada cargo uma vez só:</p>
+<div class="ex-code">SELECT <input data-answer="DISTINCT|distinct" aria-label="palavra-chave"> cargo FROM funcionarios;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Quantas linhas vêm em <code>SELECT DISTINCT estado FROM clientes;</code>, se os 30 clientes são dos estados PI, SP, CE e PE?</p>
+<label><input type="radio" name="q2"> 30</label>
+<label><input type="radio" name="q2"> 4</label>
+<label><input type="radio" name="q2"> 1</label>
+<label><input type="radio" name="q2"> 8</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. Em <code>SELECT DISTINCT estado, vip FROM clientes;</code>, as linhas <code>PI|0</code> e <code>PI|1</code>…</p>
+<label><input type="radio" name="q3"> …são repetidas, e só uma fica</label>
+<label><input type="radio" name="q3"> …dão erro, porque o <code>DISTINCT</code> só aceita uma coluna</label>
+<label><input type="radio" name="q3"> …são diferentes, e as duas ficam: o <code>DISTINCT</code> olha a linha inteira</label>
+<label><input type="radio" name="q3"> …viram uma linha <code>PI|NULL</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. Onde o <code>DISTINCT</code> deve ser escrito?</p>
+<label><input type="radio" name="q4"> Logo depois do <code>SELECT</code>, antes da lista de colunas</label>
+<label><input type="radio" name="q4"> Antes da coluna que não pode repetir, em qualquer lugar da lista</label>
+<label><input type="radio" name="q4"> Depois do nome da tabela</label>
+<label><input type="radio" name="q4"> No fim, depois do <code>;</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A tabela tem 3 clientes sem email (<code>NULL</code>). No resultado de <code>SELECT DISTINCT email FROM clientes;</code>, quantas linhas <em>NULL</em> aparecem?</p>
+<label><input type="radio" name="q5"> Três</label>
+<label><input type="radio" name="q5"> Nenhuma: o <code>DISTINCT</code> tira os <code>NULL</code></label>
+<label><input type="radio" name="q5"> Dá erro</label>
+<label><input type="radio" name="q5"> Uma</label>
+</div>
+
+<h3>Missão final: quem já vendeu?</h3>
+
+<div class="trysql" data-goal="linhas:6;;colunas:funcionario_id">
+<p class="try-task"><strong>Missão:</strong> a tabela <code>pedidos</code> tem a coluna <code>funcionario_id</code>, com o número do funcionário que atendeu cada pedido. A gerente quer saber quais funcionários já atenderam algum pedido. Mostre só essa coluna, cada número uma vez.</p>
+<pre class="script" data-file="consulta.sql">SELECT funcionario_id FROM pedidos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT DISTINCT funcionario_id FROM pedidos;
+</pre>
+</div>
+
+<p>Dos 8 funcionários, 6 aparecem (os números 2 a 7). Faltam a gerente, Marta (1), e o estoquista, Davi (8), que não atendem pedidos. Confira com <code>SELECT * FROM funcionarios;</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um <code>SELECT</code> comum mostra uma linha para cada linha da tabela, com repetições.</li>
+  <li><code>SELECT DISTINCT</code> ("distintos") tira as linhas repetidas do resultado: cada valor aparece uma vez. A tabela não muda.</li>
+  <li>O <code>DISTINCT</code> vem logo depois do <code>SELECT</code> e vale para a <strong>linha inteira</strong>: com várias colunas, só some a linha igual em todas elas.</li>
+  <li>Com uma coluna que nunca se repete (como <code>id</code>), o <code>DISTINCT</code> não tem o que tirar.</li>
+  <li>Os <code>NULL</code> viram uma linha só. Textos são comparados exatamente: <code>Vendedor</code> e <code>Vendedora</code> são diferentes.</li>
+  <li>O SQL não promete a ordem do resultado; para ordenar, use <code>ORDER BY</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
