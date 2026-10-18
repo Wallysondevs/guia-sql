@@ -43,7 +43,12 @@
     var m = /^([A-Za-z]+)(\s+([A-Za-z]+))?/.exec(s);
     if (!m) return "";
     var v = m[1].toUpperCase();
-    if (/^(CREATE|DROP|ALTER)$/.test(v) && m[3]) v += " " + m[3].toUpperCase();
+    if (/^(CREATE|DROP|ALTER)$/.test(v) && m[3]) {
+      v += " " + m[3].toUpperCase();
+      // CREATE UNIQUE INDEX, CREATE TEMP VIEW, CREATE VIRTUAL TABLE: mostra também a terceira palavra
+      var m3 = /^(UNIQUE|TEMP|TEMPORARY|VIRTUAL)$/i.test(m[3]) && /^[A-Za-z]+\s+[A-Za-z]+\s+([A-Za-z]+)/.exec(s);
+      if (m3) v += " " + m3[1].toUpperCase();
+    }
     if (v === "WITH") {
       // WITH … DELETE/INSERT/UPDATE: o verbo de verdade é a primeira palavra fora dos parênteses das CTEs
       var prof = 0, i = 0, re = /'(?:[^']|'')*'|"(?:[^"]|"")*"|\(|\)|[A-Za-z_]+|[\s\S]/g, t;
@@ -136,7 +141,7 @@
       // o estado das tabelas depois de rodar (para tabela: e mudou:)
       try {
         var nomes = [];
-        db.exec({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'", rowMode: "array", callback: function (r) { nomes.push(r[0]); } });
+        db.exec({ sql: "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' UNION SELECT name FROM sqlite_temp_master WHERE type IN ('table','view')", rowMode: "array", callback: function (r) { nomes.push(r[0]); } });
         nomes.forEach(function (n) {
           try { res.estado.tabelas[String(n).toLowerCase()] = db.selectValue('SELECT count(*) FROM "' + String(n).replace(/"/g, '""') + '"'); } catch (e) {}
         });

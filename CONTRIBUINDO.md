@@ -120,7 +120,7 @@ Todas as linhas de **todos** os SELECTs da execução, no formato do `sqlite3 .m
 | `contem:TEXTO` | o TEXTO aparece literalmente na saída canônica |
 | `erro:` | a execução terminou em erro (qualquer um) |
 | `erro:REGEX` | a mensagem de erro casa com a regex |
-| `tabela:nome` | a tabela existe depois de rodar (nome em minúsculas) |
+| `tabela:nome` | a tabela **ou view** (também TEMP) existe depois de rodar (nome em minúsculas); `mudou:` também conta as linhas de uma view |
 | `mudou:tabela=N` | depois de rodar, a tabela tem exatamente N linhas |
 
 - **A barra vertical no `out:`.** Na saída canônica, `|` separa as colunas, mas na regex `|` quer dizer "ou". Para casar o separador, escape com barra invertida: `out:^Papelaria\|` casa `Papelaria|…`. Sem a barra, `out:a|b` quer dizer "tem `a` ou tem `b`".
