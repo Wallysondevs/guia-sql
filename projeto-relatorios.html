@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Projeto: Relatórios da Loja — faturamento, ticket médio e rankings | Guia SQL</title>
+<meta name="description" content="Projeto do Guia SQL: os relatórios de verdade da Loja Aurora, versão por versão. Valor de cada pedido, faturamento por ano e por mês, ticket médio, melhores clientes, produtos nunca vendidos, ranking por categoria com RANK e um painel com VIEW, com as armadilhas do frete repetido e da média errada, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>Projeto: <span class="hl">Relatórios da Loja</span></h1>
+
+<p class="intro">Toda segunda-feira, a Marta Lustosa, gerente da Loja Aurora, faz as mesmas perguntas: quanto a loja vendeu, em que mês vendeu mais, quanto gasta um cliente por compra, quem são os melhores clientes, que produtos estão encalhados e que categoria puxa as vendas. Até hoje a Ana respondia somando na calculadora. Neste projeto você escreve esses <strong>relatórios em SQL</strong>, um por versão, sobre os 90 pedidos reais da Aurora. No caminho, você vai cair (de propósito) nas duas armadilhas que mais enganam quem faz relatório: o frete contado várias vezes e a média calculada sobre a coisa errada.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A calcular o valor de cada pedido juntando <code>pedidos</code> e <code>itens_pedido</code>, e a base que todos os relatórios usam.</li>
+  <li>Faturamento por ano e por mês com <code>strftime</code> e <code>GROUP BY</code>.</li>
+  <li>O <strong>ticket médio</strong>, e por que a média dos itens não é a média dos pedidos.</li>
+  <li>Os melhores clientes, os produtos nunca vendidos e os clientes que nunca compraram.</li>
+  <li>Um ranking com empates usando <code>RANK() OVER</code>.</li>
+  <li>A guardar a consulta-base numa <code>VIEW</code> e montar um painel por ano.</li>
+</ul>
+</div>
+
+<p>Todas as caixas desta página rodam sobre a Aurora completa, que o editor carrega a cada Rodar. Nenhum número do texto foi digitado à mão: são os resultados reais desses dados. Os conceitos têm aula própria; os mais usados aqui são <a href="group-by.html">GROUP BY</a>, <a href="inner-join.html">INNER JOIN</a>, <a href="funcoes-data.html">Funções de Data</a> e <a href="with-cte.html">CTE (WITH)</a>.</p>
+
+<hr>
+
+<h2>A ideia: de onde sai cada número</h2>
+<p>Um relatório é uma pergunta de negócio traduzida em SQL. Antes de escrever, pergunte: <strong>onde está esse número no banco?</strong> Na Aurora, o dinheiro de uma venda está espalhado em duas tabelas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que</th><th>Onde está</th><th>Conta</th></tr>
+<tr><td>Valor dos produtos de um item</td><td><code>itens_pedido</code></td><td><code>quantidade * preco_unitario</code></td></tr>
+<tr><td>Valor dos produtos de um pedido</td><td><code>itens_pedido</code>, somado por pedido</td><td><code>SUM(quantidade * preco_unitario)</code></td></tr>
+<tr><td>Frete de um pedido</td><td><code>pedidos</code> (uma vez por pedido)</td><td><code>frete</code></td></tr>
+<tr><td>Total cobrado do cliente</td><td>as duas</td><td>produtos + frete</td></tr>
+</table>
+</div>
+
+<p>Neste projeto, <strong>faturamento</strong> é o valor dos produtos vendidos (o frete vai para a transportadora), e <strong>total do pedido</strong> é o que o cliente pagou, frete incluído. Combinar isso antes evita a pior briga de relatório: dois números "certos" que não batem porque cada um mediu uma coisa.</p>
+
+<hr>
+
+<h2>Versão 1: o valor de cada pedido</h2>
+<p>Todo relatório desta página nasce desta consulta. Ela junta cada pedido com os seus itens e soma, pedido por pedido:</p>
+
+<pre class="file" data-file="v1-valor-pedido.sql" data-resultado>SELECT p.id, p.data,
+       SUM(i.quantidade * i.preco_unitario)           AS produtos,
+       p.frete,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id
+ORDER BY p.id
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>JOIN itens_pedido i ON i.pedido_id = p.id</dt><dd>Cada pedido encontra os seus itens. O pedido 1 tem 3 itens, então vira <strong>3 linhas</strong> antes do agrupamento (aula <a href="inner-join.html">INNER JOIN</a>).</dd>
+  <dt>GROUP BY p.id</dt><dd>Junta de volta as linhas de cada pedido numa só (aula <a href="group-by.html">GROUP BY</a>).</dd>
+  <dt>SUM(i.quantidade * i.preco_unitario)</dt><dd>Soma os subtotais dos itens do grupo: o valor dos produtos.</dd>
+  <dt>p.frete</dt><dd>O frete fica <strong>fora</strong> do <code>SUM</code>: dentro do grupo ele é igual nas 3 linhas, porque o grupo é um pedido só (<code>p.id</code> é a chave primária). Por isso é seguro citá-lo direto. Se ele entrasse no <code>SUM</code>, seria somado 3 vezes, como você vai ver em <a href="#errado">Quando dá errado</a>.</dd>
+  <dt>LIMIT 5</dt><dd>Só para a tela não encher. Sem ele, saem os 90 pedidos.</dd>
+</dl>
+
+<p>O pedido 1 fecha em 40.84 (30.94 em produtos e 9.9 de frete), o mesmo número que você conferiu no projeto <a href="projeto-loja.html">a Loja Aurora Completa</a>. O pedido 4 teve frete grátis: o total é igual aos produtos.</p>
+
+<div class="trysql" data-goal="linhas:5;;contem:649.47">
+<p class="try-task"><strong>Missão:</strong> a Marta quer saber quanto dinheiro está "na rua": os pedidos ainda <strong>não entregues</strong>. Mude a consulta para mostrar só os pedidos com <code>entregue_em</code> vazio (aula <a href="is-null.html">IS NULL</a>), com o nome do cliente e o total. Tire o <code>LIMIT</code>. Dica: o filtro vai no <code>WHERE</code>, antes do <code>GROUP BY</code>.</p>
+<pre class="script" data-file="v1-valor-pedido.sql">SELECT p.id, p.data,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id
+ORDER BY p.id
+LIMIT 5;
+</pre>
+<pre class="solucao" data-file="v1-valor-pedido.sql">SELECT p.id, c.nome AS cliente, p.data,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE p.entregue_em IS NULL
+GROUP BY p.id
+ORDER BY p.id;
+</pre>
+</div>
+
+<p>São os pedidos 86 a 90. O maior é o da Juliana Paes Barbosa (pedido 88, 649.47), com três caixas de som.</p>
+
+<hr>
+
+<h2>Versão 2: faturamento por ano e por mês</h2>
+<p>A pergunta mais clássica: quanto a loja vendeu em cada ano? A data do pedido está guardada como texto <code>AAAA-MM-DD</code>, e a função <code>strftime</code> recorta o pedaço que interessa (aula <a href="funcoes-data.html">Funções de Data</a>):</p>
+
+<pre class="file" data-file="v2-por-ano.sql" data-resultado>SELECT strftime('%Y', p.data)                   AS ano,
+       COUNT(DISTINCT p.id)                     AS pedidos,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY ano;
+</pre>
+
+<dl class="anatomy">
+  <dt>strftime('%Y', p.data)</dt><dd>De <code>'2024-01-05'</code>, tira só o ano: <code>'2024'</code>. Com <code>'%Y-%m'</code>, tira ano e mês: <code>'2024-01'</code>.</dd>
+  <dt>GROUP BY ano</dt><dd>Agrupa pelo apelido da coluna. O SQLite aceita; outros bancos pedem a expressão inteira de novo (veja "Nos outros bancos", no fim).</dd>
+  <dt>COUNT(DISTINCT p.id)</dt><dd>Conta os pedidos <strong>diferentes</strong>. Um <code>COUNT(*)</code> aqui contaria as linhas do JOIN, ou seja, os itens: 220 em vez de 90 (aula <a href="count.html">COUNT()</a>).</dd>
+  <dt>ROUND(…, 2)</dt><dd>Duas casas decimais, como dinheiro (aula <a href="funcoes-numericas.html">Funções Numéricas</a>).</dd>
+</dl>
+
+<p>Em 2024 foram 32 pedidos e 8280.8 em produtos; em 2025, os mesmos 32 pedidos renderam bem menos, 5464.52. E 2026 ainda não acabou: os dados vão até outubro. Comparar um ano inteiro com dez meses é injusto; o relatório por mês resolve:</p>
+
+<pre class="file" data-file="v2-por-mes.sql" data-resultado>SELECT strftime('%Y-%m', p.data)               AS mes,
+       COUNT(DISTINCT p.id)                     AS pedidos,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE p.data &gt;= '2026-01-01'
+GROUP BY mes;
+</pre>
+
+<p>Outubro de 2026, com 1042.71, é o melhor mês do ano até agora, e agosto (97.19) o pior. O <code>WHERE p.data &gt;= '2026-01-01'</code> funciona com texto porque o formato <code>AAAA-MM-DD</code> se ordena igual a uma data: esse é o grande motivo para guardar datas assim.</p>
+
+<div class="trysql" data-goal="linhas:12;;contem:2025-04|25.13">
+<p class="try-task"><strong>Missão:</strong> monte o faturamento de <strong>cada mês de 2025</strong>, com as colunas <code>mes</code> e <code>faturamento</code> (arredondado em 2 casas), do melhor mês para o pior. Hoje a caixa mostra o resumo por ano. Você vai descobrir qual mês de 2025 quase não vendeu.</p>
+<pre class="script" data-file="v2-por-mes.sql">SELECT strftime('%Y', p.data) AS ano,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY ano;
+</pre>
+<pre class="solucao" data-file="v2-por-mes.sql">SELECT strftime('%Y-%m', p.data) AS mes,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE strftime('%Y', p.data) = '2025'
+GROUP BY mes
+ORDER BY faturamento DESC;
+</pre>
+</div>
+
+<p>Janeiro de 2025 lidera, com 865.78, e abril de 2025 fecha a lista com 25.13: dois pedidos pequenos, só de papelaria (caderno, canetas, lápis e marca-texto). Há outras formas de filtrar o ano, e todas cumprem a missão:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Filtro</th><th>Como pensa</th><th>Observação</th></tr>
+<tr><td><code>WHERE strftime('%Y', p.data) = '2025'</code></td><td>"o ano da data é 2025"</td><td>O mais legível. Calcula a função em toda linha.</td></tr>
+<tr><td><code>WHERE p.data BETWEEN '2025-01-01' AND '2025-12-31'</code></td><td>"a data está entre o primeiro e o último dia"</td><td>Usa índice, se houver um em <code>data</code> (aula <a href="between.html">BETWEEN</a>).</td></tr>
+<tr><td><code>WHERE p.data LIKE '2025-%'</code></td><td>"o texto começa com 2025-"</td><td>Funciona porque a data é texto; truque válido só no SQLite (aula <a href="like.html">LIKE</a>).</td></tr>
+<tr><td><code>HAVING mes LIKE '2025-%'</code></td><td>filtra os grupos depois de montados</td><td>Funciona, mas agrupa os 34 meses para jogar 22 fora. Prefira o <code>WHERE</code> (aula <a href="having.html">HAVING</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Versão 3: o ticket médio</h2>
+<p>O <strong>ticket médio</strong> é quanto um cliente gasta, em média, por compra: o total cobrado dividido pelo número de pedidos. A tentação é fazer um <code>AVG</code> direto no JOIN. Veja o que sai:</p>
+
+<pre class="file" data-file="v3-media-errada.sql" data-resultado>SELECT ROUND(AVG(i.quantidade * i.preco_unitario), 2) AS ticket_errado
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id;
+</pre>
+
+<p>84.26 é a média dos <strong>itens</strong>, não dos pedidos: o <code>AVG</code> calculou sobre as 220 linhas do JOIN. Um pedido tem 2 ou 3 itens, então a média por pedido tem de ser bem maior. Para acertar, primeiro calcule o total de <strong>cada pedido</strong> (a versão 1) e só depois tire a média desses 90 totais. O <code>WITH</code> dá um nome à consulta de dentro, como uma tabela provisória (aula <a href="with-cte.html">CTE (WITH)</a>):</p>
+
+<pre class="file" data-file="v3-ticket-medio.sql" data-resultado>WITH totais AS (
+    SELECT p.id, p.data,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT COUNT(*)              AS pedidos,
+       ROUND(SUM(total), 2)  AS faturado_com_frete,
+       ROUND(AVG(total), 2)  AS ticket_medio,
+       MIN(total)            AS menor,
+       MAX(total)            AS maior
+FROM totais;
+</pre>
+
+<dl class="anatomy">
+  <dt>WITH totais AS ( … )</dt><dd>A consulta da versão 1, sem <code>LIMIT</code>, ganha o nome <code>totais</code>: 90 linhas, uma por pedido.</dd>
+  <dt>FROM totais</dt><dd>A consulta de fora lê <code>totais</code> como se fosse uma tabela.</dd>
+  <dt>AVG(total)</dt><dd>Agora a média é sobre os 90 pedidos: <strong>220.46</strong>. O mesmo resultado sai de <code>SUM(total) / COUNT(*)</code> (19841.55 / 90).</dd>
+  <dt>MIN e MAX</dt><dd>O pedido mais barato custou 13.25 e o mais caro, 660.0 (o pedido 3, com três fones de ouvido).</dd>
+</dl>
+
+<div class="trysql" data-goal="linhas:3;;contem:273.31">
+<p class="try-task"><strong>Missão:</strong> o ticket médio caiu ou subiu com o tempo? Mude a consulta de fora para mostrar o ticket médio <strong>por ano</strong>: as colunas <code>ano</code>, <code>pedidos</code> e <code>ticket_medio</code> (em 2 casas), uma linha por ano. A data já está dentro de <code>totais</code>.</p>
+<pre class="script" data-file="v3-ticket-medio.sql">WITH totais AS (
+    SELECT p.id, p.data,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT COUNT(*) AS pedidos, ROUND(AVG(total), 2) AS ticket_medio
+FROM totais;
+</pre>
+<pre class="solucao" data-file="v3-ticket-medio.sql">WITH totais AS (
+    SELECT p.id, p.data,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT strftime('%Y', data) AS ano,
+       COUNT(*)             AS pedidos,
+       ROUND(AVG(total), 2) AS ticket_medio
+FROM totais
+GROUP BY ano;
+</pre>
+</div>
+
+<p>O ticket caiu de 273.31 em 2024 para 185.3 em 2025 e voltou um pouco, para 198.7, em 2026. Como o número de pedidos por ano ficou parecido, é o valor de cada compra que explica a queda do faturamento de 2025, e não a falta de clientes. É o tipo de conclusão que só aparece quando o número está certo.</p>
+
+<hr>
+
+<h2>Versão 4: os melhores clientes</h2>
+<p>Quem são os clientes que mais gastaram na loja, somando todos os pedidos? Mesma base, agora agrupada por cliente:</p>
+
+<pre class="file" data-file="v4-top-clientes.sql" data-resultado>WITH totais AS (
+    SELECT p.id, p.cliente_id,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT c.nome,
+       COUNT(*)             AS pedidos,
+       ROUND(SUM(t.total), 2) AS gasto
+FROM totais t
+JOIN clientes c ON c.id = t.cliente_id
+GROUP BY c.id
+ORDER BY gasto DESC
+LIMIT 5;
+</pre>
+
+<p>A Conceição Prado lidera, com 1398.03 em 4 pedidos. Repare na Ana Carvalho Lima, em segundo: com só 3 pedidos, ela gastou mais que a Juliana, que fez 4. O <code>ORDER BY gasto DESC</code> põe o maior em cima (aula <a href="order-by.html">ORDER BY</a>) e o <code>LIMIT 5</code> corta o "top 5" (aula <a href="limit.html">LIMIT e OFFSET</a>).</p>
+
+<div class="trysql" data-goal="linhas:3;;contem:Igor Mendes|15|3812.21">
+<p class="try-task"><strong>Missão:</strong> agora a Marta quer o ranking da equipe: os <strong>3 vendedores</strong> que mais venderam, com o nome, o número de pedidos e o total vendido (com frete, em 2 casas). O vendedor de cada pedido está em <code>pedidos.funcionario_id</code>; leve essa coluna para dentro do <code>WITH</code> e junte com <code>funcionarios</code>.</p>
+<pre class="script" data-file="v4-top-vendedores.sql">WITH totais AS (
+    SELECT p.id, p.cliente_id,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT c.nome, COUNT(*) AS pedidos, ROUND(SUM(t.total), 2) AS vendido
+FROM totais t
+JOIN clientes c ON c.id = t.cliente_id
+GROUP BY c.id
+ORDER BY vendido DESC
+LIMIT 3;
+</pre>
+<pre class="solucao" data-file="v4-top-vendedores.sql">WITH totais AS (
+    SELECT p.id, p.funcionario_id,
+           SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+    FROM pedidos p
+    JOIN itens_pedido i ON i.pedido_id = p.id
+    GROUP BY p.id
+)
+SELECT f.nome, COUNT(*) AS pedidos, ROUND(SUM(t.total), 2) AS vendido
+FROM totais t
+JOIN funcionarios f ON f.id = t.funcionario_id
+GROUP BY f.id
+ORDER BY vendido DESC
+LIMIT 3;
+</pre>
+</div>
+
+<p>Todos os seis vendedores atenderam exatamente 15 pedidos; o que separa o Igor Mendes (3812.21) da Sofia Rocha, a última, é o valor de cada venda. E o Davi Nunes, o estoquista, não aparece: ele não atende pedidos.</p>
+
+<hr>
+
+<h2>Versão 5: o que ficou parado</h2>
+<p>Tão importante quanto o que vendeu é o que <strong>não</strong> vendeu: produto encalhado é dinheiro parado na prateleira. Um produto nunca vendido é um produto que não aparece em nenhuma linha de <code>itens_pedido</code>. O <code>LEFT JOIN</code> mantém todos os produtos e deixa <code>NULL</code> onde não achou par (aula <a href="left-join.html">LEFT JOIN</a>):</p>
+
+<pre class="file" data-file="v5-nunca-vendidos.sql" data-resultado>SELECT p.id, p.nome, p.estoque,
+       p.estoque * p.preco AS valor_parado
+FROM produtos p
+LEFT JOIN itens_pedido i ON i.produto_id = p.id
+WHERE i.produto_id IS NULL;
+</pre>
+
+<dl class="anatomy">
+  <dt>LEFT JOIN itens_pedido i</dt><dd>Todo produto aparece, mesmo sem item. Os que nunca venderam vêm com as colunas de <code>i</code> todas <code>NULL</code>.</dd>
+  <dt>WHERE i.produto_id IS NULL</dt><dd>Fica só com esses: os que não acharam par.</dd>
+  <dt>p.estoque * p.preco</dt><dd>Quanto dinheiro está parado em cada um.</dd>
+</dl>
+
+<p>São três produtos de jardinagem: o Vaso de Cerâmica Médio, a Tesoura de Poda e as Luvas de Jardinagem. A mesma pergunta pode ser escrita de três jeitos, e todos dão os mesmos 3 produtos:</p>
+
+<pre class="file" data-file="v5-tres-formas.sql" data-resultado>-- forma 2: NOT IN com subconsulta
+SELECT id, nome FROM produtos
+WHERE id NOT IN (SELECT produto_id FROM itens_pedido);
+
+-- forma 3: NOT EXISTS
+SELECT id, nome FROM produtos p
+WHERE NOT EXISTS (SELECT 1 FROM itens_pedido i WHERE i.produto_id = p.id);
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Lê-se</th><th>Cuidado</th></tr>
+<tr><td><code>LEFT JOIN … WHERE … IS NULL</code></td><td>"junte e fique com quem não achou par"</td><td>Teste a coluna da tabela da direita que nunca é <code>NULL</code> de verdade (a chave).</td></tr>
+<tr><td><code>NOT IN (subconsulta)</code></td><td>"o id não está na lista dos vendidos"</td><td>Se a subconsulta devolver algum <code>NULL</code>, o <code>NOT IN</code> não devolve nada. Aqui é seguro: <code>produto_id</code> é <code>NOT NULL</code> (aula <a href="in.html">IN</a>).</td></tr>
+<tr><td><code>NOT EXISTS (subconsulta)</code></td><td>"não existe item deste produto"</td><td>A mais segura com <code>NULL</code>, e a preferida de muita gente (aula <a href="exists.html">EXISTS</a>).</td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="linhas:4;;contem:Rosângela Dias">
+<p class="try-task"><strong>Missão:</strong> o mesmo raciocínio vale para gente. Liste os <strong>clientes que nunca fizeram um pedido</strong>, com o <code>id</code> e o <code>nome</code>. Use a forma que preferir.</p>
+<pre class="script" data-file="v5-clientes-parados.sql">SELECT p.id, p.nome
+FROM produtos p
+LEFT JOIN itens_pedido i ON i.produto_id = p.id
+WHERE i.produto_id IS NULL;
+</pre>
+<pre class="solucao" data-file="v5-clientes-parados.sql">SELECT c.id, c.nome
+FROM clientes c
+LEFT JOIN pedidos p ON p.cliente_id = c.id
+WHERE p.id IS NULL;
+</pre>
+</div>
+
+<p>São os clientes 27 a 30: o Paulo Sérgio Andrade, a Tainá Soares, o Elias Furtado e a Rosângela Dias. Cadastrados, com email, e sem nenhuma compra: um bom público para uma campanha de "primeira compra".</p>
+
+<hr>
+
+<h2>Versão 6: o ranking das categorias</h2>
+<p>Que categoria puxa as vendas da Aurora? Para isso, cada item precisa achar o seu produto e, pelo produto, a sua categoria: dois JOINs em fila.</p>
+
+<pre class="file" data-file="v6-ranking-categorias.sql" data-resultado>SELECT c.nome AS categoria,
+       SUM(i.quantidade)                              AS unidades,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento,
+       RANK() OVER (ORDER BY SUM(i.quantidade * i.preco_unitario) DESC) AS posicao
+FROM itens_pedido i
+JOIN produtos p   ON p.id = i.produto_id
+JOIN categorias c ON c.id = p.categoria_id
+GROUP BY c.id
+ORDER BY posicao;
+</pre>
+
+<dl class="anatomy">
+  <dt>itens_pedido → produtos → categorias</dt><dd>O item sabe o produto; o produto sabe a categoria. Os dois JOINs seguem as chaves estrangeiras que você criou no projeto <a href="projeto-loja.html">a Loja Aurora Completa</a>.</dd>
+  <dt>RANK() OVER (ORDER BY … DESC)</dt><dd>Uma <strong>função de janela</strong>: depois de agrupar, numera as linhas na ordem pedida. 1 para a maior venda, 2 para a seguinte… (aula <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>).</dd>
+  <dt>ORDER BY posicao</dt><dd>O <code>RANK</code> calcula a posição, mas não ordena a saída; quem ordena é o <code>ORDER BY</code>.</dd>
+</dl>
+
+<p>Eletrônicos lidera com folga: 5999.05, quase um terço dos 18537.4 de faturamento total. E repare na Papelaria: é a <strong>segunda</strong> em unidades (60), mas a <strong>sétima</strong> em dinheiro, porque vende lápis de 1.15 e canetas de 2.79. "O que mais vende" depende de você medir em unidades ou em reais. Jardim fica em último, e agora você sabe por quê: três dos seus cinco produtos nunca venderam.</p>
+
+<p>Com produtos, o ranking fica mais interessante, porque aparecem <strong>empates</strong>. Veja os mais vendidos em unidades:</p>
+
+<pre class="file" data-file="v6-top-produtos.sql" data-resultado>SELECT pr.nome,
+       SUM(i.quantidade) AS unidades,
+       RANK() OVER (ORDER BY SUM(i.quantidade) DESC) AS posicao
+FROM itens_pedido i
+JOIN produtos pr ON pr.id = i.produto_id
+GROUP BY pr.id
+ORDER BY posicao
+LIMIT 7;
+</pre>
+
+<p>Três produtos empatam em 12 unidades e todos ganham a posição 2; o seguinte pula para a 5. É assim que o <code>RANK</code> trata empates, como numa corrida com dois segundos lugares. E veja o problema do <code>LIMIT</code>: o Conjunto de Copos e o Estojo Duplo empatam na posição 5, e um <code>LIMIT 5</code> cortaria um deles sem critério nenhum.</p>
+
+<div class="trysql" data-goal="linhas:6;;contem:Estojo Duplo|11|5">
+<p class="try-task"><strong>Missão:</strong> faça um "top 5" <strong>justo</strong>: todos os produtos com posição até 5, empates incluídos. Não dá para usar <code>WHERE posicao &lt;= 5</code> direto, porque o <code>WHERE</code> roda antes do <code>RANK</code> existir. Ponha a consulta dentro de um <code>WITH</code> e filtre do lado de fora. Mantenha as colunas <code>nome</code>, <code>unidades</code> e <code>posicao</code>.</p>
+<pre class="script" data-file="v6-top-justo.sql">SELECT pr.nome,
+       SUM(i.quantidade) AS unidades,
+       RANK() OVER (ORDER BY SUM(i.quantidade) DESC) AS posicao
+FROM itens_pedido i
+JOIN produtos pr ON pr.id = i.produto_id
+GROUP BY pr.id
+ORDER BY posicao
+LIMIT 5;
+</pre>
+<pre class="solucao" data-file="v6-top-justo.sql">WITH ranking AS (
+    SELECT pr.nome,
+           SUM(i.quantidade) AS unidades,
+           RANK() OVER (ORDER BY SUM(i.quantidade) DESC) AS posicao
+    FROM itens_pedido i
+    JOIN produtos pr ON pr.id = i.produto_id
+    GROUP BY pr.id
+)
+SELECT nome, unidades, posicao
+FROM ranking
+WHERE posicao &lt;= 5
+ORDER BY posicao;
+</pre>
+</div>
+
+<p>Seis produtos no "top 5": é o certo, porque dois empataram no quinto lugar. Se a Marta quisesse posições sem buraco (1, 2, 2, 2, 3…), a função seria <code>DENSE_RANK()</code>; se quisesse exatamente 5 linhas desempatando por algum critério, <code>ROW_NUMBER()</code> com um segundo item no <code>ORDER BY</code>.</p>
+
+<hr>
+
+<h2>Versão 7: o painel, com uma VIEW</h2>
+<p>Você escreveu o mesmo <code>WITH totais</code> quatro vezes. Num banco de verdade, essa consulta-base vira uma <strong>VIEW</strong>: uma consulta guardada com nome, que se usa como tabela (aula <a href="views.html">Views</a>). Escreve-se uma vez e todo relatório aproveita:</p>
+
+<pre class="file" data-file="v7-view.sql" data-resultado>CREATE VIEW totais_pedido AS
+SELECT p.id, p.cliente_id, p.funcionario_id, p.data, p.frete,
+       SUM(i.quantidade * i.preco_unitario)           AS produtos,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id;
+
+SELECT * FROM totais_pedido WHERE id &lt;= 3;
+</pre>
+
+<p>A view não copia dados: cada vez que você lê <code>totais_pedido</code>, o SQLite roda a consulta de novo. Se amanhã entrar um pedido, ele já aparece. No editor, ela dura só até o fim do Rodar; num arquivo, ela fica guardada para sempre, como uma tabela.</p>
+
+<div class="trysql" data-goal="colunas:ano,pedidos,faturamento,frete,ticket_medio;;linhas:3;;contem:2026|26|4792.08|374.15|198.7">
+<p class="try-task"><strong>Missão final:</strong> monte o painel anual da Marta em cima da view. Uma linha por ano, com as colunas exatamente <code>ano</code>, <code>pedidos</code>, <code>faturamento</code> (soma dos produtos), <code>frete</code> (soma dos fretes) e <code>ticket_medio</code> (média do total), os três valores arredondados em 2 casas.</p>
+<pre class="script" data-file="v7-painel.sql">CREATE VIEW totais_pedido AS
+SELECT p.id, p.cliente_id, p.funcionario_id, p.data, p.frete,
+       SUM(i.quantidade * i.preco_unitario)           AS produtos,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id;
+
+-- o painel: uma linha por ano
+SELECT * FROM totais_pedido LIMIT 3;
+</pre>
+<pre class="solucao" data-file="v7-painel.sql">CREATE VIEW totais_pedido AS
+SELECT p.id, p.cliente_id, p.funcionario_id, p.data, p.frete,
+       SUM(i.quantidade * i.preco_unitario)           AS produtos,
+       SUM(i.quantidade * i.preco_unitario) + p.frete AS total
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY p.id;
+
+-- o painel: uma linha por ano
+SELECT strftime('%Y', data)    AS ano,
+       COUNT(*)                AS pedidos,
+       ROUND(SUM(produtos), 2) AS faturamento,
+       ROUND(SUM(frete), 2)    AS frete,
+       ROUND(AVG(total), 2)    AS ticket_medio
+FROM totais_pedido
+GROUP BY ano;
+</pre>
+</div>
+
+<p>Repare que aqui o frete pode ser somado sem medo: a view tem <strong>uma linha por pedido</strong>, então cada frete aparece uma vez só. Esse é o próximo assunto.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Relatório errado raramente dá mensagem de erro. Ele dá um <strong>número</strong>, com cara de certo. Os casos abaixo rodam sem reclamar, e é exatamente isso que os torna perigosos.</p>
+
+<div class="cenario">
+<strong>O frete contado duas ou três vezes</strong>
+<p>A Ana quis o total faturado com frete numa consulta só:</p>
+<pre class="file" data-file="frete-repetido.sql" data-resultado>SELECT SUM(i.quantidade * i.preco_unitario + p.frete) AS total_errado
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id;
+</pre>
+<p><strong>O que aconteceu:</strong> 21726.95, quando o certo é 19841.55. No JOIN, o pedido 1 vira 3 linhas, e o frete dele aparece nas 3. Somando, o frete de cada pedido entrou uma vez <strong>por item</strong>: 3189.55 de frete, em vez dos 1304.15 de verdade.</p>
+<p><strong>Como consertar:</strong> some o frete numa consulta que tenha uma linha por pedido, como a view <code>totais_pedido</code>, ou separadamente:</p>
+<pre class="file" data-file="frete-certo.sql" data-resultado>SELECT (SELECT SUM(quantidade * preco_unitario) FROM itens_pedido)
+     + (SELECT SUM(frete) FROM pedidos) AS total_certo;
+</pre>
+<p>A regra: antes de somar uma coluna depois de um JOIN, pergunte "essa coluna se repetiu?". Coluna da tabela "de um" (pedidos) se repete em cada linha da tabela "de muitos" (itens).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o GROUP BY</strong>
+<pre class="file" data-file="sem-group-by.sql" data-resultado>SELECT c.nome, SUM(i.quantidade * i.preco_unitario) AS gasto
+FROM pedidos p
+JOIN clientes c     ON c.id = p.cliente_id
+JOIN itens_pedido i ON i.pedido_id = p.id;
+</pre>
+<p><strong>O que aconteceu:</strong> uma linha só, dizendo que o José Ribamar Silva gastou 18537.4. Na verdade, 18537.4 é a loja inteira: sem <code>GROUP BY</code>, o <code>SUM</code> juntou tudo num grupo único, e o SQLite pôs um nome qualquer do grupo na coluna <code>nome</code>. Outros bancos recusariam essa consulta com erro; o SQLite aceita e devolve um número enganoso.</p>
+<p><strong>Como consertar:</strong> toda coluna do <code>SELECT</code> que não está dentro de uma função de agregação tem de estar no <code>GROUP BY</code>: aqui, <code>GROUP BY c.id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A média sobre a coisa errada</strong>
+<p>Já visto na versão 3: <code>AVG</code> direto no JOIN dá a média dos <strong>itens</strong> (84.26), não dos pedidos (220.46). Sempre que o relatório falar "por pedido", "por cliente" ou "por mês", monte primeiro uma linha por pedido, por cliente ou por mês, e só então tire a média.</p>
+</div>
+
+<div class="cenario">
+<strong>Filtrou o total no WHERE</strong>
+<p>A Ana quis só os pedidos acima de 500:</p>
+<pre class="file" data-file="where-soma.sql" data-resultado data-erro>SELECT p.id, SUM(i.quantidade * i.preco_unitario) AS produtos
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+WHERE SUM(i.quantidade * i.preco_unitario) &gt; 500
+GROUP BY p.id;
+</pre>
+<p><strong>O que aconteceu:</strong> <code>misuse of aggregate: SUM()</code>, "uso indevido da agregação SUM()". Este, pelo menos, dá erro. O <code>WHERE</code> olha uma linha de cada vez, antes de existir grupo; a soma só existe depois do <code>GROUP BY</code>.</p>
+<p><strong>Como consertar:</strong> filtro sobre o resultado de um grupo vai no <code>HAVING</code>: <code>GROUP BY p.id HAVING produtos &gt; 500</code> (aula <a href="having.html">HAVING</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Data num formato que o SQLite não entende</strong>
+<pre class="file" data-file="data-br.sql" data-resultado>SELECT strftime('%Y-%m', '2024-01-05') AS formato_iso,
+       strftime('%Y-%m', '05/01/2024') AS formato_br;
+</pre>
+<p><strong>O que aconteceu:</strong> o formato <code>AAAA-MM-DD</code> virou <code>2024-01</code>; o brasileiro <code>DD/MM/AAAA</code> virou <em>NULL</em>, sem erro nenhum. Num relatório por mês, todas as vendas com data assim cairiam num grupo <em>NULL</em>. É por isso que a Aurora guarda as datas em ISO. Se um dia você importar uma planilha com datas brasileiras, converta antes (o projeto <a href="projeto-csv.html">da Planilha ao Banco</a> mostra como).</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O <code>strftime</code> é do SQLite. Para recortar ano e mês de uma data, cada banco tem a sua função, e lá a coluna seria do tipo <code>DATE</code>, não texto. Trechos ilustrativos, que não rodam no editor:</p>
+<pre class="file" data-file="ano-mes-outros-bancos.sql">-- PostgreSQL
+SELECT to_char(data, 'YYYY-MM') AS mes, ... GROUP BY 1;
+-- MySQL / MariaDB
+SELECT DATE_FORMAT(data, '%Y-%m') AS mes, ... GROUP BY mes;
+-- SQL Server
+SELECT FORMAT(data, 'yyyy-MM') AS mes, ... GROUP BY FORMAT(data, 'yyyy-MM');
+</pre>
+<p>Repare no SQL Server: ele não aceita o apelido <code>mes</code> no <code>GROUP BY</code>, então a expressão se repete. E a consulta "sem GROUP BY" do Quando dá errado, que o SQLite aceita, é recusada com erro no PostgreSQL e no SQL Server. <code>WITH</code>, <code>VIEW</code> e <code>RANK() OVER</code> são SQL padrão e funcionam igual nos quatro. Mais em <a href="dialetos.html">As Diferenças entre os Bancos</a>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Relatório</th><th>O miolo do SQL</th><th>Aula</th></tr>
+<tr><td>Valor de cada pedido</td><td><code>SUM(i.quantidade * i.preco_unitario) + p.frete … GROUP BY p.id</code></td><td><a href="group-by.html">GROUP BY</a></td></tr>
+<tr><td>Faturamento por mês</td><td><code>strftime('%Y-%m', p.data) AS mes … GROUP BY mes</code></td><td><a href="funcoes-data.html">Funções de Data</a></td></tr>
+<tr><td>Contar pedidos depois do JOIN</td><td><code>COUNT(DISTINCT p.id)</code></td><td><a href="count.html">COUNT()</a></td></tr>
+<tr><td>Ticket médio</td><td><code>WITH totais AS (…) SELECT AVG(total) FROM totais</code></td><td><a href="with-cte.html">CTE (WITH)</a></td></tr>
+<tr><td>Top N</td><td><code>ORDER BY gasto DESC LIMIT 5</code></td><td><a href="limit.html">LIMIT e OFFSET</a></td></tr>
+<tr><td>Nunca vendidos</td><td><code>LEFT JOIN … WHERE i.produto_id IS NULL</code> ou <code>NOT EXISTS</code></td><td><a href="left-join.html">LEFT JOIN</a></td></tr>
+<tr><td>Ranking com empates</td><td><code>RANK() OVER (ORDER BY SUM(…) DESC)</code></td><td><a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a></td></tr>
+<tr><td>Filtrar o ranking</td><td><code>WITH ranking AS (…) SELECT … WHERE posicao &lt;= 5</code></td><td><a href="janelas.html">Funções de Janela</a></td></tr>
+<tr><td>Filtrar grupos</td><td><code>GROUP BY p.id HAVING produtos &gt; 500</code></td><td><a href="having.html">HAVING</a></td></tr>
+<tr><td>Consulta-base reutilizável</td><td><code>CREATE VIEW totais_pedido AS …</code></td><td><a href="views.html">Views</a></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Recortar o mês</h3>
+<p>Complete para transformar <code>'2026-10-14'</code> em <code>'2026-10'</code>:</p>
+<div class="ex-code">strftime('<input data-answer="%Y-%m" aria-label="formato">', p.data)</div>
+</div>
+
+<div class="exercise">
+<h3>2. Contar pedidos, não itens</h3>
+<p>Depois de juntar <code>pedidos</code> com <code>itens_pedido</code>, complete para contar os pedidos diferentes:</p>
+<div class="ex-code">COUNT(<input data-answer="DISTINCT|distinct" aria-label="palavra-chave"> p.id)</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. <code>SELECT SUM(p.frete) FROM pedidos p JOIN itens_pedido i ON i.pedido_id = p.id;</code> dá 3189.55, mas a soma dos fretes é 1304.15. Por quê?</p>
+<label><input type="radio" name="q3"> Erro de arredondamento do REAL</label>
+<label><input type="radio" name="q3"> O JOIN repete o frete de cada pedido uma vez por item</label>
+<label><input type="radio" name="q3"> Faltou o ROUND</label>
+<label><input type="radio" name="q3"> O JOIN somou o frete dos clientes sem pedido</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Três produtos empatam em 12 unidades, logo atrás do primeiro. Que posições o <code>RANK()</code> dá a eles, e qual vem depois?</p>
+<label><input type="radio" name="q4"> 2, 3 e 4; depois o 5</label>
+<label><input type="radio" name="q4"> 2, 2 e 2; depois o 3</label>
+<label><input type="radio" name="q4"> 2, 2 e 2; depois o 5</label>
+<label><input type="radio" name="q4"> 1, 1 e 1; depois o 2</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. Onde vai o filtro "só os pedidos com produtos acima de 500"?</p>
+<label><input type="radio" name="q5"> No <code>WHERE</code>, com <code>SUM(…) &gt; 500</code></label>
+<label><input type="radio" name="q5"> No <code>ORDER BY</code></label>
+<label><input type="radio" name="q5"> No <code>JOIN … ON</code></label>
+<label><input type="radio" name="q5"> No <code>HAVING</code>, depois do <code>GROUP BY</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. O ticket médio da Aurora é 220.46. O que esse número quer dizer?</p>
+<label><input type="radio" name="q6"> Em média, cada pedido custou 220.46 ao cliente, frete incluído</label>
+<label><input type="radio" name="q6"> Em média, cada item custou 220.46</label>
+<label><input type="radio" name="q6"> Cada cliente gastou 220.46 no total</label>
+<label><input type="radio" name="q6"> A loja vende 220.46 por mês</label>
+</div>
+
+<h3>Desafio: o melhor mês de todos</h3>
+
+<div class="trysql" data-goal="linhas:3;;contem:2024-02|1244.61">
+<p class="try-task"><strong>Missão:</strong> sem filtrar ano nenhum, descubra os <strong>3 melhores meses</strong> da história da Aurora em faturamento (produtos, 2 casas), com as colunas <code>mes</code> e <code>faturamento</code>, do maior para o menor.</p>
+<pre class="script" data-file="desafio.sql">SELECT strftime('%Y', p.data) AS ano,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY ano
+ORDER BY faturamento DESC;
+</pre>
+<pre class="solucao" data-file="desafio.sql">SELECT strftime('%Y-%m', p.data) AS mes,
+       ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS faturamento
+FROM pedidos p
+JOIN itens_pedido i ON i.pedido_id = p.id
+GROUP BY mes
+ORDER BY faturamento DESC
+LIMIT 3;
+</pre>
+</div>
+
+<p>Fevereiro de 2024, com 1244.61. Nenhum mês de 2025 chega perto.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Antes de escrever um relatório, combine o que cada número significa: aqui, <strong>faturamento</strong> = produtos e <strong>total</strong> = produtos + frete.</li>
+  <li>A base de quase tudo é o valor de cada pedido: <code>JOIN itens_pedido</code> + <code>SUM(quantidade * preco_unitario)</code> + <code>GROUP BY p.id</code>. Guarde-a numa <code>VIEW</code> ou num <code>WITH</code>.</li>
+  <li>Depois de um JOIN de "um para muitos", a coluna do "um" se repete: <code>SUM(frete)</code> e <code>COUNT(*)</code> ficam inflados. Use <code>COUNT(DISTINCT …)</code> e some o frete numa consulta com uma linha por pedido.</li>
+  <li>Média "por pedido" exige uma linha por pedido primeiro: o ticket médio é 220.46, não os 84.26 da média dos itens.</li>
+  <li><code>strftime('%Y-%m', data)</code> agrupa por mês; funciona porque as datas estão em <code>AAAA-MM-DD</code>.</li>
+  <li><code>LEFT JOIN … IS NULL</code> ou <code>NOT EXISTS</code> acham o que nunca aconteceu; <code>RANK() OVER</code> faz rankings com empates, filtrados por fora com <code>WITH</code>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
