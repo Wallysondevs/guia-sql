@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Curingas — % e _ no LIKE | Guia SQL</title>
+<meta name="description" content="Os curingas do LIKE para quem nunca mexeu num banco de dados: % (qualquer sequência, até nenhuma) e _ (exatamente um caractere), combinados para achar começo, fim, meio, posição e tamanho; datas, telefones e nomes da Loja Aurora; o curinga de verdade com ESCAPE, os equivalentes * e ? do GLOB e as armadilhas, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Curingas (% e _)</span></h1>
+
+<p class="intro">No baralho, o curinga vale qualquer carta. No <code>LIKE</code> (aula <a href="like.html">LIKE</a>), os curingas valem qualquer letra. São só dois, e com eles você monta quase toda busca de texto: o <code>%</code>, que vale "<strong>qualquer quantidade</strong> de caracteres", e o <code>_</code>, que vale "<strong>exatamente um</strong> caractere". Nesta aula você vai combiná-los para achar pedidos de um mês, clientes nascidos em maio, telefones no formato brasileiro e nomes de um tamanho certo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O <code>%</code>: zero, um ou muitos caracteres.</li>
+  <li>O <code>_</code>: exatamente um caractere, nem mais nem menos.</li>
+  <li>Combinar os dois para buscar pelo <strong>começo</strong>, pelo <strong>fim</strong>, pelo <strong>meio</strong>, pela <strong>posição</strong> e pelo <strong>tamanho</strong>.</li>
+  <li>Buscas em datas guardadas como texto (<code>2026-10-%</code>) e em telefones (<code>(__) _____-____</code>).</li>
+  <li>O que fazer quando o texto tem um <code>%</code> ou um <code>_</code> de verdade.</li>
+  <li>Os curingas equivalentes do <code>GLOB</code> (<code>*</code> e <code>?</code>) e as armadilhas mais comuns.</li>
+</ul>
+</div>
+
+<p>Os exemplos usam o banco da <a href="banco-do-guia.html">Loja Aurora</a>, e cada quadro "Resultado" vem do SQLite de verdade, rodando no seu navegador.</p>
+
+<hr>
+
+<h2>A ideia: as caixinhas do formulário</h2>
+<p>Pense num formulário de papel com caixinhas para o CEP: <code>[_][_][_][_][_]-[_][_][_]</code>. Cada caixinha recebe <strong>um</strong> algarismo, e você sabe exatamente quantos cabem. Esse é o <code>_</code>. Agora pense no campo "Observações", uma linha comprida em que cabe qualquer coisa, de nada a um parágrafo. Esse é o <code>%</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Curinga</th><th>Vale</th><th>Pode ser vazio?</th><th>No formulário</th></tr>
+<tr><td><code>%</code> (porcentagem)</td><td>Qualquer sequência de caracteres</td><td><strong>Sim</strong>: vale também "nada"</td><td>O campo "Observações"</td></tr>
+<tr><td><code>_</code> (sublinhado)</td><td>Exatamente <strong>um</strong> caractere qualquer</td><td><strong>Não</strong>: tem de haver um caractere ali</td><td>Uma caixinha do CEP</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O <code>%</code> vale até "nada"</h2>
+<p>A melhor forma de ver um curinga é testá-lo em textos soltos. Cada coluna abaixo pergunta "este texto combina com este padrão?" (1 = sim, 0 = não):</p>
+
+<pre class="file" data-file="teste.sql" data-resultado>SELECT 'Ana' LIKE 'Ana%', 'Ana' LIKE 'Ana_', 'Anas' LIKE 'Ana_', 'Anabela' LIKE 'Ana_';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Teste</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>'Ana' LIKE 'Ana%'</code></td><td>1</td><td>O <code>%</code> vale "nada": "Ana" seguido de nada é "Ana".</td></tr>
+<tr><td><code>'Ana' LIKE 'Ana_'</code></td><td>0</td><td>O <code>_</code> exige um caractere depois de "Ana", e não há.</td></tr>
+<tr><td><code>'Anas' LIKE 'Ana_'</code></td><td>1</td><td>Depois de "Ana" há exatamente um caractere: o "s".</td></tr>
+<tr><td><code>'Anabela' LIKE 'Ana_'</code></td><td>0</td><td>Depois de "Ana" há quatro caracteres; o <code>_</code> só vale um.</td></tr>
+</table>
+</div>
+
+<p>Com o <code>%</code>, a posição dele no padrão decide a busca. Uma revisão rápida da aula anterior, com um exemplo de cada:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Padrão</th><th>Busca</th><th>Exemplo na loja</th></tr>
+<tr><td><code>'Garrafa%'</code></td><td>Começa com</td><td>Garrafa Térmica 1L, Garrafa Squeeze 700ml</td></tr>
+<tr><td><code>'% peças'</code></td><td>Termina com</td><td>Jogo de Panelas 5 peças, Faqueiro Inox 24 peças, Quebra-cabeça 500 peças</td></tr>
+<tr><td><code>'%500%'</code></td><td>Contém</td><td>Quebra-cabeça 500 peças, Café Torrado 500g, Azeite Extra Virgem 500ml</td></tr>
+<tr><td><code>'Caneta%Azul'</code></td><td>Começa com uma coisa e termina com outra</td><td>Caneta Esferográfica Azul</td></tr>
+<tr><td><code>'%'</code></td><td>Qualquer texto (mas não <code>NULL</code>)</td><td>Todos os 45 produtos</td></tr>
+</table>
+</div>
+
+<h3>Vários <code>%</code> no mesmo padrão</h3>
+<p>Um padrão pode ter quantos <code>%</code> você quiser. Os produtos que têm "de" duas vezes no nome:</p>
+
+<pre class="file" data-file="de-de.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome LIKE '%de%de%';
+</pre>
+
+<p>Repare no "Conjunto de Copos 6 unidades": o segundo "de" está dentro de "unida<strong>de</strong>s". O <code>LIKE</code> não sabe o que é uma palavra; ele só procura as letras. E no "Guia de Receitas do Nor<strong>de</strong>ste", também. Se você quer a palavra "de" sozinha, inclua os espaços: <code>'% de % de %'</code>.</p>
+
+<p>Dá para contar <strong>palavras</strong> do mesmo jeito. Os clientes com pelo menos três palavras no nome (dois espaços):</p>
+
+<pre class="file" data-file="tres-nomes.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome LIKE '% % %';
+</pre>
+
+<hr>
+
+<h2>2. O <code>_</code>: um caractere, numa posição certa</h2>
+<p>O <code>_</code> serve quando você sabe <strong>onde</strong> está a letra, ou <strong>quantas</strong> letras há. Os estados com duas letras que começam com P:</p>
+
+<pre class="file" data-file="estados-p.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado LIKE 'P_';
+</pre>
+
+<p>Piauí (PI) e Pernambuco (PE): 16 clientes. O <code>'P_'</code> quer dizer "um P e mais <strong>um</strong> caractere". Como toda sigla de estado tem duas letras, aqui <code>'P%'</code> daria o mesmo resultado; o <code>_</code> só deixa a intenção mais clara.</p>
+
+<h3>Pela posição</h3>
+<p>Os clientes cujo nome tem "a" como <strong>segunda</strong> letra:</p>
+
+<pre class="file" data-file="segunda-letra.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome LIKE '_a%';
+</pre>
+
+<dl class="anatomy">
+  <dt>_</dt><dd>A primeira letra, qualquer uma (o M de Maria, o C de Carlos…).</dd>
+  <dt>a</dt><dd>A segunda letra tem de ser "a".</dd>
+  <dt>%</dt><dd>O resto do nome, qualquer coisa.</dd>
+</dl>
+
+<h3>Pelo tamanho</h3>
+<p>E os clientes cujo <strong>primeiro nome</strong> tem exatamente 5 letras? Cinco <code>_</code>, um espaço e o resto:</p>
+
+<pre class="file" data-file="cinco-letras.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome LIKE '_____ %';
+</pre>
+
+<p>Maria, Tiago, Bruno, Paulo, Tainá e Elias. Repare na Tainá: o "á" conta como <strong>um</strong> caractere, como deve ser. O espaço depois dos cinco <code>_</code> é o que garante o tamanho: sem ele, <code>'_____%'</code> aceitaria qualquer nome com cinco letras <strong>ou mais</strong>.</p>
+
+<div class="tip">
+<strong>Contar sublinhados</strong>
+<p>Vários <code>_</code> seguidos ficam difíceis de contar na tela (<code>_____</code> são cinco?). Conte com o dedo, ou escreva o padrão em partes num comentário (aula <a href="comentarios.html">Comentários</a>): <code>-- 5 letras + espaço + resto</code>.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:3">
+<p class="try-task"><strong>Experimente:</strong> as datas de nascimento estão no formato <code>AAAA-MM-DD</code> (como <code>1990-05-14</code>). Mostre os clientes nascidos em <strong>maio</strong>, de qualquer ano: quatro <code>_</code> para o ano, <code>-05-</code> e dois <code>_</code> para o dia. São 3.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes
+WHERE nascimento LIKE '05%';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, nascimento
+FROM clientes
+WHERE nascimento LIKE '____-05-__';
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Curingas em datas e telefones</h2>
+<h3>Datas guardadas como texto</h3>
+<p>A Loja Aurora guarda as datas como texto no formato <code>AAAA-MM-DD</code>. Com o <code>%</code>, fica fácil pegar um mês inteiro. Os pedidos de outubro de 2026:</p>
+
+<pre class="file" data-file="outubro.sql" data-resultado>SELECT id, data
+FROM pedidos
+WHERE data LIKE '2026-10-%';
+</pre>
+
+<p>Três pedidos: 88, 89 e 90. E os clientes que fazem aniversário em dezembro (qualquer ano, qualquer dia):</p>
+
+<pre class="file" data-file="dezembro.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+WHERE nascimento LIKE '%-12-%';
+</pre>
+
+<p>Isso funciona porque as datas estão sempre com dois algarismos no mês e no dia (<code>05</code>, e não <code>5</code>). Para contas de verdade com datas (dias entre duas datas, o mês atual…), o SQL tem funções próprias, na aula <a href="funcoes-data.html">Funções de Data</a>.</p>
+
+<h3>O formato de um telefone</h3>
+<p>Os telefones dos fornecedores misturam o formato brasileiro, como <code>(86) 99821-4455</code>, com o internacional, como <code>+351 22 123 4567</code>. Para achar os que estão no formato brasileiro de celular, desenhe o formato com <code>_</code>:</p>
+
+<pre class="file" data-file="telefone.sql" data-resultado>SELECT nome, telefone
+FROM fornecedores
+WHERE telefone LIKE '(__) _____-____';
+</pre>
+
+<p>Os 4 fornecedores brasileiros. Os de Portugal e da Argentina não têm parênteses nem a mesma quantidade de algarismos, e ficaram de fora. Um detalhe: o <code>_</code> aceita <strong>qualquer</strong> caractere, não só algarismos. <code>(ab) cdefg-hijk</code> também passaria. Para exigir algarismos, só com o <code>GLOB</code> e o <code>[0-9]</code> (seção 5).</p>
+
+<hr>
+
+<h2>4. Quando o <code>%</code> ou o <code>_</code> é de verdade</h2>
+<p>Como você viu em <a href="like.html">LIKE</a>, dentro do padrão o <code>%</code> e o <code>_</code> são sempre curingas. Para procurar um sublinhado ou um sinal de porcentagem <strong>de verdade</strong>, escolha um caractere de escape com <code>ESCAPE</code> e ponha-o antes:</p>
+
+<pre class="file" data-file="escape.sql" data-resultado>SELECT 'Desconto 10%' LIKE '%10!%' ESCAPE '!',
+       'Desconto 100' LIKE '%10!%' ESCAPE '!',
+       'Desconto 100' LIKE '%10%';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Padrão</th><th>Quer dizer</th></tr>
+<tr><td><code>'%10!%' ESCAPE '!'</code></td><td>Termina com "10%" (o último <code>%</code> é um sinal de porcentagem)</td></tr>
+<tr><td><code>'%10%'</code></td><td>Contém "10" (o último <code>%</code> é curinga): por isso "Desconto 100" passa</td></tr>
+<tr><td><code>'%!_%' ESCAPE '!'</code></td><td>Contém um sublinhado de verdade</td></tr>
+<tr><td><code>'%!!%' ESCAPE '!'</code></td><td>Contém um ponto de exclamação (o próprio caractere de escape, dobrado)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. Formas diferentes: os curingas do GLOB</h2>
+<p>O <code>GLOB</code>, que só existe no SQLite, faz o mesmo papel com outros símbolos, e diferencia maiúsculas de minúsculas (veja <a href="like.html">LIKE</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Ideia</th><th><code>LIKE</code></th><th><code>GLOB</code></th><th>Exemplo</th></tr>
+<tr><td>Qualquer sequência (até nada)</td><td><code>%</code></td><td><code>*</code></td><td><code>cidade LIKE 'P%'</code> = <code>cidade GLOB 'P*'</code> (Parnaíba, Picos)</td></tr>
+<tr><td>Exatamente um caractere</td><td><code>_</code></td><td><code>?</code></td><td><code>nome LIKE '_a%'</code> = <code>nome GLOB '?a*'</code> (Maria, Carlos…)</td></tr>
+<tr><td>Um caractere de uma lista</td><td>—</td><td><code>[abc]</code></td><td><code>GLOB '[AEIOU]*'</code>: começa com vogal maiúscula</td></tr>
+<tr><td>Um caractere de uma faixa</td><td>—</td><td><code>[0-9]</code></td><td><code>GLOB '*[0-9]'</code>: termina com algarismo</td></tr>
+<tr><td>Um caractere <strong>fora</strong> da lista</td><td>—</td><td><code>[^abc]</code></td><td><code>GLOB '[^A]*'</code>: não começa com A</td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="glob.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE nome GLOB '?a*';
+</pre>
+
+<p>Os mesmos 9 clientes do <code>'_a%'</code> da seção 2. Para quase tudo, o <code>LIKE</code> basta e funciona em qualquer banco. Use o <code>GLOB</code> quando precisar de listas (<code>[0-9]</code>) ou quando maiúsculas importarem.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Qual usar</th></tr>
+<tr><td>Começo, fim ou meio do texto</td><td><code>%</code></td></tr>
+<tr><td>Uma letra numa posição certa, ou um tamanho certo</td><td><code>_</code> (um por caractere)</td></tr>
+<tr><td>Um mês numa data <code>AAAA-MM-DD</code></td><td><code>'2026-10-%'</code> ou <code>'____-10-__'</code></td></tr>
+<tr><td>Só algarismos, só vogais…</td><td><code>GLOB</code> com <code>[0-9]</code>, <code>[aeiou]</code></td></tr>
+<tr><td>O texto tem <code>%</code> ou <code>_</code> de verdade</td><td><code>ESCAPE</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Curingas quase nunca dão mensagem de erro: o SQL roda, e o problema aparece como linhas <strong>a mais</strong> ou <strong>a menos</strong>. Por isso, confira sempre se o número de linhas faz sentido.</p>
+
+<div class="cenario">
+<strong>O LIKE ignorou a maiúscula que você queria</strong>
+<p>A Ana quer os produtos medidos em mililitros (<code>ml</code>) ou em litros (<code>L</code>):</p>
+<pre class="file" data-file="litros.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome LIKE '%ml' OR nome LIKE '%L';
+</pre>
+<p><strong>O que aconteceu:</strong> vieram 7 produtos, entre eles a Caneta Esferográfica Azu<strong>l</strong>, a Mochila Escolar Azu<strong>l</strong> e a Caixa de Som Portáti<strong>l</strong>. O <code>LIKE</code> ignora maiúsculas, então <code>'%L'</code> é igual a <code>'%l'</code>: "termina com a letra L, maiúscula ou minúscula".</p>
+<p><strong>Como consertar:</strong> seja mais específico, exigindo um algarismo antes do L: <code>GLOB '*[0-9]L'</code>, que diferencia maiúsculas e só aceita algarismos (Garrafa Térmica 1L, Regador Plástico 5L).</p>
+</div>
+
+<div class="cenario">
+<strong>Sublinhados de menos ou de mais</strong>
+<pre class="file" data-file="tres.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado LIKE 'P__';
+</pre>
+<p><strong>O que aconteceu:</strong> 0 linhas, sem erro. <code>'P__'</code> exige <strong>três</strong> caracteres (P + 2), e as siglas têm dois. Um <code>_</code> a mais, e nada passa; um a menos, e também nada.</p>
+<p><strong>Como consertar:</strong> um <code>_</code> para cada caractere que falta: <code>'P_'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>%</code> no meio</strong>
+<pre class="file" data-file="meio.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE nome LIKE 'Caneta Azul';
+</pre>
+<p><strong>O que aconteceu:</strong> 0 linhas. O produto se chama "Caneta <strong>Esferográfica</strong> Azul", e o padrão, sem curinga, só aceita o texto exato "Caneta Azul".</p>
+<p><strong>Como consertar:</strong> ponha um <code>%</code> onde pode haver "qualquer coisa": <code>'Caneta%Azul'</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Usou os curingas errados</strong>
+<p><code>LIKE 'Ana*'</code> e <code>LIKE '?a%'</code> não dão erro, mas também não acham nada do que você queria: o <code>*</code> e o <code>?</code> são curingas do <code>GLOB</code> (e da busca de arquivos do computador). No <code>LIKE</code>, eles são caracteres comuns. E o contrário também vale: <code>GLOB 'Ana%'</code> procura um sinal de porcentagem de verdade.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>_</code> pegou mais do que você queria</strong>
+<p>O <code>_</code> vale <strong>qualquer</strong> caractere, inclusive espaço, ponto, hífen ou letra. O padrão de telefone <code>'(__) _____-____'</code> aceitaria "(xx) abcde-fghi". Se precisar exigir algarismos, use <code>GLOB '([0-9][0-9]) *'</code>.</p>
+</div>
+
+<div class="note" id="outros">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li>O <code>%</code> e o <code>_</code> são padrão SQL e funcionam igual no MySQL, no PostgreSQL e no SQL Server.</li>
+  <li><strong>Escape automático:</strong> no MySQL e no PostgreSQL, a barra invertida já é o escape quando você não escreve <code>ESCAPE</code>: <code>LIKE '%\_%'</code> procura um sublinhado de verdade. No SQLite (e no padrão SQL), não há escape automático; escreva sempre <code>ESCAPE</code>, que funciona em todos.</li>
+  <li><strong>SQL Server</strong> aceita, dentro do próprio <code>LIKE</code>, listas como as do <code>GLOB</code>: <code>[0-9]</code>, <code>[^a]</code>, e usa colchetes também para escapar um curinga: <code>LIKE '5[%]'</code> procura "5%".</li>
+</ul>
+<p>Ilustrativo (não roda no SQLite):</p>
+<pre class="file" data-file="outros.sql">-- MySQL / PostgreSQL: a barra invertida escapa o curinga
+SELECT nome FROM produtos WHERE nome LIKE '%\_%';
+
+-- SQL Server: listas e escape com colchetes
+SELECT nome FROM fornecedores WHERE telefone LIKE '([0-9][0-9]) %';
+SELECT nome FROM produtos WHERE nome LIKE '%10[%]%';
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Padrão</th><th>Combina com</th><th>Não combina com</th></tr>
+<tr><td><code>'Ana%'</code></td><td>Ana, Ana Beatriz, Anabela</td><td>Mariana</td></tr>
+<tr><td><code>'%ana'</code></td><td>Ana, Mariana, Juliana</td><td>Anabela</td></tr>
+<tr><td><code>'%ana%'</code></td><td>Ana, Mariana, Anabela, Juliana</td><td>Bruno</td></tr>
+<tr><td><code>'Ana_'</code></td><td>Anas, Anaí</td><td>Ana, Anabela</td></tr>
+<tr><td><code>'_a%'</code></td><td>Maria, Carlos, Tainá</td><td>Ana, Bruno</td></tr>
+<tr><td><code>'P_'</code></td><td>PI, PE</td><td>P, PIA</td></tr>
+<tr><td><code>'____-05-__'</code></td><td>1990-05-14</td><td>1990-5-14, 1990-06-14</td></tr>
+<tr><td><code>'%!%' ESCAPE '!'</code></td><td>Desconto 10%</td><td>Desconto 100</td></tr>
+<tr><td><code>'%'</code></td><td>Qualquer texto, até o vazio</td><td><code>NULL</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Exatamente um</h3>
+<p>Qual curinga vale exatamente um caractere?</p>
+<div class="ex-code"><input data-answer="_" aria-label="curinga"></div>
+</div>
+
+<div class="exercise">
+<h3>2. O mês na data</h3>
+<p>Complete o padrão para achar os pedidos de dezembro de 2025:</p>
+<div class="ex-code">SELECT id, data FROM pedidos WHERE data LIKE '2025-12<input data-answer="%" aria-label="curinga">';</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. <code>'Ana' LIKE 'Ana%'</code> dá qual resultado?</p>
+<label><input type="radio" name="q3"> 0, porque falta alguma coisa depois de "Ana"</label>
+<label><input type="radio" name="q3"> 1, porque o <code>%</code> também vale "nada"</label>
+<label><input type="radio" name="q3"> Erro de sintaxe</label>
+<label><input type="radio" name="q3"> <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Qual destes nomes combina com <code>'_a%'</code>?</p>
+<label><input type="radio" name="q4"> Ana Beatriz Sousa</label>
+<label><input type="radio" name="q4"> Bruno Cavalcante</label>
+<label><input type="radio" name="q4"> Elias Furtado</label>
+<label><input type="radio" name="q4"> Camila Duarte</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que <code>nome LIKE '%L'</code> acha a "Mochila Escolar Azul"?</p>
+<label><input type="radio" name="q5"> Porque o <code>LIKE</code> do SQLite ignora maiúsculas, e "Azul" termina com "l"</label>
+<label><input type="radio" name="q5"> Porque o <code>%</code> vale também a letra L</label>
+<label><input type="radio" name="q5"> Porque "Mochila" tem um L no meio</label>
+<label><input type="radio" name="q5"> Porque faltou o <code>ESCAPE</code></label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. No <code>GLOB</code>, qual é o equivalente do <code>_</code>?</p>
+<label><input type="radio" name="q6"> <code>*</code></label>
+<label><input type="radio" name="q6"> <code>%</code></label>
+<label><input type="radio" name="q6"> <code>?</code></label>
+<label><input type="radio" name="q6"> <code>#</code></label>
+</div>
+
+<h3>Missão final: nomes de cinco letras</h3>
+
+<div class="trysql" data-goal="linhas:6">
+<p class="try-task"><strong>Missão:</strong> a Ana quer os clientes cujo <strong>primeiro nome</strong> tem exatamente 5 letras (são 6). O padrão abaixo traz gente demais: ele aceita qualquer nome com 5 letras <strong>ou mais</strong>. Conserte o padrão.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome
+FROM clientes
+WHERE nome LIKE '_____%';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome
+FROM clientes
+WHERE nome LIKE '_____ %';
+</pre>
+</div>
+
+<p>Dica, se travar: depois do primeiro nome vem sempre um espaço.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>%</code> vale qualquer sequência de caracteres, <strong>até nenhuma</strong>; <code>_</code> vale <strong>exatamente um</strong> caractere.</li>
+  <li>Combine-os: <code>'Garrafa%'</code> (começo), <code>'% peças'</code> (fim), <code>'%500%'</code> (meio), <code>'_a%'</code> (posição), <code>'_____ %'</code> (tamanho).</li>
+  <li>Em datas <code>AAAA-MM-DD</code>, <code>'2026-10-%'</code> pega um mês; <code>'____-05-__'</code> pega maio de qualquer ano.</li>
+  <li>O <code>_</code> conta caracteres (o "á" é um só) e aceita qualquer caractere, não só letras ou algarismos.</li>
+  <li>Para um <code>%</code> ou <code>_</code> de verdade, use <code>ESCAPE</code>. No <code>GLOB</code>, os curingas são <code>*</code> e <code>?</code>, e há listas como <code>[0-9]</code>.</li>
+  <li>Curingas quase nunca dão erro: o engano aparece como linhas a mais ou a menos. Confira se o número de linhas faz sentido.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
