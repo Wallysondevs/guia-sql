@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL ROLLBACK e Savepoints — desfazer uma transação | Guia SQL</title>
+<meta name="description" content="ROLLBACK e savepoints para quem está começando em SQL: desfazer uma transação inteira, testar um UPDATE perigoso e voltar atrás, desfazer depois de um erro, SAVEPOINT, ROLLBACK TO e RELEASE para desfazer só um pedaço, INSERT OR ROLLBACK e as mensagens reais do SQLite.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">ROLLBACK e Savepoints</span></h1>
+
+<p class="intro">Na aula <a href="transacoes.html">Transações</a>, a Ana aprendeu a juntar vários comandos com <code>BEGIN</code> e gravá-los de uma vez com <code>COMMIT</code>. Falta a outra metade: e se, no meio da transação, ela perceber que fez besteira? Para isso existe o <strong><code>ROLLBACK</code></strong> ("voltar atrás"), que desfaz a transação inteira, como se ela nunca tivesse começado. E, quando só um pedaço deu errado, os <strong>savepoints</strong> ("pontos de salvamento") deixam desfazer só aquele pedaço e continuar.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A desfazer uma transação inteira com <code>ROLLBACK</code>.</li>
+  <li>A usar a transação como rede de proteção: testar um <code>UPDATE</code> ou <code>DELETE</code> perigoso, olhar o resultado e desfazer.</li>
+  <li>O que fazer quando um comando da transação dá erro.</li>
+  <li>A marcar pontos dentro da transação com <code>SAVEPOINT</code>, voltar a eles com <code>ROLLBACK TO</code> e descartá-los com <code>RELEASE</code>.</li>
+  <li>O <code>INSERT OR ROLLBACK</code>, que desfaz tudo sozinho quando dá erro.</li>
+  <li>O que o <code>ROLLBACK</code> não consegue desfazer, e as mensagens reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Os exemplos com quadro "Resultado" rodam no SQLite do seu navegador. Como <strong>cada Rodar começa com o banco limpo</strong>, cada exemplo tem a transação inteira na mesma caixa: o <code>BEGIN</code>, as mudanças, o <code>ROLLBACK</code> e um <code>SELECT</code> depois, para você ver que tudo voltou. As partes em que um erro acontece no meio saíram do terminal da Ana, porque o editor para no primeiro erro.</p>
+
+<hr>
+
+<h2>A ideia: o "salvar" do videogame</h2>
+<p>Num videogame, você salva o jogo antes de entrar numa fase difícil. Se tudo der errado lá dentro, você não precisa recomeçar do zero: carrega o jogo salvo e está de volta à porta da fase, com tudo o que tinha conquistado antes.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No videogame</th><th>No banco</th></tr>
+<tr><td>Começar uma partida</td><td><code>BEGIN</code></td></tr>
+<tr><td>Desistir da partida e voltar ao menu, sem gravar nada</td><td><code>ROLLBACK</code>: desfaz tudo desde o <code>BEGIN</code></td></tr>
+<tr><td>Salvar antes da fase difícil</td><td><code>SAVEPOINT fase2</code>: marca um ponto</td></tr>
+<tr><td>Carregar o jogo salvo</td><td><code>ROLLBACK TO fase2</code>: desfaz só o que veio depois da marca</td></tr>
+<tr><td>Apagar o jogo salvo, que não é mais preciso</td><td><code>RELEASE fase2</code>: tira a marca (sem desfazer nada)</td></tr>
+<tr><td>Terminar a partida e gravar o recorde</td><td><code>COMMIT</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. <code>ROLLBACK</code>: desfazer tudo</h2>
+<p>A Ana precisava apagar os itens de um pedido e escreveu o <code>DELETE</code>, mas esqueceu o <code>WHERE</code> (o erro da aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>). Por sorte, ela estava dentro de uma transação:</p>
+
+<pre class="file" data-file="desfazer.sql" data-resultado>BEGIN;
+
+DELETE FROM itens_pedido;          -- faltou: WHERE pedido_id = 90
+SELECT count(*) AS itens FROM itens_pedido;
+
+ROLLBACK;
+
+SELECT count(*) AS itens FROM itens_pedido;
+</pre>
+
+<dl class="anatomy">
+  <dt>BEGIN;</dt><dd>Abre a transação: dali em diante, nada é gravado de verdade.</dd>
+  <dt>DELETE FROM itens_pedido;</dt><dd>O acidente: sem <code>WHERE</code>, apaga as 220 linhas da tabela.</dd>
+  <dt>SELECT count(*) …</dt><dd>Dentro da transação: 0 itens. A Ana vê o estrago antes de gravar.</dd>
+  <dt>ROLLBACK;</dt><dd>"Volte atrás": desfaz <strong>tudo</strong> o que a transação fez e a fecha. Nada foi gravado.</dd>
+  <dt>SELECT count(*) …</dt><dd>Depois do <code>ROLLBACK</code>: os 220 itens estão lá, intactos.</dd>
+</dl>
+
+<p>No quadro, o primeiro <code>SELECT</code> mostra 0 e o segundo mostra 220. O <code>ROLLBACK</code> não "apaga o <code>DELETE</code>" item por item: ele simplesmente joga fora a transação, e o banco continua exatamente como estava no <code>BEGIN</code>. Para os outros programas que usam o banco, nada aconteceu; eles nem chegaram a ver os itens sumirem.</p>
+
+<p>No terminal, com o arquivo de verdade, é igual:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; DELETE FROM itens_pedido;
+sqlite&gt; SELECT count(*) FROM itens_pedido;
+0
+sqlite&gt; ROLLBACK;
+sqlite&gt; SELECT count(*) FROM itens_pedido;
+220</pre>
+
+<hr>
+
+<h2>2. A transação como ensaio</h2>
+<p>O <code>ROLLBACK</code> transforma qualquer mudança arriscada num <strong>ensaio</strong>: você faz, confere e só grava se gostou. A loja quer aumentar em 10% os preços dos eletrônicos (categoria 2), arredondando para duas casas com <code>round()</code> (veja <a href="funcoes-numericas.html">Funções Numéricas</a>). Antes de gravar, a Ana quer ver como ficam:</p>
+
+<pre class="file" data-file="ensaio.sql" data-resultado>BEGIN;
+
+UPDATE produtos
+SET preco = round(preco * 1.10, 2)
+WHERE categoria_id = 2;
+
+SELECT nome, preco FROM produtos WHERE categoria_id = 2;
+
+ROLLBACK;
+</pre>
+
+<p>Ela olha a tabela, vê que a Caixa de Som passou de 189.99 para 208.99, e decide conversar com o gerente antes. Como terminou com <code>ROLLBACK</code>, nenhum preço mudou. Se tivesse gostado, trocaria o <code>ROLLBACK</code> por <code>COMMIT</code>.</p>
+
+<div class="trysql" data-goal="contem:Fone de Ouvido Bluetooth|142.89;;contem:Fone de Ouvido Bluetooth|129.9">
+<p class="try-task"><strong>Experimente:</strong> este ensaio terminou com <code>COMMIT</code>, e o aumento ficou gravado: os dois <code>SELECT</code> mostram o preço novo. Troque o comando certo para que o aumento seja só um ensaio, e o último <code>SELECT</code> mostre os preços antigos (o fone volta a 129.9).</p>
+<pre class="script" data-file="ensaio2.sql">BEGIN;
+UPDATE produtos SET preco = round(preco * 1.10, 2) WHERE categoria_id = 2;
+SELECT nome, preco FROM produtos WHERE categoria_id = 2;
+COMMIT;
+
+SELECT nome, preco FROM produtos WHERE categoria_id = 2;
+</pre>
+<pre class="solucao" data-file="ensaio2.sql">BEGIN;
+UPDATE produtos SET preco = round(preco * 1.10, 2) WHERE categoria_id = 2;
+SELECT nome, preco FROM produtos WHERE categoria_id = 2;
+ROLLBACK;
+
+SELECT nome, preco FROM produtos WHERE categoria_id = 2;
+</pre>
+</div>
+
+<div class="tip">
+<strong>Um hábito que salva empregos</strong>
+<p>Antes de rodar um <code>UPDATE</code> ou <code>DELETE</code> num banco de verdade, escreva <code>BEGIN;</code> primeiro. Rode o comando, confira o número de linhas afetadas com um <code>SELECT</code> e só então decida entre <code>COMMIT</code> e <code>ROLLBACK</code>. Se o <code>UPDATE</code> disser "45 linhas afetadas" quando você esperava 1, o <code>ROLLBACK</code> está a uma palavra de distância.</p>
+</div>
+
+<hr>
+
+<h2>3. <code>ROLLBACK</code> depois de um erro</h2>
+<p>Na aula anterior, a Ana baixou o estoque, o <code>INSERT</code> do item falhou e ela deu <code>COMMIT</code> mesmo assim: o estoque ficou baixado sem a venda. O certo, depois de um erro, é desfazer tudo:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; INSERT INTO itens_pedido (pedido_id, produto_id, quantidade) VALUES (90, 3, 2);
+Runtime error: NOT NULL constraint failed: itens_pedido.preco_unitario (19)
+sqlite&gt; ROLLBACK;
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430</pre>
+
+<p>O <code>INSERT</code> falhou porque faltou o preço. O <code>ROLLBACK</code> desfez também o <code>UPDATE</code> que tinha dado certo, e o estoque continua em 430. Agora a Ana corrige o <code>INSERT</code> e começa de novo, com <code>BEGIN</code>. Esse é o padrão de qualquer programa que usa banco de dados:</p>
+
+<ol class="passo">
+  <li><code>BEGIN</code>.</li>
+  <li>Rode os comandos, um por um.</li>
+  <li>Algum deu erro? <code>ROLLBACK</code> e avise quem pediu a tarefa.</li>
+  <li>Todos deram certo? <code>COMMIT</code>.</li>
+</ol>
+
+<p>Nas linguagens de programação, esse padrão aparece como um <code>try</code>/<code>catch</code> ("tente"/"pegue o erro") em volta da transação. Você vai ver isso em <a href="sql-nas-linguagens.html">SQL nas Linguagens</a>.</p>
+
+<hr>
+
+<h2>4. Savepoints: desfazer só um pedaço</h2>
+<p>Às vezes, o erro está num pedaço da tarefa, e o resto está certo. A Rosângela Dias (cliente 30) está comprando três produtos com o vendedor Pedro Araújo (id 4). Os dois primeiros itens entram sem problema. O terceiro é o Pen Drive 32GB (produto 12), mas a Ana repara, ao conferir, que ele está descontinuado e com estoque 0: o estoque ficaria negativo. Ela quer desfazer <strong>só</strong> esse item e gravar o resto. Para isso, antes do item duvidoso, ela marca um <strong>savepoint</strong>:</p>
+
+<pre class="file" data-file="savepoint.sql" data-resultado>BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 30, 4, '2026-10-18', NULL, 0.0);
+
+INSERT INTO itens_pedido VALUES (91, 1, 2, 12.35);
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 1;
+
+SAVEPOINT item2;
+
+INSERT INTO itens_pedido VALUES (91, 12, 1, 29.9);
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 12;
+SELECT id, nome, estoque, descontinuado FROM produtos WHERE id IN (1, 12);
+
+ROLLBACK TO item2;
+RELEASE item2;
+
+COMMIT;
+
+SELECT pedido_id, produto_id, quantidade FROM itens_pedido WHERE pedido_id = 91;
+SELECT id, nome, estoque FROM produtos WHERE id IN (1, 12);
+</pre>
+
+<dl class="anatomy">
+  <dt>SAVEPOINT item2;</dt><dd>Marca um ponto chamado <code>item2</code> no meio da transação. O nome é você quem escolhe, com as mesmas regras de um nome de tabela.</dd>
+  <dt>INSERT … / UPDATE …</dt><dd>O item duvidoso. O <code>SELECT</code> logo depois mostra o problema: estoque <strong>-1</strong> num produto descontinuado.</dd>
+  <dt>ROLLBACK TO item2;</dt><dd>"Volte até <code>item2</code>": desfaz só o que veio <strong>depois</strong> da marca. O pedido e o primeiro item continuam. A transação <strong>continua aberta</strong>, e a marca continua lá (dá para voltar a ela de novo).</dd>
+  <dt>RELEASE item2;</dt><dd>"Solte <code>item2</code>": tira a marca, que não é mais necessária. Não desfaz nem grava nada.</dd>
+  <dt>COMMIT;</dt><dd>Grava o que sobrou: o pedido 91 com um item só, e o caderno com o estoque baixado.</dd>
+</dl>
+
+<p>No resultado, o primeiro <code>SELECT</code> (dentro da transação) mostra o pen drive com estoque -1. Depois do <code>ROLLBACK TO</code> e do <code>COMMIT</code>, o pedido 91 ficou com um item só (o caderno), o caderno foi de 120 para 118 e o pen drive voltou a 0. No quadro, o <code>ROLLBACK TO</code> aparece como "ROLLBACK: ok": para o SQLite, ele é uma forma do <code>ROLLBACK</code>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>Desfaz</th><th>A transação</th><th>A marca</th></tr>
+<tr><td><code>ROLLBACK</code></td><td>Tudo, desde o <code>BEGIN</code></td><td>Termina</td><td>Todas somem</td></tr>
+<tr><td><code>ROLLBACK TO nome</code></td><td>Só o que veio depois da marca</td><td>Continua aberta</td><td>Continua (e as marcas criadas depois dela somem)</td></tr>
+<tr><td><code>RELEASE nome</code></td><td>Nada</td><td>Continua aberta (se veio de um <code>BEGIN</code>)</td><td>Some, junto com as criadas depois dela</td></tr>
+<tr><td><code>COMMIT</code></td><td>Nada: grava tudo</td><td>Termina</td><td>Todas somem</td></tr>
+</table>
+</div>
+
+<h3>Várias marcas, uma dentro da outra</h3>
+<p>Dá para marcar quantos pontos quiser. Elas funcionam como uma pilha: voltar a uma marca antiga apaga as marcas mais novas que ela.</p>
+
+<pre class="file" data-file="pilha.sql" data-resultado data-erro>BEGIN;
+SAVEPOINT a;
+UPDATE produtos SET estoque = 1 WHERE id = 1;
+SAVEPOINT b;
+UPDATE produtos SET estoque = 2 WHERE id = 2;
+ROLLBACK TO a;
+RELEASE b;
+</pre>
+
+<p>O <code>ROLLBACK TO a</code> desfez os dois <code>UPDATE</code> e apagou a marca <code>b</code>, que tinha sido criada depois de <code>a</code>. Por isso o <code>RELEASE b</code> deu erro: "não existe o savepoint <code>b</code>".</p>
+
+<h3><code>SAVEPOINT</code> sem <code>BEGIN</code></h3>
+<p>No SQLite, um <code>SAVEPOINT</code> fora de qualquer transação <strong>abre</strong> uma transação, e o <code>RELEASE</code> dessa marca funciona como o <code>COMMIT</code> dela:</p>
+
+<pre class="file" data-file="savepoint-sozinho.sql" data-resultado>SAVEPOINT ajuste;
+UPDATE produtos SET estoque = 100 WHERE id = 1;
+RELEASE ajuste;
+
+SELECT nome, estoque FROM produtos WHERE id = 1;
+</pre>
+
+<p>Depois do <code>RELEASE ajuste</code> o estoque ficou gravado em 100, e não há mais transação aberta. É uma forma prática de escrever uma transação com nome, mas o <code>BEGIN</code> … <code>COMMIT</code> é mais claro e funciona em todos os bancos.</p>
+
+<hr>
+
+<h2>5. <code>INSERT OR ROLLBACK</code>: desfazer sozinho</h2>
+<p>Você viu que, no SQLite, um erro no meio desfaz só o comando que falhou. Mas dá para mandar um comando específico desfazer a transação <strong>inteira</strong> se ele violar uma regra da tabela (chave repetida, <code>NOT NULL</code>…): é o <code>OR ROLLBACK</code>, escrito logo depois do <code>INSERT</code> (ou do <code>UPDATE</code>):</p>
+
+<pre class="term">sqlite&gt; BEGIN;
+sqlite&gt; UPDATE produtos SET estoque = estoque - 2 WHERE id = 3;
+sqlite&gt; INSERT OR ROLLBACK INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (1, 1, 2, 12.35);
+Runtime error: UNIQUE constraint failed: itens_pedido.pedido_id, itens_pedido.produto_id (19)
+sqlite&gt; SELECT estoque FROM produtos WHERE id = 3;
+430
+sqlite&gt; COMMIT;
+Runtime error: cannot commit - no transaction is active</pre>
+
+<p>O pedido 1 já tinha o produto 1, e a chave <code>(pedido_id, produto_id)</code> não aceita repetição. Por causa do <code>OR ROLLBACK</code>, o SQLite desfez a transação toda: o estoque voltou a 430 sozinho. A prova é o <code>COMMIT</code> seguinte: "não há transação ativa". Útil, mas pouco comum; o jeito mais claro continua sendo testar o erro e dar <code>ROLLBACK</code> você mesmo.</p>
+
+<hr>
+
+<h2>6. Formas diferentes de fazer</h2>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Use</th></tr>
+<tr><td>Algo deu errado e nada da transação deve ficar</td><td><code>ROLLBACK;</code> (ou <code>ROLLBACK TRANSACTION;</code>)</td></tr>
+<tr><td>Ensaiar uma mudança e ver o resultado</td><td><code>BEGIN;</code> … <code>SELECT</code> … <code>ROLLBACK;</code></td></tr>
+<tr><td>Desfazer só uma parte e continuar</td><td><code>SAVEPOINT x;</code> … <code>ROLLBACK TO x;</code></td></tr>
+<tr><td>A parte deu certo, a marca não serve mais</td><td><code>RELEASE x;</code></td></tr>
+<tr><td>Escrita longa, do padrão SQL</td><td><code>ROLLBACK TO SAVEPOINT x;</code> e <code>RELEASE SAVEPOINT x;</code> (o mesmo que as formas curtas)</td></tr>
+<tr><td>Um comando que, se falhar, deve desfazer tudo</td><td><code>INSERT OR ROLLBACK …</code> / <code>UPDATE OR ROLLBACK …</code></td></tr>
+<tr><td>Voltar ao estado de ontem, depois do <code>COMMIT</code></td><td>Nenhum destes: só o backup (aula <a href="dump-backup.html">Backup</a>)</td></tr>
+</table>
+</div>
+
+<p>Até a estrutura do banco volta com o <code>ROLLBACK</code>. No SQLite, criar ou apagar uma tabela também faz parte da transação:</p>
+
+<pre class="file" data-file="ddl.sql" data-resultado data-erro>BEGIN;
+CREATE TABLE cupons (codigo TEXT, desconto REAL);
+ROLLBACK;
+
+SELECT * FROM cupons;
+</pre>
+
+<p>A tabela <code>cupons</code> foi criada dentro da transação e sumiu com o <code>ROLLBACK</code>: "não existe a tabela cupons". Isso não vale em todos os bancos (veja <a href="#outros">Nos outros bancos</a>).</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong><code>ROLLBACK</code> sem transação</strong>
+<pre class="file" data-file="rollback-sozinho.sql" data-resultado data-erro>DELETE FROM itens_pedido WHERE pedido_id = 90;
+ROLLBACK;
+</pre>
+<p><strong>O que aconteceu:</strong> "não posso voltar atrás: nenhuma transação está ativa". Sem <code>BEGIN</code>, o <code>DELETE</code> rodou no modo automático e foi gravado na hora. O <code>ROLLBACK</code> chegou tarde. No editor, como o banco é limpo a cada Rodar, isso não estraga nada; num arquivo de verdade, os itens do pedido 90 teriam sumido para sempre.</p>
+<p><strong>Como consertar:</strong> o <code>BEGIN</code> vem <strong>antes</strong> da mudança, nunca depois. Uma vez gravado, só o backup traz de volta.</p>
+</div>
+
+<div class="cenario">
+<strong><code>ROLLBACK</code> depois do <code>COMMIT</code></strong>
+<pre class="file" data-file="tarde-demais.sql" data-resultado data-erro>BEGIN;
+DELETE FROM clientes WHERE id = 30;
+COMMIT;
+ROLLBACK;
+</pre>
+<p><strong>O que aconteceu:</strong> a mesma mensagem. O <code>COMMIT</code> gravou e fechou a transação; não há mais nada a desfazer. O <code>COMMIT</code> é definitivo.</p>
+</div>
+
+<div class="cenario">
+<strong>Savepoint com nome errado</strong>
+<pre class="file" data-file="nome-errado.sql" data-resultado data-erro>BEGIN;
+SAVEPOINT item2;
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 12;
+ROLLBACK TO item_2;
+</pre>
+<p><strong>O que aconteceu:</strong> "não existe o savepoint <code>item_2</code>". A marca se chama <code>item2</code>, sem o sublinhado. O <code>RELEASE</code> com um nome que não existe dá a mesma mensagem. Atenção: depois desse erro, a transação continua aberta e o <code>UPDATE</code> continua valendo.</p>
+<p><strong>Como consertar:</strong> use exatamente o nome do <code>SAVEPOINT</code>. (Maiúsculas e minúsculas não importam: <code>ITEM2</code> também acha a marca <code>item2</code>.)</p>
+</div>
+
+<div class="cenario">
+<strong>Achar que o <code>ROLLBACK TO</code> encerra a transação</strong>
+<p>Depois de um <code>ROLLBACK TO</code>, a transação continua aberta. Se a Ana esquecer o <code>COMMIT</code> e fechar o <code>sqlite3</code>, perde <strong>tudo</strong>, inclusive a parte boa, que ela queria guardar. E, enquanto a transação estiver aberta, os outros programas recebem <code>database is locked</code> ao tentar escrever (veja <a href="transacoes.html">Transações</a>).</p>
+<p><strong>Como evitar:</strong> todo <code>BEGIN</code> termina em <code>COMMIT</code> ou <code>ROLLBACK</code>. O <code>ROLLBACK TO</code> não conta.</p>
+</div>
+
+<hr>
+
+<h2 id="outros">Nos outros bancos</h2>
+<div class="note">
+<strong>ROLLBACK e savepoints no MySQL, PostgreSQL e SQL Server</strong>
+<p>O <code>ROLLBACK</code> é igual em todos. Os savepoints mudam um pouco (trechos <strong>ilustrativos</strong>, conforme a documentação oficial):</p>
+<pre class="file" data-file="outros-bancos.sql">-- MySQL e PostgreSQL: como no SQLite (a palavra SAVEPOINT é opcional no PostgreSQL)
+SAVEPOINT item2;
+ROLLBACK TO SAVEPOINT item2;
+RELEASE SAVEPOINT item2;
+
+-- SQL Server: outro nome, e não existe RELEASE
+SAVE TRANSACTION item2;
+ROLLBACK TRANSACTION item2;
+</pre>
+<ul>
+  <li><strong>PostgreSQL:</strong> o <code>SAVEPOINT</code> só funciona dentro de um <code>BEGIN</code>; ele não abre uma transação sozinho, como no SQLite. Como no SQLite, um <code>CREATE TABLE</code> pode ser desfeito pelo <code>ROLLBACK</code>.</li>
+  <li><strong>MySQL:</strong> <code>CREATE TABLE</code>, <code>DROP TABLE</code> e <code>ALTER TABLE</code> fazem um <code>COMMIT</code> automático da transação que estiver aberta. Um <code>ROLLBACK</code> depois deles não desfaz nem a tabela nem o que veio antes.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando</th><th>O que faz</th></tr>
+<tr><td><code>ROLLBACK;</code></td><td>Desfaz a transação inteira e a encerra</td></tr>
+<tr><td><code>SAVEPOINT nome;</code></td><td>Marca um ponto (fora de transação, abre uma)</td></tr>
+<tr><td><code>ROLLBACK TO nome;</code></td><td>Desfaz até a marca; a transação continua</td></tr>
+<tr><td><code>RELEASE nome;</code></td><td>Tira a marca (e as mais novas); se a marca abriu a transação, grava</td></tr>
+<tr><td><code>INSERT OR ROLLBACK …</code></td><td>Se o comando violar uma restrição, desfaz a transação toda</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>cannot rollback - no transaction is active</code></td><td>Não há transação aberta: a mudança já foi gravada (ou nunca houve <code>BEGIN</code>)</td></tr>
+<tr><td><code>no such savepoint: nome</code></td><td>Marca com nome errado, ou já apagada por um <code>ROLLBACK TO</code>/<code>RELEASE</code> anterior</td></tr>
+<tr><td><code>cannot commit - no transaction is active</code></td><td>Depois de um <code>INSERT OR ROLLBACK</code> que falhou: a transação já foi desfeita</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O ensaio</h3>
+<p>Complete para que a Ana veja o resultado do <code>DELETE</code> sem gravá-lo:</p>
+<div class="ex-code"><input data-answer="BEGIN|begin" aria-label="abrir">;<br>DELETE FROM itens_pedido WHERE pedido_id = 90;<br>SELECT count(*) FROM itens_pedido;<br><input data-answer="ROLLBACK|rollback" aria-label="desfazer">;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Voltar até a marca</h3>
+<p>Complete para desfazer só o que veio depois da marca <code>frete</code>:</p>
+<div class="ex-code">SAVEPOINT frete;<br>UPDATE pedidos SET frete = 0 WHERE id = 90;<br>ROLLBACK <input data-answer="TO|to" aria-label="palavra"> frete;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Depois de <code>BEGIN; DELETE FROM itens_pedido; ROLLBACK;</code>, quantos itens tem a tabela?</p>
+<label><input type="radio" name="q3"> 0</label>
+<label><input type="radio" name="q3"> 220, os mesmos de antes</label>
+<label><input type="radio" name="q3"> 110</label>
+<label><input type="radio" name="q3"> Dá erro, porque o <code>DELETE</code> não pode ser desfeito</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">4. Depois de um <code>ROLLBACK TO item2</code>, a transação…</p>
+<label><input type="radio" name="q4"> …termina, como num <code>ROLLBACK</code></label>
+<label><input type="radio" name="q4"> …é gravada, como num <code>COMMIT</code></label>
+<label><input type="radio" name="q4"> …continua aberta: ainda falta o <code>COMMIT</code> ou o <code>ROLLBACK</code></label>
+<label><input type="radio" name="q4"> …volta ao <code>BEGIN</code> e apaga tudo</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou um <code>UPDATE</code> sem <code>BEGIN</code> e logo depois um <code>ROLLBACK</code>. O que acontece?</p>
+<label><input type="radio" name="q5"> O <code>UPDATE</code> é desfeito</label>
+<label><input type="radio" name="q5"> O banco pergunta se ela tem certeza</label>
+<label><input type="radio" name="q5"> O <code>UPDATE</code> é desfeito pela metade</label>
+<label><input type="radio" name="q5"> Erro <code>cannot rollback - no transaction is active</code>: o <code>UPDATE</code> já foi gravado</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Para que serve o <code>RELEASE nome</code>?</p>
+<label><input type="radio" name="q6"> Tira a marca, sem desfazer nada</label>
+<label><input type="radio" name="q6"> Desfaz tudo o que veio depois da marca</label>
+<label><input type="radio" name="q6"> Desfaz a transação inteira</label>
+<label><input type="radio" name="q6"> Destrava o banco para os outros programas</label>
+</div>
+
+<h3>Missão final: o item que não pode entrar</h3>
+
+<div class="trysql" data-goal="mudou:pedidos=91;;mudou:itens_pedido=222;;contem:27|Carrinho de Fricção|0;;contem:30|Garrafa Squeeze 700ml|94">
+<p class="try-task"><strong>Missão:</strong> a venda do pedido 91 tem três itens, mas o terceiro, o Carrinho de Fricção (produto 27), está descontinuado e com estoque 0. Marque um <code>SAVEPOINT</code> antes do terceiro item e, depois dele, volte à marca com <code>ROLLBACK TO</code> (e solte-a com <code>RELEASE</code>), para que o pedido seja gravado só com os dois primeiros itens. O carrinho tem de continuar com estoque 0.</p>
+<pre class="script" data-file="pedido91.sql">BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 30, 4, '2026-10-18', NULL, 0.0);
+
+INSERT INTO itens_pedido VALUES (91, 30, 1, 21.75);
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 30;
+
+INSERT INTO itens_pedido VALUES (91, 31, 2, 16.4);
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 31;
+
+INSERT INTO itens_pedido VALUES (91, 27, 1, 18.6);
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 27;
+
+COMMIT;
+
+SELECT id, nome, estoque FROM produtos WHERE id IN (27, 30, 31);
+</pre>
+<pre class="solucao" data-file="pedido91.sql">BEGIN;
+
+INSERT INTO pedidos (id, cliente_id, funcionario_id, data, entregue_em, frete)
+VALUES (91, 30, 4, '2026-10-18', NULL, 0.0);
+
+INSERT INTO itens_pedido VALUES (91, 30, 1, 21.75);
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 30;
+
+INSERT INTO itens_pedido VALUES (91, 31, 2, 16.4);
+UPDATE produtos SET estoque = estoque - 2 WHERE id = 31;
+
+SAVEPOINT item3;
+INSERT INTO itens_pedido VALUES (91, 27, 1, 18.6);
+UPDATE produtos SET estoque = estoque - 1 WHERE id = 27;
+ROLLBACK TO item3;
+RELEASE item3;
+
+COMMIT;
+
+SELECT id, nome, estoque FROM produtos WHERE id IN (27, 30, 31);
+</pre>
+</div>
+
+<p>Rode primeiro como está: o carrinho fica com estoque -1. Com a marca e o <code>ROLLBACK TO</code>, ele fica em 0, e a garrafa (94) e a corda (71) mantêm a baixa. Num programa de verdade, a decisão de voltar à marca viria de uma conferência ("o estoque ficou negativo?"), feita depois do <code>UPDATE</code>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>ROLLBACK</code> desfaz a transação inteira, desde o <code>BEGIN</code>, e a encerra. Para os outros programas, nada aconteceu.</li>
+  <li>Use a transação como ensaio: <code>BEGIN</code>, a mudança, um <code>SELECT</code> para conferir e, só então, <code>COMMIT</code> ou <code>ROLLBACK</code>.</li>
+  <li>Se um comando da transação falhar, dê <code>ROLLBACK</code> e recomece; no SQLite o erro não desfaz o resto sozinho (a não ser com <code>INSERT OR ROLLBACK</code>).</li>
+  <li><code>SAVEPOINT nome</code> marca um ponto; <code>ROLLBACK TO nome</code> desfaz só o que veio depois (a transação continua); <code>RELEASE nome</code> tira a marca.</li>
+  <li>Depois do <code>COMMIT</code> (ou sem <code>BEGIN</code>), não há <code>ROLLBACK</code>: <code>cannot rollback - no transaction is active</code>. Aí, só o backup.</li>
+  <li>No SQLite, até <code>CREATE TABLE</code> volta com o <code>ROLLBACK</code>; no MySQL, não.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
