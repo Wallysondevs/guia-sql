@@ -316,7 +316,7 @@ SELECT * FROM t;
 <tr><td><code>ANY</code>, <code>SOME</code>, <code>ALL</code> (com subconsulta)</td><td>Não existem: <code>syntax error</code></td><td>Existem no MySQL, no PostgreSQL e no SQL Server (aula <a href="any-all.html">ANY e ALL</a>)</td></tr>
 <tr><td><code>||</code></td><td>Junta textos</td><td>No MySQL, é um "ou" (obsoleto), a não ser com o modo <code>PIPES_AS_CONCAT</code> (aula <a href="or.html">OR</a>)</td></tr>
 <tr><td><code>&amp;&amp;</code></td><td>Não existe: <code>syntax error</code></td><td>No MySQL, é um "e" (obsoleto) (aula <a href="and.html">AND</a>)</td></tr>
-<tr><td><code>"texto"</code></td><td>Aspas duplas são nomes</td><td>No MySQL, aspas duplas também podem ser texto, a não ser com o modo <code>ANSI_QUOTES</code> (aula <a href="where.html">WHERE</a>)</td></tr>
+<tr><td><code>"texto"</code></td><td>Aspas duplas são nomes: no editor, texto entre aspas duplas dá erro; o <code>sqlite3</code> do Debian, no terminal, aceita calado se não houver coluna com aquele nome</td><td>No MySQL, aspas duplas também podem ser texto, a não ser com o modo <code>ANSI_QUOTES</code> (aula <a href="where.html">WHERE</a>)</td></tr>
 <tr><td><code>STRICT</code>, <code>GLOB</code>, <code>PRAGMA</code></td><td>Existem</td><td>São só do SQLite</td></tr>
 </table>
 </div>
