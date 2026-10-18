@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O Terminal do SQLite — o programa sqlite3 | Guia SQL</title>
+<meta name="description" content="O terminal do SQLite (o programa sqlite3) para quem nunca o abriu: abrir o loja.db, o prompt sqlite&gt;, o ponto e vírgula, o prompt de continuação ...&gt;, comandos em várias linhas, as mensagens Parse error e Runtime error, sair com .quit, banco em memória e as quatro formas de mandar SQL ao sqlite3, com sessões reais.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>O Terminal do <span class="hl">SQLite</span></h1>
+
+<p class="intro">Na aula passada você instalou o <code>sqlite3</code> e conferiu a versão. Agora é hora de <strong>entrar</strong> nele. O <code>sqlite3</code> é como o balcão do estoquista: você chega, faz um pedido em SQL, ele responde, e você faz o próximo pedido, até ir embora. Nesta aula você vai abrir o banco da Loja Aurora no terminal, fazer as primeiras consultas, escrever comandos em várias linhas, descobrir o que acontece quando o ponto e vírgula fica para trás e sair do programa sem susto. Todas as sessões são reais, do computador da Ana.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Como abrir um banco com <code>sqlite3 loja.db</code> e o que diz a mensagem de boas-vindas.</li>
+  <li>Os dois prompts: <code>sqlite&gt;</code> (pronto para um comando novo) e <code>...&gt;</code> (esperando o resto do comando).</li>
+  <li>Por que o <strong>ponto e vírgula</strong> é obrigatório no terminal, e como sair do "prompt de continuação".</li>
+  <li>Como ler as mensagens <code>Parse error</code> e <code>Runtime error</code>, com a seta que aponta o erro.</li>
+  <li>Como sair: <code>.quit</code>, <code>.exit</code> e Ctrl+D.</li>
+  <li>O banco em memória (<code>sqlite3</code> sozinho) e o <code>.open</code>.</li>
+  <li>Quatro formas de mandar SQL ao <code>sqlite3</code>: digitando, como argumento, por um arquivo e por um "cano".</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>Como ler os quadros de terminal</strong>
+<p>Nos quadros pretos, <code>$</code> é o prompt do terminal da Ana (<code>ana@notebook:~$</code>), <code>sqlite&gt;</code> é o prompt do <code>sqlite3</code>, e <code>...&gt;</code> é o prompt de continuação. O que vem depois de um prompt foi o que a Ana digitou; as outras linhas são as respostas. Para acompanhar no seu computador, você precisa do <code>loja.db</code> criado em <a href="instalar.html#banco">Instalar o SQLite</a>.</p>
+</div>
+
+<hr>
+
+<h2>A ideia: um balcão de atendimento</h2>
+<p>Até agora você usou o <strong>terminal do sistema</strong> (o do <code>$</code>), que entende comandos como <code>ls</code>, <code>cd</code> e <code>sqlite3 --version</code>. Quando você digita <code>sqlite3 loja.db</code>, entra num <strong>segundo balcão</strong>, dentro do primeiro: o do SQLite, que entende SQL. É como passar da recepção de uma loja para o balcão do estoque: o atendente muda, a língua muda, e o aviso em cima do balcão também (o prompt troca de <code>$</code> para <code>sqlite&gt;</code>).</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Prompt</th><th>Quem está atendendo</th><th>O que entende</th><th>Exemplo</th></tr>
+<tr><td><code>$</code></td><td>O terminal do sistema (bash)</td><td>Comandos do sistema</td><td><code>ls</code>, <code>cd Downloads</code>, <code>sqlite3 loja.db</code></td></tr>
+<tr><td><code>sqlite&gt;</code></td><td>O <code>sqlite3</code>, pronto</td><td>SQL e comandos de ponto</td><td><code>SELECT nome FROM clientes;</code>, <code>.quit</code></td></tr>
+<tr><td><code>...&gt;</code></td><td>O <code>sqlite3</code>, esperando o resto</td><td>A continuação do comando anterior</td><td>A próxima linha do <code>SELECT</code>, ou só o <code>;</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Entrando: <code>sqlite3 loja.db</code></h2>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; </pre>
+
+<dl class="anatomy">
+  <dt>sqlite3 loja.db</dt><dd>Abre o programa já com o banco <code>loja.db</code> da pasta em que você está. Se o arquivo não existir, o <code>sqlite3</code> cria um banco novo, vazio, com esse nome (o susto do "no such table" de <a href="instalar.html#errado">Instalar o SQLite</a>).</dd>
+  <dt>SQLite version 3.50.4 …</dt><dd>A mensagem de boas-vindas, com a versão.</dd>
+  <dt>Enter ".help" for usage hints.</dt><dd>"Digite <code>.help</code> para ver dicas de uso." O <code>.help</code> lista os <strong>comandos de ponto</strong>, que são a próxima aula.</dd>
+  <dt>sqlite&gt;</dt><dd>O prompt: o <code>sqlite3</code> está esperando o seu pedido.</dd>
+</dl>
+
+<h2>2. A primeira consulta no terminal</h2>
+<p>Digite a consulta e termine com <strong>ponto e vírgula</strong>. Ao apertar <kbd>Enter</kbd>, a resposta aparece logo embaixo, e o prompt volta, pronto para outra:</p>
+
+<pre class="term">sqlite&gt; SELECT nome, preco FROM produtos WHERE preco &lt; 5;
+Caneta Esferográfica Azul|2.79
+Lápis Grafite HB|1.15
+Marca-texto Amarelo|4.9
+sqlite&gt; </pre>
+
+<p>É a mesma consulta e a mesma resposta da aula <a href="o-que-e-sql.html">O que é SQL</a>, mas com outra cara. No editor do guia o resultado vem numa tabela bonita, com o nome das colunas. No terminal, o padrão é o modo <strong>list</strong> ("lista"): uma linha por registro, valores separados por uma barra vertical <code>|</code>, sem cabeçalho. Dá para mudar isso, com <code>.headers on</code> e <code>.mode box</code>, por exemplo; é assunto de <a href="comandos-ponto.html">Comandos de Ponto</a>.</p>
+
+<p>Compare com o editor, onde a mesma consulta vira tabela:</p>
+
+<pre class="file" data-file="baratos.sql" data-resultado>SELECT nome, preco FROM produtos WHERE preco &lt; 5;
+</pre>
+
+<hr>
+
+<h2>3. Comandos em várias linhas e o prompt <code>...&gt;</code></h2>
+<p>Consultas maiores ficam mais legíveis com uma parte por linha. No terminal, isso funciona assim: enquanto o <code>sqlite3</code> não vê o ponto e vírgula, ele entende que o comando <strong>ainda não acabou</strong> e mostra o prompt de continuação, <code>...&gt;</code>:</p>
+
+<pre class="term">sqlite&gt; SELECT nome, cidade
+   ...&gt; FROM clientes
+   ...&gt; WHERE estado = 'CE';
+Carlos Eduardo Lima|Fortaleza
+Fernanda Carvalho|Fortaleza
+Patrícia Gusmão|Fortaleza
+Gustavo Henrique Prado|Fortaleza
+Débora Cristina Alves|Fortaleza
+Mirela Pontes|Fortaleza
+Rosângela Dias|Fortaleza
+sqlite&gt; </pre>
+
+<dl class="anatomy">
+  <dt>sqlite&gt; SELECT nome, cidade</dt><dd>A primeira linha, sem ponto e vírgula. Ao apertar <kbd>Enter</kbd>, nada roda ainda.</dd>
+  <dt>...&gt; FROM clientes</dt><dd>O prompt mudou para <code>...&gt;</code>: "continue, estou ouvindo". Esta linha é juntada à anterior.</dd>
+  <dt>...&gt; WHERE estado = 'CE';</dt><dd>O ponto e vírgula fecha o comando. Só agora o <code>sqlite3</code> junta as três linhas e roda tudo como uma consulta só.</dd>
+</dl>
+
+<p>Repare que os pontinhos ficam alinhados embaixo do <code>sqlite&gt;</code>, para as linhas do comando ficarem uma embaixo da outra. Você não digita os <code>...&gt;</code>; quem os escreve é o programa.</p>
+
+<h3>O ponto e vírgula esquecido</h3>
+<p>O tropeço número 1 de quem começa no terminal: digitar a consulta, apertar <kbd>Enter</kbd> e… nada. Só aparece o <code>...&gt;</code>:</p>
+
+<pre class="term">sqlite&gt; SELECT COUNT(*) FROM clientes
+   ...&gt; ;
+30
+sqlite&gt; </pre>
+
+<p>A Ana esqueceu o <code>;</code>, e o <code>sqlite3</code> ficou esperando o resto. Não travou, não deu erro: ele só acha que você ainda vai escrever mais. A saída é simples: digite o <code>;</code> que faltou, sozinho na linha, e aperte <kbd>Enter</kbd>. A consulta roda inteira.</p>
+
+<div class="warning">
+<strong>No editor do guia é diferente</strong>
+<p>No editor das aulas, o último comando da caixa pode ficar sem ponto e vírgula, porque o botão Rodar já diz "acabou". No terminal, não: lá, o <code>;</code> é o seu "pode rodar". Por isso, o costume que este guia segue é <strong>sempre</strong> terminar com <code>;</code>, em qualquer lugar.</p>
+</div>
+
+<h3>Vários comandos numa linha só</h3>
+<p>O inverso também vale: se o <code>;</code> separa os comandos, dá para escrever dois na mesma linha. Os dois rodam, um depois do outro:</p>
+
+<pre class="term">sqlite&gt; SELECT nome FROM categorias WHERE id = 1; SELECT nome FROM categorias WHERE id = 2;
+Papelaria
+Eletrônicos
+sqlite&gt; </pre>
+
+<p>No editor do guia acontece o mesmo, e lá cada comando ganha a sua tabela:</p>
+
+<pre class="file" data-file="dois-comandos.sql" data-resultado>SELECT nome FROM categorias WHERE id = 1; SELECT nome FROM categorias WHERE id = 2;
+</pre>
+
+<div class="trysql" data-goal="out:30\n90">
+<p class="try-task"><strong>Experimente:</strong> a Ana quer contar os clientes e os pedidos de uma vez só, mas a caixa dá erro. Rode, leia a mensagem e conserte com o que faltou entre os dois comandos. Devem aparecer dois resultados: 30 e 90.</p>
+<pre class="script" data-file="consulta.sql">SELECT COUNT(*) FROM clientes
+SELECT COUNT(*) FROM pedidos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT COUNT(*) FROM clientes;
+SELECT COUNT(*) FROM pedidos;
+</pre>
+</div>
+
+<p>Sem o <code>;</code> no fim da primeira linha, o SQLite lê as duas como <strong>um</strong> comando só, e se perde ao encontrar o segundo <code>SELECT</code> no meio: <code>near "SELECT": syntax error</code>.</p>
+
+<hr>
+
+<h2>4. Os erros no terminal: <code>Parse error</code> e a seta</h2>
+<p>No terminal, as mensagens de erro são as mesmas do editor, com dois acréscimos: um prefixo que diz o <strong>tipo</strong> do erro e, muitas vezes, a linha do comando repetida com uma <strong>seta</strong> embaixo do ponto onde o SQLite se perdeu.</p>
+
+<pre class="term">sqlite&gt; SELEC nome FROM produtos;
+Parse error: near "SELEC": syntax error
+  SELEC nome FROM produtos;
+  ^--- error here
+sqlite&gt; SELECT nome, preço FROM produtos;
+Parse error: no such column: preço
+  SELECT nome, preço FROM produtos;
+               ^--- error here
+sqlite&gt; </pre>
+
+<dl class="anatomy">
+  <dt>Parse error:</dt><dd>"Erro de análise": o SQLite nem chegou a rodar o comando, porque não conseguiu entendê-lo. Palavra errada, tabela ou coluna que não existe, aspas trocadas… tudo isso é descoberto na leitura.</dd>
+  <dt>near "SELEC": syntax error</dt><dd>A mesma mensagem que o editor mostra: "erro de sintaxe perto de <code>SELEC</code>".</dd>
+  <dt>SELEC nome FROM produtos;</dt><dd>O seu comando, repetido.</dd>
+  <dt>^--- error here</dt><dd>"O erro está aqui": o <code>^</code> fica embaixo da palavra culpada. No segundo exemplo, ele aponta exatamente para <code>preço</code>, a coluna que não existe (a certa é <code>preco</code>).</dd>
+</dl>
+
+<p>Às vezes a seta vem do outro lado, com o texto antes dela, e às vezes nem aparece. Veja os dois casos:</p>
+
+<pre class="term">sqlite&gt; SELECT nome FROM produtos WHERE nome = "Lápis Grafite HB";
+Parse error: no such column: "Lápis Grafite HB" - should this be a string literal in single-quotes?
+  SELECT nome FROM produtos WHERE nome = "Lápis Grafite HB";
+                           error here ---^
+sqlite&gt; SELECT nome FROM produto;
+Parse error: no such table: produto
+sqlite&gt; </pre>
+
+<p>A primeira é a das aspas duplas (texto vai entre aspas <strong>simples</strong>), com a seta apontando para o começo do <code>"Lápis…</code>. A segunda, a da tabela com nome errado, vem sem seta: o nome <code>produto</code> já diz tudo.</p>
+
+<h3>Erro durante a execução: <code>Runtime error</code></h3>
+<p>Alguns comandos são entendidos, começam a rodar e só então dão problema. Aí o prefixo é outro. A Ana tentou cadastrar uma categoria com o id 1, que já é da Papelaria:</p>
+
+<pre class="term">sqlite&gt; INSERT INTO categorias (id, nome) VALUES (1, 'Papelaria');
+Runtime error: UNIQUE constraint failed: categorias.id (19)
+sqlite&gt; </pre>
+
+<p><code>Runtime error</code> é "erro durante a execução". A mensagem diz que a regra de valor único (<em>UNIQUE constraint</em>) da coluna <code>categorias.id</code> falhou: o id é o número da ficha e não pode se repetir. O <code>(19)</code> é o código numérico desse tipo de erro no SQLite, útil para programadores. Nada foi gravado. Regras como essa têm aulas próprias, como <a href="primary-key.html">PRIMARY KEY</a> e <a href="unique.html">UNIQUE</a>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Como a mensagem aparece</th></tr>
+<tr><td>Editor do guia</td><td><code>near "SELEC": syntax error</code> (só a mensagem, em vermelho)</td></tr>
+<tr><td>Terminal, digitando</td><td><code>Parse error: near "SELEC": syntax error</code>, com a seta</td></tr>
+<tr><td>Terminal, SQL como argumento</td><td><code>Error: in prepare, no such table: produto</code> (veja a seção 7)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>5. Saindo: <code>.quit</code></h2>
+<p>Para ir embora do balcão, use o comando <code>.quit</code> ("sair"), com o ponto na frente e <strong>sem</strong> ponto e vírgula. O prompt volta a ser o do terminal:</p>
+
+<pre class="term">sqlite&gt; .quit
+$ </pre>
+
+<p>O <code>.exit</code> faz a mesma coisa. Outro jeito, no Linux e no macOS, é apertar <kbd>Ctrl</kbd>+<kbd>D</kbd> no prompt vazio: a documentação do SQLite diz para terminar o programa com o caractere de "fim de arquivo" do sistema, "normalmente Control-D". Cuidado com o <kbd>Ctrl</kbd>+<kbd>C</kbd>: ele <strong>não</strong> sai; serve para interromper uma consulta que está demorando demais.</p>
+
+<p>Precisa salvar antes de sair? Não. No SQLite, cada comando que muda dados é gravado no arquivo assim que termina. Não existe "Salvar como". Isso é ótimo e perigoso ao mesmo tempo, como mostra a seção 7.</p>
+
+<hr>
+
+<h2>6. Sem arquivo: o banco em memória e o <code>.open</code></h2>
+<p>E se você digitar só <code>sqlite3</code>, sem nome de banco? (No Windows, é o que acontece ao dar dois cliques no <code>sqlite3.exe</code>.)</p>
+
+<pre class="term">$ sqlite3
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+Connected to a transient in-memory database.
+Use ".open FILENAME" to reopen on a persistent database.
+sqlite&gt; SELECT 2 + 3;
+5
+sqlite&gt; SELECT COUNT(*) FROM produtos;
+Parse error: no such table: produtos
+sqlite&gt; .open loja.db
+sqlite&gt; SELECT COUNT(*) FROM produtos;
+45
+sqlite&gt; .exit</pre>
+
+<dl class="anatomy">
+  <dt>Connected to a transient in-memory database.</dt><dd>"Conectado a um banco temporário em memória." Um banco vazio, que existe só enquanto o programa está aberto. Ao sair, ele some.</dd>
+  <dt>Use ".open FILENAME" …</dt><dd>"Use <code>.open NOMEDOARQUIVO</code> para reabrir num banco permanente."</dd>
+  <dt>SELECT 2 + 3;</dt><dd>Mesmo sem tabelas, o SQLite faz contas. Às vezes ele é usado só como calculadora.</dd>
+  <dt>no such table: produtos</dt><dd>O banco em memória está vazio: a tabela de produtos está no <code>loja.db</code>, não aqui.</dd>
+  <dt>.open loja.db</dt><dd>Abre o <code>loja.db</code> no lugar do banco em memória, sem sair do programa. Agora os 45 produtos aparecem.</dd>
+</dl>
+
+<p>O banco em memória é ótimo para testes rápidos: dá para criar tabelas, brincar e sair sem deixar rastro. O editor deste guia funciona exatamente assim: cada Rodar cria um banco em memória novo e carrega a Loja Aurora nele.</p>
+
+<hr>
+
+<h2>7. Quatro formas de mandar SQL ao <code>sqlite3</code></h2>
+<p>Entrar e digitar é só uma das maneiras. Para um comando rápido, ou para repetir sempre a mesma lista de comandos, há outras três. Todas reais, no computador da Ana:</p>
+
+<h3>Forma 2: o SQL como argumento</h3>
+<pre class="term">$ sqlite3 loja.db "SELECT nome, cargo FROM funcionarios WHERE id = 1;"
+Marta Lustosa|Gerente</pre>
+<p>O SQL vai entre aspas duplas, depois do nome do banco (por isso, dentro dele, o texto usa aspas simples). O <code>sqlite3</code> roda aquele comando, mostra a resposta e volta para o <code>$</code>. Ótimo para uma pergunta só.</p>
+
+<h3>Forma 3: um arquivo de comandos</h3>
+<pre class="term">$ cat contagem.sql
+SELECT COUNT(*) FROM clientes;
+SELECT COUNT(*) FROM pedidos;
+$ sqlite3 loja.db &lt; contagem.sql
+30
+90</pre>
+<p>O arquivo <code>contagem.sql</code> tem dois comandos (o <code>cat</code> mostra o que há dentro). O <code>&lt;</code> faz o <code>sqlite3</code> ler os comandos do arquivo em vez do teclado. Foi assim que você criou o <code>loja.db</code> a partir do <code>aurora.sql</code>. Bom para relatórios que você roda toda semana: escreve uma vez, roda sempre.</p>
+
+<h3>Forma 4: pelo "cano" (<code>|</code>)</h3>
+<pre class="term">$ echo "SELECT nome FROM categorias WHERE id = 8;" | sqlite3 loja.db
+Jardim</pre>
+<p>O <code>|</code> do terminal (o <em>pipe</em>, "cano") liga a saída de um programa à entrada de outro: o <code>echo</code> "fala" o SQL, e o <code>sqlite3</code> "ouve". Programadores usam muito isso em scripts.</p>
+
+<h3>Qual usar</h3>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Comando</th><th>Quando usar</th></tr>
+<tr><td>1. Interativa</td><td><code>sqlite3 loja.db</code> e digitar</td><td>Explorar o banco, aprender, testar várias coisas seguidas</td></tr>
+<tr><td>2. Argumento</td><td><code>sqlite3 loja.db "SQL;"</code></td><td>Uma pergunta rápida, sem entrar no programa</td></tr>
+<tr><td>3. Arquivo</td><td><code>sqlite3 loja.db &lt; arquivo.sql</code></td><td>Uma lista de comandos que se repete: criar o banco, um relatório</td></tr>
+<tr><td>4. Cano</td><td><code>echo "SQL;" | sqlite3 loja.db</code></td><td>Scripts, ligar o <code>sqlite3</code> a outros programas</td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>No terminal, mudar é para valer</strong>
+<p>Ao contrário do editor do guia, no seu <code>loja.db</code> uma mudança fica gravada, e nenhum comando pergunta "tem certeza?":</p>
+<pre class="term">$ sqlite3 loja.db "SELECT estoque FROM produtos WHERE id = 2;"
+500
+$ sqlite3 loja.db "UPDATE produtos SET estoque = 499 WHERE id = 2;"
+$ sqlite3 loja.db "SELECT estoque FROM produtos WHERE id = 2;"
+499</pre>
+<p>A Ana vendeu uma caneta azul, e o estoque baixou de 500 para 499 de verdade: o <code>UPDATE</code> não mostrou nada, mas gravou. Para treinar sem medo, faça uma cópia antes (<code>cp loja.db loja-copia.db</code>) ou recrie o banco do zero com <code>sqlite3 loja.db &lt; aurora.sql</code>, como em <a href="instalar.html#banco">Instalar o SQLite</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>"Travou": o prompt <code>...&gt;</code> não sai</strong>
+<pre class="term">sqlite&gt; SELECT COUNT(*) FROM clientes
+   ...&gt; ;
+30
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> faltou o ponto e vírgula, e o <code>sqlite3</code> está esperando o fim do comando. Ele não travou.</p>
+<p><strong>Como consertar:</strong> digite <code>;</code> e <kbd>Enter</kbd>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>;</code> não resolve: a aspa aberta</strong>
+<p>A Ana esqueceu de fechar a aspa do nome. Repare no prompt de continuação: em vez de <code>   ...&gt;</code>, ele começa com uma aspa, <code>'  ...&gt;</code>. É o <code>sqlite3</code> avisando "tem uma aspa simples aberta":</p>
+<pre class="term">sqlite&gt; SELECT nome FROM clientes WHERE nome = 'Ana Beatriz Sousa;
+'  ...&gt; SELECT 1;
+'  ...&gt; ';
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> com a aspa aberta, tudo o que vem depois vira parte do texto, até o ponto e vírgula e o <code>SELECT 1;</code> da linha seguinte. Por isso o <code>;</code> não funcionou. Só quando a Ana digitou <code>'</code> (fechando o texto) e <code>;</code> o comando terminou. Ele rodou, mas procurou uma cliente com o nome "Ana Beatriz Sousa;" seguido de uma quebra de linha e "SELECT 1;", que não existe. Por isso não apareceu nada.</p>
+<p><strong>Como consertar:</strong> quando o prompt de continuação começar com uma aspa, feche a aspa e ponha o <code>;</code>: <code>';</code>. Depois, digite o comando de novo, certo: <code>WHERE nome = 'Ana Beatriz Sousa';</code>. No editor do guia, o mesmo erro aparece assim:</p>
+<pre class="file" data-file="aspa-aberta.sql" data-resultado data-erro>SELECT nome FROM clientes WHERE nome = 'Ana Beatriz Sousa;
+</pre>
+<p><code>unrecognized token</code> é "símbolo não reconhecido": um texto que começa com <code>'</code> e nunca termina.</p>
+</div>
+
+<div class="cenario">
+<strong>SQL no lugar errado</strong>
+<p>Já viu em <a href="instalar.html#errado">Instalar o SQLite</a>: SQL digitado no <code>$</code> dá erro do <code>bash</code>, não do SQLite. O contrário também acontece. A Ana quis ver os arquivos da pasta e digitou <code>ls</code> dentro do <code>sqlite3</code>:</p>
+<pre class="term">sqlite&gt; ls
+   ...&gt; ;
+Parse error: near "ls": syntax error
+  ls ;
+  ^--- error here
+sqlite&gt; </pre>
+<p><strong>O que aconteceu:</strong> o <code>sqlite3</code> achou que <code>ls</code> fosse o começo de um comando SQL e esperou o <code>;</code>. Quando ele veio, juntou as duas linhas (<code>ls ;</code>) e não reconheceu a palavra.</p>
+<p><strong>Como consertar:</strong> antes de digitar, <strong>olhe o prompt</strong>: <code>$</code> é o sistema, <code>sqlite&gt;</code> é o SQLite. Para voltar ao sistema, <code>.quit</code>.</p>
+</div>
+
+<div class="cenario">
+<strong><code>Error: in prepare</code>: o erro fora do modo interativo</strong>
+<pre class="term">$ sqlite3 loja.db "SELECT nome FROM produto;"
+Error: in prepare, no such table: produto
+$ echo $?
+1</pre>
+<p><strong>O que aconteceu:</strong> é o mesmo erro da tabela com nome errado, só que com outra embalagem, porque o SQL veio como argumento. "In prepare" quer dizer "ao preparar o comando", antes de rodar. O <code>echo $?</code> mostra o <strong>código de saída</strong> do último programa: 1 quer dizer "terminou com erro" (0 seria "deu certo"). Scripts usam esse número para saber se o <code>sqlite3</code> deu certo.</p>
+<p><strong>Como consertar:</strong> o nome da tabela: <code>produtos</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Comando ou tecla</th><th>O que faz</th></tr>
+<tr><td><code>sqlite3 loja.db</code></td><td>Abre o banco (cria um vazio, se não existir)</td></tr>
+<tr><td><code>sqlite3</code></td><td>Abre um banco temporário em memória</td></tr>
+<tr><td><code>;</code></td><td>Termina um comando SQL: "pode rodar"</td></tr>
+<tr><td><code>...&gt;</code></td><td>Prompt de continuação: o comando ainda não terminou</td></tr>
+<tr><td><code>'  ...&gt;</code></td><td>Continuação com uma aspa simples aberta: feche com <code>';</code></td></tr>
+<tr><td><code>.open arquivo.db</code></td><td>Troca para outro banco sem sair</td></tr>
+<tr><td><code>.help</code></td><td>Lista os comandos de ponto</td></tr>
+<tr><td><code>.quit</code> ou <code>.exit</code></td><td>Sai do <code>sqlite3</code></td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Sai (fim de arquivo), no Linux e no macOS</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Interrompe uma consulta demorada (não sai)</td></tr>
+<tr><td><code>sqlite3 loja.db "SQL;"</code></td><td>Roda um comando e termina</td></tr>
+<tr><td><code>sqlite3 loja.db &lt; arquivo.sql</code></td><td>Roda os comandos de um arquivo</td></tr>
+<tr><td><code>Parse error:</code> / <code>Runtime error:</code></td><td>Erro ao entender o comando / erro ao executá-lo</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Sair do programa</h3>
+<p>Complete o comando que sai do <code>sqlite3</code>:</p>
+<div class="ex-code">sqlite&gt; .<input data-answer="quit" aria-label="comando de ponto"></div>
+</div>
+
+<div class="exercise">
+<h3>2. Abrir outro banco</h3>
+<p>Você abriu o <code>sqlite3</code> sem arquivo. Complete o comando que abre o banco da loja sem sair do programa:</p>
+<div class="ex-code">sqlite&gt; .<input data-answer="open" aria-label="comando de ponto"> loja.db</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. A Ana digitou <code>SELECT nome FROM clientes</code>, apertou Enter e apareceu <code>...&gt;</code>. O que aconteceu?</p>
+<label><input type="radio" name="q3"> O programa travou e é preciso fechar o terminal</label>
+<label><input type="radio" name="q3"> Faltou o ponto e vírgula; o <code>sqlite3</code> espera o fim do comando</label>
+<label><input type="radio" name="q3"> A tabela não existe</label>
+<label><input type="radio" name="q3"> O banco está vazio</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. O prompt de continuação apareceu como <code>'  ...&gt;</code>, e digitar <code>;</code> não adiantou. O que fazer?</p>
+<label><input type="radio" name="q4"> Apertar Ctrl+C várias vezes</label>
+<label><input type="radio" name="q4"> Digitar <code>.quit</code></label>
+<label><input type="radio" name="q4"> Esperar</label>
+<label><input type="radio" name="q4"> Fechar a aspa simples aberta e terminar: <code>';</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Qual a diferença entre <code>Parse error</code> e <code>Runtime error</code>?</p>
+<label><input type="radio" name="q5"> Parse error: o SQLite não entendeu o comando; Runtime error: entendeu, mas deu problema ao executar</label>
+<label><input type="radio" name="q5"> São a mesma coisa, em versões diferentes</label>
+<label><input type="radio" name="q5"> Parse error é do bash; Runtime error é do SQLite</label>
+<label><input type="radio" name="q5"> Runtime error só acontece no editor do guia</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">6. A Ana quer rodar toda segunda-feira os mesmos cinco comandos de relatório. Qual forma combina mais?</p>
+<label><input type="radio" name="q6"> Digitar os cinco toda semana no <code>sqlite&gt;</code></label>
+<label><input type="radio" name="q6"> Abrir o <code>sqlite3</code> sem arquivo</label>
+<label><input type="radio" name="q6"> Guardar os comandos num arquivo e rodar <code>sqlite3 loja.db &lt; relatorio.sql</code></label>
+<label><input type="radio" name="q6"> Usar <code>.open</code> cinco vezes</label>
+</div>
+
+<h3>Missão final: o pedido em várias linhas</h3>
+
+<div class="trysql" data-goal="linhas:7;;colunas:nome,email">
+<p class="try-task"><strong>Missão:</strong> a Ana escreveu, em três linhas, uma consulta para ver o nome e o email dos clientes da cidade de <strong>São Paulo</strong>, mas ela não funciona. Há dois problemas: uma vírgula que falta e um ponto e vírgula no lugar errado, no meio do comando. Conserte e rode. Depois, se tiver o <code>loja.db</code>, digite a mesma consulta no terminal, linha por linha, e veja o prompt <code>...&gt;</code> aparecer.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome email
+FROM clientes;
+WHERE cidade = 'São Paulo'
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, email
+FROM clientes
+WHERE cidade = 'São Paulo';
+</pre>
+</div>
+
+<p>Um dos sete clientes paulistanos aparece com <em>NULL</em> no email: ele não informou o endereço. Esse e outros "buracos" de propósito no banco da loja estão em <a href="banco-do-guia.html">O Banco da Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>sqlite3 loja.db</code> abre o banco e mostra o prompt <code>sqlite&gt;</code>; <code>sqlite3</code> sozinho abre um banco temporário em memória, e <code>.open</code> troca de banco.</li>
+  <li>No terminal, o comando só roda depois do <strong>ponto e vírgula</strong>. Sem ele, aparece o prompt de continuação <code>...&gt;</code>: digite o <code>;</code> que faltou. Com uma aspa aberta, o prompt vira <code>'  ...&gt;</code>: feche com <code>';</code>.</li>
+  <li>O resultado sai no modo <strong>list</strong>: valores separados por <code>|</code>, sem cabeçalho.</li>
+  <li>Os erros vêm com prefixo: <code>Parse error</code> (não entendeu, muitas vezes com a seta <code>^--- error here</code>) ou <code>Runtime error</code> (deu problema ao executar). Como argumento, a embalagem é <code>Error: in prepare, …</code>.</li>
+  <li>Sai-se com <code>.quit</code>, <code>.exit</code> ou <kbd>Ctrl</kbd>+<kbd>D</kbd>; <kbd>Ctrl</kbd>+<kbd>C</kbd> só interrompe uma consulta.</li>
+  <li>Quatro formas de mandar SQL: digitando, como argumento (<code>"SQL;"</code>), por arquivo (<code>&lt; arquivo.sql</code>) e pelo cano (<code>|</code>).</li>
+  <li>No seu <code>loja.db</code>, toda mudança é gravada na hora, sem "salvar" e sem "desfazer". Treine numa cópia.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
