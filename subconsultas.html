@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Subconsultas — uma consulta dentro da outra | Guia SQL</title>
+<meta name="description" content="Subconsultas em SQL para quem está começando: a subconsulta escalar no WHERE e no SELECT, a lista com IN e NOT IN, a tabela derivada no FROM, a subconsulta correlacionada, quando trocar por JOIN, a armadilha do NOT IN com NULL e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Subconsultas</span></h1>
+
+<p class="intro">A Ana quer saber quais produtos da Loja Aurora custam <strong>mais que a média</strong>. São duas perguntas, uma depois da outra: primeiro "qual é a média?", depois "quem está acima dela?". Em SQL, dá para fazer as duas de uma vez, pondo uma consulta <strong>dentro</strong> da outra. A consulta de dentro se chama <strong>subconsulta</strong> (em inglês, <em>subquery</em>): ela roda primeiro, e o resultado dela vira parte da consulta de fora.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A <strong>subconsulta escalar</strong>: um valor só, usado no <code>WHERE</code> e no <code>SELECT</code>.</li>
+  <li>A subconsulta que devolve uma <strong>lista</strong>, com <code>IN</code> e <code>NOT IN</code>.</li>
+  <li>A subconsulta no <code>FROM</code>, que funciona como uma tabela temporária.</li>
+  <li>A subconsulta <strong>correlacionada</strong>, que roda uma vez para cada linha de fora.</li>
+  <li>Quando a mesma pergunta fica melhor com <code>JOIN</code>.</li>
+  <li>A armadilha do <code>NOT IN</code> com <code>NULL</code> e os erros reais do SQLite.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade no seu navegador, no banco da Loja Aurora (veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>). Esta aula usa <a href="avg.html">AVG()</a>, <a href="max.html">MAX()</a>, <a href="in.html">IN</a> e <a href="group-by.html">GROUP BY</a>.</p>
+
+<hr>
+
+<h2>A ideia: perguntar a quem sabe</h2>
+<p>A Ana está no caixa e precisa saber se um produto está acima do preço médio da loja. Ela não sabe a média de cabeça, então pergunta à colega do escritório: "qual é o preço médio?". A colega faz a conta e responde. Com a resposta, a Ana decide.</p>
+
+<p>A subconsulta é a colega do escritório. A consulta de fora (a Ana) faz uma pergunta no meio do caminho, a de dentro responde, e a de fora usa a resposta:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O que a subconsulta devolve</th><th>Onde costuma ir</th><th>Exemplo</th><th>Seção</th></tr>
+<tr><td>Um valor só (1 linha, 1 coluna)</td><td><code>WHERE preco &gt; (…)</code>, no <code>SELECT</code></td><td>o preço médio</td><td>1 e 2</td></tr>
+<tr><td>Uma lista (várias linhas, 1 coluna)</td><td><code>WHERE id IN (…)</code></td><td>os clientes que pediram</td><td>3</td></tr>
+<tr><td>Uma tabela (várias linhas e colunas)</td><td><code>FROM (…)</code></td><td>o total de cada pedido</td><td>4</td></tr>
+</table>
+</div>
+
+<p>Em todos os casos, a subconsulta vai <strong>entre parênteses</strong>. É assim que o banco sabe onde ela começa e termina.</p>
+
+<hr>
+
+<h2>1. A subconsulta escalar no WHERE</h2>
+<p>Primeiro, a pergunta da colega, sozinha:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT AVG(preco) FROM produtos;
+</pre>
+
+<p>A média é 48.2053333333333. A Ana poderia copiar esse número para dentro de outra consulta (<code>WHERE preco &gt; 48.2</code>), mas aí, no dia em que um preço mudar, o número copiado fica velho. Melhor deixar o banco calcular na hora, pondo a pergunta inteira no lugar do número:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; (SELECT AVG(preco) FROM produtos)
+ORDER BY preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>(SELECT AVG(preco) FROM produtos)</dt><dd>A subconsulta. Ela roda primeiro e devolve <strong>um valor só</strong>: a média. Uma subconsulta que devolve um valor só (uma linha, uma coluna) se chama <strong>escalar</strong>.</dd>
+  <dt>WHERE preco &gt; ( … )</dt><dd>A consulta de fora usa esse valor como se você tivesse digitado o número. O resultado: os 14 produtos acima da média.</dd>
+  <dt>Os parênteses</dt><dd>Obrigatórios. Sem eles, o banco não sabe que o segundo <code>SELECT</code> é uma pergunta dentro da primeira.</dd>
+</dl>
+
+<p>O mesmo jeito serve para achar "o mais" de alguma coisa. O produto mais caro da loja:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco = (SELECT MAX(preco) FROM produtos);
+</pre>
+
+<p>O Jogo de Panelas, a 249.9. E se dois produtos empatassem no preço máximo, os dois apareceriam, o que é uma vantagem sobre um <code>ORDER BY preco DESC LIMIT 1</code>, que mostraria só um.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Luana Castelo;;contem:Marta Lustosa">
+<p class="try-task"><strong>Missão:</strong> mostre só os funcionários que ganham <strong>mais que a média</strong> dos salários da loja. Use uma subconsulta com <code>AVG(salario)</code>, sem digitar o valor da média.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, salario
+FROM funcionarios
+WHERE salario &gt; (SELECT AVG(salario) FROM funcionarios);
+</pre>
+</div>
+
+<hr>
+
+<h2>2. A subconsulta escalar no SELECT</h2>
+<p>Um valor só pode ir também na lista de colunas. Aqui, para cada produto da Papelaria, quanto ele está acima ou abaixo da média da loja:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome,
+       preco,
+       ROUND(preco - (SELECT AVG(preco) FROM produtos), 2) AS diferenca
+FROM produtos
+WHERE categoria_id = 1;
+</pre>
+
+<p>A subconsulta devolve a média; a conta <code>preco - média</code> é feita em cada linha, e o <code>ROUND(…, 2)</code> arredonda para 2 casas (aula <a href="funcoes-numericas.html">Funções Numéricas</a>). Número negativo é "abaixo da média": o lápis está 47.06 abaixo; a mochila, 41.78 acima.</p>
+
+<hr>
+
+<h2>3. A lista: subconsulta com IN</h2>
+<p>A subconsulta também pode devolver <strong>várias linhas</strong> de uma coluna, uma lista. Aí ela vai com o <code>IN</code> (aula <a href="in.html">IN</a>), no lugar daquela lista que você escreveria à mão, <code>IN (7, 8, 9)</code>.</p>
+
+<p>A Ana quer os clientes que fizeram pedido de setembro de 2026 para cá. A tabela <code>pedidos</code> sabe quem pediu, mas só pelo número (<code>cliente_id</code>). Primeiro, a lista de números:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT cliente_id FROM pedidos WHERE data &gt;= '2026-09-01';
+</pre>
+
+<p>Seis números, de 7 a 12. Agora ponha essa consulta dentro do <code>IN</code>, e o banco busca os nomes:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, cidade
+FROM clientes
+WHERE id IN (SELECT cliente_id FROM pedidos WHERE data &gt;= '2026-09-01');
+</pre>
+
+<dl class="anatomy">
+  <dt>WHERE id IN ( … )</dt><dd>"O <code>id</code> do cliente está na lista que a subconsulta devolver."</dd>
+  <dt>SELECT cliente_id FROM pedidos …</dt><dd>A subconsulta devolve <strong>uma coluna</strong> só: a lista de números. Com <code>IN</code>, ela pode ter quantas linhas quiser (até nenhuma).</dd>
+</dl>
+
+<h3>NOT IN: quem não está na lista</h3>
+<p>Com <code>NOT IN</code>, a pergunta vira o contrário. Os clientes que <strong>nunca</strong> fizeram pedido:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, nome
+FROM clientes
+WHERE id NOT IN (SELECT cliente_id FROM pedidos);
+</pre>
+
+<p>Os clientes 27 a 30 se cadastraram e nunca compraram. Do mesmo jeito, os produtos que nunca foram vendidos (que não aparecem em nenhum item de pedido):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id, nome
+FROM produtos
+WHERE id NOT IN (SELECT produto_id FROM itens_pedido);
+</pre>
+
+<p>Os três últimos produtos de jardinagem. Cuidado com o <code>NOT IN</code> quando a lista pode ter <code>NULL</code>: ele simplesmente para de devolver linhas. É uma armadilha famosa, que está em <a href="#errado">Quando dá errado</a>.</p>
+
+<div class="trysql" data-goal="linhas:2;;contem:Brinquedos;;contem:Eletrônicos">
+<p class="try-task"><strong>Missão:</strong> quais <strong>categorias</strong> têm algum produto descontinuado? Filtre a consulta abaixo com <code>id IN (…)</code> e uma subconsulta que liste o <code>categoria_id</code> dos produtos com <code>descontinuado = 1</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome
+FROM categorias;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome
+FROM categorias
+WHERE id IN (SELECT categoria_id FROM produtos WHERE descontinuado = 1);
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A subconsulta no FROM: uma tabela de passagem</h2>
+<p>A Ana quer o <strong>ticket médio</strong> da loja: quanto vale, em média, um pedido. Cada pedido tem vários itens, então são dois passos: somar os itens de cada pedido e, depois, tirar a média desses totais. O primeiro passo, sozinho (só os 5 primeiros, para ver o formato):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT pedido_id, SUM(quantidade * preco_unitario) AS total
+FROM itens_pedido
+GROUP BY pedido_id
+LIMIT 5;
+</pre>
+
+<p>O resultado tem cara de tabela: uma linha por pedido, com o total. Uma subconsulta no <code>FROM</code> pode fazer o papel de uma tabela:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT ROUND(AVG(total), 2) AS ticket_medio
+FROM (
+  SELECT pedido_id, SUM(quantidade * preco_unitario) AS total
+  FROM itens_pedido
+  GROUP BY pedido_id
+) AS t;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM ( … )</dt><dd>No lugar do nome de uma tabela, uma consulta inteira. O banco roda a de dentro e a de fora lê o resultado como se fosse uma tabela. Ela também é chamada de <strong>tabela derivada</strong>.</dd>
+  <dt>AS total</dt><dd>O apelido da coluna de dentro. É por esse nome que a consulta de fora a enxerga: <code>AVG(total)</code>.</dd>
+  <dt>AS t</dt><dd>O apelido da tabela derivada. O SQLite aceita sem ele, mas outros bancos exigem (veja a nota "Nos outros bancos"). Ponha sempre.</dd>
+</dl>
+
+<p>O ticket médio é 205.97 (sem contar o frete). Repare por que não dava para fazer numa consulta só: <code>AVG(quantidade * preco_unitario)</code> direto na tabela daria 84.26, a média de cada <strong>item</strong>, e não de cada pedido.</p>
+
+<p>Você já usou esse jeito na aula <a href="union-all.html">UNION ALL</a>, para contar o resultado de um <code>UNION ALL</code>. Quando a subconsulta do <code>FROM</code> fica grande, ou é usada mais de uma vez, existe uma escrita mais limpa para ela: a <a href="with-cte.html">CTE (WITH)</a>, no Nível 3.</p>
+
+<hr>
+
+<h2>5. A subconsulta correlacionada</h2>
+<p>Até aqui, a subconsulta rodava <strong>uma vez</strong>, e a resposta valia para todas as linhas. Agora uma pergunta diferente: quais produtos custam mais que a média <strong>da própria categoria</strong>? A média muda de categoria para categoria, então a subconsulta precisa saber de qual produto se está falando:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT p.nome, p.categoria_id, p.preco
+FROM produtos AS p
+WHERE p.preco &gt; (SELECT AVG(p2.preco)
+                 FROM produtos AS p2
+                 WHERE p2.categoria_id = p.categoria_id)
+ORDER BY p.categoria_id;
+</pre>
+
+<dl class="anatomy">
+  <dt>FROM produtos AS p</dt><dd>A consulta de fora, com o apelido <code>p</code>.</dd>
+  <dt>FROM produtos AS p2</dt><dd>A de dentro lê a <strong>mesma</strong> tabela, com outro apelido (<code>p2</code>), como no <a href="self-join.html">Self Join</a>.</dd>
+  <dt>WHERE p2.categoria_id = p.categoria_id</dt><dd>O pulo do gato: a subconsulta usa uma coluna da consulta <strong>de fora</strong> (<code>p.categoria_id</code>). Por isso ela é <strong>correlacionada</strong>: o resultado dela depende da linha que está sendo examinada lá fora.</dd>
+</dl>
+
+<p>Para entender, siga a Mochila Escolar Azul:</p>
+<ol class="passo">
+  <li>Lá fora, o banco está olhando a mochila: <code>p.categoria_id</code> = 1, <code>p.preco</code> = 89.99.</li>
+  <li>A subconsulta roda com <code>p2.categoria_id = 1</code> e calcula a média da Papelaria: 21.78.</li>
+  <li>89.99 &gt; 21.78? Sim: a mochila entra no resultado.</li>
+  <li>Na próxima linha (o caderno, também da Papelaria), a subconsulta roda de novo. Num produto de Eletrônicos, ela calcula a média de Eletrônicos, e assim por diante.</li>
+</ol>
+
+<p>São 18 produtos. Uma subconsulta correlacionada também pode ir no <code>SELECT</code>. Aqui, o número de pedidos de cada cliente (os de Pernambuco e os que nunca compraram):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome,
+       (SELECT COUNT(*) FROM pedidos AS pe WHERE pe.cliente_id = c.id) AS pedidos
+FROM clientes AS c
+WHERE c.estado = 'PE' OR c.id &gt; 26;
+</pre>
+
+<p>Para cada cliente, a subconsulta conta os pedidos daquele <code>c.id</code>. Quem nunca pediu ganha 0, e não some do resultado.</p>
+
+<div class="tip">
+<strong>Correlacionada roda muitas vezes</strong>
+<p>Na ideia, a subconsulta correlacionada roda uma vez por linha de fora: com 45 produtos, 45 vezes. O banco tem truques para acelerar (como os <a href="indices.html">índices</a>), mas, em tabelas enormes, vale comparar com a versão em <code>JOIN</code> + <code>GROUP BY</code>.</p>
+</div>
+
+<hr>
+
+<h2>6. Formas diferentes: subconsulta × JOIN</h2>
+<p>Muitas perguntas com <code>IN</code> também se respondem com um <code>JOIN</code>. Os clientes que pediram de setembro de 2026 para cá, da seção 3, com <a href="inner-join.html">INNER JOIN</a>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT DISTINCT c.nome, c.cidade
+FROM clientes AS c
+INNER JOIN pedidos AS pe ON pe.cliente_id = c.id
+WHERE pe.data &gt;= '2026-09-01';
+</pre>
+
+<p>Mesmos 6 clientes. Repare no <code>DISTINCT</code>: o <code>JOIN</code> repete o cliente uma vez para cada pedido dele, e o <code>IN</code> não, porque só pergunta "está na lista?". E os clientes que nunca pediram, com <a href="left-join.html">LEFT JOIN</a>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.nome
+FROM clientes AS c
+LEFT JOIN pedidos AS pe ON pe.cliente_id = c.id
+WHERE pe.id IS NULL;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Pergunta</th><th>Com subconsulta</th><th>Com JOIN</th><th>Outra forma</th></tr>
+<tr><td>Quem tem pedido?</td><td><code>WHERE id IN (SELECT cliente_id …)</code></td><td><code>INNER JOIN</code> + <code>DISTINCT</code></td><td><a href="exists.html"><code>EXISTS</code></a></td></tr>
+<tr><td>Quem não tem pedido?</td><td><code>WHERE id NOT IN (…)</code> (cuidado com NULL)</td><td><code>LEFT JOIN … WHERE … IS NULL</code></td><td><a href="exists.html"><code>NOT EXISTS</code></a></td></tr>
+<tr><td>Acima da média geral</td><td><code>WHERE preco &gt; (SELECT AVG …)</code></td><td>difícil</td><td>—</td></tr>
+<tr><td>Preciso de colunas das duas tabelas</td><td>só uma por subconsulta no <code>SELECT</code></td><td><code>JOIN</code>: é para isso que ele existe</td><td>—</td></tr>
+</table>
+</div>
+
+<p>Regra prática: se você só quer <strong>filtrar</strong> por outra tabela, a subconsulta costuma ser mais fácil de ler. Se quer <strong>mostrar</strong> colunas da outra tabela, use <code>JOIN</code>.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Função agregada direto no WHERE</strong>
+<p>A primeira tentativa de quase todo mundo:</p>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome, preco
+FROM produtos
+WHERE preco &gt; AVG(preco);
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of aggregate function AVG()</code>, "uso indevido da função agregada AVG()". O <code>WHERE</code> examina uma linha por vez, e uma linha sozinha não tem média.</p>
+<p><strong>Como consertar:</strong> ponha a média numa subconsulta: <code>WHERE preco &gt; (SELECT AVG(preco) FROM produtos)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>A subconsulta "escalar" devolveu várias linhas</strong>
+<p>A Ana queria os produtos com o mesmo preço de algum item da Papelaria, e usou <code>=</code>:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+WHERE preco = (SELECT preco FROM produtos WHERE categoria_id = 1);
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, e só o caderno no resultado. A Papelaria tem 6 preços, mas, quando uma subconsulta usada como valor devolve várias linhas, o SQLite pega a <strong>primeira</strong> e ignora o resto, em silêncio. Os outros bancos dão erro nesse caso (veja a nota abaixo).</p>
+<p><strong>Como consertar:</strong> se a subconsulta pode devolver uma lista, use <code>IN</code>: <code>WHERE preco IN (SELECT preco FROM produtos WHERE categoria_id = 1)</code>. Se você queria mesmo um valor só, garanta isso com uma função agregada (<code>MAX</code>, <code>AVG</code>…).</p>
+</div>
+
+<div class="cenario">
+<strong>Colunas demais na subconsulta</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE id IN (SELECT cliente_id, data FROM pedidos);
+</pre>
+<p><strong>A mensagem:</strong> <code>sub-select returns 2 columns - expected 1</code>, "a subconsulta devolve 2 colunas, era esperada 1". O <code>IN</code> compara o <code>id</code> com <strong>uma</strong> coluna; o banco não sabe o que fazer com a <code>data</code>. A mesma mensagem aparece com uma subconsulta de 2 colunas no <code>SELECT</code>.</p>
+<p><strong>Como consertar:</strong> deixe só a coluna que vai ser comparada: <code>SELECT cliente_id FROM pedidos</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu os parênteses</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT nome
+FROM clientes
+WHERE id IN SELECT cliente_id FROM pedidos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "SELECT": syntax error</code>, "erro de sintaxe perto de SELECT". Sem parênteses, o banco não reconhece o segundo <code>SELECT</code> como subconsulta.</p>
+<p><strong>Como consertar:</strong> toda subconsulta vai entre parênteses: <code>IN (SELECT cliente_id FROM pedidos)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O <code>NOT IN</code> que não devolve nada</strong>
+<p>A Ana quer os clientes de estados onde a loja <strong>não</strong> tem fornecedor. Os fornecedores estão no PI, CE e SP, mais dois estrangeiros, com <code>estado</code> <code>NULL</code>. Então deveriam sair os clientes de Pernambuco:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado NOT IN (SELECT estado FROM fornecedores);
+</pre>
+<p><strong>O que acontece:</strong> zero linhas, sem erro. A lista da subconsulta tem um <code>NULL</code>. Para o banco, "PE não está em (PI, CE, SP, NULL)" não é verdadeiro: como <code>NULL</code> é "desconhecido", ele não pode garantir que PE é diferente daquele valor desconhecido (aula <a href="null.html">O Valor NULL</a>). A resposta vira "desconhecido", e o <code>WHERE</code> descarta a linha. Isso acontece com <strong>todos</strong> os clientes.</p>
+<p><strong>Como consertar:</strong> tire os <code>NULL</code> da lista:</p>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, estado
+FROM clientes
+WHERE estado NOT IN (SELECT estado FROM fornecedores WHERE estado IS NOT NULL);
+</pre>
+<p>Agora saem a Juliana e o Bruno, de Pernambuco. Outra saída é o <code>NOT EXISTS</code>, que não tem essa armadilha (aula <a href="exists.html">EXISTS</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>A subconsulta escalar não achou nada</strong>
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome
+FROM produtos
+WHERE preco &gt; (SELECT AVG(preco) FROM produtos WHERE categoria_id = 99);
+</pre>
+<p><strong>O que acontece:</strong> zero linhas, sem erro. Não existe categoria 99, então a média é <code>NULL</code>, e nenhuma comparação com <code>NULL</code> é verdadeira. Se uma subconsulta escalar não encontra nenhuma linha, o resultado dela é <code>NULL</code>.</p>
+<p><strong>Como consertar:</strong> confira o filtro de dentro rodando a subconsulta sozinha; ela tem de devolver o valor que você espera.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>Subconsulta escalar com várias linhas:</strong> o SQLite pega a primeira em silêncio; os outros bancos param com erro. No MySQL é o erro 1242, <code>Subquery returns more than 1 row</code>; o manual do PostgreSQL diz que usar como escalar uma consulta que devolve mais de uma linha "é um erro". Nos dois, uma subconsulta escalar sem nenhuma linha vale <code>NULL</code>, como no SQLite.</li>
+  <li><strong>Apelido da tabela derivada:</strong> no MySQL, o apelido depois de <code>FROM (…)</code> é obrigatório ("toda tabela no FROM precisa ter um nome"). Escreva sempre <code>FROM (…) AS t</code>, que funciona em todos.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>WHERE preco &gt; (SELECT AVG(preco) FROM produtos)</code></td><td>Escalar: compara com um valor calculado na hora</td></tr>
+<tr><td><code>SELECT nome, (SELECT …) AS x FROM …</code></td><td>Escalar no <code>SELECT</code>: uma coluna calculada por outra consulta</td></tr>
+<tr><td><code>WHERE id IN (SELECT cliente_id FROM pedidos)</code></td><td>Lista: está entre os valores devolvidos</td></tr>
+<tr><td><code>WHERE id NOT IN (SELECT … WHERE … IS NOT NULL)</code></td><td>Lista: não está entre os valores (tire os <code>NULL</code>)</td></tr>
+<tr><td><code>FROM (SELECT …) AS t</code></td><td>Tabela derivada: uma consulta no lugar de uma tabela</td></tr>
+<tr><td><code>WHERE p.preco &gt; (SELECT AVG(p2.preco) … WHERE p2.categoria_id = p.categoria_id)</code></td><td>Correlacionada: a de dentro usa uma coluna da de fora</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of aggregate function AVG()</code></td><td>Agregada direto no <code>WHERE</code>: use uma subconsulta</td></tr>
+<tr><td><code>sub-select returns 2 columns - expected 1</code></td><td>A subconsulta tem colunas demais para <code>IN</code> ou para um valor</td></tr>
+<tr><td><code>near "SELECT": syntax error</code></td><td>Faltaram os parênteses em volta da subconsulta</td></tr>
+<tr><td>(nenhuma, 0 linhas)</td><td><code>NOT IN</code> com <code>NULL</code> na lista, ou subconsulta escalar sem resultado</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. O preço mais barato</h3>
+<p>Complete para mostrar o produto mais barato da loja:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE preco = (SELECT <input data-answer="MIN(preco)|min(preco)" aria-label="função"> FROM produtos);</div>
+</div>
+
+<div class="exercise">
+<h3>2. Na lista</h3>
+<p>Complete para mostrar os produtos que já foram vendidos alguma vez:</p>
+<div class="ex-code">SELECT nome FROM produtos WHERE id <input data-answer="IN|in" aria-label="operador"> (SELECT produto_id FROM itens_pedido);</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que é uma subconsulta <strong>correlacionada</strong>?</p>
+<label><input type="radio" name="q3"> Uma subconsulta que fica no <code>FROM</code></label>
+<label><input type="radio" name="q3"> Uma subconsulta que devolve várias colunas</label>
+<label><input type="radio" name="q3"> Uma subconsulta que usa uma coluna da consulta de fora, e por isso roda de novo para cada linha</label>
+<label><input type="radio" name="q3"> Uma subconsulta com <code>JOIN</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">4. A Ana escreveu <code>WHERE estado NOT IN (SELECT estado FROM fornecedores)</code> e veio 0 linhas. A causa mais provável:</p>
+<label><input type="radio" name="q4"> A subconsulta devolve algum <code>NULL</code>, e aí o <code>NOT IN</code> nunca é verdadeiro</label>
+<label><input type="radio" name="q4"> Faltou o <code>DISTINCT</code> na subconsulta</label>
+<label><input type="radio" name="q4"> <code>NOT IN</code> não funciona com subconsulta</label>
+<label><input type="radio" name="q4"> A subconsulta tem colunas demais</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">5. No SQLite, o que acontece com <code>WHERE preco = (SELECT preco FROM produtos WHERE categoria_id = 1)</code>, se a subconsulta devolve 6 linhas?</p>
+<label><input type="radio" name="q5"> Dá erro: subconsulta com mais de uma linha</label>
+<label><input type="radio" name="q5"> O SQLite usa só a primeira linha, sem avisar</label>
+<label><input type="radio" name="q5"> Ele compara com as 6, como um <code>IN</code></label>
+<label><input type="radio" name="q5"> O resultado vem vazio</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">6. Por que <code>AVG(quantidade * preco_unitario)</code> direto em <code>itens_pedido</code> não dá o ticket médio por pedido?</p>
+<label><input type="radio" name="q6"> Porque <code>AVG</code> não aceita contas dentro</label>
+<label><input type="radio" name="q6"> Porque falta o <code>ORDER BY</code></label>
+<label><input type="radio" name="q6"> Porque o <code>AVG</code> ignora os decimais</label>
+<label><input type="radio" name="q6"> Porque ele tira a média de cada item, e não de cada pedido; é preciso somar por pedido antes, numa subconsulta no <code>FROM</code></label>
+</div>
+
+<h3>Missão final: quem comprou o mais caro</h3>
+
+<div class="trysql" data-goal="colunas:nome,cidade;;linhas:6;;contem:Sebastião Moura">
+<p class="try-task"><strong>Missão:</strong> a consulta abaixo já acha os pedidos que têm o produto mais caro da loja (sem digitar o número dele). A Ana quer o <strong>nome e a cidade dos clientes</strong> que fizeram esses pedidos. Use a consulta abaixo como subconsulta: os pedidos ficam na tabela <code>pedidos</code> (coluna <code>cliente_id</code>), e os nomes, em <code>clientes</code>. (Dica: são dois <code>IN</code>, um dentro do outro.)</p>
+<pre class="script" data-file="consulta.sql">SELECT pedido_id
+FROM itens_pedido
+WHERE produto_id = (SELECT id FROM produtos
+                    WHERE preco = (SELECT MAX(preco) FROM produtos));
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, cidade
+FROM clientes
+WHERE id IN (SELECT cliente_id
+             FROM pedidos
+             WHERE id IN (SELECT pedido_id
+                          FROM itens_pedido
+                          WHERE produto_id = (SELECT id FROM produtos
+                                              WHERE preco = (SELECT MAX(preco) FROM produtos))));
+</pre>
+</div>
+
+<p>Leia a solução de dentro para fora: o preço máximo → o produto com esse preço → os pedidos que têm esse produto → os clientes desses pedidos. Cada parêntese responde uma pergunta para o de fora.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Uma <strong>subconsulta</strong> é uma consulta entre parênteses dentro de outra. Ela responde uma pergunta no meio do caminho.</li>
+  <li><strong>Escalar</strong> (um valor só): vai no <code>WHERE</code> (<code>preco &gt; (SELECT AVG(preco) …)</code>) ou no <code>SELECT</code>. Se não acha nada, vale <code>NULL</code>; se acha várias linhas, o SQLite usa a primeira em silêncio.</li>
+  <li><strong>Lista</strong> (uma coluna): vai com <code>IN</code> e <code>NOT IN</code>. No <code>NOT IN</code>, tire os <code>NULL</code> da lista.</li>
+  <li><strong>No <code>FROM</code></strong>: a subconsulta vira uma tabela de passagem; dê um apelido (<code>AS t</code>).</li>
+  <li><strong>Correlacionada</strong>: a de dentro usa uma coluna da de fora e roda de novo para cada linha.</li>
+  <li>Para só filtrar, a subconsulta é ótima; para mostrar colunas de outra tabela, use <code>JOIN</code>. A próxima aula, <a href="exists.html">EXISTS</a>, mostra mais um jeito de perguntar "tem ou não tem?".</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
