@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL PARTITION BY — a janela que recomeça em cada grupo | Guia SQL</title>
+<meta name="description" content="PARTITION BY para quem está começando: a média da categoria ao lado de cada produto, o ranking dentro de cada categoria, o campeão de cada grupo, o último pedido de cada cliente, o intervalo entre pedidos por cliente, o acumulado que recomeça a cada ano, GROUP BY × PARTITION BY e os erros reais do SQLite, com missões.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">PARTITION BY</span></h1>
+
+<p class="intro">Nas últimas três aulas, a janela era sempre o resultado inteiro: a média de <strong>todos</strong> os produtos, o ranking de <strong>todos</strong>, o pedido anterior <strong>da loja</strong>. Para comparar um produto só com os da categoria dele, ou um pedido só com os do mesmo cliente, a Ana precisou de um <code>WHERE</code> que deixava um grupo de cada vez. Com <code>PARTITION BY</code> ("dividir por"), a janela se divide em grupos sozinha e <strong>recomeça em cada um</strong>: a média de cada categoria, o ranking dentro de cada categoria, o intervalo entre os pedidos de cada cliente, tudo numa consulta só.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é uma partição e como <code>PARTITION BY</code> divide a janela.</li>
+  <li>A diferença entre <code>GROUP BY</code> (as linhas viram uma por grupo) e <code>PARTITION BY</code> (as linhas ficam).</li>
+  <li><code>PARTITION BY</code> com <code>ORDER BY</code>: ranking e acumulado dentro de cada grupo.</li>
+  <li>O "melhor de cada grupo": o campeão de cada categoria, o último pedido de cada cliente.</li>
+  <li><code>LAG</code> por cliente, e o acumulado que recomeça a cada ano.</li>
+  <li>Os erros mais comuns, com a mensagem real do SQLite.</li>
+</ul>
+</div>
+
+<p>Esta aula fecha a série das funções de janela: <a href="janelas.html">Funções de Janela (OVER)</a>, <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a> e <a href="lag-lead.html">LAG e LEAD</a>. Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: as turmas da escola</h2>
+<p>Uma escola tem três turmas do 6º ano. No boletim de cada aluno, a coluna "média" é a média <strong>da turma dele</strong>, e não da escola inteira. E o "1º lugar" é o 1º da turma: cada turma tem o seu. A secretaria não junta os alunos nem os separa em planilhas diferentes; ela só faz cada conta <strong>dentro da turma</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na escola</th><th>No SQL</th></tr>
+<tr><td>A turma de cada aluno</td><td>a <strong>partição</strong>: o grupo de linhas com o mesmo valor na coluna do <code>PARTITION BY</code></td></tr>
+<tr><td>"Média da turma" no boletim</td><td><code>AVG(nota) OVER (PARTITION BY turma)</code></td></tr>
+<tr><td>"1º lugar da turma"</td><td><code>RANK() OVER (PARTITION BY turma ORDER BY nota DESC)</code></td></tr>
+<tr><td>O cartaz com a média de cada turma, uma linha por turma</td><td><code>GROUP BY turma</code> (os alunos somem)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. A média da categoria ao lado de cada produto</h2>
+<p>Os produtos de Livros e de Papelaria, cada um com a média de preço <strong>da sua categoria</strong>:</p>
+
+<pre class="file" data-file="media-categoria.sql" data-resultado>SELECT c.nome AS categoria,
+       p.nome,
+       p.preco,
+       ROUND(AVG(p.preco) OVER (PARTITION BY p.categoria_id), 2) AS media_categoria
+FROM produtos AS p
+JOIN categorias AS c ON c.id = p.categoria_id
+WHERE p.categoria_id IN (1, 4)
+ORDER BY c.nome, p.preco DESC;
+</pre>
+
+<dl class="anatomy">
+  <dt>AVG(p.preco) OVER (…)</dt><dd>Uma média como função de janela, como na aula <a href="janelas.html">Funções de Janela</a>.</dd>
+  <dt>PARTITION BY p.categoria_id</dt><dd>"Divida por categoria". Em vez de uma janela com todas as linhas, cada linha enxerga só as linhas <strong>da mesma categoria</strong> que ela. Cada categoria é uma partição.</dd>
+  <dt>WHERE p.categoria_id IN (1, 4)</dt><dd>Só para o quadro ficar curto: duas categorias, duas partições. Tire o <code>WHERE</code> e as 8 categorias ganham, cada uma, a sua média.</dd>
+</dl>
+
+<p>Os 5 livros mostram 42.06, a média dos livros; os 6 itens de papelaria mostram 21.78, a média da papelaria. Nenhuma linha sumiu.</p>
+
+<h3>GROUP BY × PARTITION BY</h3>
+<p>Compare com o <code>GROUP BY</code> da aula <a href="group-by.html">GROUP BY</a>, que calcula as mesmas médias:</p>
+
+<pre class="file" data-file="group-by.sql" data-resultado>SELECT c.nome AS categoria,
+       ROUND(AVG(p.preco), 2) AS media_categoria
+FROM produtos AS p
+JOIN categorias AS c ON c.id = p.categoria_id
+WHERE p.categoria_id IN (1, 4)
+GROUP BY p.categoria_id
+ORDER BY c.nome;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>GROUP BY categoria_id</code></th><th><code>OVER (PARTITION BY categoria_id)</code></th></tr>
+<tr><td>Linhas no resultado</td><td>Uma por categoria (2)</td><td>Todas (11)</td></tr>
+<tr><td>Pode mostrar <code>nome</code> do produto?</td><td>Não faz sentido: o grupo tem vários nomes</td><td>Sim: cada linha continua sendo um produto</td></tr>
+<tr><td>Onde se escreve</td><td>Uma cláusula do <code>SELECT</code>, depois do <code>WHERE</code></td><td>Dentro do <code>OVER (…)</code> de cada função</td></tr>
+<tr><td>Para quê</td><td>O resumo de cada grupo</td><td>Cada linha comparada com o seu grupo</td></tr>
+</table>
+</div>
+
+<h3>Comparar cada um com o seu grupo</h3>
+<p>Com a média da categoria na linha, dá para medir "caro para a categoria dele". A Mochila Escolar Azul custa R$ 89,99: barata para um eletrônico, caríssima para a papelaria.</p>
+
+<pre class="file" data-file="acima-da-categoria.sql" data-resultado>SELECT categoria_id,
+       nome,
+       preco,
+       ROUND(preco - AVG(preco) OVER (PARTITION BY categoria_id), 2) AS acima_da_media,
+       ROUND(100.0 * preco / SUM(preco) OVER (PARTITION BY categoria_id), 1) AS pct_da_categoria
+FROM produtos
+WHERE categoria_id = 1
+ORDER BY preco DESC;
+</pre>
+
+<hr>
+
+<h2>2. PARTITION BY + ORDER BY: o ranking dentro de cada grupo</h2>
+<p>Dentro do <code>OVER</code>, o <code>PARTITION BY</code> vem <strong>primeiro</strong> e o <code>ORDER BY</code> depois. A numeração (ou o acumulado) anda na ordem pedida e <strong>volta a 1</strong> em cada partição:</p>
+
+<pre class="file" data-file="ranking-categoria.sql" data-resultado>SELECT categoria_id,
+       nome,
+       preco,
+       ROW_NUMBER() OVER (PARTITION BY categoria_id ORDER BY preco DESC) AS posicao
+FROM produtos
+WHERE categoria_id IN (1, 4, 8)
+ORDER BY categoria_id, posicao;
+</pre>
+
+<dl class="anatomy">
+  <dt>PARTITION BY categoria_id</dt><dd>Uma numeração separada para cada categoria.</dd>
+  <dt>ORDER BY preco DESC</dt><dd>Dentro de cada categoria, do mais caro para o mais barato.</dd>
+  <dt>ROW_NUMBER()</dt><dd>1, 2, 3… e de novo 1 quando a categoria muda (aula <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>).</dd>
+  <dt>ORDER BY categoria_id, posicao (no fim)</dt><dd>Só a arrumação do resultado: categoria por categoria, em ordem de posição.</dd>
+</dl>
+
+<p>A papelaria vai de 1 a 6, os livros recomeçam em 1 e vão até 5, a jardinagem também de 1 a 5. A Mochila, o Atlas Geográfico e a Tesoura de Poda são os mais caros das suas categorias.</p>
+
+<hr>
+
+<h2>3. O melhor de cada grupo</h2>
+<p>Este é o uso mais famoso do <code>PARTITION BY</code>: ficar com <strong>uma linha por grupo</strong>, mas a linha inteira (e não só um <code>MAX</code>). Numere dentro de cada grupo numa CTE e fique com o número 1.</p>
+
+<h3>O último pedido de cada cliente</h3>
+<pre class="file" data-file="ultimo-pedido.sql" data-resultado>WITH numerados AS (
+  SELECT cliente_id, id, data,
+         ROW_NUMBER() OVER (PARTITION BY cliente_id ORDER BY data DESC) AS n
+  FROM pedidos
+)
+SELECT c.nome, u.id AS pedido, u.data
+FROM numerados AS u
+JOIN clientes AS c ON c.id = u.cliente_id
+WHERE u.n = 1
+ORDER BY u.data
+LIMIT 5;
+</pre>
+
+<dl class="anatomy">
+  <dt>PARTITION BY cliente_id ORDER BY data DESC</dt><dd>Para cada cliente, os pedidos do mais recente para o mais antigo. O mais recente ganha 1.</dd>
+  <dt>WHERE u.n = 1</dt><dd>Fica só o mais recente de cada cliente. O filtro está fora da CTE porque uma janela não pode ir no <code>WHERE</code>.</dd>
+  <dt>ORDER BY u.data LIMIT 5</dt><dd>Os 5 clientes que estão há mais tempo sem comprar: o último pedido do Tiago Fontes foi em 8 de janeiro de 2026.</dd>
+</dl>
+
+<p>Sem o <code>LIMIT</code>, saem 26 linhas: um último pedido para cada um dos 26 clientes que já compraram.</p>
+
+<div class="tip">
+<strong>Por que não <code>MAX(data)</code> com <code>GROUP BY</code>?</strong>
+<p><code>SELECT cliente_id, MAX(data) FROM pedidos GROUP BY cliente_id</code> dá a data do último pedido, mas não o <strong>pedido</strong>: o <code>id</code>, o frete, o vendedor. Para pegar a linha inteira, você teria de juntar o resultado de volta com <code>pedidos</code>. Com <code>ROW_NUMBER</code> e <code>PARTITION BY</code>, a linha inteira já vem pronta.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:26;;contem:José Ribamar Silva|79|2026-06-29">
+<p class="try-task"><strong>Missão:</strong> a numeração abaixo não recomeça por cliente, e por isso só sobrou <strong>um</strong> pedido: o mais recente da loja. Acrescente o <code>PARTITION BY</code> para que cada cliente tenha a sua numeração, e o resultado mostre o último pedido de <strong>cada</strong> um dos 26 clientes.</p>
+<pre class="script" data-file="consulta.sql">WITH numerados AS (
+  SELECT cliente_id, id, data,
+         ROW_NUMBER() OVER (ORDER BY data DESC) AS n
+  FROM pedidos
+)
+SELECT c.nome, u.id AS pedido, u.data
+FROM numerados AS u
+JOIN clientes AS c ON c.id = u.cliente_id
+WHERE u.n = 1
+ORDER BY c.nome;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH numerados AS (
+  SELECT cliente_id, id, data,
+         ROW_NUMBER() OVER (PARTITION BY cliente_id ORDER BY data DESC) AS n
+  FROM pedidos
+)
+SELECT c.nome, u.id AS pedido, u.data
+FROM numerados AS u
+JOIN clientes AS c ON c.id = u.cliente_id
+WHERE u.n = 1
+ORDER BY c.nome;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. LAG por cliente: o intervalo entre pedidos de todos de uma vez</h2>
+<p>Na aula <a href="lag-lead.html">LAG e LEAD</a>, a Ana calculou os dias entre os pedidos de <strong>um</strong> cliente, com <code>WHERE cliente_id = 1</code>. Com <code>PARTITION BY cliente_id</code>, o "pedido anterior" passa a ser o anterior <strong>do mesmo cliente</strong>, para todos ao mesmo tempo:</p>
+
+<pre class="file" data-file="lag-por-cliente.sql" data-resultado>SELECT cliente_id,
+       id,
+       data,
+       LAG(data) OVER (PARTITION BY cliente_id ORDER BY data) AS anterior,
+       CAST(julianday(data)
+            - julianday(LAG(data) OVER (PARTITION BY cliente_id ORDER BY data)) AS INTEGER) AS dias
+FROM pedidos
+WHERE cliente_id IN (1, 2, 13)
+ORDER BY cliente_id, data;
+</pre>
+
+<p>Cada cliente começa com <code>NULL</code> (o primeiro pedido dele não tem anterior), e a conta nunca mistura um cliente com outro. O <code>WHERE</code> deixou só três clientes para o quadro ficar curto; a mesma janela, sem o <code>WHERE</code>, calcula os intervalos dos 26. Resumindo numa CTE:</p>
+
+<pre class="file" data-file="intervalo-medio.sql" data-resultado>WITH intervalos AS (
+  SELECT cliente_id,
+         julianday(data)
+         - julianday(LAG(data) OVER (PARTITION BY cliente_id ORDER BY data)) AS dias
+  FROM pedidos
+)
+SELECT COUNT(dias) AS intervalos,
+       ROUND(AVG(dias), 1) AS media_de_dias,
+       MIN(dias) AS menor,
+       MAX(dias) AS maior
+FROM intervalos;
+</pre>
+
+<p>64 intervalos (90 pedidos menos o primeiro de cada um dos 26 clientes), com média de 302,1 dias: os clientes da Aurora voltam, em média, uma vez a cada dez meses.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> troque a janela para <code>LEAD</code> e calcule os dias <strong>até o próximo</strong> pedido de cada cliente. Depois tente <code>PARTITION BY funcionario_id</code> no lugar de <code>cliente_id</code>: o intervalo entre os pedidos atendidos por cada vendedor.</p>
+<pre class="script" data-file="consulta.sql">SELECT cliente_id,
+       id,
+       data,
+       CAST(julianday(data)
+            - julianday(LAG(data) OVER (PARTITION BY cliente_id ORDER BY data)) AS INTEGER) AS dias
+FROM pedidos
+ORDER BY cliente_id, data;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Particionar por uma expressão: o acumulado do ano</h2>
+<p>A partição não precisa ser uma coluna pronta: pode ser uma conta. A Ana quer o total vendido acumulado <strong>dentro de cada ano</strong>, recomeçando em janeiro. O ano são os 4 primeiros caracteres do mês (<code>substr(mes, 1, 4)</code>, aula <a href="funcoes-texto.html">Funções de Texto</a>):</p>
+
+<pre class="file" data-file="acumulado-do-ano.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  GROUP BY mes
+),
+acumulado AS (
+  SELECT mes,
+         vendas,
+         ROUND(SUM(vendas) OVER (PARTITION BY substr(mes, 1, 4) ORDER BY mes), 2) AS acumulado_do_ano
+  FROM mensal
+)
+SELECT mes, vendas, acumulado_do_ano
+FROM acumulado
+WHERE mes LIKE '%-12' OR mes = '2026-10';
+</pre>
+
+<dl class="anatomy">
+  <dt>PARTITION BY substr(mes, 1, 4)</dt><dd>Uma partição por ano: <code>'2024'</code>, <code>'2025'</code>, <code>'2026'</code>.</dd>
+  <dt>ORDER BY mes</dt><dd>Dentro de cada ano, o acumulado vai de janeiro em diante e recomeça no ano seguinte. Os meses não se repetem, então a moldura padrão não traz surpresa de empate (aula <a href="janelas.html">Funções de Janela</a>, seção 4).</dd>
+  <dt>WHERE mes LIKE '%-12' OR …</dt><dd>Mostra só o fechamento de cada ano (dezembro, e outubro em 2026, o último mês com pedidos). O filtro está <strong>fora</strong> da CTE de propósito; você vai ver por quê em <a href="#errado">Quando dá errado</a>.</dd>
+</dl>
+
+<p>2024 fechou com R$ 8.280,80 em produtos, 2025 com R$ 5.464,52 (o mesmo número do acumulado da aula de janelas), e 2026 está em R$ 4.792,08 até outubro.</p>
+
+<h3>Mais de uma coluna</h3>
+<p><code>PARTITION BY</code> aceita várias colunas separadas por vírgula: a partição é cada <strong>combinação</strong>. Os eletrônicos e brinquedos, contando quantos produtos há em cada par (categoria, descontinuado):</p>
+
+<pre class="file" data-file="duas-colunas.sql" data-resultado>SELECT categoria_id,
+       descontinuado,
+       nome,
+       COUNT(*) OVER (PARTITION BY categoria_id, descontinuado) AS no_grupo
+FROM produtos
+WHERE categoria_id IN (2, 5)
+ORDER BY categoria_id, descontinuado, nome;
+</pre>
+
+<p>Os eletrônicos se dividem em 6 ativos e 1 descontinuado (o Pen Drive 32GB); os brinquedos, em 4 ativos e 1 descontinuado (o Carrinho de Fricção).</p>
+
+<hr>
+
+<h2>6. Formas diferentes de fazer a mesma coisa</h2>
+<p>A média da categoria ao lado de cada produto (seção 1) também sai de dois jeitos sem janela:</p>
+
+<h3>a) GROUP BY numa CTE e JOIN de volta</h3>
+<pre class="file" data-file="join-de-volta.sql" data-resultado>WITH medias AS (
+  SELECT categoria_id, ROUND(AVG(preco), 2) AS media_categoria
+  FROM produtos
+  GROUP BY categoria_id
+)
+SELECT p.categoria_id, p.nome, p.preco, m.media_categoria
+FROM produtos AS p
+JOIN medias AS m ON m.categoria_id = p.categoria_id
+WHERE p.categoria_id = 4
+ORDER BY p.preco DESC;
+</pre>
+
+<h3>b) Subconsulta correlacionada</h3>
+<pre class="file" data-file="correlacionada.sql" data-resultado>SELECT p.categoria_id,
+       p.nome,
+       p.preco,
+       (SELECT ROUND(AVG(p2.preco), 2)
+        FROM produtos AS p2
+        WHERE p2.categoria_id = p.categoria_id) AS media_categoria
+FROM produtos AS p
+WHERE p.categoria_id = 4
+ORDER BY p.preco DESC;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Vantagem</th><th>Desvantagem</th></tr>
+<tr><td><code>AVG(…) OVER (PARTITION BY …)</code></td><td>Curta; a conta fica ao lado da coluna que ela explica; ranking, acumulado e <code>LAG</code> por grupo no mesmo jeito</td><td>Precisa de SQLite 3.25 ou mais novo</td></tr>
+<tr><td><code>GROUP BY</code> numa CTE + <code>JOIN</code></td><td>Funciona em qualquer banco; a CTE de médias pode servir para outras consultas</td><td>Dois passos; para ranking e "anterior" não serve</td></tr>
+<tr><td>Subconsulta correlacionada</td><td>Funciona em qualquer banco</td><td>Roda uma vez por linha; a condição de grupo se repete</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Esqueceu o PARTITION BY no LAG: um cliente "herda" a data de outro</strong>
+<pre class="file" data-file="sem-partition.sql" data-resultado>SELECT cliente_id,
+       id,
+       data,
+       CAST(julianday(data)
+            - julianday(LAG(data) OVER (ORDER BY cliente_id, data)) AS INTEGER) AS dias
+FROM pedidos
+WHERE cliente_id IN (1, 2)
+ORDER BY cliente_id, data;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, mas o primeiro pedido do cliente 2 aparece com <strong>-897</strong> dias. O <code>ORDER BY cliente_id, data</code> coloca os pedidos em ordem de cliente, mas a janela continua sendo uma só: o "anterior" do primeiro pedido do cliente 2 é o último pedido do cliente 1, de 2026.</p>
+<p><strong>Como consertar:</strong> quem separa os grupos é o <code>PARTITION BY</code>, não o <code>ORDER BY</code>: <code>LAG(data) OVER (PARTITION BY cliente_id ORDER BY data)</code>. Aí o primeiro pedido de cada cliente fica com <code>NULL</code>, como deve ser.</p>
+</div>
+
+<div class="cenario">
+<strong>O WHERE na mesma consulta corta o acumulado</strong>
+<p>A Ana quis ver só o fim de 2024 e o começo de 2025, e pôs o filtro na mesma consulta da janela:</p>
+<pre class="file" data-file="where-corta.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       ROUND(SUM(vendas) OVER (PARTITION BY substr(mes, 1, 4) ORDER BY mes), 2) AS acumulado_do_ano
+FROM mensal
+WHERE mes BETWEEN '2024-11' AND '2025-02'
+ORDER BY mes;
+</pre>
+<p><strong>O que acontece:</strong> o acumulado de 2024 começa em novembro (128.53) e fecha dezembro em 1344.35, quando o ano todo teve 8280.8. O <code>WHERE</code> roda <strong>antes</strong> da janela: os meses de janeiro a outubro de 2024 foram embora antes de serem somados.</p>
+<p><strong>Como consertar:</strong> calcule a janela numa CTE, com todas as linhas, e filtre por fora, como na seção 5.</p>
+</div>
+
+<div class="cenario">
+<strong>Partição pela coluna errada: todo mundo em 1º</strong>
+<pre class="file" data-file="particao-errada.sql" data-resultado>SELECT nome,
+       preco,
+       ROW_NUMBER() OVER (PARTITION BY id ORDER BY preco DESC) AS posicao
+FROM produtos
+LIMIT 4;
+</pre>
+<p><strong>O que acontece:</strong> todas as posições saem 1. Cada <code>id</code> é único, então cada produto ficou sozinho na sua partição, e numa partição de uma linha só todo mundo é o primeiro.</p>
+<p><strong>Como consertar:</strong> particione pela coluna que forma os <strong>grupos</strong> (<code>categoria_id</code>), nunca pela que identifica cada linha.</p>
+</div>
+
+<div class="cenario">
+<strong>Apelido no PARTITION BY</strong>
+<pre class="file" data-file="erro-apelido.sql" data-resultado data-erro>SELECT categoria_id AS cat,
+       nome,
+       ROW_NUMBER() OVER (PARTITION BY cat ORDER BY preco DESC) AS posicao
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>no such column: cat</code>, "coluna inexistente: cat". O apelido <code>cat</code> é criado na lista do <code>SELECT</code>, e a janela não o enxerga.</p>
+<p><strong>Como consertar:</strong> use a coluna (ou a expressão) original: <code>PARTITION BY categoria_id</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>ORDER BY antes do PARTITION BY</strong>
+<pre class="file" data-file="erro-ordem.sql" data-resultado data-erro>SELECT nome,
+       ROW_NUMBER() OVER (ORDER BY preco DESC PARTITION BY categoria_id) AS posicao
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "PARTITION": syntax error</code>. Dentro do <code>OVER</code> a ordem é fixa: primeiro <code>PARTITION BY</code>, depois <code>ORDER BY</code>, depois a moldura (<code>ROWS …</code>).</p>
+<p><strong>Como consertar:</strong> <code>OVER (PARTITION BY categoria_id ORDER BY preco DESC)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o BY</strong>
+<pre class="file" data-file="erro-by.sql" data-resultado data-erro>SELECT nome, AVG(preco) OVER (PARTITION categoria_id) AS media
+FROM produtos;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "categoria_id": syntax error</code>. São duas palavras: <code>PARTITION BY</code>, como em <code>GROUP BY</code> e <code>ORDER BY</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><code>PARTITION BY</code> é do padrão SQL e se escreve igual no <strong>PostgreSQL</strong>, no <strong>SQL Server</strong> e no <strong>MySQL</strong> (a partir da 8.0), com a mesma ordem dentro do <code>OVER</code>.</li>
+  <li><strong>SQL Server</strong>: a documentação diz que o <code>PARTITION BY</code> só pode usar colunas que vêm do <code>FROM</code>, e não apelidos nem expressões da lista do <code>SELECT</code>, a mesma regra do erro <code>no such column: cat</code> acima.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>AVG(x) OVER (PARTITION BY g)</code></td><td>A média do grupo <code>g</code>, ao lado de cada linha</td></tr>
+<tr><td><code>ROW_NUMBER() OVER (PARTITION BY g ORDER BY x DESC)</code></td><td>Numeração que recomeça em cada grupo</td></tr>
+<tr><td><code>RANK() OVER (PARTITION BY g ORDER BY x DESC)</code></td><td>Ranking dentro de cada grupo</td></tr>
+<tr><td><code>SUM(x) OVER (PARTITION BY g ORDER BY d)</code></td><td>Acumulado que recomeça em cada grupo</td></tr>
+<tr><td><code>LAG(x) OVER (PARTITION BY g ORDER BY d)</code></td><td>O valor anterior do mesmo grupo</td></tr>
+<tr><td><code>PARTITION BY a, b</code></td><td>Uma partição por combinação de <code>a</code> e <code>b</code></td></tr>
+<tr><td><code>PARTITION BY substr(mes, 1, 4)</code></td><td>Partição por uma expressão (o ano)</td></tr>
+<tr><td><code>WITH n AS (… ROW_NUMBER() OVER (PARTITION BY g ORDER BY …) AS n …) SELECT … WHERE n = 1</code></td><td>Uma linha (a primeira) de cada grupo</td></tr>
+<tr><td>Ordem dentro do <code>OVER</code></td><td><code>PARTITION BY</code> → <code>ORDER BY</code> → moldura</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>no such column: cat</code></td><td>Apelido do <code>SELECT</code> usado no <code>PARTITION BY</code></td></tr>
+<tr><td><code>near "PARTITION": syntax error</code></td><td><code>ORDER BY</code> antes do <code>PARTITION BY</code></td></tr>
+<tr><td><code>near "categoria_id": syntax error</code></td><td>Faltou o <code>BY</code></td></tr>
+<tr><td>(dias negativos no primeiro pedido de um cliente)</td><td><code>LAG</code> sem <code>PARTITION BY</code>: cruzou de um cliente para outro</td></tr>
+<tr><td>(acumulado menor que o esperado)</td><td>O <code>WHERE</code> na mesma consulta cortou linhas antes da janela</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Dividir por</h3>
+<p>Complete para mostrar cada funcionário com a média de salário <strong>do seu cargo</strong>:</p>
+<div class="ex-code">SELECT nome, cargo, salario, AVG(salario) OVER (<input data-answer="PARTITION BY|partition by" aria-label="cláusula"> cargo) AS media_cargo FROM funcionarios;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A ordem dentro do OVER</h3>
+<p>Complete o ranking de preço dentro de cada categoria:</p>
+<div class="ex-code">RANK() OVER (PARTITION BY categoria_id <input data-answer="ORDER BY|order by" aria-label="cláusula"> preco DESC)</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Qual é a diferença entre <code>GROUP BY categoria_id</code> e <code>OVER (PARTITION BY categoria_id)</code>?</p>
+<label><input type="radio" name="q3"> Nenhuma: os dois devolvem uma linha por categoria</label>
+<label><input type="radio" name="q3"> O <code>GROUP BY</code> devolve uma linha por categoria; o <code>PARTITION BY</code> mantém todas as linhas, cada uma com a conta do seu grupo</label>
+<label><input type="radio" name="q3"> O <code>PARTITION BY</code> apaga as categorias vazias</label>
+<label><input type="radio" name="q3"> O <code>GROUP BY</code> só funciona com <code>ROW_NUMBER</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Um <code>LAG(data) OVER (ORDER BY cliente_id, data)</code> deu dias negativos no primeiro pedido de cada cliente. Por quê?</p>
+<label><input type="radio" name="q4"> Porque as datas estão em formato errado</label>
+<label><input type="radio" name="q4"> Porque o <code>LAG</code> não aceita duas colunas no <code>ORDER BY</code></label>
+<label><input type="radio" name="q4"> Porque faltou o <code>CAST</code></label>
+<label><input type="radio" name="q4"> Porque sem <code>PARTITION BY</code> a janela é uma só, e o "anterior" do primeiro pedido de um cliente é o último pedido do cliente de antes</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Para mostrar o pedido mais recente de cada cliente, com todas as colunas do pedido, a melhor forma é…</p>
+<label><input type="radio" name="q5"> <code>ROW_NUMBER() OVER (PARTITION BY cliente_id ORDER BY data DESC)</code> numa CTE e <code>WHERE n = 1</code> fora dela</label>
+<label><input type="radio" name="q5"> <code>SELECT * FROM pedidos ORDER BY data DESC LIMIT 1</code></label>
+<label><input type="radio" name="q5"> <code>ROW_NUMBER() OVER (PARTITION BY id)</code></label>
+<label><input type="radio" name="q5"> <code>WHERE ROW_NUMBER() OVER (…) = 1</code> direto na consulta</label>
+</div>
+
+<h3>Missão final: o campeão de cada categoria</h3>
+
+<div class="trysql" data-goal="linhas:8;;contem:Eletrônicos|Caixa de Som Portátil|1899.9;;contem:Livros|Atlas Geográfico|580.0">
+<p class="try-task"><strong>Missão:</strong> a Ana quer o produto que mais vendeu (em valor) <strong>em cada categoria</strong>. O ranking abaixo é de todos os produtos juntos, e por isso só sobrou o campeão geral. Faça o ranking recomeçar em cada categoria para aparecerem os 8 campeões.</p>
+<pre class="script" data-file="consulta.sql">WITH vendas AS (
+  SELECT pr.categoria_id, pr.nome,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendido
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+),
+ranking AS (
+  SELECT categoria_id, nome, vendido,
+         RANK() OVER (ORDER BY vendido DESC) AS posicao
+  FROM vendas
+)
+SELECT c.nome AS categoria, r.nome AS produto, r.vendido
+FROM ranking AS r
+JOIN categorias AS c ON c.id = r.categoria_id
+WHERE r.posicao = 1
+ORDER BY r.vendido DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">WITH vendas AS (
+  SELECT pr.categoria_id, pr.nome,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendido
+  FROM itens_pedido AS i
+  JOIN produtos AS pr ON pr.id = i.produto_id
+  GROUP BY pr.id
+),
+ranking AS (
+  SELECT categoria_id, nome, vendido,
+         RANK() OVER (PARTITION BY categoria_id ORDER BY vendido DESC) AS posicao
+  FROM vendas
+)
+SELECT c.nome AS categoria, r.nome AS produto, r.vendido
+FROM ranking AS r
+JOIN categorias AS c ON c.id = r.categoria_id
+WHERE r.posicao = 1
+ORDER BY r.vendido DESC;
+</pre>
+</div>
+
+<p>Do Jogo de Panelas (Casa e Cozinha, R$ 1.999,20) ao Regador Plástico 5L (Jardim, R$ 158,70): cada categoria tem o seu campeão. Troque <code>vendido</code> por unidades (<code>SUM(i.quantidade)</code>) e o <code>RANK</code> mostra empates: em Alimentos, Brinquedos e Livros, dois ou mais produtos dividem o 1º lugar.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>PARTITION BY</code> divide a janela em grupos (partições), e cada função de janela é calculada <strong>dentro do grupo</strong> de cada linha. Nenhuma linha some.</li>
+  <li><code>GROUP BY</code> resume (uma linha por grupo); <code>PARTITION BY</code> compara (cada linha com o seu grupo).</li>
+  <li>Dentro do <code>OVER</code>: <code>PARTITION BY</code>, depois <code>ORDER BY</code>, depois a moldura. Com <code>ORDER BY</code>, a numeração, o ranking e o acumulado recomeçam em cada partição.</li>
+  <li>"O melhor de cada grupo": <code>ROW_NUMBER()</code> ou <code>RANK()</code> com <code>PARTITION BY</code> numa CTE, e <code>WHERE posicao = 1</code> fora.</li>
+  <li><code>LAG</code> e <code>LEAD</code> com <code>PARTITION BY</code> nunca cruzam de um grupo para outro; sem ele, o primeiro pedido de um cliente "herda" a data de outro.</li>
+  <li>A partição pode ser uma expressão (<code>substr(mes, 1, 4)</code>) ou várias colunas. O <code>WHERE</code> da mesma consulta corta linhas antes da janela; para filtrar o resultado, use uma CTE.</li>
+  <li>Próxima aula: guardar e consultar dados em <a href="json.html">JSON no SQL</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
