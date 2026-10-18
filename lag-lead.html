@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL LAG e LEAD — a linha anterior e a seguinte | Guia SQL</title>
+<meta name="description" content="LAG e LEAD para quem está começando: comparar cada pedido com o anterior, a variação das vendas mês a mês, quantos dias entre um pedido e outro com julianday, o valor padrão da primeira linha, LAG × subconsulta × self-join e os erros reais do SQLite, com missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">LAG e LEAD</span></h1>
+
+<p class="intro">Num <code>SELECT</code> comum, cada linha só enxerga a si mesma. Para saber "este pedido foi maior ou menor que o anterior?" ou "quantos dias o cliente demorou para voltar?", a linha precisa espiar a <strong>vizinha</strong>. É exatamente o que fazem duas funções de janela: <code>LAG</code> traz um valor da linha <strong>anterior</strong>, e <code>LEAD</code>, da linha <strong>seguinte</strong>. Nesta aula a Ana usa as duas para comparar pedidos, acompanhar as vendas mês a mês e medir, em dias, o intervalo entre as compras dos clientes.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li><code>LAG(coluna)</code>: o valor da linha anterior; <code>LEAD(coluna)</code>: o da seguinte.</li>
+  <li>Comparar pedido a pedido e calcular a variação mês a mês.</li>
+  <li>Os dias entre um pedido e outro, com <code>julianday</code>.</li>
+  <li>Pular mais de uma linha (<code>LAG(x, 2)</code>) e trocar o <code>NULL</code> da primeira linha por um valor padrão.</li>
+  <li>LAG × subconsulta × self-join, e por que o self-join pelo <code>id</code> engana.</li>
+  <li>Os erros mais comuns, com a mensagem real do SQLite.</li>
+</ul>
+</div>
+
+<p>Esta aula continua as de <a href="janelas.html">Funções de Janela (OVER)</a> e <a href="row-number.html">ROW_NUMBER, RANK e DENSE_RANK</a>. Todos os exemplos rodam de verdade no seu navegador, no banco da <a href="banco-do-guia.html">Loja Aurora</a>.</p>
+
+<hr>
+
+<h2>A ideia: o extrato do banco</h2>
+<p>Pense no extrato da sua conta: uma linha por dia, com o saldo. Para saber se você gastou mais hoje do que ontem, você olha a linha de <strong>cima</strong>. Para saber quanto tempo falta para o próximo depósito, olha a de <strong>baixo</strong>. Você não junta as linhas, não soma nada: só espia a vizinha.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>No extrato</th><th>No SQL</th><th>Tradução</th></tr>
+<tr><td>Olhar a linha de cima</td><td><code>LAG(coluna) OVER (ORDER BY …)</code></td><td><em>lag</em> = "atraso", "ficar para trás"</td></tr>
+<tr><td>Olhar a linha de baixo</td><td><code>LEAD(coluna) OVER (ORDER BY …)</code></td><td><em>lead</em> = "dianteira", "ir na frente"</td></tr>
+<tr><td>A ordem do extrato (por data)</td><td>o <code>ORDER BY</code> dentro do <code>OVER</code></td><td>sem ordem, "a de cima" não quer dizer nada</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. O pedido anterior e o seguinte</h2>
+<p>O José Ribamar Silva (cliente 1) fez 4 pedidos. Para cada um, a data do pedido anterior e a do seguinte dele:</p>
+
+<pre class="file" data-file="vizinhos.sql" data-resultado>SELECT id,
+       data,
+       LAG(data)  OVER (ORDER BY data) AS anterior,
+       LEAD(data) OVER (ORDER BY data) AS seguinte
+FROM pedidos
+WHERE cliente_id = 1
+ORDER BY data;
+</pre>
+
+<dl class="anatomy">
+  <dt>LAG(data)</dt><dd>"O valor de <code>data</code> na linha anterior". A coluna entre parênteses é <strong>o que</strong> buscar na vizinha.</dd>
+  <dt>LEAD(data)</dt><dd>O mesmo, na linha seguinte.</dd>
+  <dt>OVER (ORDER BY data)</dt><dd>Define quem é "anterior" e "seguinte": a ordem das datas. É a parte mais importante; sem ela, a vizinhança é a ordem que o SQLite quiser.</dd>
+  <dt>WHERE cliente_id = 1</dt><dd>O <code>WHERE</code> roda antes da janela (aula <a href="janelas.html">Funções de Janela</a>): a janela só enxerga os 4 pedidos do José. Por isso o "anterior" do pedido 27 é o pedido 1 dele, e não o pedido 26 da loja.</dd>
+</dl>
+
+<p>Repare nas pontas: o primeiro pedido não tem anterior, e o último não tem seguinte. Nesses lugares a função devolve <code>NULL</code>. Você vai ver na seção 4 como trocar esse <code>NULL</code> por outra coisa.</p>
+
+<div class="trysql" data-goal="colunas:id,data,data_anterior;;linhas:4;;contem:29|2024-11-21|2024-01-27">
+<p class="try-task"><strong>Missão:</strong> agora a Ana Beatriz Sousa (cliente 3). Mostre os pedidos dela em ordem de data, com as colunas <code>id</code>, <code>data</code> e <code>data_anterior</code> (a data do pedido anterior <strong>dela</strong>).</p>
+<pre class="script" data-file="consulta.sql">SELECT id, data
+FROM pedidos
+WHERE cliente_id = 3
+ORDER BY data;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id,
+       data,
+       LAG(data) OVER (ORDER BY data) AS data_anterior
+FROM pedidos
+WHERE cliente_id = 3
+ORDER BY data;
+</pre>
+</div>
+
+<hr>
+
+<h2>2. Comparar com o anterior: a diferença</h2>
+<p>Com o valor anterior na mesma linha, é só fazer a conta. Os pedidos de julho em diante de 2026, cada um comparado com o pedido anterior da loja. O valor de cada pedido vem de uma CTE (aula <a href="with-cte.html">CTE (WITH)</a>):</p>
+
+<pre class="file" data-file="diferenca.sql" data-resultado>WITH totais AS (
+  SELECT p.id, p.data,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS valor
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data &gt;= '2026-07-01'
+  GROUP BY p.id
+)
+SELECT id,
+       data,
+       valor,
+       LAG(valor) OVER (ORDER BY data) AS anterior,
+       ROUND(valor - LAG(valor) OVER (ORDER BY data), 2) AS diferenca
+FROM totais
+ORDER BY data;
+</pre>
+
+<dl class="anatomy">
+  <dt>LAG(valor) OVER (ORDER BY data)</dt><dd>O valor do pedido anterior, em ordem de data.</dd>
+  <dt>valor - LAG(valor) OVER (…)</dt><dd>Positivo: este pedido foi maior que o anterior. Negativo: menor. Na primeira linha, qualquer conta com <code>NULL</code> dá <code>NULL</code> (aula <a href="null.html">O Valor NULL</a>).</dd>
+</dl>
+
+<p>O pedido 88, de 5 de outubro, foi R$ 474,97 maior que o anterior: é um dos maiores pedidos da história da loja (R$ 619,47).</p>
+
+<h3>A variação mês a mês</h3>
+<p>O mesmo truque com as vendas de cada mês de 2025, agora em porcentagem: "quanto este mês subiu ou caiu em relação ao anterior". A mesma janela aparece três vezes, então ela ganha nome com <code>WINDOW</code>:</p>
+
+<pre class="file" data-file="variacao.sql" data-resultado>WITH mensal AS (
+  SELECT strftime('%Y-%m', p.data) AS mes,
+         ROUND(SUM(i.quantidade * i.preco_unitario), 2) AS vendas
+  FROM pedidos AS p
+  JOIN itens_pedido AS i ON i.pedido_id = p.id
+  WHERE p.data LIKE '2025-%'
+  GROUP BY mes
+)
+SELECT mes,
+       vendas,
+       LAG(vendas) OVER m AS mes_anterior,
+       ROUND(100.0 * (vendas - LAG(vendas) OVER m) / LAG(vendas) OVER m, 1) AS variacao_pct
+FROM mensal
+WINDOW m AS (ORDER BY mes)
+ORDER BY mes;
+</pre>
+
+<dl class="anatomy">
+  <dt>WINDOW m AS (ORDER BY mes)</dt><dd>A janela com nome, para não repetir <code>OVER (ORDER BY mes)</code> três vezes.</dd>
+  <dt>100.0 * (vendas - anterior) / anterior</dt><dd>A conta da porcentagem de variação: a diferença dividida pelo valor de antes.</dd>
+</dl>
+
+<p>Abril caiu 95,7% (de R$ 579,07 para R$ 25,13), e por isso maio aparece com +3119,6%: sair de quase nada para R$ 809,09 é muitas vezes mais. Variações em porcentagem enganam quando a base é pequena; mostre sempre o valor junto.</p>
+
+<hr>
+
+<h2>3. Os dias entre um pedido e outro: julianday</h2>
+<p>A pergunta da Ana agora é sobre tempo: "de quantos em quantos dias o José volta a comprar?". O primeiro impulso é subtrair as datas direto, mas isso não funciona (veja em <a href="#errado">Quando dá errado</a>). As datas da Aurora são <strong>texto</strong> no formato <code>AAAA-MM-DD</code>; para fazer conta, transforme cada uma num número de dias com <code>julianday</code> (aula <a href="funcoes-data.html">Funções de Data</a>):</p>
+
+<pre class="file" data-file="julianday.sql" data-resultado>SELECT julianday('2024-01-05') AS dia_juliano,
+       julianday('2024-10-29') - julianday('2024-01-05') AS diferenca;
+</pre>
+
+<dl class="anatomy">
+  <dt>julianday('2024-01-05')</dt><dd>O "dia juliano": quantos dias se passaram desde uma data muito antiga (no ano 4713 antes de Cristo), uma contagem usada na astronomia. O <code>.5</code> no fim é porque o dia juliano começa ao meio-dia; a meia-noite de uma data fica no meio.</dd>
+  <dt>julianday(…) - julianday(…)</dt><dd>A diferença entre dois dias julianos é o número de dias entre as datas: 298 dias entre 5 de janeiro e 29 de outubro de 2024. Sai com <code>.0</code> porque é um número real.</dd>
+</dl>
+
+<p>Agora junte com o <code>LAG</code>: em cada pedido, os dias desde o pedido anterior do mesmo cliente.</p>
+
+<pre class="file" data-file="dias-entre.sql" data-resultado>SELECT id,
+       data,
+       LAG(data) OVER (ORDER BY data) AS anterior,
+       CAST(julianday(data) - julianday(LAG(data) OVER (ORDER BY data)) AS INTEGER) AS dias
+FROM pedidos
+WHERE cliente_id = 1
+ORDER BY data;
+</pre>
+
+<dl class="anatomy">
+  <dt>julianday(LAG(data) OVER (…))</dt><dd>A data do pedido anterior, virada em número de dias. A janela vai dentro da função, sem problema.</dd>
+  <dt>CAST(… AS INTEGER)</dt><dd>Tira o <code>.0</code>: 298 em vez de 298.0 (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>).</dd>
+</dl>
+
+<p>O José compra mais ou menos a cada 300 dias: uma vez por ano, quase certinho.</p>
+
+<h3>LEAD: quanto tempo até o próximo</h3>
+<p>Com <code>LEAD</code>, a conta olha para a frente. Os pedidos da loja desde setembro de 2026 e quantos dias se passaram até o próximo pedido chegar:</p>
+
+<pre class="file" data-file="ate-o-proximo.sql" data-resultado>SELECT id,
+       data,
+       LEAD(data) OVER (ORDER BY data) AS proximo,
+       CAST(julianday(LEAD(data) OVER (ORDER BY data)) - julianday(data) AS INTEGER) AS espera
+FROM pedidos
+WHERE data &gt;= '2026-09-01'
+ORDER BY data;
+</pre>
+
+<p>O último pedido (90, de 14 de outubro) ainda não tem próximo: <code>NULL</code>.</p>
+
+<h3>De quantos em quantos dias a loja recebe pedido?</h3>
+<p>Calcule o intervalo de cada pedido para o anterior (agora na loja inteira) numa CTE, e resuma fora dela. Não dá para pôr <code>AVG(LAG(…))</code> direto: uma agregação não pode conter uma janela.</p>
+
+<pre class="file" data-file="intervalo-medio.sql" data-resultado>WITH intervalos AS (
+  SELECT id,
+         julianday(data) - julianday(LAG(data) OVER (ORDER BY data)) AS dias
+  FROM pedidos
+)
+SELECT ROUND(AVG(dias), 1) AS media_de_dias,
+       MIN(dias) AS menor,
+       MAX(dias) AS maior
+FROM intervalos;
+</pre>
+
+<p>Em média, um pedido a cada 11,4 dias; nunca menos de 4 dias de intervalo, nunca mais de 18. O <code>AVG</code>, o <code>MIN</code> e o <code>MAX</code> ignoram o <code>NULL</code> do primeiro pedido (aula <a href="funcoes-agregadas.html">Funções Agregadas</a>).</p>
+
+<hr>
+
+<h2>4. Pular mais de uma linha e o valor padrão</h2>
+<p><code>LAG</code> e <code>LEAD</code> aceitam mais dois valores entre os parênteses:</p>
+
+<pre class="file" data-file="forma completa">LAG(coluna, quantas_linhas, valor_se_nao_houver)
+</pre>
+
+<pre class="file" data-file="lag-completo.sql" data-resultado>SELECT id,
+       data,
+       LAG(data, 1, 'primeiro pedido') OVER (ORDER BY data) AS anterior,
+       LAG(data, 2) OVER (ORDER BY data) AS dois_antes
+FROM pedidos
+WHERE cliente_id = 1
+ORDER BY data;
+</pre>
+
+<dl class="anatomy">
+  <dt>LAG(data, 1, 'primeiro pedido')</dt><dd>Uma linha para trás (o padrão é 1) e, quando não houver linha anterior, o texto <code>'primeiro pedido'</code> no lugar do <code>NULL</code>.</dd>
+  <dt>LAG(data, 2)</dt><dd>Duas linhas para trás. Os dois primeiros pedidos não têm "dois antes", e ficam <code>NULL</code>.</dd>
+</dl>
+
+<div class="tip">
+<strong>Valor padrão ou COALESCE?</strong>
+<p>O terceiro valor do <code>LAG</code> só entra quando <strong>não existe</strong> linha anterior. Se a linha anterior existe mas a coluna nela é <code>NULL</code>, o <code>LAG</code> devolve esse <code>NULL</code>. Para trocar os dois casos, use <code>COALESCE(LAG(x) OVER (…), 'valor')</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>).</p>
+</div>
+
+<hr>
+
+<h2>5. Formas diferentes de fazer a mesma coisa</h2>
+<p>Antes das funções de janela, havia dois jeitos de achar "o pedido anterior". Um funciona; o outro engana.</p>
+
+<h3>a) Subconsulta correlacionada</h3>
+<pre class="file" data-file="subconsulta.sql" data-resultado>SELECT p.id,
+       p.data,
+       (SELECT MAX(p2.data)
+        FROM pedidos AS p2
+        WHERE p2.cliente_id = 1
+          AND p2.data &lt; p.data) AS anterior
+FROM pedidos AS p
+WHERE p.cliente_id = 1
+ORDER BY p.data;
+</pre>
+<p>"A maior data do José que seja menor que a deste pedido." Dá o mesmo que o <code>LAG</code>, mas a condição do cliente aparece duas vezes, a subconsulta roda uma vez por linha, e buscar outra coluna do pedido anterior (o valor, o id) exige outra subconsulta.</p>
+
+<h3>b) Self-join pelo id: a armadilha</h3>
+<p>A ideia parece boa: "o pedido anterior é o de <code>id</code> um a menos" (aula <a href="self-join.html">Self Join</a>):</p>
+<pre class="file" data-file="self-join.sql" data-resultado>SELECT p.id,
+       p.data,
+       a.data AS anterior
+FROM pedidos AS p
+LEFT JOIN pedidos AS a ON a.id = p.id - 1
+WHERE p.cliente_id = 1
+ORDER BY p.data;
+</pre>
+<p>Compare com o resultado da seção 1: as datas "anteriores" estão <strong>erradas</strong>. O pedido 26 é o anterior <strong>da loja</strong>, de outro cliente, e não o anterior do José. E mesmo para a loja inteira, isso só funciona enquanto os <code>id</code> estiverem em ordem de data e sem buracos (um pedido apagado já quebra a conta). O <code>LAG</code> não depende de nada disso: ele segue o <code>ORDER BY</code> que você mandar.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Funciona?</th><th>Quando usar</th></tr>
+<tr><td><code>LAG</code> / <code>LEAD</code></td><td>Sim, seguindo o <code>ORDER BY</code> da janela</td><td>Sempre que o SQLite for 3.25 ou mais novo</td></tr>
+<tr><td>Subconsulta com <code>MAX(data) … WHERE data &lt; …</code></td><td>Sim, mas repete condições e roda por linha</td><td>Num banco sem funções de janela</td></tr>
+<tr><td>Self-join com <code>id - 1</code></td><td>Só por sorte: depende dos ids em sequência</td><td>Evite</td></tr>
+</table>
+</div>
+
+<div class="note">
+<strong>E para todos os clientes de uma vez?</strong>
+<p>Nesta aula, o <code>WHERE cliente_id = 1</code> separou um cliente. Para calcular "o pedido anterior <strong>do mesmo cliente</strong>" para todos os 26 clientes numa consulta só, a janela precisa recomeçar a cada cliente. É o assunto da próxima aula: <a href="partition-by.html">PARTITION BY</a>.</p>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Subtrair as datas direto</strong>
+<pre class="file" data-file="subtrair-texto.sql" data-resultado>SELECT id,
+       data,
+       data - LAG(data) OVER (ORDER BY data) AS dias
+FROM pedidos
+WHERE cliente_id = 1;
+</pre>
+<p><strong>O que acontece:</strong> nenhum erro, e a coluna <code>dias</code> mostra 0, 1, 1. Para fazer a conta de menos, o SQLite transforma cada texto num número lendo só o começo dele, até onde ele parece número: <code>'2024-10-29'</code> vira <code>2024</code>. Então <code>'2024-10-29' - '2024-01-05'</code> é <code>2024 - 2024 = 0</code>, e <code>'2025-09-03' - '2024-10-29'</code> é 1. É a diferença em <strong>anos</strong> (e só do número do ano), não em dias.</p>
+<p><strong>Como consertar:</strong> <code>julianday(data) - julianday(LAG(data) OVER (…))</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Data fora do formato ISO</strong>
+<pre class="file" data-file="formato.sql" data-resultado>SELECT julianday('05/01/2024') AS brasileiro,
+       julianday('2024-1-5') AS sem_zeros,
+       julianday('2024-01-05') AS iso;
+</pre>
+<p><strong>O que acontece:</strong> as duas primeiras dão <code>NULL</code>, sem erro nenhum. O <code>julianday</code> só entende datas no formato <code>AAAA-MM-DD</code>, com os zeros. Num banco com datas em outro formato, todas as diferenças saem <code>NULL</code>.</p>
+<p><strong>Como consertar:</strong> guarde datas sempre como <code>AAAA-MM-DD</code> (aula <a href="datas.html">Datas e Horas</a>). As da Loja Aurora já estão assim.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o <code>OVER</code></strong>
+<pre class="file" data-file="erro-over.sql" data-resultado data-erro>SELECT id, LAG(data) AS anterior
+FROM pedidos
+WHERE cliente_id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of window function LAG()</code>. <code>LAG</code> e <code>LEAD</code> só existem como janela.</p>
+<p><strong>Como consertar:</strong> <code>LAG(data) OVER (ORDER BY data)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu a coluna</strong>
+<pre class="file" data-file="erro-argumento.sql" data-resultado data-erro>SELECT id, LAG() OVER (ORDER BY data) AS anterior
+FROM pedidos
+WHERE cliente_id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>wrong number of arguments to function LAG()</code>. Ao contrário de <code>ROW_NUMBER()</code>, o <code>LAG</code> precisa saber <strong>o que</strong> buscar na linha vizinha.</p>
+<p><strong>Como consertar:</strong> diga a coluna: <code>LAG(data)</code>, <code>LAG(valor)</code>…</p>
+</div>
+
+<div class="cenario">
+<strong>LAG no WHERE</strong>
+<p>A Ana quis mostrar só os pedidos feitos com menos de 7 dias de intervalo:</p>
+<pre class="file" data-file="erro-where.sql" data-resultado data-erro>SELECT id, data
+FROM pedidos
+WHERE julianday(data) - julianday(LAG(data) OVER (ORDER BY data)) &lt; 7;
+</pre>
+<p><strong>A mensagem:</strong> <code>misuse of window function LAG()</code>. Como toda janela, o <code>LAG</code> é calculado depois do <code>WHERE</code>.</p>
+<p><strong>Como consertar:</strong> calcule o intervalo numa CTE, como em "De quantos em quantos dias", e filtre <code>WHERE dias &lt; 7</code> fora dela.</p>
+</div>
+
+<div class="cenario">
+<strong>Sem erro, mas sem garantia: esqueceu o ORDER BY da janela</strong>
+<p><code>LAG(data) OVER ()</code> roda, e muitas vezes até parece certo, porque o SQLite costuma ler a tabela na ordem do <code>id</code>. Mas "anterior" sem ordem quer dizer "a linha que o SQLite leu antes", e isso pode mudar com um índice novo ou um <code>WHERE</code> diferente.</p>
+<p><strong>Como consertar:</strong> diga sempre a ordem: <code>OVER (ORDER BY data)</code>, e se houver datas repetidas, desempate: <code>OVER (ORDER BY data, id)</code>.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><code>LAG</code> e <code>LEAD</code>, com os mesmos três valores (coluna, quantas linhas, valor padrão), existem no <strong>PostgreSQL</strong>, no <strong>SQL Server</strong> (a partir do 2012) e no <strong>MySQL</strong> (a partir da 8.0).</li>
+  <li>A conta de dias é que muda, porque cada banco tem o seu tipo de data. No <strong>PostgreSQL</strong>, subtrair dois valores do tipo <code>date</code> já dá o número de dias. No <strong>MySQL</strong>, use <code>DATEDIFF(data, anterior)</code>; no <strong>SQL Server</strong>, <code>DATEDIFF(day, anterior, data)</code> (repare que a ordem dos argumentos é diferente nos dois). O <code>julianday</code> é do SQLite.</li>
+</ul>
+<p>Trechos só ilustrativos (não rodam no SQLite):</p>
+<pre class="file" data-file="outros-bancos.sql">-- MySQL
+SELECT id, DATEDIFF(data, LAG(data) OVER (ORDER BY data)) AS dias FROM pedidos;
+-- SQL Server
+SELECT id, DATEDIFF(day, LAG(data) OVER (ORDER BY data), data) AS dias FROM pedidos;
+-- PostgreSQL (com a coluna data do tipo date)
+SELECT id, data - LAG(data) OVER (ORDER BY data) AS dias FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>LAG(x) OVER (ORDER BY y)</code></td><td>O valor de <code>x</code> na linha anterior (na ordem de <code>y</code>)</td></tr>
+<tr><td><code>LEAD(x) OVER (ORDER BY y)</code></td><td>O valor de <code>x</code> na linha seguinte</td></tr>
+<tr><td><code>LAG(x, 2)</code></td><td>Duas linhas para trás</td></tr>
+<tr><td><code>LAG(x, 1, 'padrão')</code></td><td>Valor quando não há linha anterior</td></tr>
+<tr><td><code>x - LAG(x) OVER (…)</code></td><td>A diferença para a linha anterior</td></tr>
+<tr><td><code>julianday(data) - julianday(LAG(data) OVER (…))</code></td><td>Dias desde a linha anterior</td></tr>
+<tr><td><code>CAST(… AS INTEGER)</code></td><td>Tira o <code>.0</code> do número de dias</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>misuse of window function LAG()</code></td><td>Faltou o <code>OVER</code>, ou o <code>LAG</code> está no <code>WHERE</code></td></tr>
+<tr><td><code>wrong number of arguments to function LAG()</code></td><td>Faltou a coluna: <code>LAG(data)</code></td></tr>
+<tr><td>(dias saindo 0 e 1)</td><td>Subtraiu as datas como texto; use <code>julianday</code></td></tr>
+<tr><td>(dias saindo <code>NULL</code> em tudo)</td><td>Datas fora do formato <code>AAAA-MM-DD</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A linha anterior</h3>
+<p>Complete a função que busca o valor da linha <strong>anterior</strong>:</p>
+<div class="ex-code">SELECT data, <input data-answer="LAG|lag" aria-label="função">(frete) OVER (ORDER BY data) AS frete_anterior FROM pedidos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Os dias</h3>
+<p>Complete a função que transforma a data em número de dias, para a subtração funcionar:</p>
+<div class="ex-code">SELECT <input data-answer="julianday|JULIANDAY" aria-label="função">(entregue_em) - julianday(data) AS dias_para_entregar FROM pedidos;</div>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">3. Num <code>LEAD(data) OVER (ORDER BY data)</code>, o que aparece na <strong>última</strong> linha?</p>
+<label><input type="radio" name="q3"> A data da primeira linha</label>
+<label><input type="radio" name="q3"> <code>NULL</code>, porque não existe linha seguinte</label>
+<label><input type="radio" name="q3"> A própria data da última linha</label>
+<label><input type="radio" name="q3"> Um erro</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. A Ana fez <code>data - LAG(data) OVER (ORDER BY data)</code> e recebeu 0 e 1. Por quê?</p>
+<label><input type="radio" name="q4"> Porque o <code>LAG</code> só funciona com números</label>
+<label><input type="radio" name="q4"> Porque faltou o <code>CAST</code></label>
+<label><input type="radio" name="q4"> Porque os pedidos foram no mesmo dia</label>
+<label><input type="radio" name="q4"> Porque as datas são texto, e a conta usou só o número do ano; o certo é <code>julianday</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. Por que <code>LEFT JOIN pedidos AS a ON a.id = p.id - 1</code> não acha o pedido anterior de um cliente?</p>
+<label><input type="radio" name="q5"> Porque o pedido de <code>id</code> um a menos é o anterior da loja, que costuma ser de outro cliente</label>
+<label><input type="radio" name="q5"> Porque o <code>LEFT JOIN</code> não aceita contas no <code>ON</code></label>
+<label><input type="radio" name="q5"> Porque os ids começam em 0</label>
+<label><input type="radio" name="q5"> Porque o SQLite não faz self-join</label>
+</div>
+
+<h3>Missão final: o intervalo da Ana Beatriz</h3>
+
+<div class="trysql" data-goal="colunas:data,dias;;linhas:4;;contem:2025-09-26|309">
+<p class="try-task"><strong>Missão:</strong> de quantos em quantos dias a Ana Beatriz Sousa (cliente 3) volta a comprar? Mostre a <code>data</code> de cada pedido dela e a coluna <code>dias</code>: os dias desde o pedido anterior dela, como número inteiro.</p>
+<pre class="script" data-file="consulta.sql">SELECT data
+FROM pedidos
+WHERE cliente_id = 3
+ORDER BY data;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT data,
+       CAST(julianday(data) - julianday(LAG(data) OVER (ORDER BY data)) AS INTEGER) AS dias
+FROM pedidos
+WHERE cliente_id = 3
+ORDER BY data;
+</pre>
+</div>
+
+<p>299, 309 e 299 dias: como o José, a Ana Beatriz compra uma vez por ano. A primeira linha fica com <code>NULL</code>, porque não há pedido anterior a ela.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>LAG(x)</code> traz o valor de <code>x</code> da linha anterior; <code>LEAD(x)</code>, da seguinte. As duas são funções de janela: <code>OVER (ORDER BY …)</code> diz quem é vizinho de quem.</li>
+  <li>Nas pontas, sem vizinha, o resultado é <code>NULL</code>. <code>LAG(x, 1, 'padrão')</code> troca esse <code>NULL</code>; <code>LAG(x, 2)</code> pula duas linhas.</li>
+  <li>Com o valor vizinho na mesma linha, você calcula diferenças e variações: <code>x - LAG(x) OVER (…)</code>.</li>
+  <li>Datas são texto: para contar dias, <code>julianday(data) - julianday(LAG(data) OVER (…))</code>, com <code>CAST(… AS INTEGER)</code> para tirar o <code>.0</code>. Subtrair o texto direto dá a diferença dos anos.</li>
+  <li>Para filtrar ou resumir pelo resultado do <code>LAG</code>, calcule numa CTE primeiro.</li>
+  <li>O self-join pelo <code>id - 1</code> só acerta por sorte; o <code>LAG</code> segue a ordem que você pedir.</li>
+  <li>Próxima aula: a janela que recomeça em cada grupo, para fazer tudo isso por cliente e por categoria de uma vez: <a href="partition-by.html">PARTITION BY</a>.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
