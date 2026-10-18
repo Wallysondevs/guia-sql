@@ -459,8 +459,9 @@ var NIVEIS = [
         cmds[cmds.length - 1] += "\n" + mc[1];
         return;
       }
-      // o prompt do sqlite3 ("sqlite> ") e a continuação dele ("   ...> ")
-      var ms = /^(sqlite>|\s*\.\.\.>)(?: (.*)|())$/.exec(l);
+      // o prompt do sqlite3 ("sqlite> ") e a continuação dele: 3 sinais do que ficou aberto + "...>"
+      // ("   ...> ", "(x1...> " parêntese aberto, "'  ...> " aspa aberta)
+      var ms = /^(sqlite>|.{3}\.\.\.>)(?: (.*)|())$/.exec(l);
       if (ms) {
         var cs = ms[2] || "", ns = "", is = cs.indexOf("«");
         if (is !== -1) { ns = '<span class="t-a">← ' + esc(cs.slice(is + 1).trim()) + "</span>"; cs = cs.slice(0, is).replace(/\s+$/, ""); }
