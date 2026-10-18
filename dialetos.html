@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Dialetos — as diferenças entre SQLite, MySQL, PostgreSQL e SQL Server | Guia SQL</title>
+<meta name="description" content="As diferenças entre os bancos para quem está começando: o que é igual em todos, e como mudam LIMIT, TOP e FETCH, as aspas dos nomes, a numeração automática, a concatenação, as datas, os booleanos e o UPSERT no SQLite, MySQL/MariaDB, PostgreSQL e SQL Server, com consultas rodadas de verdade e os erros mais comuns.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Dialetos</span>: as diferenças entre os bancos</h1>
+
+<p class="intro">Quem fala português no Brasil entende quem fala português em Portugal, mas tropeça em algumas palavras: aqui é <em>ônibus</em>, lá é <em>autocarro</em>; aqui é <em>trem</em>, lá é <em>comboio</em>. Com o SQL acontece a mesma coisa. Todo banco de dados fala a mesma língua, o <strong>SQL padrão</strong>, mas cada um tem o seu <strong>sotaque</strong>, que os programadores chamam de <strong>dialeto</strong>. Nesta aula a Ana pega as consultas que já sabe fazer na Loja Aurora e vê como elas ficam no <strong>SQLite</strong>, no <strong>MySQL/MariaDB</strong>, no <strong>PostgreSQL</strong> e no <strong>SQL Server</strong>: o que é igual, o que muda e qual erro aparece quando ela usa a palavra de um banco no outro.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que existe um SQL padrão e, mesmo assim, cada banco tem o seu dialeto.</li>
+  <li>O núcleo que funciona igual em todos: <code>SELECT</code>, <code>WHERE</code>, <code>JOIN</code>, <code>GROUP BY</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>.</li>
+  <li>As oito diferenças que mais aparecem: limitar linhas (<code>LIMIT</code> × <code>TOP</code> × <code>FETCH</code>), aspas de nomes (<code>"</code> × <code>`</code> × <code>[ ]</code>), numeração automática, concatenação de texto, datas, booleanos, UPSERT e tipos.</li>
+  <li>Os erros que cada banco mostra quando recebe o "sotaque" de outro.</li>
+  <li>Como escrever SQL que funciona em quase todos (o mais perto possível do padrão).</li>
+</ul>
+</div>
+
+<div class="tip">
+<strong>De onde vêm os resultados desta aula</strong>
+<p>Os quadros "Resultado" embaixo dos códigos rodam no <strong>SQLite</strong> de verdade, no seu navegador, como em todo o guia. As sessões de terminal do <strong>PostgreSQL 17</strong> e do <strong>MariaDB 11.8</strong> também são reais: rodamos as mesmas consultas, com os mesmos dados da Loja Aurora, nos dois bancos instalados na máquina da Ana. O <strong>SQL Server</strong> e o <strong>MySQL</strong> da Oracle nós <strong>não</strong> rodamos: o que aparece deles está marcado como <strong>ilustrativo</strong> e foi conferido na documentação oficial (learn.microsoft.com e dev.mysql.com).</p>
+</div>
+
+<hr>
+
+<h2>A ideia: uma língua, vários sotaques</h2>
+<p>O SQL tem uma norma oficial, publicada pela ISO (a organização internacional de padrões) com o número <strong>ISO/IEC 9075</strong>. Ela diz como se escreve um <code>SELECT</code>, um <code>JOIN</code>, um <code>CREATE TABLE</code>. Os bancos seguem essa norma no essencial, mas:</p>
+<ul>
+  <li>muitos nasceram <strong>antes</strong> de a norma cobrir certos assuntos (limitar linhas, numerar automaticamente) e inventaram o seu jeito, que os usuários continuam usando;</li>
+  <li>cada um acrescenta <strong>extras</strong> próprios, como funções de data com nomes diferentes;</li>
+  <li>alguns têm regras próprias para coisas pequenas, como aspas e letras maiúsculas.</li>
+</ul>
+<p>Pense numa receita de bolo escrita por quatro cozinheiras. Todas usam farinha, ovos e forno (o núcleo), mas uma escreve "xícara", outra "chávena", outra "200 g". Quem sabe a receita base adapta rápido. É isso que você vai treinar aqui.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Quem faz</th><th>O dialeto se chama</th><th>Programa de terminal</th><th>Aula</th></tr>
+<tr><td>SQLite</td><td>projeto de domínio público (sqlite.org)</td><td>SQL do SQLite</td><td><code>sqlite3</code></td><td>todo este guia</td></tr>
+<tr><td>MySQL</td><td>Oracle</td><td>SQL do MySQL</td><td><code>mysql</code></td><td rowspan="2"><a href="mysql.html">SQL no MySQL e MariaDB</a></td></tr>
+<tr><td>MariaDB</td><td>criado pelos desenvolvedores originais do MySQL</td><td>quase o mesmo do MySQL</td><td><code>mariadb</code></td></tr>
+<tr><td>PostgreSQL</td><td>comunidade PostgreSQL</td><td>SQL do PostgreSQL</td><td><code>psql</code></td><td><a href="postgresql.html">SQL no PostgreSQL</a></td></tr>
+<tr><td>SQL Server</td><td>Microsoft</td><td><strong>T-SQL</strong> (Transact-SQL)</td><td><code>sqlcmd</code></td><td><a href="sql-server.html">SQL no SQL Server</a></td></tr>
+</table>
+</div>
+
+<p>Os quatro bancos famosos já foram apresentados em <a href="bancos-famosos.html">Os Bancos Famosos</a>. Aqui o foco é o código.</p>
+
+<hr>
+
+<h2>1. O que é igual em todos</h2>
+<p>A primeira boa notícia: quase tudo o que você aprendeu nos Níveis 1 e 2 funciona do mesmo jeito em qualquer banco. Esta consulta conta os pedidos dos clientes do Piauí, cidade por cidade. Ela usa <code>JOIN</code>, <code>WHERE</code>, <code>GROUP BY</code>, <code>COUNT</code>, apelidos com <code>AS</code> e <code>ORDER BY</code>:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT c.cidade, COUNT(*) AS pedidos
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+WHERE c.estado = 'PI'
+GROUP BY c.cidade
+ORDER BY pedidos DESC, c.cidade;
+</pre>
+
+<p>A Ana copiou exatamente o mesmo texto no PostgreSQL e no MariaDB. Veja que o resultado é o mesmo; só muda o "desenho" da tabela que cada programa de terminal faz:</p>
+
+<pre class="term">$ psql loja
+psql (17.11 (Debian 17.11-0+deb13u1))
+Digite "help" para obter ajuda.
+
+loja=&gt; SELECT c.cidade, COUNT(*) AS pedidos FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE c.estado = 'PI' GROUP BY c.cidade ORDER BY pedidos DESC, c.cidade;
+  cidade  | pedidos
+----------+---------
+ Teresina |      31
+ Parnaíba |       4
+ Oeiras   |       3
+ Picos    |       3
+(4 linhas)
+
+loja=&gt; \q</pre>
+
+<pre class="term">$ mariadb loja
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 26
+Server version: 11.8.6-MariaDB-0+deb13u1 from Debian -- Please help get to 10k stars at https://github.com/MariaDB/Server
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+MariaDB [loja]&gt; SELECT c.cidade, COUNT(*) AS pedidos FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE c.estado = 'PI' GROUP BY c.cidade ORDER BY pedidos DESC, c.cidade;
++-----------+---------+
+| cidade    | pedidos |
++-----------+---------+
+| Teresina  |      31 |
+| Parnaíba  |       4 |
+| Oeiras    |       3 |
+| Picos     |       3 |
++-----------+---------+
+4 rows in set (0,001 sec)
+
+MariaDB [loja]&gt; quit
+Bye</pre>
+
+<p>(O <code>mariadb loja</code> entrou sem pedir senha porque a Ana guardou o usuário e a senha num arquivo de opções, o <code>~/.my.cnf</code>; como fazer isso, e como entrar com <code>-u ana -p</code>, está em <a href="mysql.html">SQL no MySQL e MariaDB</a>. A coluna <code>cidade</code> sai um espaço mais larga no MariaDB porque o programa <code>mariadb</code> mede a largura pelo número de bytes, e o "í" de Parnaíba ocupa dois. É só desenho, o dado está certo.)</p>
+
+<p><strong>Daqui em diante</strong>, para economizar espaço, as sessões mostram só o que a Ana digitou já dentro do <code>psql</code> (prompt <code>loja=&gt;</code>) ou do <code>mariadb</code> (prompt <code>MariaDB [loja]&gt;</code>).</p>
+
+<p>No SQL Server a consulta também é a mesma. Este trecho é <strong>ilustrativo</strong>: não rodamos SQL Server, mas tudo o que ele usa está na documentação da Microsoft:</p>
+
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">SELECT c.cidade, COUNT(*) AS pedidos
+FROM pedidos p
+JOIN clientes c ON c.id = p.cliente_id
+WHERE c.estado = 'PI'
+GROUP BY c.cidade
+ORDER BY pedidos DESC, c.cidade;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Igual (ou quase) nos quatro</th><th>Aula</th></tr>
+<tr><td><code>SELECT</code>, <code>FROM</code>, <code>WHERE</code>, <code>AND</code>, <code>OR</code>, <code>NOT</code></td><td><a href="select.html">SELECT</a>, <a href="where.html">WHERE</a></td></tr>
+<tr><td><code>ORDER BY</code>, <code>DISTINCT</code>, <code>AS</code></td><td><a href="order-by.html">ORDER BY</a>, <a href="aliases.html">Apelidos</a></td></tr>
+<tr><td><code>LIKE</code>, <code>IN</code>, <code>BETWEEN</code>, <code>IS NULL</code></td><td><a href="like.html">LIKE</a>, <a href="is-null.html">IS NULL</a></td></tr>
+<tr><td><code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code>, <code>GROUP BY</code>, <code>HAVING</code></td><td><a href="funcoes-agregadas.html">Funções Agregadas</a></td></tr>
+<tr><td><code>INNER JOIN</code>, <code>LEFT JOIN</code>, <code>UNION</code>, subconsultas, <code>CASE</code>, <code>COALESCE</code></td><td><a href="joins.html">JOIN</a>, <a href="case.html">CASE</a></td></tr>
+<tr><td><code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code></td><td><a href="insert.html">INSERT</a></td></tr>
+<tr><td><code>WITH</code> (CTE) e funções de janela (<code>OVER</code>)</td><td><a href="with-cte.html">CTE</a>, <a href="janelas.html">Janelas</a></td></tr>
+</table>
+</div>
+
+<p>Duas exceções conhecidas: o <code>FULL JOIN</code> não existe no MySQL (a sintaxe de JOIN da documentação do MySQL 8.4 só tem <code>INNER</code>, <code>CROSS</code>, <code>LEFT</code>, <code>RIGHT</code> e <code>NATURAL</code>; veja <a href="full-join.html">FULL JOIN</a>), e o <code>RIGHT JOIN</code> e o <code>FULL JOIN</code> só chegaram ao SQLite na versão 3.39.</p>
+
+<hr>
+
+<h2>2. Limitar linhas: LIMIT × TOP × FETCH FIRST</h2>
+<p>Esta é a diferença mais famosa. A Ana quer os <strong>3 produtos mais caros</strong>. No SQLite ela já sabe (aula <a href="limit.html">LIMIT e OFFSET</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3;
+</pre>
+
+<p>Cada banco escreve isso de um jeito. A norma ISO criou, em 2008, a forma <code>FETCH FIRST</code> ("busque as primeiras"), mas muitos bancos já tinham a sua:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Os 3 primeiros</th><th>Pular 3 e pegar mais 3 (página 2)</th></tr>
+<tr><td>SQLite</td><td><code>LIMIT 3</code></td><td><code>LIMIT 3 OFFSET 3</code> ou <code>LIMIT 3, 3</code></td></tr>
+<tr><td>MySQL / MariaDB</td><td><code>LIMIT 3</code></td><td><code>LIMIT 3 OFFSET 3</code> ou <code>LIMIT 3, 3</code></td></tr>
+<tr><td>PostgreSQL</td><td><code>LIMIT 3</code> ou <code>FETCH FIRST 3 ROWS ONLY</code></td><td><code>LIMIT 3 OFFSET 3</code> (a forma <code>LIMIT 3, 3</code> dá erro)</td></tr>
+<tr><td>SQL Server</td><td><code>SELECT TOP (3) …</code></td><td><code>ORDER BY … OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY</code></td></tr>
+<tr><td>Padrão ISO</td><td><code>FETCH FIRST 3 ROWS ONLY</code></td><td><code>OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY</code></td></tr>
+</table>
+</div>
+
+<p>Repare na forma <code>LIMIT 3, 3</code>: o <strong>primeiro</strong> número é quantas linhas pular, o segundo é quantas mostrar. O SQLite aceita, por compatibilidade com o MySQL:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3, 3;
+</pre>
+
+<p>O PostgreSQL recusa essa forma, e a mensagem (em português, porque o computador da Ana está em português) já diz o que fazer:</p>
+
+<pre class="term">loja=&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 3, 3;
+ERRO:  sintaxe LIMIT #,# não tem suporte
+LINHA 1: ...ECT nome, preco FROM produtos ORDER BY preco DESC LIMIT 3, 3...
+                                                              ^
+DICA:  Use cláusulas LIMIT e OFFSET separadas.
+loja=&gt; SELECT nome, preco FROM produtos ORDER BY preco DESC FETCH FIRST 3 ROWS ONLY;
+           nome           | preco
+--------------------------+--------
+ Jogo de Panelas 5 peças  | 249.90
+ Caixa de Som Portátil    | 189.99
+ Fone de Ouvido Bluetooth | 129.90
+(3 linhas)
+</pre>
+
+<p>Repare também no preço: o SQLite mostra <code>249.9</code>, o PostgreSQL mostra <code>249.90</code>. A coluna no PostgreSQL foi criada como <code>NUMERIC(10,2)</code> (número exato com 2 casas), e não como <code>REAL</code>. Tipos são o assunto da seção 8.</p>
+
+<p>No SQL Server, o jeito clássico é o <code>TOP</code>, que vem logo depois do <code>SELECT</code>. A Microsoft recomenda sempre os parênteses, <code>TOP (3)</code>, e sempre um <code>ORDER BY</code>, porque sem ele "as primeiras linhas" saem numa ordem indefinida (ilustrativo):</p>
+
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">SELECT TOP (3) nome, preco
+FROM produtos
+ORDER BY preco DESC;
+
+-- página 2 (a partir do SQL Server 2012): o ORDER BY é obrigatório
+SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+OFFSET 3 ROWS FETCH NEXT 3 ROWS ONLY;
+</pre>
+
+<div class="trysql" data-goal="linhas:3;;contem:Jogo de Panelas 5 peças|249.9">
+<p class="try-task"><strong>Experimente:</strong> a Ana achou esta consulta num tutorial de SQL Server. Rode e veja o erro: o SQLite não conhece <code>TOP</code>. Reescreva no jeito do SQLite para mostrar os 3 produtos mais caros.</p>
+<pre class="script" data-file="consulta.sql">SELECT TOP 3 nome, preco
+FROM produtos
+ORDER BY preco DESC;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco
+FROM produtos
+ORDER BY preco DESC
+LIMIT 3;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Aspas nos nomes: " × ` × [ ]</h2>
+<p>Você aprendeu que <strong>texto</strong> vai entre aspas simples: <code>'PI'</code>. E os <strong>nomes</strong> de tabelas e colunas? Normalmente vão sem aspas nenhuma. Mas às vezes um nome precisa de aspas: quando tem espaço (<code>data de entrega</code>), acento estranho ou é uma palavra reservada (uma coluna chamada <code>order</code>, por exemplo). Aí cada banco usa um sinal:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Aspas de nome (identificador)</th><th>O que <code>"nome"</code> significa</th></tr>
+<tr><td>Padrão ISO</td><td><code>"nome"</code></td><td>a coluna <code>nome</code></td></tr>
+<tr><td>SQLite</td><td><code>"nome"</code>; também aceita <code>`nome`</code> e <code>[nome]</code></td><td>a coluna <code>nome</code> (no editor do guia, sempre)</td></tr>
+<tr><td>PostgreSQL</td><td><code>"nome"</code></td><td>a coluna <code>nome</code>, <strong>com maiúsculas e minúsculas exatas</strong></td></tr>
+<tr><td>MySQL / MariaDB</td><td><code>`nome`</code> (crase)</td><td><strong>o texto</strong> <code>'nome'</code>! (a não ser no modo <code>ANSI_QUOTES</code>)</td></tr>
+<tr><td>SQL Server</td><td><code>[nome]</code>; também <code>"nome"</code> com <code>QUOTED_IDENTIFIER ON</code> (o padrão da maioria das conexões)</td><td>a coluna <code>nome</code></td></tr>
+</table>
+</div>
+
+<p>O SQLite é o mais tolerante: aceita os três sinais, para facilitar quem traz código de outro banco:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT [nome], `cidade`, "estado"
+FROM clientes
+WHERE id = 1;
+</pre>
+
+<p>Agora o perigo. No MariaDB (e no MySQL), aspas <strong>duplas</strong> são texto, como as simples. A Ana pediu a coluna <code>"nome"</code> e recebeu a palavra "nome":</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT "nome" FROM clientes WHERE id = 1;
++------+
+| nome |
++------+
+| nome |
++------+
+1 row in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT `nome` FROM clientes WHERE id = 1;
++---------------------+
+| nome                |
++---------------------+
+| José Ribamar Silva  |
++---------------------+
+1 row in set (0,000 sec)
+</pre>
+
+<p>Nenhum erro, nenhum aviso: só um resultado errado. É o tipo de diferença mais traiçoeira. A documentação do MySQL explica que o modo <code>ANSI_QUOTES</code> faz <code>"</code> virar aspas de nome, "como a crase", e então aspas duplas deixam de servir para texto.</p>
+
+<p>E a crase no PostgreSQL? Ele não a conhece e dá erro de sintaxe:</p>
+
+<pre class="term">loja=&gt; SELECT `nome` FROM clientes WHERE id = 1;
+ERRO:  erro de sintaxe em ou próximo a "FROM"
+LINHA 1: SELECT `nome` FROM clientes WHERE id = 1;
+                       ^
+</pre>
+
+<h3>Maiúsculas nos nomes</h3>
+<p>Outra diferença ligada às aspas. No SQLite, <code>Nome</code>, <code>NOME</code> e <code>nome</code> são a mesma coluna, com ou sem aspas. No PostgreSQL, um nome <strong>sem</strong> aspas é convertido para minúsculas (a documentação diz: "nomes sem aspas são sempre convertidos para minúsculas"), mas <strong>com</strong> aspas ele vale letra por letra:</p>
+
+<pre class="term">loja=&gt; SELECT Nome FROM clientes WHERE id = 1;
+        nome
+--------------------
+ José Ribamar Silva
+(1 linha)
+
+loja=&gt; SELECT "Nome" FROM clientes WHERE id = 1;
+ERRO:  coluna "Nome" não existe
+LINHA 1: SELECT "Nome" FROM clientes WHERE id = 1;
+                ^
+DICA:  Talvez você queira fazer referência à coluna "clientes.nome".
+</pre>
+
+<p>No MySQL/MariaDB no Linux, o contrário acontece com <strong>tabelas</strong>: os nomes de tabela diferenciam maiúsculas (a documentação do MySQL explica que eles viram arquivos e pastas no disco), mas os de coluna não:</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT Nome FROM CLIENTES WHERE id = 1;
+ERROR 1146 (42S02): Table 'loja.CLIENTES' doesn't exist
+</pre>
+
+<p>A regra que evita tudo isso, e que o guia segue desde o começo: <strong>nomes de tabela e coluna em minúsculas, sem espaço, sem acento, sem aspas</strong>. Assim o mesmo SQL funciona nos quatro bancos.</p>
+
+<hr>
+
+<h2>4. Numeração automática do id</h2>
+<p>Toda tabela da Loja Aurora tem um <code>id</code>. Quando a Ana cadastra um aviso novo, ela não quer escolher o número; quer que o banco dê o próximo. Cada banco tem a sua palavra para isso (no SQLite, veja <a href="auto-increment.html">AUTOINCREMENT</a>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Como declarar o id automático</th></tr>
+<tr><td>SQLite</td><td><code>id INTEGER PRIMARY KEY</code> (ou <code>… PRIMARY KEY AUTOINCREMENT</code>)</td></tr>
+<tr><td>MySQL / MariaDB</td><td><code>id INT AUTO_INCREMENT PRIMARY KEY</code></td></tr>
+<tr><td>PostgreSQL</td><td><code>id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY</code> (padrão ISO) ou o antigo <code>id SERIAL PRIMARY KEY</code></td></tr>
+<tr><td>SQL Server</td><td><code>id INT IDENTITY(1,1) PRIMARY KEY</code></td></tr>
+</table>
+</div>
+
+<pre class="file" data-file="avisos.sql" data-resultado>CREATE TABLE avisos (
+    id    INTEGER PRIMARY KEY,
+    texto TEXT NOT NULL
+);
+INSERT INTO avisos (texto) VALUES
+    ('Promoção de volta às aulas'),
+    ('Inventário no sábado');
+SELECT * FROM avisos;
+</pre>
+
+<p>A mesma tabela, rodada de verdade no PostgreSQL e no MariaDB, com a palavra de cada um:</p>
+
+<pre class="term">loja=&gt; CREATE TABLE avisos (id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY, texto VARCHAR(100) NOT NULL);
+CREATE TABLE
+loja=&gt; INSERT INTO avisos (texto) VALUES ('Promoção de volta às aulas'), ('Inventário no sábado');
+INSERT 0 2
+loja=&gt; SELECT * FROM avisos;
+ id |           texto
+----+----------------------------
+  1 | Promoção de volta às aulas
+  2 | Inventário no sábado
+(2 linhas)
+</pre>
+
+<pre class="term">MariaDB [loja]&gt; CREATE TABLE avisos (id INT AUTO_INCREMENT PRIMARY KEY, texto VARCHAR(100) NOT NULL);
+Query OK, 0 rows affected (0,010 sec)
+
+MariaDB [loja]&gt; INSERT INTO avisos (texto) VALUES ('Promoção de volta às aulas'), ('Inventário no sábado');
+Query OK, 2 rows affected (0,002 sec)
+Records: 2  Duplicates: 0  Warnings: 0
+</pre>
+
+<p>No SQL Server (ilustrativo, sintaxe da documentação do <code>IDENTITY</code>; os dois números são o começo e o passo, e se você não puser nenhum o padrão é <code>(1,1)</code>):</p>
+
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">CREATE TABLE avisos (
+    id    INT IDENTITY(1,1) PRIMARY KEY,
+    texto NVARCHAR(100) NOT NULL
+);
+</pre>
+
+<hr>
+
+<h2>5. Juntar textos: || × CONCAT × +</h2>
+<p>A Ana quer uma coluna só com "nome (cidade)". No SQLite ela usa <code>||</code>, que é o operador do padrão ISO (aula <a href="funcoes-texto.html">Funções de Texto</a>):</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome || ' (' || cidade || ')' AS cliente
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th><code>||</code></th><th><code>CONCAT(a, b, …)</code></th><th>Outro</th></tr>
+<tr><td>SQLite</td><td>junta textos</td><td>sim (desde a versão 3.44)</td><td>—</td></tr>
+<tr><td>PostgreSQL</td><td>junta textos</td><td>sim</td><td>—</td></tr>
+<tr><td>MySQL / MariaDB</td><td><strong>é OU lógico</strong> (a não ser no modo <code>PIPES_AS_CONCAT</code>)</td><td>sim (o jeito normal)</td><td>—</td></tr>
+<tr><td>SQL Server</td><td>junta textos <strong>só a partir do SQL Server 2025</strong></td><td>sim</td><td><code>+</code> junta textos</td></tr>
+</table>
+</div>
+
+<p>No MariaDB, o <code>||</code> é "ou", como o <code>OR</code>. Então ele tenta transformar cada texto em número, não consegue, e devolve <code>0</code>, com 12 avisos (<em>warnings</em>):</p>
+
+<pre class="term">MariaDB [loja]&gt; SELECT nome || ' (' || cidade || ')' AS cliente FROM clientes WHERE id &lt;= 3;
++---------+
+| cliente |
++---------+
+|       0 |
+|       0 |
+|       0 |
++---------+
+3 rows in set, 12 warnings (0,000 sec)
+
+MariaDB [loja]&gt; SHOW WARNINGS;
++---------+------+----------------------------------------------------------+
+| Level   | Code | Message                                                  |
++---------+------+----------------------------------------------------------+
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'José Ribamar Silva'  |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ' ('                   |
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'Teresina'            |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ')'                    |
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'Maria Clara Mendes'  |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ' ('                   |
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'Teresina'            |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ')'                    |
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'Ana Beatriz Sousa'   |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ' ('                   |
+| Warning | 1292 | Truncated incorrect DECIMAL value: 'São Paulo'           |
+| Warning | 1292 | Truncated incorrect DOUBLE value: ')'                    |
++---------+------+----------------------------------------------------------+
+12 rows in set (0,000 sec)
+
+MariaDB [loja]&gt; SELECT CONCAT(nome, ' (', cidade, ')') AS cliente FROM clientes WHERE id &lt;= 3;
++--------------------------------+
+| cliente                        |
++--------------------------------+
+| José Ribamar Silva (Teresina)  |
+| Maria Clara Mendes (Teresina)  |
+| Ana Beatriz Sousa (São Paulo)  |
++--------------------------------+
+3 rows in set (0,000 sec)
+</pre>
+
+<p>O <code>SHOW WARNINGS</code> ("mostre os avisos") explica: "Truncated incorrect DECIMAL value", isto é, "valor DECIMAL incorreto, truncado". O banco tentou ler cada pedaço de texto como número. A documentação do MySQL 8.4 diz que esse uso do <code>||</code> como "ou" é uma extensão fora do padrão e está <strong>descontinuado</strong> (deve sumir numa versão futura). Até lá, no MySQL e no MariaDB, use <code>CONCAT()</code>.</p>
+
+<p>No SQL Server, o jeito tradicional é o <code>+</code> (ilustrativo):</p>
+
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">SELECT nome + ' (' + cidade + ')' AS cliente
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<p>E o que o SQLite faz com esse <code>+</code>? Ele é sempre <strong>soma</strong> de números. O SQLite tenta converter os textos em número, não consegue, e trata cada um como 0:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome + ' (' + cidade + ')' AS cliente
+FROM clientes
+WHERE id &lt;= 3;
+</pre>
+
+<div class="trysql" data-goal="contem:Carlos Eduardo Lima (Fortaleza)">
+<p class="try-task"><strong>Experimente:</strong> esta consulta veio de um sistema em SQL Server e, no SQLite, devolve só zeros. Troque os <code>+</code> pelo operador de juntar texto do SQLite (ou use <code>CONCAT</code>) para aparecer "Carlos Eduardo Lima (Fortaleza)".</p>
+<pre class="script" data-file="consulta.sql">SELECT nome + ' (' + cidade + ')' AS cliente
+FROM clientes
+WHERE estado = 'CE';
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome || ' (' || cidade || ')' AS cliente
+FROM clientes
+WHERE estado = 'CE';
+</pre>
+</div>
+
+<div class="note">
+<strong>E quando um dos textos é NULL?</strong>
+<p>Com <code>||</code>, um pedaço <code>NULL</code> deixa tudo <code>NULL</code> (no SQLite e no PostgreSQL; e o <code>||</code> do SQL Server 2025 também, segundo a Microsoft). Já o <code>CONCAT()</code> trata <code>NULL</code> como texto vazio no SQLite e no PostgreSQL, mas no MySQL/MariaDB o <code>CONCAT()</code> devolve <code>NULL</code>. O cliente 7 não tem email:</p>
+<pre class="term">MariaDB [loja]&gt; SELECT CONCAT(nome, ' &lt;', email, '&gt;') AS contato FROM clientes WHERE id IN (6, 7);
++--------------------------------------------------+
+| contato                                          |
++--------------------------------------------------+
+| Rafael Monteiro &lt;rafael.monteiro@exemplo.com.br&gt; |
+| NULL                                             |
++--------------------------------------------------+
+2 rows in set (0,000 sec)
+</pre>
+<pre class="term">loja=&gt; SELECT CONCAT(nome, ' &lt;', email, '&gt;') AS contato FROM clientes WHERE id IN (6, 7);
+                     contato
+--------------------------------------------------
+ Rafael Monteiro &lt;rafael.monteiro@exemplo.com.br&gt;
+ Luís Otávio Brito &lt;&gt;
+(2 linhas)
+</pre>
+<p>Se o dado pode faltar, proteja com <code>COALESCE(email, '')</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>), que funciona igual nos quatro bancos.</p>
+</div>
+
+<hr>
+
+<h2>6. Datas</h2>
+<p>Aqui as diferenças são grandes. O SQLite não tem um tipo "data": ele guarda o texto <code>'2024-01-05'</code> e usa funções como <code>date()</code>, <code>strftime()</code> e <code>julianday()</code> (aula <a href="funcoes-data.html">Funções de Data</a>). Os outros têm um tipo <code>DATE</code> de verdade, com funções próprias. A Ana quer, para os 3 primeiros pedidos, o prazo de 7 dias depois do pedido e quantos dias a entrega levou:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT id,
+       date(data, '+7 days') AS prazo,
+       julianday(entregue_em) - julianday(data) AS dias
+FROM pedidos
+WHERE id &lt;= 3;
+</pre>
+
+<pre class="term">loja=&gt; SELECT id, data + 7 AS prazo, entregue_em - data AS dias FROM pedidos WHERE id &lt;= 3;
+ id |   prazo    | dias
+----+------------+------
+  1 | 2024-01-12 |    5
+  2 | 2024-01-21 |    7
+  3 | 2024-02-03 |    4
+(3 linhas)
+</pre>
+
+<pre class="term">MariaDB [loja]&gt; SELECT id, DATE_ADD(data, INTERVAL 7 DAY) AS prazo, DATEDIFF(entregue_em, data) AS dias FROM pedidos WHERE id &lt;= 3;
++----+------------+------+
+| id | prazo      | dias |
++----+------------+------+
+|  1 | 2024-01-12 |    5 |
+|  2 | 2024-01-21 |    7 |
+|  3 | 2024-02-03 |    4 |
++----+------------+------+
+3 rows in set (0,001 sec)
+</pre>
+
+<pre class="file" data-file="sqlserver.sql (ilustrativo)">SELECT id,
+       DATEADD(day, 7, data) AS prazo,
+       DATEDIFF(day, data, entregue_em) AS dias
+FROM pedidos
+WHERE id &lt;= 3;
+</pre>
+
+<p>Os mesmos números nos quatro (o SQLite escreve <code>5.0</code> porque o <code>julianday()</code> trabalha com números com casas decimais). Mas repare na ordem dos argumentos do <code>DATEDIFF</code>: no MySQL/MariaDB é <code>DATEDIFF(fim, início)</code>; no SQL Server é <code>DATEDIFF(unidade, início, fim)</code>. Mesma palavra, ordem diferente.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tarefa</th><th>SQLite</th><th>MySQL / MariaDB</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>Hoje</td><td><code>date('now')</code> ou <code>CURRENT_DATE</code></td><td><code>CURDATE()</code> ou <code>CURRENT_DATE</code></td><td><code>CURRENT_DATE</code></td><td><code>CAST(GETDATE() AS date)</code>; <code>CURRENT_DATE</code> só no 2025</td></tr>
+<tr><td>Agora (data e hora)</td><td><code>datetime('now')</code></td><td><code>NOW()</code></td><td><code>NOW()</code></td><td><code>GETDATE()</code> ou <code>SYSDATETIME()</code></td></tr>
+<tr><td>Somar 7 dias</td><td><code>date(d, '+7 days')</code></td><td><code>DATE_ADD(d, INTERVAL 7 DAY)</code></td><td><code>d + 7</code> ou <code>d + INTERVAL '7 days'</code></td><td><code>DATEADD(day, 7, d)</code></td></tr>
+<tr><td>Dias entre duas datas</td><td><code>julianday(b) - julianday(a)</code></td><td><code>DATEDIFF(b, a)</code></td><td><code>b - a</code></td><td><code>DATEDIFF(day, a, b)</code></td></tr>
+<tr><td>O ano</td><td><code>strftime('%Y', d)</code></td><td><code>YEAR(d)</code></td><td><code>EXTRACT(YEAR FROM d)</code></td><td><code>YEAR(d)</code></td></tr>
+<tr><td>Formatar 05/01/2024</td><td><code>strftime('%d/%m/%Y', d)</code></td><td><code>DATE_FORMAT(d, '%d/%m/%Y')</code></td><td><code>to_char(d, 'DD/MM/YYYY')</code></td><td><code>FORMAT(d, 'dd/MM/yyyy')</code></td></tr>
+</table>
+</div>
+
+<p>Um ponto comum que ajuda muito: os quatro entendem a data escrita como <code>'AAAA-MM-DD'</code> (o formato ISO, o mesmo que a Loja Aurora usa). Guarde datas sempre assim.</p>
+
+<hr>
+
+<h2>7. Verdadeiro e falso (booleanos)</h2>
+<p>A coluna <code>vip</code> da Loja Aurora diz se o cliente é VIP. No SQLite ela guarda <code>0</code> ou <code>1</code>; as palavras <code>TRUE</code> e <code>FALSE</code> existem, mas são só apelidos para 1 e 0:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT nome, vip, TRUE AS verdadeiro, FALSE AS falso
+FROM clientes
+WHERE vip = TRUE AND estado = 'SP';
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>Tipo</th><th>Como aparece no resultado</th><th><code>WHERE vip = 1</code> funciona?</th></tr>
+<tr><td>SQLite</td><td>não tem; usa <code>INTEGER</code> 0/1</td><td><code>1</code></td><td>sim</td></tr>
+<tr><td>MySQL / MariaDB</td><td><code>BOOLEAN</code>, que é apelido de <code>TINYINT(1)</code></td><td><code>1</code></td><td>sim</td></tr>
+<tr><td>PostgreSQL</td><td><code>BOOLEAN</code> de verdade</td><td><code>t</code> ou <code>f</code></td><td><strong>não</strong>: use <code>vip = true</code> ou só <code>WHERE vip</code></td></tr>
+<tr><td>SQL Server</td><td><code>bit</code> (guarda 1, 0 ou NULL)</td><td><code>1</code></td><td>sim</td></tr>
+</table>
+</div>
+
+<pre class="term">loja=&gt; SELECT nome, vip FROM clientes WHERE vip = true AND estado = 'SP';
+       nome        | vip
+-------------------+-----
+ Ana Beatriz Sousa | t
+(1 linha)
+
+loja=&gt; SELECT nome, vip FROM clientes WHERE vip = 1;
+ERRO:  operador não existe: boolean = integer
+LINHA 1: SELECT nome, vip FROM clientes WHERE vip = 1;
+                                                  ^
+DICA:  Nenhum operador corresponde ao nome e tipo de dados dos argumentos fornecidos. Talvez seja necessário adicionar uma conversão de tipo de dados explícita.
+</pre>
+
+<p>O PostgreSQL é o mais rigoroso com tipos: um <code>boolean</code> não se compara com um número. Escrever <code>vip = TRUE</code> funciona no SQLite, no MySQL/MariaDB e no PostgreSQL. No SQL Server o <code>bit</code> se compara com <code>1</code> (a documentação diz que os textos <code>'TRUE'</code> e <code>'FALSE'</code> podem ser convertidos para 1 e 0).</p>
+
+<hr>
+
+<h2>8. Inserir ou atualizar (UPSERT)</h2>
+<p>A Ana quer renomear a categoria 8 para "Jardim e Quintal", e, se ela não existisse, criá-la. Esse "insere, e se já existe atualiza" tem o apelido de <strong>UPSERT</strong> (<em>update</em> + <em>insert</em>). No SQLite e no PostgreSQL é igual:</p>
+
+<pre class="file" data-file="upsert.sql" data-resultado>INSERT INTO categorias (id, nome) VALUES (8, 'Jardim e Quintal')
+ON CONFLICT (id) DO UPDATE SET nome = excluded.nome;
+
+SELECT id, nome FROM categorias WHERE id = 8;
+</pre>
+
+<dl class="anatomy">
+  <dt>INSERT INTO … VALUES (8, …)</dt><dd>Tenta inserir a categoria 8 normalmente.</dd>
+  <dt>ON CONFLICT (id)</dt><dd>"Em caso de conflito no <code>id</code>": se já existe uma linha com esse id…</dd>
+  <dt>DO UPDATE SET nome = excluded.nome</dt><dd>…atualize essa linha. <code>excluded</code> ("a excluída") é a linha que você tentou inserir e foi barrada.</dd>
+</dl>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Banco</th><th>UPSERT</th></tr>
+<tr><td>SQLite</td><td><code>INSERT … ON CONFLICT (id) DO UPDATE SET nome = excluded.nome</code></td></tr>
+<tr><td>PostgreSQL</td><td>igual ao SQLite (e também <code>MERGE</code>)</td></tr>
+<tr><td>MySQL</td><td><code>INSERT … VALUES (…) AS nova ON DUPLICATE KEY UPDATE nome = nova.nome</code></td></tr>
+<tr><td>MariaDB</td><td><code>INSERT … ON DUPLICATE KEY UPDATE nome = VALUE(nome)</code></td></tr>
+<tr><td>SQL Server</td><td><code>MERGE INTO … USING … WHEN MATCHED THEN UPDATE … WHEN NOT MATCHED THEN INSERT …;</code></td></tr>
+</table>
+</div>
+
+<pre class="term">MariaDB [loja]&gt; INSERT INTO categorias (id, nome) VALUES (8, 'Jardim e Quintal') ON DUPLICATE KEY UPDATE nome = VALUE(nome);
+Query OK, 2 rows affected (0,002 sec)
+</pre>
+
+<p>"2 rows affected" assusta, mas é a convenção do MySQL/MariaDB: 1 quer dizer "inseri uma linha nova", 2 quer dizer "atualizei uma que já existia". Até MySQL e MariaDB, que são parentes, divergem aqui: a forma <code>AS nova … nova.nome</code> é a recomendada pela documentação do MySQL 8.4 (que marca o <code>VALUES()</code> antigo como descontinuado), mas o MariaDB 11.8 recusa essa forma com erro de sintaxe. Os detalhes estão em <a href="mysql.html">SQL no MySQL e MariaDB</a>; o <code>MERGE</code> do SQL Server está em <a href="sql-server.html">SQL no SQL Server</a>.</p>
+
+<hr>
+
+<h2>9. Tipos de dados</h2>
+<p>O SQLite é flexível: uma coluna <code>INTEGER</code> aceita até um texto (aula <a href="tipos-sqlite.html">Os Tipos no SQLite</a>). Os outros bancos são rígidos: cada coluna aceita só o seu tipo, e muitos tipos têm tamanho. Quando a Ana levou a Loja Aurora para os outros bancos, ela trocou os tipos assim:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Coluna</th><th>SQLite</th><th>MySQL / MariaDB</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td><code>id</code></td><td><code>INTEGER PRIMARY KEY</code></td><td><code>INT AUTO_INCREMENT</code></td><td><code>INTEGER GENERATED … AS IDENTITY</code></td><td><code>INT IDENTITY(1,1)</code></td></tr>
+<tr><td><code>nome</code></td><td><code>TEXT</code></td><td><code>VARCHAR(100)</code></td><td><code>VARCHAR(100)</code> ou <code>TEXT</code></td><td><code>NVARCHAR(100)</code></td></tr>
+<tr><td><code>estado</code></td><td><code>TEXT</code></td><td><code>CHAR(2)</code></td><td><code>CHAR(2)</code></td><td><code>CHAR(2)</code></td></tr>
+<tr><td><code>preco</code></td><td><code>REAL</code></td><td><code>DECIMAL(10,2)</code></td><td><code>NUMERIC(10,2)</code></td><td><code>DECIMAL(10,2)</code></td></tr>
+<tr><td><code>nascimento</code></td><td><code>TEXT</code> ('AAAA-MM-DD')</td><td><code>DATE</code></td><td><code>DATE</code></td><td><code>DATE</code></td></tr>
+<tr><td><code>vip</code></td><td><code>INTEGER</code> 0/1</td><td><code>BOOLEAN</code></td><td><code>BOOLEAN</code></td><td><code>BIT</code></td></tr>
+</table>
+</div>
+
+<p>A tabela completa, com todos os tipos, está em <a href="ref-tipos.html">Referência: Tipos de Dados</a>.</p>
+
+<hr>
+
+<h2>Formas diferentes de escrever o mesmo SQL</h2>
+<p>Quando um código precisa rodar em mais de um banco, você tem duas estratégias:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Estratégia</th><th>Exemplo</th><th>Vantagem</th><th>Desvantagem</th></tr>
+<tr><td><strong>Ficar no padrão</strong></td><td><code>FETCH FIRST 3 ROWS ONLY</code>, <code>CASE</code>, <code>COALESCE</code>, <code>CURRENT_DATE</code>, nomes minúsculos sem aspas</td><td>roda em mais bancos sem mudar nada</td><td>nem todo banco tem tudo (o SQLite e o MySQL não têm <code>FETCH FIRST</code>)</td></tr>
+<tr><td><strong>Usar o sotaque local</strong></td><td><code>LIMIT</code>, <code>TOP</code>, <code>DATE_ADD</code>, <code>strftime</code></td><td>é o que a documentação e os exemplos daquele banco usam</td><td>na troca de banco, tem de reescrever</td></tr>
+<tr><td><strong>Separar as partes que mudam</strong></td><td>a parte da data numa view ou numa função do seu programa</td><td>só um pedaço muda na migração</td><td>dá um pouco mais de trabalho no começo</td></tr>
+</table>
+</div>
+
+<p>Na prática, quase todo mundo usa o sotaque do banco onde trabalha e consulta uma tabela como as desta página quando precisa migrar.</p>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Os erros de dialeto têm uma cara típica: <strong>erro de sintaxe perto da palavra estranha</strong>, ou <strong>função que não existe</strong>. E às vezes, o pior caso: nenhum erro, só um resultado errado.</p>
+
+<div class="cenario">
+<strong>Usou TOP no SQLite (ou em qualquer banco que não seja o SQL Server)</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT TOP 3 nome FROM produtos;
+</pre>
+<p>O SQLite leu <code>SELECT TOP</code> achando que <code>TOP</code> era o nome de uma coluna; aí veio o <code>3</code> e ele não entendeu mais nada: <code>near "3": syntax error</code> ("perto de 3: erro de sintaxe"). O MariaDB e o PostgreSQL também tropeçam no <code>3</code>:</p>
+<pre class="term">MariaDB [loja]&gt; SELECT TOP 3 nome FROM produtos;
+ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near '3 nome FROM produtos' at line 1
+</pre>
+<pre class="term">loja=&gt; SELECT TOP 3 nome FROM produtos;
+ERRO:  erro de sintaxe em ou próximo a "3"
+LINHA 1: SELECT TOP 3 nome FROM produtos;
+                    ^
+</pre>
+<p><strong>Como consertar:</strong> troque por <code>LIMIT 3</code> no fim.</p>
+</div>
+
+<div class="cenario">
+<strong>Função de outro banco</strong>
+<pre class="file" data-file="consulta.sql" data-resultado data-erro>SELECT id, DATEDIFF(entregue_em, data) AS dias
+FROM pedidos
+WHERE id &lt;= 5;
+</pre>
+<p><code>no such function: DATEDIFF</code>: "não existe a função DATEDIFF". O SQLite não tem essa função do MySQL/SQL Server.</p>
+<p><strong>Como consertar:</strong> procure a função equivalente na tabela da seção 6: <code>julianday(entregue_em) - julianday(data)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Aspas duplas viraram texto (MySQL/MariaDB)</strong>
+<p>Você já viu na seção 3: <code>SELECT "nome" FROM clientes</code> no MariaDB devolve a palavra <code>nome</code> em vez do nome do cliente. Pior ainda num filtro: <code>WHERE "estado" = 'PI'</code> compara o texto "estado" com "PI", que nunca é igual, e a consulta volta vazia, sem erro.</p>
+<p><strong>Como consertar:</strong> nomes sem aspas. Se precisar de aspas num nome no MySQL/MariaDB, use a crase: <code>`estado`</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>|| no MySQL/MariaDB devolve 0</strong>
+<p>Também na seção 5: o <code>||</code> é "ou" lógico lá, e o resultado vira <code>0</code>, sem erro, só com um aviso discreto no fim: <code>3 rows in set, 12 warnings</code>. Sempre que aparecer <code>warnings</code> depois de uma consulta, peça <code>SHOW WARNINGS;</code> e leia.</p>
+<p><strong>Como consertar:</strong> <code>CONCAT(nome, ' (', cidade, ')')</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Comparou booleano com número (PostgreSQL)</strong>
+<p>Seção 7: <code>WHERE vip = 1</code> dá <code>ERRO:  operador não existe: boolean = integer</code>. <strong>Como consertar:</strong> <code>WHERE vip = true</code> ou simplesmente <code>WHERE vip</code>.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Assunto</th><th>SQLite</th><th>MySQL / MariaDB</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>Limitar</td><td><code>LIMIT 3</code></td><td><code>LIMIT 3</code></td><td><code>LIMIT 3</code> / <code>FETCH FIRST 3 ROWS ONLY</code></td><td><code>TOP (3)</code> / <code>OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY</code></td></tr>
+<tr><td>Aspas de nome</td><td><code>"x"</code> (aceita <code>`x`</code>, <code>[x]</code>)</td><td><code>`x`</code></td><td><code>"x"</code></td><td><code>[x]</code> ou <code>"x"</code></td></tr>
+<tr><td>Texto</td><td colspan="4">sempre aspas simples: <code>'Teresina'</code> (no SQL Server, <code>N'Teresina'</code> para texto Unicode)</td></tr>
+<tr><td>id automático</td><td><code>INTEGER PRIMARY KEY</code></td><td><code>AUTO_INCREMENT</code></td><td><code>GENERATED … AS IDENTITY</code> / <code>SERIAL</code></td><td><code>IDENTITY(1,1)</code></td></tr>
+<tr><td>Juntar texto</td><td><code>||</code>, <code>concat()</code></td><td><code>CONCAT()</code></td><td><code>||</code>, <code>concat()</code></td><td><code>+</code>, <code>CONCAT()</code>, <code>||</code> (2025)</td></tr>
+<tr><td>Hoje</td><td><code>date('now')</code></td><td><code>CURDATE()</code></td><td><code>CURRENT_DATE</code></td><td><code>CAST(GETDATE() AS date)</code></td></tr>
+<tr><td>Somar dias</td><td><code>date(d,'+7 days')</code></td><td><code>DATE_ADD(d, INTERVAL 7 DAY)</code></td><td><code>d + 7</code></td><td><code>DATEADD(day, 7, d)</code></td></tr>
+<tr><td>Booleano</td><td>0/1</td><td><code>BOOLEAN</code> = <code>TINYINT(1)</code></td><td><code>BOOLEAN</code> (t/f)</td><td><code>bit</code></td></tr>
+<tr><td>UPSERT</td><td><code>ON CONFLICT … DO UPDATE</code></td><td><code>ON DUPLICATE KEY UPDATE</code></td><td><code>ON CONFLICT … DO UPDATE</code></td><td><code>MERGE</code></td></tr>
+<tr><td>Erro de tabela inexistente</td><td><code>no such table: x</code></td><td><code>ERROR 1146 (42S02): Table 'loja.x' doesn't exist</code></td><td><code>ERRO:  relação "x" não existe</code></td><td><code>Invalid object name 'x'.</code> (Msg 208)</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Os 5 primeiros no SQL Server</h3>
+<p>Complete a consulta do SQL Server que mostra os 5 clientes mais novos:</p>
+<div class="ex-code">SELECT <input data-answer="TOP" aria-label="palavra de limite"> (5) nome, nascimento FROM clientes ORDER BY nascimento DESC;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Aspas de nome no MySQL</h3>
+<p>No MySQL, a coluna se chama <code>order</code> (uma palavra reservada) e precisa de aspas de nome. Qual sinal vai dos dois lados? Escreva o sinal:</p>
+<div class="ex-code">SELECT <input data-answer="`" aria-label="sinal de aspas de nome">order<input data-answer="`" aria-label="sinal de aspas de nome"> FROM vendas;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. No MariaDB, a Ana rodou <code>SELECT nome || ' - ' || cidade FROM clientes;</code>. O que aparece?</p>
+<label><input type="radio" name="q3"> Os nomes e as cidades juntos</label>
+<label><input type="radio" name="q3"> Um erro de sintaxe</label>
+<label><input type="radio" name="q3"> Zeros, com avisos, porque lá <code>||</code> é "ou" lógico</label>
+<label><input type="radio" name="q3"> NULL em todas as linhas</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Qual destas consultas funciona igual no SQLite, no MySQL/MariaDB e no PostgreSQL?</p>
+<label><input type="radio" name="q4"> <code>SELECT TOP 3 nome FROM produtos;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT nome FROM produtos ORDER BY preco DESC LIMIT 3;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT nome FROM produtos ORDER BY preco DESC LIMIT 3, 3;</code></label>
+<label><input type="radio" name="q4"> <code>SELECT nome FROM produtos FETCH FIRST 3 ROWS ONLY;</code></label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. No PostgreSQL, a tabela foi criada com a coluna <code>nome</code>. Qual destas consultas dá <code>ERRO:  coluna … não existe</code>?</p>
+<label><input type="radio" name="q5"> <code>SELECT nome FROM clientes;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT NOME FROM clientes;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT "nome" FROM clientes;</code></label>
+<label><input type="radio" name="q5"> <code>SELECT "Nome" FROM clientes;</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual é a forma do padrão ISO para pegar só as 3 primeiras linhas?</p>
+<label><input type="radio" name="q6"> <code>FETCH FIRST 3 ROWS ONLY</code></label>
+<label><input type="radio" name="q6"> <code>LIMIT 3</code></label>
+<label><input type="radio" name="q6"> <code>TOP (3)</code></label>
+<label><input type="radio" name="q6"> <code>ROWNUM &lt;= 3</code></label>
+</div>
+
+<h3>Missão final: traduzir do MySQL para o SQLite</h3>
+
+<div class="trysql" data-goal="colunas:id,prazo,dias;;linhas:5;;contem:2024-01-12|5">
+<p class="try-task"><strong>Missão:</strong> a Ana recebeu esta consulta de um colega que usa MySQL. Ela mostra, para os 5 primeiros pedidos, o prazo (7 dias depois da data do pedido) e quantos dias a entrega levou. Traduza as duas funções para o SQLite, mantendo os apelidos <code>prazo</code> e <code>dias</code>. Dica: a tabela da seção 6.</p>
+<pre class="script" data-file="consulta.sql">SELECT id,
+       DATE_ADD(data, INTERVAL 7 DAY) AS prazo,
+       DATEDIFF(entregue_em, data) AS dias
+FROM pedidos
+WHERE id &lt;= 5;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT id,
+       date(data, '+7 days') AS prazo,
+       julianday(entregue_em) - julianday(data) AS dias
+FROM pedidos
+WHERE id &lt;= 5;
+</pre>
+</div>
+
+<p>Se você usou <code>CAST(julianday(entregue_em) - julianday(data) AS INTEGER)</code> para tirar o <code>.0</code>, também está certo.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Todos os bancos falam SQL (norma ISO/IEC 9075), cada um com o seu <strong>dialeto</strong>. O núcleo (<code>SELECT</code>, <code>WHERE</code>, <code>JOIN</code>, <code>GROUP BY</code>, <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>) é igual.</li>
+  <li>Limitar: <code>LIMIT</code> (SQLite, MySQL/MariaDB, PostgreSQL), <code>TOP (n)</code> (SQL Server), <code>FETCH FIRST n ROWS ONLY</code> (padrão; PostgreSQL, SQL Server com <code>OFFSET</code>, MariaDB).</li>
+  <li>Aspas de nome: <code>"x"</code> (padrão, PostgreSQL, SQLite), <code>`x`</code> (MySQL/MariaDB), <code>[x]</code> (SQL Server). No MySQL/MariaDB, <code>"x"</code> é <strong>texto</strong>. Use nomes minúsculos sem aspas e evite o problema.</li>
+  <li>id automático: <code>INTEGER PRIMARY KEY</code>, <code>AUTO_INCREMENT</code>, <code>GENERATED AS IDENTITY</code>/<code>SERIAL</code>, <code>IDENTITY(1,1)</code>.</li>
+  <li>Juntar texto: <code>||</code> no SQLite e no PostgreSQL; <code>CONCAT()</code> no MySQL/MariaDB (lá <code>||</code> é "ou"); <code>+</code> no SQL Server.</li>
+  <li>Datas e booleanos são onde os bancos mais diferem: confira a tabela antes de migrar. O PostgreSQL não compara <code>boolean</code> com número.</li>
+  <li>Erros de dialeto: "erro de sintaxe perto de…" ou "função não existe". O pior caso não dá erro nenhum: só um resultado errado.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
