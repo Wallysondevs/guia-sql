@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teste interno do editor | Guia SQL</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body id="teste-interno">
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<h1>Teste interno do <span class="hl">editor</span></h1>
+
+<p class="intro">Página de teste do <code>assets/sqlsim.js</code>. Ela <strong>não</strong> está na NIVEIS e não aparece no menu. O <code>tools/testar-navegador.js</code> abre esta página no Chromium, clica nos botões de cada caixa e confere o que foi desenhado.</p>
+
+<h2>1. Caixa livre (com NULL)</h2>
+<div class="trysql" id="cx-livre">
+<pre class="script" data-file="consulta.sql">SELECT nome, email
+FROM clientes
+WHERE id IN (6, 7);
+</pre>
+</div>
+
+<h2>2. Missão</h2>
+<div class="trysql" id="cx-missao" data-goal="linhas:4;;colunas:nome">
+<p class="try-task"><strong>Missão:</strong> mostre o nome dos clientes que nunca fizeram um pedido.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome FROM clientes
+WHERE id NOT IN (SELECT cliente_id FROM pedidos);
+</pre>
+</div>
+
+<h2>3. Missão de erro</h2>
+<div class="trysql" id="cx-missao-erro" data-goal="erro:no such table">
+<p class="try-task"><strong>Missão:</strong> provoque o erro de tabela inexistente.</p>
+<pre class="script" data-file="consulta.sql">SELECT count(*) FROM clientes;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT count(*) FROM cliente;
+</pre>
+</div>
+
+<h2>4. Várias instruções</h2>
+<div class="trysql" id="cx-varios" data-goal="mudou:categorias=9;;contem:Ferramentas">
+<pre class="script" data-file="consulta.sql">-- um comentário antes
+CREATE TABLE notas (id INTEGER PRIMARY KEY, texto TEXT);
+INSERT INTO notas (texto) VALUES ('primeira'), ('segunda');
+UPDATE produtos SET preco = preco + 1 WHERE preco &lt; 2;
+SELECT * FROM notas;
+DROP TABLE notas;
+</pre>
+<pre class="solucao" data-file="consulta.sql">INSERT INTO categorias (nome, descricao) VALUES ('Ferramentas', 'Martelos &amp; chaves');
+SELECT nome, descricao FROM categorias WHERE id = 9;
+</pre>
+</div>
+
+<h2>5. Erro de propósito</h2>
+<div class="trysql" id="cx-erro" data-erro>
+<pre class="script" data-file="consulta.sql">SELECT 'antes do erro' AS aviso;
+SELECT * FROM cliente;
+SELECT 'nunca roda';
+</pre>
+</div>
+
+<h2>6. A trava anti-loop</h2>
+<div class="trysql" id="cx-trava" data-erro>
+<pre class="script" data-file="sem-fim.sql">WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n)
+SELECT count(*) FROM n;
+</pre>
+</div>
+
+<h2>7. Mais de 500 linhas</h2>
+<div class="trysql" id="cx-grande">
+<pre class="script" data-file="grande.sql">WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n LIMIT 600)
+SELECT x, '&lt;b&gt;não é negrito&lt;/b&gt;' AS texto FROM n;
+</pre>
+</div>
+
+<h2>8. Comando de ponto (não existe no editor)</h2>
+<div class="trysql" id="cx-ponto" data-erro>
+<pre class="script" data-file="consulta.sql">.tables
+</pre>
+</div>
+
+<h2>9. Quadros Resultado</h2>
+<pre class="file" data-file="consulta.sql" data-resultado id="res-select">SELECT nome, preco
+FROM produtos
+WHERE preco &lt; 2
+ORDER BY preco;
+</pre>
+
+<pre class="file" data-file="consulta.sql" data-resultado id="res-dml">UPDATE produtos SET estoque = 0 WHERE categoria_id = 1;
+DELETE FROM itens_pedido WHERE pedido_id = 1;
+</pre>
+
+<pre class="file" data-file="consulta.sql" data-resultado data-erro id="res-erro">SELECT nome FROM cliente;
+</pre>
+
+<p style="height: 1500px">(espaço para testar o desenho preguiçoso: os quadros abaixo só rodam quando chegam perto da tela)</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado id="res-longe">SELECT count(*) AS total FROM pedidos WHERE entregue_em IS NULL;
+</pre>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>

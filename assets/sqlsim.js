@@ -52,7 +52,7 @@
     var capi = sqlite3.capi, wasm = sqlite3.wasm;
     var res = { itens: [], erro: null, canonico: "", ultimo: null, estado: { tabelas: {} } };
     var db = new sqlite3.oo1.DB(":memory:");
-    var inicio = Date.now();
+    var inicio = Date.now(), parou = false;
     try {
       try { db.exec(String(seed || "")); }
       catch (e) { res.erro = { msg: "no banco de exemplo (aurora.sql): " + e.message, seed: true }; return res; }
@@ -60,7 +60,8 @@
       // trava de segurança: um SQL sem fim (WITH RECURSIVE sem LIMIT…) é interrompido
       try {
         capi.sqlite3_progress_handler(db, 5000, function () {
-          return (Date.now() - inicio > S.tempoMax) ? 1 : 0;
+          if (Date.now() - inicio > S.tempoMax) { parou = true; return 1; }
+          return 0;
         }, 0);
       } catch (e) { /* sem progress handler, segue sem a trava */ }
 
@@ -105,7 +106,7 @@
               else res.itens.push({ tipo: "ok", verbo: verbo });
             }
           }
-          if (erroMsg) { res.erro = { msg: erroMsg }; break; }
+          if (erroMsg) { res.erro = { msg: erroMsg }; if (parou) res.erro.trava = true; break; }
         }
       } finally { wasm.scopedAllocPop(scope); }
 
@@ -342,7 +343,9 @@
       else if (it.tipo === "mudanca") h += '<p class="sql-msg">' + escHtml(it.verbo) + ": " + (it.n === 1 ? "1 linha afetada" : it.n + " linhas afetadas") + "</p>";
       else h += '<p class="sql-msg">' + escHtml(it.verbo) + ": ok</p>";
     });
-    if (res.erro) h += '<div class="sql-erro">Erro do SQLite: ' + escHtml(res.erro.msg) + "</div>";
+    if (res.erro) h += '<div class="sql-erro">Erro do SQLite: ' + escHtml(res.erro.msg) + "</div>" +
+      (res.erro.trava ? '<p class="sql-msg sql-dica">O guia parou este SQL depois de ' + Math.round(S.tempoMax / 1000) +
+        " segundos: parece que ele não tem fim (um <code>WITH RECURSIVE</code> sem <code>LIMIT</code>?).</p>" : "");
     if (!h) h = '<p class="sql-msg sql-vazio">(nenhum comando para rodar)</p>';
     return h;
   }

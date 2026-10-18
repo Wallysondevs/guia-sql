@@ -356,7 +356,7 @@ function testarPagina(arq, motor) {
     else {
       const desc = res.itens.map((x) => x.tipo === "select" ? linhasDe(x.linhas.length) :
         x.tipo === "mudanca" ? x.verbo + " " + x.n : x.verbo).join(" + ");
-      itens.push({ grav: "ok", linha: r.linha, msg: nome + ": " + (desc || "nada") + (res.erro ? (desc ? ", depois " : "") + "erro esperado: " + res.erro.msg : "") });
+      itens.push({ grav: "ok", linha: r.linha, msg: nome + ": " + (desc || (res.erro ? "" : "nada")) + (res.erro ? (desc ? ", depois " : "") + "erro esperado: " + res.erro.msg : "") });
     }
   });
 
