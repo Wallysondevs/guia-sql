@@ -72,7 +72,7 @@ alimentos e jardinagem.
 | chefe_id | INTEGER | FK → funcionarios(id); **self-join**; NULL na gerente |
 
 Hierarquia: Marta Lustosa (1, Gerente, chefe_id NULL) chefia 2, 3, 4 e 5;
-Luana Castelo (5, Supervisora) chefia 6, 7 e 8. O estoquista (8) não atende pedidos.
+Luana Castelo (5, Supervisora) chefia 6, 7 e 8. A gerente (1) e o estoquista (8) nunca atenderam pedidos (funcionario_id dos pedidos vai de 2 a 7).
 
 ### pedidos
 | Coluna | Tipo | Observações |
@@ -109,7 +109,7 @@ Pedidos 1–40 têm 3 itens; pedidos 41–90 têm 2 itens. Total do pedido =
 | Nomes com acento | collation / LIKE | José Ribamar Silva (1), Conceição Prado (5), Antônio Carlos Neves (9)… |
 | Apóstrofo no nome | escape de aspas (`''`) | fornecedor **2 — Loja D'Água** |
 | Homônimas parciais | LIKE 'Ana %' | clientes **3 (Ana Beatriz Sousa)** e **18 (Ana Carvalho Lima)** |
-| Somas com decimais "feias" | ROUND | ex.: total do pedido 1 = 30.94; médias de preço × quantidade geram caudas de ponto flutuante |
+| Somas com decimais "feias" | ROUND | ex.: soma dos itens do pedido 1 = 30.94 (com o frete, o total é 40.84); médias de preço × quantidade geram caudas de ponto flutuante |
 | Self-join | chefe_id | funcionarios (gerente id 1 com chefe_id NULL) |
 | Fornecedores estrangeiros | WHERE pais <> 'Brasil' / IS NULL em estado | fornecedores **4 (Portugal)** e **5 (Argentina)** |
 | Frete grátis | WHERE frete = 0 | pedidos 4, 12, 20, 28, 36, 44, 52, 60, 68, 76, 84 |
