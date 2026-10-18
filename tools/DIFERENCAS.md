@@ -46,3 +46,25 @@ SELECT value FROM generate_series(1, 3);
 3
 ```
 <!-- /pagina:cte-recursiva.html -->
+
+<!-- pagina:comentarios.html -->
+### comentarios.html (2026-10-18 13:52 UTC)
+
+**resultado 11 (linha 246)** — saída diferente; o editor deu erro e o nativo não
+
+```sql
+# comentário estilo MySQL
+SELECT 1;
+```
+
+- editor: erro `unrecognized token: "#"`; saída:
+
+```
+
+```
+- sqlite3 nativo (status 0): saída:
+
+```
+1
+```
+<!-- /pagina:comentarios.html -->
