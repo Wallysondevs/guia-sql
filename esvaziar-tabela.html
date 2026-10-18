@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL Esvaziar uma Tabela — TRUNCATE × DELETE | Guia SQL</title>
+<meta name="description" content="Como esvaziar uma tabela para quem nunca mexeu num banco: o SQLite não tem TRUNCATE (o erro real), o DELETE sem WHERE, a truncate optimization que o deixa rápido, a ordem com chaves estrangeiras, o contador do AUTOINCREMENT, e o TRUNCATE TABLE do MySQL, PostgreSQL e SQL Server.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">Esvaziar uma Tabela</span></h1>
+
+<p class="intro">Começo de ano na Loja Aurora: a Ana quer zerar uma tabela de testes e começar de novo, mantendo a tabela, as colunas e as regras. Em muitos tutoriais de SQL você vai encontrar o comando <code>TRUNCATE TABLE</code> ("trunque", "corte a tabela") para isso. No SQLite, ele <strong>não existe</strong>. Nesta aula você vai ver o erro que ele dá, como o <code>DELETE</code> sem <code>WHERE</code> faz o mesmo serviço, por que, no SQLite, esse <code>DELETE</code> costuma ser tão rápido quanto um <code>TRUNCATE</code>, e o que muda nos outros bancos.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>Por que <code>TRUNCATE TABLE</code> dá erro no SQLite, e o que usar no lugar.</li>
+  <li>Como esvaziar uma tabela com <code>DELETE FROM tabela;</code> e conferir o resultado.</li>
+  <li>A ordem certa para esvaziar tabelas ligadas por chaves estrangeiras.</li>
+  <li>A <em>truncate optimization</em>: o atalho que o SQLite usa para apagar tudo de uma vez, e quando ele não vale.</li>
+  <li>O que acontece com o contador do <code>AUTOINCREMENT</code> quando a tabela é esvaziada.</li>
+  <li>As diferenças entre esvaziar (<code>DELETE</code>/<code>TRUNCATE</code>) e jogar fora (<code>DROP TABLE</code>).</li>
+</ul>
+</div>
+
+<p>Esta aula junta duas que vieram antes: <a href="delete.html">DELETE</a> e <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>. Os exemplos rodam de verdade no seu navegador, e cada Rodar começa do banco limpo: pode esvaziar à vontade.</p>
+
+<hr>
+
+<h2>A ideia: esvaziar a gaveta, ficar com a gaveta</h2>
+<p>Na aula <a href="drop-table.html">DROP TABLE</a>, a gaveta do fichário era arrancada e jogada fora. Agora é diferente: você tira <strong>todas as fichas</strong>, e a gaveta continua no móvel, com a etiqueta e as divisórias, pronta para receber fichas novas. Há dois jeitos de tirar as fichas:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Jeito</th><th>No fichário</th><th>No SQL</th></tr>
+<tr><td>Uma por uma</td><td>Você pega cada ficha, olha, e põe na caixa do lixo.</td><td><code>DELETE</code> visitando linha por linha.</td></tr>
+<tr><td>De uma vez</td><td>Você vira a gaveta de cabeça para baixo na caixa.</td><td><code>TRUNCATE</code> nos outros bancos; no SQLite, o atalho automático do <code>DELETE</code> sem <code>WHERE</code>.</td></tr>
+</table>
+</div>
+
+<p>O resultado é o mesmo: gaveta vazia. A diferença é a velocidade, e o que acontece com as regras "uma por uma" (como as chaves estrangeiras) no caminho.</p>
+
+<hr>
+
+<h2>1. O SQLite não tem TRUNCATE</h2>
+<p>A Ana, que leu um tutorial de MySQL, tenta:</p>
+
+<pre class="file" data-file="truncate.sql" data-resultado data-erro>TRUNCATE TABLE itens_pedido;
+</pre>
+
+<p><code>near "TRUNCATE": syntax error</code>, "erro de sintaxe perto de TRUNCATE". Para o SQLite, <code>TRUNCATE</code> não é uma palavra do idioma dele, assim como <code>TRUNCATE itens_pedido;</code> (sem o <code>TABLE</code>). No terminal, a seta aponta logo para a primeira palavra:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite&gt; TRUNCATE TABLE itens_pedido;
+Parse error: near "TRUNCATE": syntax error
+  TRUNCATE TABLE itens_pedido;
+  ^--- error here
+sqlite&gt; .quit</pre>
+
+<hr>
+
+<h2>2. O jeito do SQLite: DELETE sem WHERE</h2>
+<p>Um <code>DELETE</code> apaga as linhas que o <code>WHERE</code> escolhe. Sem <code>WHERE</code>, ele escolhe <strong>todas</strong>:</p>
+
+<pre class="file" data-file="esvaziar.sql" data-resultado>DELETE FROM itens_pedido;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+
+<dl class="anatomy">
+  <dt>DELETE FROM itens_pedido</dt><dd>"Apague da tabela itens_pedido". Sem <code>WHERE</code>, vale para todas as linhas.</dd>
+  <dt>;</dt><dd>O fim do comando. Repare que não há mais nada: é isso que transforma um <code>DELETE</code> comum num "esvaziar".</dd>
+  <dt>SELECT COUNT(*)</dt><dd>Confere: 0 linhas. E a tabela continua existindo; se não existisse, o <code>SELECT</code> daria <code>no such table</code>.</dd>
+</dl>
+
+<p>O quadro mostra "220 linhas afetadas": os 220 itens de pedido foram apagados. A estrutura ficou: as colunas, a chave primária, as chaves estrangeiras. A Ana pode inserir itens novos na mesma hora.</p>
+
+<div class="warning">
+<strong>O mesmo comando que salva é o que estraga</strong>
+<p>Esvaziar uma tabela de propósito e esquecer o <code>WHERE</code> por engano são <strong>exatamente o mesmo comando</strong>. O banco não tem como saber qual foi a sua intenção. Por isso: escreva o <code>DELETE</code> sem <code>WHERE</code> só quando quiser esvaziar mesmo, rode antes um <code>SELECT COUNT(*)</code> para ver quantas linhas vão embora, e, num banco com dados de verdade, faça dentro de uma transação ou depois de um backup (aula <a href="perigo-sem-where.html">O Perigo do UPDATE e DELETE sem WHERE</a>).</p>
+</div>
+
+<div class="trysql" data-goal="mudou:itens_pedido=0;;tabela:itens_pedido">
+<p class="try-task"><strong>Experimente:</strong> o código usa o <code>TRUNCATE</code> de outros bancos e dá erro. Troque a primeira linha pelo jeito do SQLite de esvaziar a tabela <code>itens_pedido</code>, sem apagar a tabela.</p>
+<pre class="script" data-file="esvaziar.sql">TRUNCATE TABLE itens_pedido;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+<pre class="solucao" data-file="esvaziar.sql">DELETE FROM itens_pedido;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. Esvaziar tabelas ligadas: a ordem importa</h2>
+<p>Agora a Ana quer esvaziar os pedidos:</p>
+
+<pre class="file" data-file="pedidos.sql" data-resultado data-erro>DELETE FROM pedidos;
+</pre>
+
+<p><code>FOREIGN KEY constraint failed</code>. Os itens apontam para os pedidos (aula <a href="foreign-key.html">FOREIGN KEY</a>), e apagar os pedidos deixaria 220 itens órfãos. Com a regra ligada, como no editor, o banco recusa, e <strong>nenhum</strong> pedido é apagado: ou vão todos, ou nenhum. A ordem certa é a mesma do <code>DROP TABLE</code>: primeiro as filhas, depois as mães.</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>DELETE FROM itens_pedido;
+DELETE FROM pedidos;
+
+SELECT COUNT(*) AS pedidos FROM pedidos;
+</pre>
+
+<p>220 itens, depois 90 pedidos. Os clientes, os produtos e os funcionários continuam lá. (Se a chave estrangeira tivesse <code>ON DELETE CASCADE</code>, o <code>DELETE FROM pedidos</code> levaria os itens junto, sozinho; a Loja Aurora não usa isso.)</p>
+
+<hr>
+
+<h2>4. A truncate optimization: por que o DELETE é rápido</h2>
+<p>Nos outros bancos, o <code>TRUNCATE</code> existe porque é muito mais rápido que o <code>DELETE</code>: ele joga fora as páginas de dados de uma vez, em vez de apagar linha por linha. O SQLite não precisa de um comando separado para isso. A documentação dele explica:</p>
+
+<div class="tip">
+<strong>Na documentação do SQLite</strong>
+<p>"Quando o <code>WHERE</code> e o <code>RETURNING</code> são omitidos de um <code>DELETE</code> e a tabela não tem gatilhos, o SQLite usa uma otimização para apagar todo o conteúdo da tabela sem precisar visitar cada linha individualmente. Essa otimização de "truncar" deixa o <code>DELETE</code> muito mais rápido."</p>
+</div>
+
+<p>Ou seja: o <code>DELETE FROM t;</code> do SQLite já <strong>é</strong> o <code>TRUNCATE</code>, quando dá. Dá para ver a diferença por dentro com o <code>EXPLAIN</code>, que mostra o "programa" que o SQLite monta para rodar um comando (aula <a href="explain.html">EXPLAIN QUERY PLAN</a>). Não precisa entender cada linha; procure a coluna <code>opcode</code> (a instrução). Primeiro, numa cópia dos clientes, sem <code>WHERE</code>:</p>
+
+<pre class="file" data-file="explain1.sql" data-resultado>CREATE TABLE copia AS SELECT * FROM clientes;
+
+EXPLAIN DELETE FROM copia;
+</pre>
+
+<p>Cinco instruções, e a do meio é <code>Clear</code> ("limpe"): a tabela inteira de uma vez. Agora o mesmo <code>DELETE</code> com um <code>WHERE</code> que também pega todas as linhas:</p>
+
+<pre class="file" data-file="explain2.sql" data-resultado>CREATE TABLE copia AS SELECT * FROM clientes;
+
+EXPLAIN DELETE FROM copia WHERE id &gt; 0;
+</pre>
+
+<p>Treze instruções e nenhum <code>Clear</code>: <code>Rewind</code> (vá para a primeira linha), <code>Column</code> e <code>Le</code> (leia o id e compare), <code>Delete</code> (apague esta linha), <code>Next</code> (vá para a próxima) e volta. É o "uma por uma". Numa tabela de 30 linhas, a diferença nem se sente; numa de 3 milhões, sente-se muito.</p>
+
+<h3>Quando o atalho não vale</h3>
+<p>O SQLite só pode virar a gaveta de uma vez quando ninguém precisa olhar as fichas uma por uma. Ele apaga linha por linha quando:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Situação</th><th>Por quê</th></tr>
+<tr><td>O <code>DELETE</code> tem <code>WHERE</code> (qualquer um, até <code>WHERE 1</code>)</td><td>Cada linha precisa ser testada.</td></tr>
+<tr><td>O <code>DELETE</code> tem <code>RETURNING</code></td><td>Cada linha apagada precisa ser devolvida.</td></tr>
+<tr><td>A tabela tem gatilhos (<em>triggers</em>)</td><td>O gatilho precisa rodar para cada linha.</td></tr>
+<tr><td>As chaves estrangeiras estão ligadas e a tabela participa de alguma</td><td>Cada linha precisa ser conferida. No editor (regra ligada), <code>EXPLAIN DELETE FROM itens_pedido;</code> não mostra <code>Clear</code>; com <code>PRAGMA foreign_keys = OFF;</code> antes, mostra.</td></tr>
+</table>
+</div>
+
+<p>Nos três primeiros casos, a documentação do SQLite é explícita. O quarto você acabou de conferir pelo <code>EXPLAIN</code>. Em todos eles o resultado é o mesmo, só mais lento. E o número de "linhas afetadas" vem certo nos dois caminhos: desde a versão 3.6.5 (de 2008), mesmo com o atalho o SQLite conta as linhas apagadas.</p>
+
+<div class="tip">
+<strong>E o espaço no disco?</strong>
+<p>Esvaziar uma tabela libera espaço <strong>dentro</strong> do arquivo do banco, que o SQLite reaproveita nas próximas gravações. Se o arquivo vai ou não encolher, depende de como o banco foi configurado; o comando que devolve o espaço ao disco é o <code>VACUUM</code>, explicado em <a href="vacuum.html">VACUUM e ANALYZE</a>.</p>
+</div>
+
+<hr>
+
+<h2>5. E o contador do AUTOINCREMENT?</h2>
+<p>Esvaziar a tabela <strong>não</strong> zera o contador do <code>AUTOINCREMENT</code> (aula <a href="auto-increment.html">AUTOINCREMENT</a>). Ele fica guardado à parte, na tabela <code>sqlite_sequence</code>, e o <code>DELETE</code> não mexe nela:</p>
+
+<pre class="file" data-file="contador.sql" data-resultado>CREATE TABLE cupons (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT NOT NULL
+);
+INSERT INTO cupons (codigo) VALUES ('BEMVINDO'), ('NATAL'), ('PIAUI');
+
+DELETE FROM cupons;
+
+INSERT INTO cupons (codigo) VALUES ('VERAO');
+SELECT * FROM cupons;
+</pre>
+
+<p>O <code>VERAO</code> é o 4, mesmo com a tabela vazia. Na maioria das vezes, é isso mesmo que você quer (é para isso que serve o <code>AUTOINCREMENT</code>). Se for uma tabela de testes e você quiser recomeçar do 1, apague também a linha dela na <code>sqlite_sequence</code>, <strong>com a tabela já vazia</strong>:</p>
+
+<pre class="file" data-file="zerar-contador.sql" data-resultado>CREATE TABLE cupons (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    codigo TEXT NOT NULL
+);
+INSERT INTO cupons (codigo) VALUES ('BEMVINDO'), ('NATAL'), ('PIAUI');
+
+DELETE FROM cupons;
+DELETE FROM sqlite_sequence WHERE name = 'cupons';
+
+INSERT INTO cupons (codigo) VALUES ('VERAO');
+SELECT * FROM cupons;
+</pre>
+
+<p>Numa tabela só com <code>INTEGER PRIMARY KEY</code> (sem <code>AUTOINCREMENT</code>), não há contador nenhum: uma tabela vazia recomeça do 1 sozinha.</p>
+
+<hr>
+
+<h2>6. Esvaziar ou jogar fora? As formas de fazer</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Escrita no SQLite</th><th>O que sobra</th><th>Quando usar</th></tr>
+<tr><td>Esvaziar</td><td><code>DELETE FROM t;</code></td><td>A tabela vazia, com tudo: colunas, regras, índices, gatilhos.</td><td>O jeito normal de "zerar" uma tabela.</td></tr>
+<tr><td>Esvaziar e zerar o contador</td><td><code>DELETE FROM t;</code> + <code>DELETE FROM sqlite_sequence WHERE name = 't';</code></td><td>A tabela vazia, numerando do 1.</td><td>Tabelas de teste com <code>AUTOINCREMENT</code>.</td></tr>
+<tr><td>Apagar só algumas</td><td><code>DELETE FROM t WHERE …;</code></td><td>As outras linhas.</td><td>Quase sempre (aula <a href="delete.html">DELETE</a>).</td></tr>
+<tr><td>Jogar fora e recriar</td><td><code>DROP TABLE t;</code> + <code>CREATE TABLE t (…);</code></td><td>Uma tabela nova; índices e gatilhos precisam ser recriados.</td><td>Quando a estrutura também vai mudar (aula <a href="alter-table.html">ALTER TABLE</a>).</td></tr>
+<tr><td>Jogar fora</td><td><code>DROP TABLE t;</code></td><td>Nada.</td><td>A tabela não serve mais (aula <a href="drop-table.html">DROP TABLE</a>).</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+
+<div class="cenario">
+<strong>TRUNCATE no SQLite</strong>
+<p><code>near "TRUNCATE": syntax error</code> (seção 1).</p>
+<p><strong>Como consertar:</strong> <code>DELETE FROM itens_pedido;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>O asterisco do Access</strong>
+<p>Quem vem do Microsoft Access escreve um asterisco, como num <code>SELECT</code>:</p>
+<pre class="file" data-file="asterisco.sql" data-resultado data-erro>DELETE * FROM itens_pedido;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "*": syntax error</code>. O <code>DELETE</code> apaga linhas inteiras; não existe escolher colunas, então não há o que pôr entre <code>DELETE</code> e <code>FROM</code>.</p>
+<p><strong>Como consertar:</strong> <code>DELETE FROM itens_pedido;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>DELETE TABLE</strong>
+<pre class="file" data-file="delete-table.sql" data-resultado data-erro>DELETE TABLE itens_pedido;
+</pre>
+<p><strong>A mensagem:</strong> <code>near "TABLE": syntax error</code>. Uma mistura de <code>DELETE FROM</code> com <code>DROP TABLE</code>.</p>
+<p><strong>Como consertar:</strong> para esvaziar, <code>DELETE FROM itens_pedido;</code>; para jogar fora, <code>DROP TABLE itens_pedido;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Esvaziar uma tabela mãe</strong>
+<p><code>FOREIGN KEY constraint failed</code> (seção 3).</p>
+<p><strong>Como consertar:</strong> esvazie antes as tabelas filhas. Desligar as chaves estrangeiras para "passar" também funciona, mas deixa o banco cheio de órfãos: não faça.</p>
+</div>
+
+<div class="cenario">
+<strong>Esvaziou a tabela errada</strong>
+<p>Não há mensagem nenhuma: o <code>DELETE</code> deu certo, na tabela errada. Fora de uma transação, os dados só voltam de um backup. Dentro de uma, <code>ROLLBACK</code> desfaz:</p>
+<pre class="file" data-file="rollback.sql" data-resultado>BEGIN;
+DELETE FROM itens_pedido;
+ROLLBACK;
+
+SELECT COUNT(*) AS itens FROM itens_pedido;
+</pre>
+<p>Os 220 itens voltaram. Veja <a href="transacoes.html">Transações</a> e <a href="rollback.html">ROLLBACK</a>.</p>
+</div>
+
+<hr>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>MySQL, PostgreSQL e SQL Server têm <code>TRUNCATE TABLE</code>, e lá ele é bem diferente de um <code>DELETE</code> (trechos <strong>ilustrativos</strong>, não rodam no SQLite):</p>
+<pre class="file" data-file="truncate-outros.sql">-- MySQL, PostgreSQL e SQL Server
+TRUNCATE TABLE itens_pedido;
+
+-- PostgreSQL: várias tabelas, zerando os contadores, levando as filhas junto
+TRUNCATE itens_pedido, pedidos RESTART IDENTITY CASCADE;
+</pre>
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th>MySQL</th><th>PostgreSQL</th><th>SQL Server</th></tr>
+<tr><td>Zera o contador automático</td><td>Sim, sempre</td><td>Só com <code>RESTART IDENTITY</code> (o padrão é continuar)</td><td>Sim, volta ao valor inicial</td></tr>
+<tr><td>Tabela que outras referenciam</td><td>Recusa (InnoDB)</td><td>Recusa, a não ser com <code>CASCADE</code></td><td>Recusa</td></tr>
+<tr><td>Dá para desfazer com <code>ROLLBACK</code></td><td>Não: confirma a transação sozinho</td><td>Sim</td><td>Sim</td></tr>
+<tr><td>Dispara os gatilhos de <code>DELETE</code></td><td>Não</td><td>Não (tem gatilhos próprios de <code>TRUNCATE</code>)</td><td>Não</td></tr>
+</table>
+</div>
+<p>No MySQL, a documentação avisa ainda que o <code>TRUNCATE</code> não informa quantas linhas apagou: o "0 rows affected" quer dizer "sem informação". Nos três, o <code>DELETE FROM tabela;</code> também funciona, linha por linha, com gatilhos e transação.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>DELETE FROM t;</code></td><td>Esvazia a tabela; ela continua existindo. No SQLite, usa o atalho de "truncar" quando pode.</td></tr>
+<tr><td><code>DELETE FROM sqlite_sequence WHERE name = 't';</code></td><td>Zera o contador do <code>AUTOINCREMENT</code> de <code>t</code> (só com <code>t</code> vazia).</td></tr>
+<tr><td><code>EXPLAIN DELETE FROM t;</code></td><td>Mostra o programa interno; <code>Clear</code> = apagou tudo de uma vez.</td></tr>
+<tr><td>Ordem com chaves estrangeiras</td><td>Filhas antes das mães: <code>itens_pedido</code>, depois <code>pedidos</code>.</td></tr>
+<tr><td><code>TRUNCATE TABLE t;</code></td><td>Não existe no SQLite. Existe no MySQL, PostgreSQL e SQL Server.</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem</th><th>Quer dizer</th></tr>
+<tr><td><code>near "TRUNCATE": syntax error</code></td><td>O SQLite não tem <code>TRUNCATE</code>: use <code>DELETE FROM t;</code>.</td></tr>
+<tr><td><code>near "*": syntax error</code></td><td><code>DELETE *</code> não existe: é <code>DELETE FROM t;</code>.</td></tr>
+<tr><td><code>near "TABLE": syntax error</code></td><td><code>DELETE TABLE</code> não existe: é <code>DELETE FROM</code> ou <code>DROP TABLE</code>.</td></tr>
+<tr><td><code>FOREIGN KEY constraint failed</code></td><td>Outra tabela aponta para esta: esvazie a filha antes.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. Esvaziar no SQLite</h3>
+<p>Complete o comando que esvazia a tabela <code>pedidos</code> (depois dos itens):</p>
+<div class="ex-code"><input data-answer="DELETE" aria-label="comando"> FROM pedidos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. A instrução do atalho</h3>
+<p>No resultado do <code>EXPLAIN DELETE FROM copia;</code>, qual é o <code>opcode</code> que mostra que a tabela foi limpa de uma vez?</p>
+<div class="ex-code">opcode: <input data-answer="Clear" aria-label="opcode"></div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. O que o SQLite responde a <code>TRUNCATE TABLE itens_pedido;</code>?</p>
+<label><input type="radio" name="q3"> Esvazia a tabela, igual ao MySQL</label>
+<label><input type="radio" name="q3"> Apaga a tabela inteira, igual ao <code>DROP TABLE</code></label>
+<label><input type="radio" name="q3"> <code>near "TRUNCATE": syntax error</code></label>
+<label><input type="radio" name="q3"> <code>no such table: itens_pedido</code></label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. Em qual destes casos o SQLite <strong>não</strong> usa o atalho de apagar tudo de uma vez?</p>
+<label><input type="radio" name="q4"> <code>DELETE FROM copia;</code> numa tabela sem gatilhos e sem chaves estrangeiras</label>
+<label><input type="radio" name="q4"> <code>DELETE FROM copia WHERE id &gt; 0;</code>, mesmo que todas as linhas tenham id maior que 0</label>
+<label><input type="radio" name="q4"> <code>DELETE FROM copia;</code> com <code>PRAGMA foreign_keys = OFF</code></label>
+<label><input type="radio" name="q4"> Em nenhum: ele sempre usa o atalho</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A tabela <code>cupons</code> tem <code>AUTOINCREMENT</code> e os ids 1, 2 e 3. Depois de <code>DELETE FROM cupons;</code>, que id ganha o próximo cupom?</p>
+<label><input type="radio" name="q5"> 1, porque a tabela ficou vazia</label>
+<label><input type="radio" name="q5"> 3</label>
+<label><input type="radio" name="q5"> Dá erro</label>
+<label><input type="radio" name="q5"> 4, porque o contador fica na <code>sqlite_sequence</code> e o <code>DELETE</code> não mexe nele</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Qual é a diferença entre esvaziar (<code>DELETE FROM t;</code>) e <code>DROP TABLE t;</code>?</p>
+<label><input type="radio" name="q6"> Depois do <code>DELETE</code> a tabela continua existindo, vazia; depois do <code>DROP</code>, ela não existe mais</label>
+<label><input type="radio" name="q6"> Nenhuma</label>
+<label><input type="radio" name="q6"> O <code>DROP</code> é mais seguro porque guarda uma cópia</label>
+<label><input type="radio" name="q6"> O <code>DELETE</code> apaga também as colunas</label>
+</div>
+
+<h3>Missão final: zerar os pedidos</h3>
+
+<div class="trysql" data-goal="mudou:pedidos=0;;mudou:itens_pedido=0;;mudou:clientes=30">
+<p class="try-task"><strong>Missão:</strong> a Ana quer esvaziar a tabela <code>pedidos</code> para recomeçar o ano, mas o código dá <code>FOREIGN KEY constraint failed</code>. Conserte, esvaziando as tabelas na ordem certa. Os clientes têm de continuar todos lá (são 30).</p>
+<pre class="script" data-file="zerar.sql">DELETE FROM pedidos;
+
+SELECT COUNT(*) AS pedidos FROM pedidos;
+</pre>
+<pre class="solucao" data-file="zerar.sql">DELETE FROM itens_pedido;
+DELETE FROM pedidos;
+
+SELECT COUNT(*) AS pedidos FROM pedidos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>O SQLite não tem <code>TRUNCATE</code>: <code>TRUNCATE TABLE t;</code> dá <code>near "TRUNCATE": syntax error</code>.</li>
+  <li>Para esvaziar uma tabela e mantê-la, use <code>DELETE FROM t;</code>, sem <code>WHERE</code>. Confira antes com <code>SELECT COUNT(*)</code>: o mesmo comando, por engano, é um desastre.</li>
+  <li>Sem <code>WHERE</code>, sem <code>RETURNING</code> e sem gatilhos, o SQLite usa a <em>truncate optimization</em>: apaga tudo de uma vez (o <code>Clear</code> do <code>EXPLAIN</code>), tão rápido quanto um <code>TRUNCATE</code>. Com as chaves estrangeiras ligadas e a tabela numa delas, ele vai linha por linha.</li>
+  <li>Com chaves estrangeiras, esvazie das filhas para as mães.</li>
+  <li>O <code>DELETE</code> não zera o contador do <code>AUTOINCREMENT</code>; para isso, apague a linha da tabela na <code>sqlite_sequence</code>.</li>
+  <li>Nos outros bancos, <code>TRUNCATE TABLE</code> existe, mas com regras próprias: zera contadores, recusa tabelas referenciadas e, no MySQL, não pode ser desfeito.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
