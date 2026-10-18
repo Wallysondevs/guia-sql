@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL nas Linguagens — Python, PHP, Node, Java e C# | Guia SQL</title>
+<meta name="description" content="Como um programa roda SQL: a mesma consulta na Loja Aurora a partir de Python (sqlite3), PHP (PDO), Node (node:sqlite), Java (JDBC) e C# (ADO.NET). O que é um driver, o fio condutor comum (conectar, preparar, ligar parâmetros, ler linhas, fechar), a tabela de marcas de espaço reservado e links para os guias de PHP, Java, C# e C. Exemplo em Python rodando de verdade.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL nas <span class="hl">Linguagens</span></h1>
+
+<p class="intro">O SQL que você aprendeu é a língua do <strong>banco</strong>. Mas um site ou um aplicativo não é feito só de SQL: ele é feito numa <strong>linguagem de programação</strong> — Python, PHP, JavaScript, Java, C# — e essa linguagem <strong>fala com o banco</strong> para pedir e gravar dados. A boa notícia é que o SQL é quase o mesmo em todas; o que muda é só a "cola" em volta: como conectar, como mandar a consulta e como ler o resultado. Nesta aula você vê a <strong>mesma</strong> consulta na Loja Aurora saindo de cinco linguagens, e descobre que o passo a passo é sempre o mesmo.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é um <strong>driver</strong> (a biblioteca que liga a linguagem ao banco).</li>
+  <li>O fio condutor comum: conectar → preparar o SQL → ligar os parâmetros → ler as linhas → fechar.</li>
+  <li>A mesma consulta em Python, PHP, Node, Java e C#.</li>
+  <li>A marca de espaço reservado de cada uma (<code>?</code>, <code>:nome</code>, <code>$1</code>…).</li>
+  <li>Por onde começar em cada linguagem, com os guias de PHP, Java, C# e C.</li>
+</ul>
+</div>
+
+<p>Só o exemplo em <strong>Python</strong> roda aqui dentro (na máquina da Ana); os outros são <strong>ilustrativos</strong>, para você ver a forma. Todos usam <strong>parâmetros</strong> (aula <a href="parametros.html">Consultas com Parâmetros</a>): nunca cole dados no SQL à mão, em linguagem nenhuma.</p>
+
+<hr>
+
+<h2>A ideia: o banco e o tradutor</h2>
+<p>O banco de dados é como um almoxarife que só entende SQL. A sua linguagem de programação é outra pessoa, que fala outra língua. Entre as duas fica um <strong>tradutor</strong>: uma biblioteca que recebe o SQL do seu programa, entrega ao banco e traz a resposta de volta num formato que o seu programa entende (uma lista, um objeto). Esse tradutor tem nome: é o <strong>driver</strong> (ou "conector") do banco.</p>
+
+<p>Cada linguagem tem o seu driver para o SQLite (e outros para o MySQL, o PostgreSQL…). Troque o banco e você troca o driver; o seu SQL continua quase igual. É por isso que aprender SQL vale para qualquer linguagem.</p>
+
+<hr>
+
+<h2>O fio condutor (igual em todas)</h2>
+<p>Não importa a linguagem, rodar uma consulta tem sempre os mesmos passos:</p>
+
+<ol class="passo">
+  <li><strong>Conectar</strong> ao banco (abrir o arquivo <code>loja.db</code>, ou ligar no servidor).</li>
+  <li><strong>Preparar</strong> o SQL, com espaços reservados no lugar dos valores.</li>
+  <li><strong>Ligar</strong> os valores aos espaços reservados (o <em>bind</em>).</li>
+  <li><strong>Executar</strong> e <strong>ler</strong> as linhas que voltaram.</li>
+  <li><strong>Fechar</strong> a conexão no fim.</li>
+</ol>
+
+<p>A consulta que vamos usar em todas é a mesma: <strong>os produtos mais baratos que um certo preço</strong>. Em SQL puro, no editor, ela é esta (aqui com o preço <code>5</code> já no lugar):</p>
+
+<pre class="file" data-file="a-consulta.sql" data-resultado>SELECT nome, preco FROM produtos WHERE preco &lt; 5 ORDER BY preco;
+</pre>
+
+<p>Nos programas, o <code>5</code> vira um parâmetro. Vamos ver linguagem por linguagem.</p>
+
+<hr>
+
+<h2>1. Python — módulo <code>sqlite3</code></h2>
+<p>O Python já vem com o driver do SQLite embutido: o módulo <code>sqlite3</code>. É o único exemplo que roda aqui de verdade, na máquina da Ana:</p>
+
+<pre class="file" data-file="lista.py">import sqlite3
+
+con = sqlite3.connect("loja.db")        # 1. conectar
+con.row_factory = sqlite3.Row            # ler colunas pelo nome
+
+sql = "SELECT nome, preco FROM produtos WHERE preco &lt; ? ORDER BY preco LIMIT 3"
+for p in con.execute(sql, (5,)):         # 2-4. preparar, ligar o 5, ler
+    print(f"{p['nome']:&lt;28} R$ {p['preco']:.2f}")
+
+con.close()                              # 5. fechar
+</pre>
+
+<pre class="term">$ python3 lista.py
+Lápis Grafite HB             R$ 1.15
+Caneta Esferográfica Azul    R$ 2.79
+Marca-texto Amarelo          R$ 4.90</pre>
+
+<dl class="anatomy">
+  <dt>sqlite3.connect("loja.db")</dt><dd>Abre (ou cria) o arquivo do banco e devolve a conexão.</dd>
+  <dt>WHERE preco &lt; ?</dt><dd>O espaço reservado posicional (aula <a href="parametros.html">Consultas com Parâmetros</a>).</dd>
+  <dt>con.execute(sql, (5,))</dt><dd>Prepara, liga o <code>5</code> ao <code>?</code>, executa e devolve as linhas, que o <code>for</code> percorre.</dd>
+  <dt>con.close()</dt><dd>Fecha a conexão. Sempre feche, ou use um <code>with</code>.</dd>
+</dl>
+
+<hr>
+
+<h2>2. PHP — PDO</h2>
+<p>No PHP, o jeito moderno é o <strong>PDO</strong> (<em>PHP Data Objects</em>), um driver único que fala com SQLite, MySQL, PostgreSQL e outros trocando só o começo da conexão (o <em>DSN</em>). O espaço reservado é o mesmo <code>?</code> (ou o <code>:nome</code>):</p>
+
+<pre class="file" data-file="lista.php">&lt;?php
+$pdo = new PDO("sqlite:loja.db");                 // 1. conectar
+$pdo-&gt;setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+$sql = "SELECT nome, preco FROM produtos WHERE preco &lt; ? ORDER BY preco LIMIT 3";
+$stmt = $pdo-&gt;prepare($sql);                       // 2. preparar
+$stmt-&gt;execute([5]);                               // 3-4. ligar o 5 e executar
+
+foreach ($stmt as $p) {                           // ler as linhas
+    printf("%-28s R$ %.2f\n", $p["nome"], $p["preco"]);
+}
+</pre>
+
+<p><em>(Ilustrativo: não roda no editor.)</em> O <code>prepare</code> cria o comando preparado e o <code>execute([5])</code> liga o valor ao <code>?</code>. Para começar em PHP, veja o <strong>Guia PHP</strong> do mesmo autor, nas aulas "Conectar com PDO" e "Prepared Statements e SQL Injection".</p>
+
+<hr>
+
+<h2>3. Node.js — <code>node:sqlite</code></h2>
+<p>O Node.js ganhou um driver de SQLite <strong>embutido</strong>, o módulo <code>node:sqlite</code>, a partir do Node 22.5 (ainda marcado como experimental). A forma lembra a dos outros: preparar e ligar o valor.</p>
+
+<pre class="file" data-file="lista.mjs">import { DatabaseSync } from "node:sqlite";
+
+const db = new DatabaseSync("loja.db");           // 1. conectar
+const stmt = db.prepare(                          // 2. preparar
+  "SELECT nome, preco FROM produtos WHERE preco &lt; ? ORDER BY preco LIMIT 3"
+);
+for (const p of stmt.all(5)) {                    // 3-4. ligar o 5, ler
+  console.log(p.nome, p.preco);
+}
+db.close();                                       // 5. fechar
+</pre>
+
+<div class="note">
+<strong>Node mais antigo</strong>
+<p>O <code>node:sqlite</code> só existe do Node 22.5 em diante. Em versões anteriores (como o Node 20), ele não está presente: <code>require("node:sqlite")</code> dá o erro <code>ERR_UNKNOWN_BUILTIN_MODULE</code>. Nesses casos, o costume é instalar um pacote da comunidade, como o <code>better-sqlite3</code>, que tem uma forma muito parecida. Por isso este exemplo fica <strong>ilustrativo</strong>.</p>
+</div>
+
+<hr>
+
+<h2>4. Java — JDBC</h2>
+<p>Em Java, o padrão para falar com bancos é o <strong>JDBC</strong> (<em>Java Database Connectivity</em>). Você usa um <code>PreparedStatement</code>, liga os valores por posição (começando em <strong>1</strong>, não em 0) e lê um <code>ResultSet</code>:</p>
+
+<pre class="file" data-file="Lista.java">import java.sql.*;
+
+public class Lista {
+    public static void main(String[] args) throws SQLException {
+        String url = "jdbc:sqlite:loja.db";                 // 1. conectar
+        String sql = "SELECT nome, preco FROM produtos WHERE preco &lt; ? ORDER BY preco LIMIT 3";
+        try (Connection con = DriverManager.getConnection(url);
+             PreparedStatement ps = con.prepareStatement(sql)) {   // 2. preparar
+            ps.setDouble(1, 5);                             // 3. ligar o 5 (posição 1)
+            try (ResultSet rs = ps.executeQuery()) {        // 4. executar e ler
+                while (rs.next()) {
+                    System.out.printf("%-28s R$ %.2f%n",
+                        rs.getString("nome"), rs.getDouble("preco"));
+                }
+            }
+        }                                                   // 5. o try fecha tudo
+    }
+}
+</pre>
+
+<p><em>(Ilustrativo.)</em> O <code>try (…)</code> com os recursos entre parênteses fecha a conexão sozinho no fim. Para começar em Java, veja o <strong>Guia Java</strong> do mesmo autor.</p>
+
+<hr>
+
+<h2>5. C# — ADO.NET (<code>Microsoft.Data.Sqlite</code>)</h2>
+<p>No C# (.NET), o padrão é o <strong>ADO.NET</strong>. Com o pacote <code>Microsoft.Data.Sqlite</code>, você cria um comando, adiciona os parâmetros (aqui nomeados, com <code>$</code>) e lê com um <code>DataReader</code>:</p>
+
+<pre class="file" data-file="Lista.cs">using Microsoft.Data.Sqlite;
+
+using var con = new SqliteConnection("Data Source=loja.db");  // 1. conectar
+con.Open();
+
+var cmd = con.CreateCommand();                                // 2. preparar
+cmd.CommandText = "SELECT nome, preco FROM produtos WHERE preco &lt; $preco ORDER BY preco LIMIT 3";
+cmd.Parameters.AddWithValue("$preco", 5);                     // 3. ligar o 5
+
+using var reader = cmd.ExecuteReader();                       // 4. executar e ler
+while (reader.Read())
+{
+    Console.WriteLine($"{reader.GetString(0),-28} R$ {reader.GetDouble(1):F2}");
+}
+</pre>
+
+<p><em>(Ilustrativo.)</em> O <code>$preco</code> é um espaço reservado nomeado (o SQLite aceita <code>:nome</code>, <code>@nome</code> e <code>$nome</code>). Para começar em C#, veja o <strong>Guia C#</strong> do mesmo autor.</p>
+
+<div class="note">
+<strong>E em C puro?</strong>
+<p>O SQLite é escrito em C, e dá para usá-lo direto, sem driver, com funções como <code>sqlite3_open</code>, <code>sqlite3_prepare_v2</code>, <code>sqlite3_bind_*</code> e <code>sqlite3_step</code>. É mais trabalhoso (é a "cozinha" que as outras linguagens escondem), mas é a base de todas elas. O <strong>Guia C</strong> do mesmo autor ajuda com a linguagem.</p>
+</div>
+
+<hr>
+
+<h2>Lado a lado</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Linguagem</th><th>Driver / biblioteca</th><th>Conectar (SQLite)</th><th>Espaço reservado</th></tr>
+<tr><td>Python</td><td><code>sqlite3</code> (embutido)</td><td><code>sqlite3.connect("loja.db")</code></td><td><code>?</code> e <code>:nome</code></td></tr>
+<tr><td>PHP</td><td>PDO</td><td><code>new PDO("sqlite:loja.db")</code></td><td><code>?</code> e <code>:nome</code></td></tr>
+<tr><td>Node.js</td><td><code>node:sqlite</code> (Node 22.5+)</td><td><code>new DatabaseSync("loja.db")</code></td><td><code>?</code> e <code>:nome</code></td></tr>
+<tr><td>Java</td><td>JDBC</td><td><code>jdbc:sqlite:loja.db</code></td><td><code>?</code> (posição começa em 1)</td></tr>
+<tr><td>C#</td><td>ADO.NET (<code>Microsoft.Data.Sqlite</code>)</td><td><code>"Data Source=loja.db"</code></td><td><code>$nome</code>, <code>:nome</code>, <code>@nome</code></td></tr>
+</table>
+</div>
+
+<p>Repare: fora o nome das funções, o <strong>SQL é idêntico</strong> e o <strong>passo a passo é o mesmo</strong>. Quem aprende SQL aprende a parte que não muda.</p>
+
+<div class="note">
+<strong>Nos bancos com servidor</strong>
+<p>Para MySQL, PostgreSQL e SQL Server, você troca o driver e o endereço da conexão (servidor, usuário, senha), mas o SQL e os passos continuam. O PostgreSQL usa a marca <code>$1</code>, <code>$2</code> nos parâmetros; o MySQL e o SQL Server usam <code>?</code> ou nomes, conforme o driver. Nesses bancos entram também os <a href="usuarios-permissoes.html">usuários e permissões</a>: o programa conecta com um usuário que só pode o necessário.</p>
+</div>
+
+<hr>
+
+<h2>Quando dá errado</h2>
+
+<div class="cenario">
+<strong>Erro do banco: cada linguagem embrulha do seu jeito</strong>
+<p>Escreva o nome da tabela errado — <code>produto</code> em vez de <code>produtos</code> — e o <strong>banco</strong> devolve sempre a mesma mensagem crua. Veja no editor:</p>
+<pre class="file" data-file="erro.sql" data-resultado data-erro>SELECT * FROM produto;
+</pre>
+<p>A mensagem do SQLite é <code>no such table: produto</code> ("não existe a tabela produto"). Num programa, essa mesma mensagem chega <strong>dentro</strong> de um erro da linguagem. Em Python, por exemplo:</p>
+<pre class="term">$ python3 -c "import sqlite3; sqlite3.connect('loja.db').execute('SELECT * FROM produto')"
+sqlite3.OperationalError: no such table: produto</pre>
+<p>Em PHP seria uma <code>PDOException</code>, em Java uma <code>SQLException</code>, em C# uma <code>SqliteException</code> — mas o texto do banco, <code>no such table: produto</code>, é o mesmo em todas. Por isso vale aprender a ler as mensagens do SQLite: elas aparecem igual em qualquer linguagem.</p>
+</div>
+
+<div class="cenario">
+<strong>Colar dados no SQL em vez de usar parâmetro</strong>
+<p>Em qualquer dessas linguagens, montar o SQL juntando texto (<code>"… WHERE nome = '" + digitado + "'"</code>) reabre a porta do <a href="sql-injection.html">SQL Injection</a> e quebra com nomes que têm apóstrofo, como <code>Loja D'Água</code>. A regra vale para todas: valor vindo de fora entra por <strong>parâmetro</strong>, nunca colado.</p>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Passo</th><th>O que é</th></tr>
+<tr><td>Driver</td><td>A biblioteca que liga a linguagem ao banco.</td></tr>
+<tr><td>Conectar</td><td>Abrir o arquivo (SQLite) ou ligar no servidor.</td></tr>
+<tr><td>Preparar</td><td>Montar o SQL com espaços reservados.</td></tr>
+<tr><td>Ligar (bind)</td><td>Encaixar os valores nos espaços reservados.</td></tr>
+<tr><td>Ler</td><td>Percorrer as linhas devolvidas.</td></tr>
+<tr><td>Fechar</td><td>Encerrar a conexão no fim.</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">1. O que é um "driver" de banco de dados?</p>
+<label><input type="radio" name="q1"> Uma peça do computador que guarda o banco</label>
+<label><input type="radio" name="q1"> A biblioteca que liga a linguagem de programação ao banco</label>
+<label><input type="radio" name="q1"> Um tipo especial de SQL</label>
+<label><input type="radio" name="q1"> O administrador do banco</label>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">2. Trocando de linguagem (de Python para Java, por exemplo), o que mais muda?</p>
+<label><input type="radio" name="q2"> O SQL da consulta, que é diferente em cada linguagem</label>
+<label><input type="radio" name="q2"> O banco de dados, que precisa ser reescrito</label>
+<label><input type="radio" name="q2"> A "cola" em volta (funções de conectar, preparar e ler); o SQL fica quase igual</label>
+<label><input type="radio" name="q2"> Nada muda</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">3. Em todas as linguagens desta aula, como o valor de busca deve entrar na consulta?</p>
+<label><input type="radio" name="q3"> Colado no texto do SQL com <code>+</code></label>
+<label><input type="radio" name="q3"> Sempre entre aspas duplas</label>
+<label><input type="radio" name="q3"> Direto do formulário, sem tratar</label>
+<label><input type="radio" name="q3"> Por um parâmetro (espaço reservado), ligado por fora</label>
+</div>
+
+<h3>Experimente: a consulta que todas rodam</h3>
+<div class="trysql" data-goal="colunas:nome,preco;;linhas:3">
+<p class="try-task"><strong>Missão:</strong> escreva, em SQL puro, a consulta que todos os programas rodaram: os produtos com <code>preco</code> menor que <code>5</code>, ordenados por <code>preco</code>. (É o que sai quando o parâmetro recebe o valor <code>5</code>.) Devem vir 3 produtos.</p>
+<pre class="script" data-file="consulta.sql">SELECT nome, preco FROM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT nome, preco FROM produtos WHERE preco &lt; 5 ORDER BY preco;
+</pre>
+</div>
+
+<h3>Missão final</h3>
+<div class="trysql" data-goal="erro:no such table">
+<p class="try-task"><strong>Missão:</strong> provoque, de propósito, o erro que todas as linguagens embrulham. Troque a consulta para ler de uma tabela que não existe (por exemplo, <code>cliente</code>, no singular) e veja a mensagem do SQLite. (Esta caixa espera um erro.)</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM clientes LIMIT 1;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM cliente LIMIT 1;
+</pre>
+</div>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li>Um programa fala com o banco por um <strong>driver</strong>: a biblioteca que traduz entre a linguagem e o SQL.</li>
+  <li>O passo a passo é sempre o mesmo: <strong>conectar → preparar → ligar os parâmetros → ler → fechar</strong>.</li>
+  <li>O SQL quase não muda de uma linguagem para outra; muda a "cola" em volta e a marca de espaço reservado (<code>?</code>, <code>:nome</code>, <code>$1</code>…).</li>
+  <li>Em todas, os valores entram por <strong>parâmetro</strong> (aula <a href="parametros.html">Consultas com Parâmetros</a>), nunca colados — senão volta o <a href="sql-injection.html">SQL Injection</a>.</li>
+  <li>O erro do banco (como <code>no such table</code>) é o mesmo texto em qualquer linguagem, só embrulhado num erro diferente.</li>
+  <li>Para aprofundar em cada linguagem: os guias de <strong>PHP</strong>, <strong>Java</strong>, <strong>C#</strong> e <strong>C</strong> do mesmo autor.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
