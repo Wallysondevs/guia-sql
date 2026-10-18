@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL SELECT — a primeira consulta, SELECT * e o ponto e vírgula | Guia SQL</title>
+<meta name="description" content="O comando SELECT para quem nunca fez uma consulta: SELECT * FROM tabela, como ler o resultado, SELECT * × escolher colunas, o ponto e vírgula, maiúsculas e minúsculas, espaços e quebras de linha, SELECT sem FROM e as mensagens de erro reais do SQLite, com missões na Loja Aurora.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">SELECT</span></h1>
+
+<p class="intro">Chegou a hora da primeira conversa de verdade com o banco de dados. Para <strong>ver</strong> o que está guardado numa tabela, você usa o comando <code>SELECT</code> (em inglês, "selecione"). É o comando mais usado do SQL: toda tela que mostra uma lista de produtos, um extrato do banco ou o histórico de pedidos de um site tem um <code>SELECT</code> por trás. Nesta aula a Ana, que trabalha na Loja Aurora, vai fazer as primeiras perguntas ao banco da loja, e você vai fazê-las junto com ela, no editor desta página.</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>A forma mais simples de consulta: <code>SELECT * FROM tabela;</code>, parte por parte.</li>
+  <li>Como ler o resultado: cabeçalho, linhas e o total de linhas.</li>
+  <li>A diferença entre <code>SELECT *</code> (todas as colunas) e escrever o nome das colunas.</li>
+  <li>Para que serve o <strong>ponto e vírgula</strong> e o que acontece quando você o esquece.</li>
+  <li>Que <code>SELECT</code>, <code>select</code> e <code>Select</code> são a mesma coisa, e por que o costume é escrever em MAIÚSCULAS.</li>
+  <li>Que espaços e quebras de linha não mudam a consulta.</li>
+  <li>As mensagens de erro reais do SQLite quando a consulta está errada.</li>
+</ul>
+</div>
+
+<p>Todos os quadros com código desta página rodam <strong>de verdade</strong>: o SQLite, um banco de dados completo, funciona dentro do seu navegador com o banco da Loja Aurora (se ainda não conhece as tabelas da loja, veja <a href="banco-do-guia.html">O Banco da Loja Aurora</a>). O quadro "Resultado" embaixo de cada código é a resposta que o banco deu.</p>
+
+<hr>
+
+<h2>A ideia: pedir para ver as fichas</h2>
+<p>Imagine o estoque da Loja Aurora antes do computador: uma gaveta com uma ficha para cada produto. Se a Ana quisesse ver os produtos, pediria ao colega do estoque:</p>
+
+<pre class="file" data-file="o pedido da Ana, em português">Me mostra todas as fichas da gaveta de produtos.
+</pre>
+
+<p>Em SQL, esse pedido tem quase as mesmas palavras, só que em inglês e numa ordem fixa: primeiro <strong>o que</strong> você quer ver, depois <strong>de onde</strong>.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Em português</th><th>Em SQL</th><th>Quer dizer</th></tr>
+<tr><td>Me mostra…</td><td><code>SELECT</code></td><td>"selecione": vou pedir dados</td></tr>
+<tr><td>…todos os campos…</td><td><code>*</code></td><td>todas as colunas</td></tr>
+<tr><td>…da gaveta de categorias.</td><td><code>FROM categorias</code></td><td>"de" categorias: a tabela de onde os dados vêm</td></tr>
+<tr><td>(fim do pedido)</td><td><code>;</code></td><td>o comando acabou</td></tr>
+</table>
+</div>
+
+<p>Duas coisas importantes antes de começar. Primeiro: o <code>SELECT</code> só <strong>lê</strong>. Ele não apaga nem muda nada no banco; você pode rodar quantos quiser, sem medo. Segundo: a resposta do banco é sempre uma <strong>tabela</strong> nova, montada na hora só para você, com as linhas e colunas que você pediu.</p>
+
+<hr>
+
+<h2>1. A primeira consulta</h2>
+<p>A tabela mais curta da loja é a de categorias. Peça para ver tudo o que tem nela:</p>
+
+<pre class="file" data-file="consulta.sql" data-resultado>SELECT * FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>"Selecione". Avisa ao banco que você quer <strong>ver</strong> dados. Toda consulta começa por aqui.</dd>
+  <dt>*</dt><dd>O asterisco quer dizer "<strong>todas as colunas</strong>". Lê-se "selecione tudo" ou "select estrela".</dd>
+  <dt>FROM</dt><dd>"De". Vem antes do nome da tabela de onde os dados saem.</dd>
+  <dt>categorias</dt><dd>O nome da tabela, escrito exatamente como ela foi criada (aqui, no plural e sem acento).</dd>
+  <dt>;</dt><dd>O ponto e vírgula fecha o comando, como o ponto final fecha uma frase. A seção 4 explica quando ele é obrigatório.</dd>
+</dl>
+
+<p>Isso é uma <strong>consulta</strong> (em inglês, <em>query</em>): um pedido de dados ao banco. Daqui para a frente, "consulta" e "SELECT" vão aparecer o tempo todo, e querem dizer quase a mesma coisa.</p>
+
+<hr>
+
+<h2>2. Lendo o resultado</h2>
+<p>Olhe de novo o quadro "Resultado" lá de cima. Ele tem três partes:</p>
+
+<ol class="passo">
+  <li><strong>O cabeçalho</strong>, a primeira linha: os nomes das colunas (<code>id</code>, <code>nome</code>, <code>descricao</code>). Com <code>*</code>, elas vêm na mesma ordem em que a tabela foi criada.</li>
+  <li><strong>As linhas</strong>: cada linha é uma categoria, uma "ficha" da gaveta. A primeira é a categoria 1, Papelaria.</li>
+  <li><strong>O total</strong>, embaixo: 8 linhas. A Loja Aurora tem 8 categorias.</li>
+</ol>
+
+<p>Agora uma tabela maior. A loja tem 6 fornecedores, e cada um tem mais colunas:</p>
+
+<pre class="file" data-file="fornecedores.sql" data-resultado>SELECT * FROM fornecedores;
+</pre>
+
+<p>Repare na coluna <code>estado</code> dos fornecedores 4 e 5: em vez de um valor, aparece <em>NULL</em>, em itálico. São os fornecedores de Portugal e da Argentina, que não têm estado brasileiro. <code>NULL</code> quer dizer "<strong>sem valor</strong>", um campo da ficha que ficou em branco. Ele tem aula própria: <a href="null.html">O Valor NULL</a>. Por enquanto, basta saber ler.</p>
+
+<div class="trysql">
+<p class="try-task"><strong>Experimente:</strong> rode a consulta. Depois troque <code>categorias</code> pelo nome de outra tabela da loja (<code>produtos</code>, <code>clientes</code>, <code>funcionarios</code>, <code>pedidos</code>, <code>itens_pedido</code>) e rode de novo. Olhe o cabeçalho e o total de linhas de cada uma.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM categorias;
+</pre>
+</div>
+
+<div class="trysql" data-goal="colunas:id,nome,cargo,salario,chefe_id;;linhas:8">
+<p class="try-task"><strong>Missão:</strong> a Ana quer ver a ficha de todos os funcionários da loja. Mude a consulta para mostrar <strong>todas as colunas</strong> da tabela <code>funcionarios</code>.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM categorias;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM funcionarios;
+</pre>
+</div>
+
+<hr>
+
+<h2>3. <code>SELECT *</code> ou o nome das colunas?</h2>
+<p>O asterisco é prático, mas traz <strong>tudo</strong>. Muitas vezes você só quer uma parte. No lugar do <code>*</code>, escreva o nome das colunas que quer ver, separados por vírgula:</p>
+
+<pre class="file" data-file="colunas.sql" data-resultado>SELECT nome, descricao FROM categorias;
+</pre>
+
+<dl class="anatomy">
+  <dt>SELECT</dt><dd>Igual a antes: vou pedir dados.</dd>
+  <dt>nome, descricao</dt><dd>A <strong>lista de colunas</strong> que você quer, separadas por vírgula. O <code>id</code> ficou de fora, porque não foi pedido.</dd>
+  <dt>FROM categorias</dt><dd>A mesma tabela.</dd>
+  <dt>;</dt><dd>Fim do comando.</dd>
+</dl>
+
+<p>As linhas são as mesmas 8; o que mudou foi quantas <strong>colunas</strong> vieram. Escolher colunas tem uma aula inteira, a próxima: <a href="select-colunas.html">Escolhendo Colunas</a>. Aqui, o importante é saber quando usar cada forma:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th></th><th><code>SELECT *</code></th><th><code>SELECT nome, descricao</code></th></tr>
+<tr><td>O que traz</td><td>Todas as colunas, na ordem da tabela</td><td>Só as colunas da lista, na ordem que você escreveu</td></tr>
+<tr><td>Bom para</td><td>Dar uma olhada numa tabela que você não conhece</td><td>Consultas de verdade: relatórios, telas, programas</td></tr>
+<tr><td>Se a tabela ganhar uma coluna nova</td><td>O resultado muda sozinho (ganha a coluna)</td><td>O resultado continua igual</td></tr>
+<tr><td>Quantidade de dados</td><td>Tudo, mesmo o que você não vai usar</td><td>Só o necessário</td></tr>
+</table>
+</div>
+
+<div class="tip">
+<strong>Boa prática</strong>
+<p>Use o <code>*</code> para <strong>explorar</strong>: "que colunas essa tabela tem mesmo?". Numa consulta que vai ficar guardada (num relatório, num programa), escreva o nome das colunas. Quem ler depois entende na hora o que a consulta mostra, e ela não muda de cara quando alguém acrescenta uma coluna na tabela.</p>
+</div>
+
+<hr>
+
+<h2>4. O ponto e vírgula</h2>
+<p>O <code>;</code> marca onde um comando <strong>termina</strong>. Com ele, você pode escrever vários comandos seguidos, e o banco roda um de cada vez, na ordem. No editor do guia, cada <code>SELECT</code> ganha a sua tabela de resultado:</p>
+
+<pre class="file" data-file="dois.sql" data-resultado>SELECT * FROM categorias;
+SELECT * FROM fornecedores;
+</pre>
+
+<p>Vieram duas tabelas: primeiro as 8 categorias, depois os 6 fornecedores. O ponto e vírgula do meio é o que separa um comando do outro.</p>
+
+<h3>Precisa mesmo do ponto e vírgula?</h3>
+<p>Depende de onde você está:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Onde</th><th>Um comando só</th><th>Vários comandos</th></tr>
+<tr><td>Editor do guia</td><td>Funciona com ou sem <code>;</code> no fim</td><td>Precisa do <code>;</code> entre um e outro</td></tr>
+<tr><td>Terminal do <code>sqlite3</code></td><td>Precisa do <code>;</code>: sem ele, o programa espera você continuar</td><td>Precisa do <code>;</code> em cada um</td></tr>
+</table>
+</div>
+
+<p>No editor, um comando sozinho sem ponto e vírgula roda normalmente:</p>
+
+<pre class="file" data-file="sem-ponto.sql" data-resultado>SELECT * FROM categorias
+</pre>
+
+<p>No <a href="shell-sqlite.html">terminal do SQLite</a> é diferente. Lá, a tecla Enter não basta: o programa só roda o comando quando encontra o <code>;</code>. Veja a Ana esquecendo o ponto e vírgula no notebook dela:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT nome FROM categorias            « a Ana apertou Enter sem o ;
+   ...> ;                                      « o sqlite3 esperou; ela digitou só o ;
+Papelaria
+Eletrônicos
+Casa e Cozinha
+Livros
+Brinquedos
+Esporte e Lazer
+Alimentos
+Jardim
+sqlite> .quit</pre>
+
+<p>O <code>   ...&gt;</code> é o prompt de <strong>continuação</strong>: o <code>sqlite3</code> está dizendo "o comando ainda não acabou, pode continuar". Não é erro. Basta digitar o <code>;</code> e apertar Enter. Isso é útil: você pode escrever uma consulta comprida em várias linhas, e ela só roda no fim.</p>
+
+<div class="tip">
+<strong>Boa prática</strong>
+<p>Termine <strong>sempre</strong> o comando com <code>;</code>, mesmo no editor, onde ele é opcional para um comando só. Assim a consulta funciona igual em qualquer lugar: no editor, no terminal e nos outros bancos.</p>
+</div>
+
+<div class="trysql" data-goal="contem:Papelaria;;linhas:30">
+<p class="try-task"><strong>Missão:</strong> numa caixa só, mostre <strong>duas</strong> tabelas: primeiro todas as categorias, depois todos os clientes. Use o ponto e vírgula para separar os dois comandos.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM categorias
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM categorias;
+SELECT * FROM clientes;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. Maiúsculas e minúsculas</h2>
+<p>As palavras do SQL (<code>SELECT</code>, <code>FROM</code>…) são chamadas <strong>palavras-chave</strong>. Para o banco, tanto faz escrevê-las em maiúsculas ou minúsculas. Estas três consultas são <strong>a mesma</strong>:</p>
+
+<pre class="file" data-file="minusculas.sql" data-resultado>select nome from categorias;
+</pre>
+
+<pre class="file" data-file="misturado.sql" data-resultado>SeLeCt nome FrOm categorias;
+</pre>
+
+<pre class="file" data-file="maiusculas.sql" data-resultado>SELECT nome FROM categorias;
+</pre>
+
+<p>No SQLite, os <strong>nomes</strong> de tabelas e colunas também não ligam para maiúsculas: <code>SELECT NOME FROM CATEGORIAS</code> funciona e dá o mesmo resultado (o cabeçalho continua <code>nome</code>, do jeito que a coluna foi criada).</p>
+
+<pre class="file" data-file="tudo-maiusculo.sql" data-resultado>SELECT NOME, Descricao FROM CATEGORIAS;
+</pre>
+
+<p>Se tanto faz, por que o guia escreve sempre <code>SELECT nome FROM categorias</code>? É um <strong>costume</strong> seguido no mundo inteiro, e tem um bom motivo: com as palavras-chave em MAIÚSCULAS e os nomes em minúsculas, você bate o olho e separa o que é "SQL" do que é "a sua tabela".</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>O quê</th><th>Como escrever</th><th>Exemplo</th></tr>
+<tr><td>Palavras-chave do SQL</td><td>MAIÚSCULAS</td><td><code>SELECT</code>, <code>FROM</code>, <code>WHERE</code></td></tr>
+<tr><td>Nomes de tabelas e colunas</td><td>minúsculas, do jeito que foram criados</td><td><code>categorias</code>, <code>nome</code>, <code>itens_pedido</code></td></tr>
+</table>
+</div>
+
+<div class="warning">
+<strong>Cuidado: os dados não são assim</strong>
+<p>Maiúsculas não importam nas palavras do SQL, mas importam (e muito) <strong>dentro dos dados</strong>. Para o SQLite, o texto <code>'Teresina'</code> e o texto <code>'teresina'</code> são diferentes. Você vai ver isso na aula <a href="where.html">WHERE</a>, quando começar a procurar valores.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>As palavras-chave não ligam para maiúsculas em nenhum banco. Os <strong>nomes</strong> variam:</p>
+<ul>
+  <li><strong>PostgreSQL:</strong> nomes sem aspas não ligam para maiúsculas, porque ele os converte para minúsculas (<code>CATEGORIAS</code> vira <code>categorias</code>).</li>
+  <li><strong>MySQL:</strong> nomes de colunas não ligam para maiúsculas, mas nomes de <strong>tabelas</strong> dependem do sistema: no Linux, <code>Categorias</code> e <code>categorias</code> são tabelas diferentes; no Windows, não.</li>
+</ul>
+<p>Mais um motivo para seguir o costume: nomes sempre em minúsculas, escritos do mesmo jeito em todo lugar.</p>
+</div>
+
+<hr>
+
+<h2>6. Espaços e quebras de linha</h2>
+<p>O SQL não liga para espaços a mais nem para quebras de linha. Você pode escrever a consulta numa linha só ou em várias:</p>
+
+<pre class="file" data-file="varias-linhas.sql" data-resultado>SELECT nome,
+       descricao
+  FROM categorias;
+</pre>
+
+<p>O resultado é igual ao da consulta numa linha só. Para consultas curtas, uma linha basta. Quando elas crescerem (e vão crescer, já na aula <a href="where.html">WHERE</a>), o costume é pôr cada parte numa linha, para ler de cima para baixo:</p>
+
+<pre class="file" data-file="a forma de uma consulta (as setas são só explicação)">SELECT nome, cidade        ← o que mostrar
+FROM clientes              ← de onde
+WHERE estado = 'PI';       ← quais linhas (aula WHERE)
+</pre>
+
+<p>O que <strong>não</strong> pode é separar uma palavra no meio nem grudar duas palavras. <code>SEL ECT * FROM categorias;</code> dá <code>near "SEL": syntax error</code>, e <code>SELECT*FROMcategorias;</code> dá <code>near "FROMcategorias": syntax error</code>: para o banco, <code>FROMcategorias</code> é uma palavra só, que ele não conhece. (Já <code>SELECT*FROM categorias;</code> funciona: o <code>*</code> é um símbolo e separa as palavras sozinho. Mas fica difícil de ler; use os espaços.)</p>
+
+<hr>
+
+<h2>7. Um <code>SELECT</code> sem tabela</h2>
+<p>O <code>FROM</code> diz de qual tabela vêm os dados. Se você não precisa de tabela nenhuma, pode deixá-lo de fora, e o <code>SELECT</code> vira uma calculadora:</p>
+
+<pre class="file" data-file="calculadora.sql" data-resultado>SELECT 2 + 2;
+</pre>
+
+<pre class="file" data-file="ola.sql" data-resultado>SELECT 'Olá, Ana';
+</pre>
+
+<p>O resultado é uma tabela de <strong>uma linha</strong>, e o cabeçalho é o próprio texto que você escreveu. Repare que o texto <code>'Olá, Ana'</code> está entre <strong>aspas simples</strong>: é assim que o SQL sabe que aquilo é um texto, e não o nome de uma coluna (a aula <a href="where.html">WHERE</a> explica com calma). Esse truque vai ser útil para testar coisas pequenas, como as comparações da aula <a href="operadores-comparacao.html">Comparações</a>.</p>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<p>O PostgreSQL também aceita <code>SELECT 2+2;</code> sem <code>FROM</code>, e a documentação dele avisa que alguns outros bancos não aceitam: neles é preciso usar uma tabela "de mentira", de uma linha só.</p>
+</div>
+
+<hr>
+
+<h2>Formas diferentes de fazer a mesma coisa</h2>
+<p>Todas estas consultas mostram a tabela de categorias inteira, com as mesmas 8 linhas e as mesmas 3 colunas:</p>
+
+<pre class="file" data-file="forma1.sql">SELECT * FROM categorias;
+</pre>
+<pre class="file" data-file="forma2.sql">SELECT id, nome, descricao FROM categorias;
+</pre>
+<pre class="file" data-file="forma3.sql">select * from categorias
+</pre>
+<pre class="file" data-file="forma4.sql">SELECT *
+FROM categorias;
+</pre>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Forma</th><th>Quando usar</th></tr>
+<tr><td><code>SELECT * FROM categorias;</code></td><td>Para explorar uma tabela rapidamente</td></tr>
+<tr><td><code>SELECT id, nome, descricao FROM categorias;</code></td><td>Em consultas que vão ficar guardadas: deixa claro o que vem, na ordem que você quer</td></tr>
+<tr><td><code>select * from categorias</code></td><td>Funciona, mas foge do costume (minúsculas e sem <code>;</code>). Evite</td></tr>
+<tr><td>Em várias linhas</td><td>Quando a consulta fica comprida: uma parte por linha</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>Quando a consulta tem um erro, o banco <strong>não</strong> mostra resultado nenhum: no lugar da tabela, aparece uma mensagem em vermelho. As mensagens do SQLite são em inglês; abaixo estão as reais, com a tradução.</p>
+
+<div class="cenario">
+<strong>O nome da tabela está errado</strong>
+<p>A Ana escreveu <code>cliente</code>, no singular, mas a tabela se chama <code>clientes</code>:</p>
+<pre class="file" data-file="erro-tabela.sql" data-resultado data-erro>SELECT * FROM cliente;
+</pre>
+<p><code>no such table: cliente</code> quer dizer "não existe a tabela <code>cliente</code>". O banco não adivinha: ou o nome está exatamente certo, ou ele não acha. No terminal, a mesma mensagem vem com um prefixo:</p>
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT * FROM cliente;
+Parse error: no such table: cliente
+sqlite> .quit</pre>
+<p><code>Parse error</code> é "erro de análise": o <code>sqlite3</code> leu o comando e achou o problema antes de rodar. <strong>Como consertar:</strong> confira o nome da tabela. Na aula <a href="banco-do-guia.html">O Banco da Loja Aurora</a> está a lista de todas; no terminal, o comando <code>.tables</code> mostra os nomes (veja <a href="comandos-ponto.html">Comandos de Ponto</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Esqueceu o que mostrar</strong>
+<pre class="file" data-file="erro-vazio.sql" data-resultado data-erro>SELECT FROM produtos;
+</pre>
+<p><code>near "FROM": syntax error</code> quer dizer "erro de sintaxe perto de <code>FROM</code>". <strong>Sintaxe</strong> é a gramática do SQL, a ordem certa das palavras. Logo depois do <code>SELECT</code> o banco esperava a lista de colunas (ou o <code>*</code>), e encontrou o <code>FROM</code>. Repare no padrão: o erro de sintaxe aponta <strong>a palavra onde o banco se perdeu</strong>, e o problema costuma estar nela ou logo antes dela.</p>
+<p><strong>Como consertar:</strong> diga o que quer ver: <code>SELECT * FROM produtos;</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Uma palavra-chave com erro de digitação</strong>
+<pre class="file" data-file="erro-form.sql" data-resultado data-erro>SELECT * FORM produtos;
+</pre>
+<p><code>near "FORM": syntax error</code>. O <code>FROM</code> virou <code>FORM</code>, uma troca de letras muito comum. O banco não conhece a palavra <code>FORM</code> e se perdeu bem ali. <strong>Como consertar:</strong> <code>FROM</code>, com o R antes do O ("de", em inglês).</p>
+</div>
+
+<div class="cenario">
+<strong>Dois comandos sem o ponto e vírgula no meio</strong>
+<pre class="file" data-file="erro-dois.sql" data-resultado data-erro>SELECT * FROM categorias SELECT * FROM fornecedores;
+</pre>
+<p><code>near "SELECT": syntax error</code>. Sem o <code>;</code>, o banco leu tudo como um comando só. Quando chegou ao segundo <code>SELECT</code>, achou que ele não fazia sentido ali. E repare: <strong>nenhuma</strong> das duas tabelas apareceu, nem a primeira, que estava certa. Um erro de sintaxe impede o comando inteiro de rodar.</p>
+<p><strong>Como consertar:</strong> ponha o <code>;</code> no fim de cada comando.</p>
+</div>
+
+<div class="trysql" data-goal="linhas:45">
+<p class="try-task"><strong>Missão:</strong> esta consulta deveria mostrar todos os produtos da loja, mas tem um erro. Rode, leia a mensagem e conserte.</p>
+<pre class="script" data-file="consulta.sql">SELECT * FORM produtos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM produtos;
+</pre>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Escrita</th><th>O que faz</th></tr>
+<tr><td><code>SELECT * FROM tabela;</code></td><td>Mostra todas as colunas e todas as linhas da tabela</td></tr>
+<tr><td><code>SELECT coluna1, coluna2 FROM tabela;</code></td><td>Mostra só as colunas da lista, nessa ordem</td></tr>
+<tr><td><code>;</code></td><td>Fecha o comando; separa um comando do outro</td></tr>
+<tr><td><code>   ...&gt;</code> (no terminal)</td><td>O comando ainda não acabou: falta o <code>;</code></td></tr>
+<tr><td><code>SELECT 2 + 2;</code></td><td>Um <code>SELECT</code> sem tabela: calcula e mostra uma linha</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Mensagem do SQLite</th><th>Quer dizer</th></tr>
+<tr><td><code>no such table: cliente</code></td><td>A tabela <code>cliente</code> não existe: confira o nome</td></tr>
+<tr><td><code>near "FROM": syntax error</code></td><td>Erro de gramática perto de <code>FROM</code>: falta algo antes dele</td></tr>
+<tr><td><code>near "FORM": syntax error</code></td><td>Palavra desconhecida ou fora do lugar: aqui, <code>FROM</code> digitado errado</td></tr>
+<tr><td><code>Parse error: …</code> (no terminal)</td><td>O mesmo erro, com o prefixo do programa <code>sqlite3</code></td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="exercise">
+<h3>1. A primeira consulta</h3>
+<p>Complete para mostrar todas as colunas da tabela <code>produtos</code>:</p>
+<div class="ex-code"><input data-answer="SELECT|select" aria-label="palavra-chave"> * <input data-answer="FROM|from" aria-label="palavra-chave"> produtos;</div>
+</div>
+
+<div class="exercise">
+<h3>2. Todas as colunas</h3>
+<p>Que símbolo, no lugar das colunas, quer dizer "todas as colunas"?</p>
+<div class="ex-code">SELECT <input data-answer="*" aria-label="símbolo"> FROM clientes;</div>
+</div>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">3. No terminal, a Ana digitou <code>SELECT * FROM categorias</code> e apertou Enter. Apareceu <code>   ...&gt;</code>. O que aconteceu?</p>
+<label><input type="radio" name="q3"> A consulta deu erro</label>
+<label><input type="radio" name="q3"> A tabela está vazia</label>
+<label><input type="radio" name="q3"> Faltou o <code>;</code>: o <code>sqlite3</code> está esperando o fim do comando</label>
+<label><input type="radio" name="q3"> O banco apagou a tabela</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">4. O que a consulta <code>select nome from categorias;</code> faz?</p>
+<label><input type="radio" name="q4"> Dá erro, porque as palavras-chave têm de ser em maiúsculas</label>
+<label><input type="radio" name="q4"> Mostra o nome das 8 categorias, igual a <code>SELECT nome FROM categorias;</code></label>
+<label><input type="radio" name="q4"> Mostra todas as colunas</label>
+<label><input type="radio" name="q4"> Mostra só a primeira categoria</label>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">5. A Ana rodou <code>SELECT * FROM produto;</code> e recebeu <code>no such table: produto</code>. Qual é o problema?</p>
+<label><input type="radio" name="q5"> Faltou o <code>;</code></label>
+<label><input type="radio" name="q5"> O <code>*</code> não funciona com produtos</label>
+<label><input type="radio" name="q5"> O <code>SELECT</code> deveria estar em minúsculas</label>
+<label><input type="radio" name="q5"> A tabela se chama <code>produtos</code>, no plural</label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">6. Rodar um <code>SELECT</code> pode estragar os dados da tabela?</p>
+<label><input type="radio" name="q6"> Não: o <code>SELECT</code> só lê; ele não muda nem apaga nada</label>
+<label><input type="radio" name="q6"> Sim, se esquecer o <code>;</code></label>
+<label><input type="radio" name="q6"> Sim, se usar o <code>*</code></label>
+<label><input type="radio" name="q6"> Só no terminal</label>
+</div>
+
+<h3>Missão final: o caderno de pedidos</h3>
+
+<div class="trysql" data-goal="colunas:pedido_id,produto_id,quantidade,preco_unitario;;linhas:220">
+<p class="try-task"><strong>Missão:</strong> cada produto vendido num pedido fica numa linha da tabela <code>itens_pedido</code> (com sublinhado no meio). Mostre essa tabela inteira, com todas as colunas. Quantas linhas ela tem?</p>
+<pre class="script" data-file="consulta.sql">SELECT * FROM pedidos;
+</pre>
+<pre class="solucao" data-file="consulta.sql">SELECT * FROM itens_pedido;
+</pre>
+</div>
+
+<p>São 220 itens, e o quadro mostra todos. Ninguém lê 220 linhas inteiras: nas próximas aulas você vai aprender a pedir só as colunas que interessam (<a href="select-colunas.html">Escolhendo Colunas</a>) e só as linhas que interessam (<a href="where.html">WHERE</a>).</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>SELECT</code> ("selecione") pede dados ao banco; <code>FROM</code> ("de") diz de qual tabela. A resposta é sempre uma tabela nova, e o <code>SELECT</code> não muda nada no banco.</li>
+  <li><code>SELECT * FROM tabela;</code> mostra todas as colunas. Para explorar, ótimo; nas consultas que ficam guardadas, prefira escrever o nome das colunas.</li>
+  <li>O <code>;</code> fecha o comando e separa um comando do outro. No terminal ele é obrigatório: sem ele, o <code>sqlite3</code> mostra <code>   ...&gt;</code> e espera.</li>
+  <li>Palavras-chave não ligam para maiúsculas, mas o costume é <code>SELECT</code> em maiúsculas e nomes de tabelas e colunas em minúsculas. Nos <strong>dados</strong>, maiúsculas importam.</li>
+  <li>Espaços e quebras de linha não mudam a consulta.</li>
+  <li>Um erro não mostra resultado nenhum: <code>no such table</code> é nome de tabela errado; <code>near "…": syntax error</code> é a gramática errada perto daquela palavra.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
