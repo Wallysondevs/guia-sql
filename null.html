@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SQL NULL — o valor desconhecido e a lógica de três valores | Guia SQL</title>
+<meta name="description" content="O valor NULL em SQL para quem nunca mexeu num banco: o que é o 'valor desconhecido', por que não é zero nem texto vazio, onde ele aparece na Loja Aurora, por que = NULL nunca funciona, a lógica de três valores (verdadeiro, falso e desconhecido), NULL em contas, ordenação e DISTINCT, com os resultados reais do SQLite e missões no editor.">
+<link rel="stylesheet" href="assets/style.css">
+<script>try{var t=localStorage.getItem("tema");if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Tópicos"></nav>
+<main class="main">
+<div class="content">
+
+<div class="pager"></div>
+
+<h1>SQL <span class="hl">O Valor NULL</span></h1>
+
+<p class="intro">Quando a Ana cadastrou o cliente Luís Otávio Brito na Loja Aurora, ele não quis dar o email. O campo ficou sem nada. No banco, esse "nada" tem nome: <strong><code>NULL</code></strong> (em inglês, "nulo"). Ele parece simples, mas é a fonte de muitos dos resultados estranhos que você vai encontrar em SQL: consultas que voltam vazias sem erro, totais que não fecham, contas que somem. Nesta aula você vai entender o que o <code>NULL</code> é, por que <code>email = NULL</code> <strong>nunca</strong> funciona e como o SQL pensa com três respostas possíveis: verdadeiro, falso e "não sei".</p>
+
+<div class="note">
+<strong>Você vai aprender</strong>
+<ul>
+  <li>O que é o <code>NULL</code>: um valor <strong>desconhecido</strong> ou que não existe.</li>
+  <li>Por que <code>NULL</code> não é zero, nem texto vazio, nem a palavra <code>'NULL'</code>.</li>
+  <li>Onde o <code>NULL</code> aparece na Loja Aurora, no editor e no terminal do <code>sqlite3</code>.</li>
+  <li>Por que <code>WHERE email = NULL</code> devolve zero linhas, sem dar erro.</li>
+  <li>A <strong>lógica de três valores</strong>: como <code>AND</code>, <code>OR</code> e <code>NOT</code> se comportam com o "não sei".</li>
+  <li>O que acontece com o <code>NULL</code> numa conta, numa ordenação e num <code>DISTINCT</code>.</li>
+</ul>
+</div>
+
+<p>Todos os exemplos rodam de verdade, no seu navegador, contra o banco da <a href="banco-do-guia.html">Loja Aurora</a>. No quadro "Resultado", o <code>NULL</code> aparece escrito <em>NULL</em>, em itálico.</p>
+
+<hr>
+
+<h2>A ideia: a ficha com um campo em branco</h2>
+<p>Imagine o fichário de clientes da loja, em papel. Na ficha do Luís Otávio, a linha "email" ficou em branco. O que esse branco quer dizer?</p>
+<ul>
+  <li>Talvez ele não tenha email.</li>
+  <li>Talvez tenha, mas não quis informar.</li>
+  <li>Talvez a Ana tenha esquecido de perguntar.</li>
+</ul>
+<p>Você não sabe. É isso que o <code>NULL</code> representa: <strong>"aqui não tem valor; o valor é desconhecido"</strong>. Repare que um branco é muito diferente de uma ficha em que está escrito "não tem email", ou de um campo "filhos" preenchido com <strong>0</strong>. Zero é uma informação (a pessoa não tem filhos); o branco é a <strong>falta</strong> de informação.</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Na ficha de papel</th><th>No banco</th><th>Quer dizer</th></tr>
+<tr><td>Campo em branco</td><td><code>NULL</code></td><td>Não sabemos / não existe</td></tr>
+<tr><td>"0" escrito no campo</td><td><code>0</code></td><td>Sabemos, e é zero</td></tr>
+<tr><td>Um traço "—" ou um campo apagado de propósito</td><td><code>''</code> (texto vazio)</td><td>Sabemos, e é um texto sem letras</td></tr>
+<tr><td>Alguém escreveu a palavra "NULL"</td><td><code>'NULL'</code></td><td>Um texto comum, de quatro letras</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>1. Onde o NULL aparece na Loja Aurora</h2>
+<p>O banco da Aurora tem vários campos sem valor, de propósito. Os clientes de número 6 a 8:</p>
+
+<pre class="file" data-file="clientes.sql" data-resultado>SELECT id, nome, email
+FROM clientes
+WHERE id BETWEEN 6 AND 8;
+</pre>
+
+<p>O cliente 7, Luís Otávio Brito, aparece com <em>NULL</em> no email. Ele não é o único. Estes são os "brancos" da Aurora:</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Tabela e coluna</th><th>Quem tem NULL</th><th>Por quê</th></tr>
+<tr><td><code>clientes.email</code></td><td>Clientes 7, 15 e 23</td><td>Não deram email</td></tr>
+<tr><td><code>clientes.nascimento</code></td><td>Clientes 9 e 21</td><td>Data de nascimento não informada</td></tr>
+<tr><td><code>fornecedores.estado</code></td><td>Fornecedores 4 (Portugal) e 5 (Argentina)</td><td>Não existe "estado brasileiro" fora do Brasil</td></tr>
+<tr><td><code>pedidos.entregue_em</code></td><td>Pedidos 86 a 90</td><td>Ainda não foram entregues</td></tr>
+<tr><td><code>funcionarios.chefe_id</code></td><td>Funcionária 1, a gerente</td><td>Ela não tem chefe</td></tr>
+</table>
+</div>
+
+<p>Repare que o <code>NULL</code> pode querer dizer coisas diferentes: "ninguém informou" (o email), "ainda não aconteceu" (a entrega) ou "não se aplica" (o estado de um fornecedor estrangeiro). Para o SQL, é sempre o mesmo <code>NULL</code>. Veja os pedidos mais recentes:</p>
+
+<pre class="file" data-file="entregas.sql" data-resultado>SELECT id, data, entregue_em
+FROM pedidos
+WHERE id &gt;= 84;
+</pre>
+
+<h3>No terminal, o NULL aparece em branco</h3>
+<p>No programa <code>sqlite3</code> (aula <a href="shell-sqlite.html">O Terminal do SQLite</a>), o <code>NULL</code> sai como <strong>nada</strong>: o email do cliente 7 simplesmente some depois da barra. Para enxergar, o comando de ponto <code>.nullvalue</code> escolhe um texto para mostrar no lugar:</p>
+
+<pre class="term">$ sqlite3 loja.db
+SQLite version 3.50.4 2025-07-30 19:33:53
+Enter ".help" for usage hints.
+sqlite> SELECT id, nome, email FROM clientes WHERE id BETWEEN 6 AND 8;
+6|Rafael Monteiro|rafael.monteiro@exemplo.com.br
+7|Luís Otávio Brito|          « o NULL: nada depois da barra
+8|Fernanda Carvalho|fernanda.carvalho@exemplo.com.br
+sqlite> .nullvalue NULL
+sqlite> SELECT id, nome, email FROM clientes WHERE id BETWEEN 6 AND 8;
+6|Rafael Monteiro|rafael.monteiro@exemplo.com.br
+7|Luís Otávio Brito|NULL
+8|Fernanda Carvalho|fernanda.carvalho@exemplo.com.br
+sqlite> .quit</pre>
+
+<p>O <code>.nullvalue</code> só muda o que o terminal <strong>mostra</strong>; o dado continua sendo <code>NULL</code>. Ele vale até você fechar o <code>sqlite3</code>. No editor do guia não é preciso: o quadro já escreve <em>NULL</em> em itálico.</p>
+
+<hr>
+
+<h2>2. NULL não é zero, nem vazio, nem a palavra "NULL"</h2>
+<p>A função <code>typeof()</code> do SQLite diz de que tipo é um valor. Compare:</p>
+
+<pre class="file" data-file="tipos.sql" data-resultado>SELECT typeof(NULL), typeof(''), typeof(0), typeof('NULL');
+</pre>
+
+<dl class="anatomy">
+  <dt>typeof(NULL) → null</dt><dd>O <code>NULL</code> é um tipo à parte: não é número nem texto.</dd>
+  <dt>typeof('') → text</dt><dd>Duas aspas simples sem nada no meio são um texto <strong>vazio</strong>: um valor conhecido, com zero letras.</dd>
+  <dt>typeof(0) → integer</dt><dd>Zero é um número inteiro como outro qualquer.</dd>
+  <dt>typeof('NULL') → text</dt><dd>Entre aspas, <code>'NULL'</code> é só uma palavra de quatro letras. Nada a ver com o valor <code>NULL</code>.</dd>
+</dl>
+
+<p>A diferença aparece nas funções também. <code>length()</code> conta as letras de um texto:</p>
+
+<pre class="file" data-file="length.sql" data-resultado>SELECT length(''), length(NULL);
+</pre>
+
+<p>O texto vazio tem 0 letras. O <code>NULL</code> tem... não se sabe: a resposta é <em>NULL</em>. Guarde essa ideia, porque ela é a regra geral: <strong>quase tudo o que toca num NULL vira NULL</strong>.</p>
+
+<hr>
+
+<h2>3. Por que <code>= NULL</code> não funciona</h2>
+<p>A Ana quer a lista de clientes sem email, para pedir o contato na próxima compra. O jeito "óbvio" é este:</p>
+
+<pre class="file" data-file="igual-null.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email = NULL;
+</pre>
+
+<p>Zero linhas, e nenhuma mensagem de erro. Mas você acabou de ver que o cliente 7 tem email <code>NULL</code>! E o contrário também falha:</p>
+
+<pre class="file" data-file="diferente-null.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email &lt;&gt; NULL;
+</pre>
+
+<p>Também zero, embora 27 clientes tenham email. Para entender, pergunte em português: "o email do Luís Otávio é igual a <em>um valor desconhecido</em>?". A resposta honesta é "<strong>não sei</strong>". E o email da Fernanda, que é conhecido, é igual a um valor desconhecido? Também "não sei". Comparar qualquer coisa com <code>NULL</code> dá <code>NULL</code>, o "não sei" do SQL:</p>
+
+<pre class="file" data-file="comparacoes.sql" data-resultado>SELECT NULL = NULL, 1 = NULL, NULL &lt;&gt; NULL, NULL &gt; 5, NULL = 0, NULL = '';
+</pre>
+
+<p>Todas as seis respostas são <em>NULL</em>, inclusive <code>NULL = NULL</code>. Pense em duas fichas com o email em branco: os dois emails são iguais? Ninguém sabe; podem ser iguais ou diferentes. E o <code>WHERE</code> tem uma regra só: <strong>ele deixa passar apenas as linhas em que a condição é verdadeira</strong>. "Falso" não passa, e "não sei" também não passa. Por isso <code>WHERE email = NULL</code> nunca encontra nada, em nenhum banco.</p>
+
+<div class="tip">
+<strong>Então como se procura um NULL?</strong>
+<p>Com um operador feito para isso: <code>IS NULL</code> ("é nulo"). Ele não compara valores; ele pergunta "este campo está em branco?", e essa pergunta sempre tem resposta. É o assunto da próxima aula, <a href="is-null.html">IS NULL e IS NOT NULL</a>. Só para matar a curiosidade:</p>
+<pre class="file" data-file="is-null.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email IS NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>4. A lógica de três valores</h2>
+<p>Até aqui, nas aulas de <a href="and.html">AND</a>, <a href="or.html">OR</a> e <a href="not.html">NOT</a>, toda condição era verdadeira (<code>1</code>) ou falsa (<code>0</code>). Com o <code>NULL</code>, o SQL ganha um terceiro valor: <strong>desconhecido</strong>. Por isso se diz que o SQL usa uma <strong>lógica de três valores</strong>.</p>
+
+<p>Como o <code>AND</code>, o <code>OR</code> e o <code>NOT</code> lidam com o "não sei"? Veja de verdade:</p>
+
+<pre class="file" data-file="tres-valores.sql" data-resultado>SELECT NULL AND 0, NULL AND 1, NULL OR 1, NULL OR 0, NOT NULL;
+</pre>
+
+<p>Parece estranho, mas tem lógica. Pense que o <code>NULL</code> é uma carta virada para baixo, que pode ser verdadeira ou falsa:</p>
+
+<ol class="passo">
+  <li><code>NULL AND 0</code> → <code>0</code>. O <code>AND</code> precisa que <strong>os dois</strong> lados sejam verdadeiros. Um lado já é falso, então não importa a carta virada: o resultado é falso.</li>
+  <li><code>NULL AND 1</code> → <em>NULL</em>. Um lado é verdadeiro; o resultado depende da carta virada. Não sei.</li>
+  <li><code>NULL OR 1</code> → <code>1</code>. O <code>OR</code> precisa de <strong>um</strong> lado verdadeiro. Já tem um, então é verdadeiro, seja qual for a carta.</li>
+  <li><code>NULL OR 0</code> → <em>NULL</em>. Um lado é falso; tudo depende da carta virada. Não sei.</li>
+  <li><code>NOT NULL</code> → <em>NULL</em>. O contrário de "não sei" continua sendo "não sei".</li>
+</ol>
+
+<p>As tabelas completas (V = verdadeiro, F = falso, ? = desconhecido, o <code>NULL</code>):</p>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>a</th><th>b</th><th>a AND b</th><th>a OR b</th></tr>
+<tr><td>V</td><td>V</td><td>V</td><td>V</td></tr>
+<tr><td>V</td><td>F</td><td>F</td><td>V</td></tr>
+<tr><td>V</td><td>?</td><td>?</td><td>V</td></tr>
+<tr><td>F</td><td>F</td><td>F</td><td>F</td></tr>
+<tr><td>F</td><td>?</td><td>F</td><td>?</td></tr>
+<tr><td>?</td><td>?</td><td>?</td><td>?</td></tr>
+</table>
+</div>
+
+<div class="table-wrap">
+<table class="ref">
+<tr><th>a</th><th>NOT a</th></tr>
+<tr><td>V</td><td>F</td></tr>
+<tr><td>F</td><td>V</td></tr>
+<tr><td>?</td><td>?</td></tr>
+</table>
+</div>
+
+<div class="trysql" data-goal="out:^1\|0\|$">
+<p class="try-task"><strong>Experimente:</strong> antes de rodar, tente adivinhar cada resposta. Depois, troque o SQL para mostrar, nesta ordem, três colunas: <code>NULL OR 1</code>, <code>NULL AND 0</code> e <code>NULL = NULL</code>. Confira se o resultado é verdadeiro, falso e desconhecido.</p>
+<pre class="script" data-file="logica.sql">SELECT NULL OR 0, NULL AND 1, NULL = 1;
+</pre>
+<pre class="solucao" data-file="logica.sql">SELECT NULL OR 1, NULL AND 0, NULL = NULL;
+</pre>
+</div>
+
+<hr>
+
+<h2>5. O total que não fecha</h2>
+<p>A consequência mais traiçoeira do "não sei" aparece quando você divide a tabela em dois grupos. A Aurora tem 6 fornecedores. Os que ficam no Piauí:</p>
+
+<pre class="file" data-file="pi.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE estado = 'PI';
+</pre>
+
+<p>E os que <strong>não</strong> ficam no Piauí:</p>
+
+<pre class="file" data-file="fora-pi.sql" data-resultado>SELECT nome, estado
+FROM fornecedores
+WHERE estado &lt;&gt; 'PI';
+</pre>
+
+<p>Dois mais dois dá quatro. Cadê os outros dois fornecedores? São a Lusitana Comércio (Portugal) e a Pampa Sur (Argentina), com <code>estado</code> <code>NULL</code>. Para eles, tanto <code>estado = 'PI'</code> quanto <code>estado &lt;&gt; 'PI'</code> dão "não sei", e o <code>WHERE</code> barra os dois. Eles somem dos dois lados.</p>
+
+<p>O mesmo acontece com os clientes: <code>WHERE email LIKE '%@exemplo.com.br'</code> traz 27, e <code>WHERE email NOT LIKE '%@exemplo.com.br'</code> traz 0. Faltam 3. Você já viu isso com o <code>BETWEEN</code> e o <code>NOT BETWEEN</code>, na aula <a href="between.html">BETWEEN</a>. A regra é sempre a mesma: <strong>se a coluna pode ter NULL, "sim" + "não" pode não dar o total</strong>.</p>
+
+<pre class="file" data-file="email-not-like.sql" data-resultado>SELECT nome, email
+FROM clientes
+WHERE email NOT LIKE '%@exemplo.com.br';
+</pre>
+
+<hr>
+
+<h2>6. NULL em contas e em textos</h2>
+<p>A Ana quer montar o contato dos clientes no formato <code>Nome &lt;email&gt;</code>. Em SQL, <code>||</code> junta textos (aula <a href="funcoes-texto.html">Funções de Texto</a>):</p>
+
+<pre class="file" data-file="contato.sql" data-resultado>SELECT nome, email,
+       nome || ' &lt;' || email || '&gt;' AS contato
+FROM clientes
+WHERE id BETWEEN 6 AND 8;
+</pre>
+
+<p>Para o cliente 7, o contato inteiro virou <em>NULL</em>, e o nome dele, que é conhecido, sumiu junto. Juntar um texto com "não sei" dá "não sei". Com números é igual:</p>
+
+<pre class="file" data-file="contas.sql" data-resultado>SELECT 10 + NULL, NULL * 0;
+</pre>
+
+<p>Até <code>NULL * 0</code> dá <em>NULL</em>: o SQL não tenta ser esperto; qualquer conta com um valor desconhecido tem resultado desconhecido. Para trocar o <code>NULL</code> por um valor padrão antes da conta (por exemplo, "sem email"), existem as funções <code>IFNULL</code> e <code>COALESCE</code>, que têm aula própria: <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>.</p>
+
+<hr>
+
+<h2>7. NULL na ordenação e no DISTINCT</h2>
+<p>Se o <code>NULL</code> não é igual a nada, onde ele fica num <code>ORDER BY</code>? No SQLite, os <code>NULL</code> vêm <strong>primeiro</strong> na ordem crescente, como se fossem menores que qualquer valor:</p>
+
+<pre class="file" data-file="ordem.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento
+LIMIT 4;
+</pre>
+
+<p>Antônio e Sebastião, sem data, aparecem antes da cliente mais velha. Com <code>DESC</code>, eles vão para o fim. Se quiser os <code>NULL</code> no fim mesmo em ordem crescente, o SQLite aceita <code>NULLS LAST</code>:</p>
+
+<pre class="file" data-file="ordem-nulls-last.sql" data-resultado>SELECT nome, nascimento
+FROM clientes
+ORDER BY nascimento NULLS LAST
+LIMIT 3;
+</pre>
+
+<p>E no <code>DISTINCT</code> (aula <a href="select-distinct.html">SELECT DISTINCT</a>), os <code>NULL</code> são tratados como <strong>um grupo só</strong>: os dois fornecedores estrangeiros viram uma linha <em>NULL</em>:</p>
+
+<pre class="file" data-file="distinct.sql" data-resultado>SELECT DISTINCT estado
+FROM fornecedores;
+</pre>
+
+<p>Aqui o SQL faz uma exceção à regra do "não sei": para agrupar e ordenar, todos os <code>NULL</code> ficam juntos.</p>
+
+<hr>
+
+<h2>Formas diferentes de lidar com um campo sem valor</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Você quer</th><th>Escreva</th><th>Não escreva</th></tr>
+<tr><td>Achar quem não tem email</td><td><code>WHERE email IS NULL</code> (próxima aula)</td><td><code>WHERE email = NULL</code> (sempre 0 linhas)</td></tr>
+<tr><td>Achar quem tem email</td><td><code>WHERE email IS NOT NULL</code></td><td><code>WHERE email &lt;&gt; NULL</code> (sempre 0 linhas)</td></tr>
+<tr><td>Dividir a tabela em "sim" e "não" sem perder ninguém</td><td>Pense no terceiro grupo: <code>... OR estado IS NULL</code></td><td>Só <code>estado = 'PI'</code> e <code>estado &lt;&gt; 'PI'</code></td></tr>
+<tr><td>Mostrar um texto no lugar do branco</td><td><code>IFNULL(email, 'sem email')</code> (aula <a href="ifnull-coalesce.html">IFNULL e COALESCE</a>)</td><td><code>email || ''</code> (continua <code>NULL</code>)</td></tr>
+<tr><td>Ver o <code>NULL</code> no terminal</td><td><code>.nullvalue NULL</code></td><td>Procurar o texto <code>'NULL'</code> com <code>WHERE email = 'NULL'</code></td></tr>
+<tr><td>Guardar "não tem" como informação</td><td>Decida e documente: <code>NULL</code> = desconhecido; <code>0</code> ou <code>''</code> = sabido</td><td>Misturar os dois na mesma coluna</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2 id="errado">Quando dá errado</h2>
+<p>O <code>NULL</code> quase nunca dá mensagem de erro. Ele dá <strong>resultado errado</strong>, o que é pior. Em cada caso, o quadro mostra o que o SQLite fez de verdade.</p>
+
+<div class="cenario">
+<strong>Procurou com <code>= NULL</code></strong>
+<pre class="file" data-file="sem-entrega.sql" data-resultado>SELECT id, data
+FROM pedidos
+WHERE entregue_em = NULL;
+</pre>
+<p><strong>O que acontece:</strong> zero linhas, embora 5 pedidos (86 a 90) não tenham sido entregues. <code>entregue_em = NULL</code> é sempre "não sei", e o <code>WHERE</code> barra tudo.</p>
+<p><strong>Como consertar:</strong> <code>WHERE entregue_em IS NULL</code> (aula <a href="is-null.html">IS NULL e IS NOT NULL</a>).</p>
+</div>
+
+<div class="cenario">
+<strong>Procurou a palavra <code>'NULL'</code></strong>
+<pre class="file" data-file="palavra-null.sql" data-resultado>SELECT nome
+FROM clientes
+WHERE email = 'NULL';
+</pre>
+<p><strong>O que acontece:</strong> zero linhas. Entre aspas, <code>'NULL'</code> é um texto de quatro letras, e nenhum cliente tem esse texto como email. É comum cair nisso depois de ver "NULL" escrito no resultado ou no terminal: aquilo é só o jeito de <strong>mostrar</strong> o branco.</p>
+<p><strong>Como consertar:</strong> sem aspas, e com <code>IS</code>: <code>WHERE email IS NULL</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Um NULL dentro do <code>NOT IN</code></strong>
+<pre class="file" data-file="not-in-null.sql" data-resultado>SELECT id, nome
+FROM clientes
+WHERE id NOT IN (1, 2, NULL);
+</pre>
+<p><strong>O que acontece:</strong> zero linhas! A Ana queria todos os clientes menos o 1 e o 2. Mas <code>id NOT IN (1, 2, NULL)</code> é o mesmo que <code>id &lt;&gt; 1 AND id &lt;&gt; 2 AND id &lt;&gt; NULL</code>, e esse último pedaço é sempre "não sei". Pela tabela do <code>AND</code>, "verdadeiro AND não sei" dá "não sei". Nenhuma linha passa. (O <code>IN</code> sem o <code>NOT</code> funciona: <code>id IN (1, 2, NULL)</code> traz os clientes 1 e 2, porque "verdadeiro OR não sei" é verdadeiro.) Esse caso é raro numa lista digitada à mão, mas aparece de verdade quando a lista vem de uma <a href="subconsultas.html">subconsulta</a> que devolve algum <code>NULL</code>.</p>
+<p><strong>Como consertar:</strong> nunca deixe <code>NULL</code> numa lista de <code>NOT IN</code>: <code>WHERE id NOT IN (1, 2)</code>.</p>
+</div>
+
+<div class="cenario">
+<strong>Tentou apagar um dado obrigatório</strong>
+<p>Nem toda coluna aceita <code>NULL</code>. Quem criou a tabela pode exigir um valor com <code>NOT NULL</code> (aula <a href="not-null.html">NOT NULL</a>). Na Aurora, o nome do cliente é obrigatório:</p>
+<pre class="file" data-file="nome-null.sql" data-resultado data-erro>UPDATE clientes
+SET nome = NULL
+WHERE id = 1;
+</pre>
+<p><strong>A mensagem:</strong> <code>NOT NULL constraint failed: clientes.nome</code>, ou seja, "a restrição NOT NULL falhou: <code>clientes.nome</code>". O SQLite se recusou a deixar a coluna <code>nome</code> em branco. (O <code>UPDATE</code>, que muda dados, tem aula própria: <a href="update.html">UPDATE</a>. No editor ele não estraga nada: cada Rodar começa com o banco limpo.)</p>
+<p><strong>Como consertar:</strong> uma coluna <code>NOT NULL</code> sempre precisa de um valor de verdade.</p>
+</div>
+
+<div class="note">
+<strong>Nos outros bancos</strong>
+<ul>
+  <li><strong>A regra do <code>= NULL</code> é a mesma</strong> no MySQL, no PostgreSQL e no SQL Server: <code>7 = NULL</code> dá <code>NULL</code>, e a forma certa é <code>IS NULL</code>. No SQL Server existe uma opção antiga, <code>SET ANSI_NULLS OFF</code>, que fazia <code>= NULL</code> "funcionar"; a documentação da Microsoft diz que ela está obsoleta e que, desde o SQL Server 2017, <code>ANSI_NULLS</code> fica sempre ligado. Não conte com ela.</li>
+  <li><strong>A posição do NULL no <code>ORDER BY</code> muda.</strong> No MySQL, como no SQLite, os <code>NULL</code> vêm primeiro na ordem crescente. No PostgreSQL é o contrário: por padrão, os <code>NULL</code> ficam no <strong>fim</strong> da ordem crescente e no começo da decrescente; ele também aceita <code>NULLS FIRST</code> e <code>NULLS LAST</code>. Se a posição importa, escreva <code>NULLS FIRST</code>/<code>NULLS LAST</code> no SQLite e no PostgreSQL, em vez de depender do padrão.</li>
+  <li><strong>Igualdade que aceita NULL.</strong> Para comparar dois valores tratando <code>NULL</code> como igual a <code>NULL</code>, o PostgreSQL usa <code>IS NOT DISTINCT FROM</code> (do SQL padrão) e o MySQL tem o operador <code>&lt;=&gt;</code>. Isso fica para a próxima aula.</li>
+</ul>
+</div>
+
+<hr>
+
+<h2>Referência rápida</h2>
+<div class="table-wrap">
+<table class="ref">
+<tr><th>Expressão</th><th>Resultado</th><th>Por quê</th></tr>
+<tr><td><code>NULL = NULL</code></td><td><code>NULL</code></td><td>Dois desconhecidos podem ou não ser iguais</td></tr>
+<tr><td><code>x = NULL</code>, <code>x &lt;&gt; NULL</code>, <code>x &gt; NULL</code></td><td><code>NULL</code></td><td>Comparar com desconhecido dá desconhecido</td></tr>
+<tr><td><code>NULL AND 0</code></td><td><code>0</code></td><td>Um lado falso já basta</td></tr>
+<tr><td><code>NULL AND 1</code></td><td><code>NULL</code></td><td>Depende do desconhecido</td></tr>
+<tr><td><code>NULL OR 1</code></td><td><code>1</code></td><td>Um lado verdadeiro já basta</td></tr>
+<tr><td><code>NULL OR 0</code></td><td><code>NULL</code></td><td>Depende do desconhecido</td></tr>
+<tr><td><code>NOT NULL</code></td><td><code>NULL</code></td><td>O contrário de "não sei" é "não sei"</td></tr>
+<tr><td><code>10 + NULL</code>, <code>'a' || NULL</code></td><td><code>NULL</code></td><td>Conta com desconhecido</td></tr>
+<tr><td><code>typeof(NULL)</code></td><td><code>null</code></td><td>Tipo próprio; <code>''</code> e <code>'NULL'</code> são <code>text</code></td></tr>
+<tr><td><code>WHERE condição</code></td><td>Só passa o verdadeiro</td><td>Falso e <code>NULL</code> ficam de fora</td></tr>
+<tr><td><code>ORDER BY coluna</code></td><td><code>NULL</code> primeiro (no SQLite)</td><td>Use <code>NULLS LAST</code> para mudar</td></tr>
+<tr><td><code>.nullvalue TEXTO</code></td><td>Mostra o <code>NULL</code> no terminal</td><td>Comando do programa <code>sqlite3</code>, não SQL</td></tr>
+</table>
+</div>
+
+<hr>
+
+<h2>Exercícios</h2>
+
+<div class="mc" data-answer="3">
+<p class="mc-q">1. O cliente 7 tem email <code>NULL</code>. O que isso quer dizer?</p>
+<label><input type="radio" name="q1"> Que o email dele é a palavra "NULL"</label>
+<label><input type="radio" name="q1"> Que o email dele é um texto vazio</label>
+<label><input type="radio" name="q1"> Que o email é desconhecido: não há valor guardado</label>
+<label><input type="radio" name="q1"> Que o cadastro dele está com erro e não pode ser lido</label>
+</div>
+
+<div class="mc" data-answer="2">
+<p class="mc-q">2. Quantas linhas <code>SELECT nome FROM clientes WHERE email = NULL;</code> devolve, sabendo que 3 clientes não têm email?</p>
+<label><input type="radio" name="q2"> 3</label>
+<label><input type="radio" name="q2"> 0, sem erro</label>
+<label><input type="radio" name="q2"> 27</label>
+<label><input type="radio" name="q2"> Nenhuma, com uma mensagem de erro</label>
+</div>
+
+<div class="exercise">
+<h3>3. Verdadeiro, falso ou desconhecido?</h3>
+<p>Escreva o resultado que o SQLite mostra (<code>1</code>, <code>0</code> ou <code>NULL</code>):</p>
+<div class="ex-code">NULL OR 1 → <input data-answer="1" aria-label="resultado de NULL OR 1"><br>
+NULL AND 0 → <input data-answer="0" aria-label="resultado de NULL AND 0"><br>
+NULL = NULL → <input data-answer="NULL" aria-label="resultado de NULL = NULL"></div>
+</div>
+
+<div class="mc" data-answer="4">
+<p class="mc-q">4. Quanto dá <code>SELECT 5 * NULL;</code>?</p>
+<label><input type="radio" name="q4"> 0</label>
+<label><input type="radio" name="q4"> 5</label>
+<label><input type="radio" name="q4"> Uma mensagem de erro</label>
+<label><input type="radio" name="q4"> <code>NULL</code></label>
+</div>
+
+<div class="mc" data-answer="1">
+<p class="mc-q">5. A Aurora tem 6 fornecedores, e 2 têm <code>estado</code> <code>NULL</code>. <code>WHERE estado = 'PI'</code> traz 2. Quantos traz <code>WHERE estado &lt;&gt; 'PI'</code>?</p>
+<label><input type="radio" name="q5"> 2, porque os fornecedores com estado NULL não passam em nenhuma das duas</label>
+<label><input type="radio" name="q5"> 4, porque 6 menos 2 dá 4</label>
+<label><input type="radio" name="q5"> 6</label>
+<label><input type="radio" name="q5"> 0</label>
+</div>
+
+<h3>Missão final: os fornecedores de fora do Piauí</h3>
+
+<div class="trysql" data-goal="linhas:4">
+<p class="try-task"><strong>Missão:</strong> a Ana quer todos os fornecedores que <strong>não</strong> ficam no Piauí, inclusive os estrangeiros. A consulta abaixo só traz 2, porque os estrangeiros têm <code>estado</code> <code>NULL</code>. Faça ela trazer os 4. Dica: os estrangeiros podem ser achados por outra coluna que não tem <code>NULL</code>, a <code>pais</code>, ou pelo <code>IS NULL</code> que você viu de relance nesta aula.</p>
+<pre class="script" data-file="fornecedores.sql">SELECT nome, estado, pais
+FROM fornecedores
+WHERE estado &lt;&gt; 'PI';
+</pre>
+<pre class="solucao" data-file="fornecedores.sql">SELECT nome, estado, pais
+FROM fornecedores
+WHERE estado &lt;&gt; 'PI' OR pais &lt;&gt; 'Brasil';
+</pre>
+</div>
+
+<p>As duas soluções funcionam: <code>WHERE estado &lt;&gt; 'PI' OR pais &lt;&gt; 'Brasil'</code> e <code>WHERE estado &lt;&gt; 'PI' OR estado IS NULL</code>. Na primeira, para a Lusitana, fica "não sei OR verdadeiro", que é verdadeiro.</p>
+
+<hr>
+
+<h2>Resumo</h2>
+<ul>
+  <li><code>NULL</code> é a <strong>falta de valor</strong>: desconhecido, ainda não aconteceu ou não se aplica. Não é <code>0</code>, nem <code>''</code>, nem <code>'NULL'</code>.</li>
+  <li>Comparar qualquer coisa com <code>NULL</code> (até <code>NULL = NULL</code>) dá <code>NULL</code>, o "não sei". Por isso <code>WHERE x = NULL</code> e <code>WHERE x &lt;&gt; NULL</code> devolvem <strong>zero linhas</strong>, sem erro.</li>
+  <li>O SQL usa três valores: verdadeiro, falso e desconhecido. <code>NULL AND 0</code> = 0, <code>NULL OR 1</code> = 1; o resto com <code>NULL</code> dá <code>NULL</code>.</li>
+  <li>O <code>WHERE</code> só deixa passar o verdadeiro. Linhas com <code>NULL</code> somem tanto do "sim" quanto do "não": o total pode não fechar.</li>
+  <li>Contas e textos com <code>NULL</code> viram <code>NULL</code>. No <code>ORDER BY</code> do SQLite, o <code>NULL</code> vem primeiro; no <code>DISTINCT</code>, os <code>NULL</code> viram um grupo só.</li>
+  <li>No terminal, o <code>NULL</code> aparece em branco; <code>.nullvalue NULL</code> mostra. Para procurar, use <code>IS NULL</code>: é a próxima aula.</li>
+</ul>
+
+<div class="pager"></div>
+
+</div>
+</main>
+</div>
+<script src="assets/site.js"></script>
+</body>
+</html>
