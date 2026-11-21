@@ -46,6 +46,7 @@ node tools/testar-missoes.js pagina.html     # só estas páginas (-q mostra só
 node tools/testar-missoes.js --nativo pagina.html   # compara também com o sqlite3 do laboratório
 node tools/testar-navegador.js --todas       # abre as páginas num Chromium sem janela (precisa do puppeteer-core)
 node tools/sim.js consulta.sql               # roda um SQL como o editor (ou: echo "SELECT 1;" | node tools/sim.js -)
+bash tools/checar-privacidade.sh             # páginas e histórico; lista extra: PROIBIDO=lista.txt
 ```
 
 ## Publicar no GitHub Pages
