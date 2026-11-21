@@ -12,9 +12,9 @@
 - `.trysql`: meta conhecida/regex válida, um só `pre.script`, missão com `pre.solucao`, inicial NÃO cumpre, solução cumpre; caixa livre roda sem erro (ou `data-erro` na div).
 - `pre.file[data-resultado]`: erro só com `data-erro`; `data-erro` sem erro = FALHA.
 - Todo `<pre>`: `<` e `&` sem escape = FALHA (o `>` pode ficar cru); entidade desconhecida em pre de código = FALHA.
-- Privacidade (`/home/admin`, `wallyson` exceto `wallysondevs.github.io`, `ip-172-`, o IP da VPS, `guia-sql-lab`) = FALHA. Link para fora da NIVEIS, SQL > 1,5 s, SELECT > 500 linhas, página sem missão = aviso.
+- Privacidade (`/home/admin`, nome de usuário real, `ip-172-`, o IP da VPS, `guia-sql-lab`) = FALHA. Links para `wallysondevs.github.io` passam. Link para fora da NIVEIS, SQL > 1,5 s, SELECT > 500 linhas, página sem missão = aviso.
 - `--nativo`: roda cada SQL em `~/guia-sql-lab/src/sqlite3 -bail -batch -cmd ".read aurora.sql" :memory:` e compara com a saída canônica (o EXPLAIN QUERY PLAN do editor é convertido na árvore do CLI; SQL com comando de ponto e a trava não são comparados). Diferença = aviso + seção da página em `tools/DIFERENCAS.md` (reescrita a cada run, com trava `.lock`; o cabeçalho sempre vem do testador). **Os autores rodam --nativo e o arquivo muda sozinho: o coordenador commita o DIFERENCAS.md quando quiser.**
-- Páginas de teste do próprio testador: `tools/teste/erros-de-proposito.html` (12 FALHAs esperadas, uma de cada tipo), `tools/teste/nativo-bateria.html` (formatos de número, math, JSON, FTS5, dbstat, datas, erros: 0 diferenças), `tools/teste/wallyson.html` (2 FALHAs esperadas).
+- Páginas de teste do próprio testador: `tools/teste/erros-de-proposito.html` (12 FALHAs esperadas, uma de cada tipo), `tools/teste/nativo-bateria.html` (formatos de número, math, JSON, FTS5, dbstat, datas, erros: 0 diferenças), `tools/teste/privacidade.html` (2 FALHAs esperadas).
 
 ## PRONTO (commits de 18/10)
 - 480fd75 testar-missoes.js + páginas de teste + DIFERENCAS.md
