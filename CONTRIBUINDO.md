@@ -9,7 +9,7 @@ O guia é uma **escola**, estilo W3Schools, para quem **nunca mexeu num banco de
 Antes de tudo, leia o `RECURSOS.md`: onde trabalhar (VPS) e como.
 
 ## 1. Esqueleto do arquivo
-Use como modelo a estrutura de `/home/admin/guia-html/titulos.html` (cabeçalho, `<main>`, blocos, rodapé). Troque:
+Use como modelo a estrutura de `/home/ana/guia-html/titulos.html` (cabeçalho, `<main>`, blocos, rodapé). Troque:
 - `<title>SQL TEMA — descrição | Guia SQL</title>`;
 - `<h1>SQL <span class="hl">TEMA</span></h1>`;
 - a caixa `.tryhtml` por **`.trysql`**.
@@ -155,7 +155,7 @@ Do notebook: `~/guia-sql-lab/testar [--nativo] [-q] pagina.html` (já com `timeo
 - Uma linha por item, com o número da linha no HTML: `ok`, `FALHA` (precisa consertar) ou `aviso` (olhe, mas não bloqueia). Código de saída: 0 = sem FALHA; 1 = alguma FALHA; 2 = página não encontrada.
 - Em cada `.trysql`: meta conhecida e regex válida, um só `pre.script`, missão com `pre.solucao`, **o inicial falha** a meta, **a solução passa**. Caixa livre: o SQL roda sem erro (ou com `data-erro`).
 - Cada `pre.file[data-resultado]` roda: erro só com `data-erro`.
-- Também: `<`/`&` sem escape nos `pre`, link para página fora da NIVEIS (aviso), dado da máquina real (`/home/admin`, `ip-172-…` → FALHA), SQL que demora mais de 1,5 s ou devolve mais de 500 linhas (aviso), página sem missão (aviso).
+- Também: `<`/`&` sem escape nos `pre`, link para página fora da NIVEIS (aviso), dado da máquina real (caminho com usuário real, `ip-172-…` → FALHA), SQL que demora mais de 1,5 s ou devolve mais de 500 linhas (aviso), página sem missão (aviso).
 - `--nativo` roda cada SQL também no `sqlite3` do lab (`sqlite3 -bail -batch`, com a Loja Aurora carregada) e compara a saída canônica e o erro; diferença vira aviso e fica registrada em `tools/DIFERENCAS.md`, na seção da página.
 - `sim.js` serve para colher a saída real que você vai citar no texto da aula.
 - No navegador de verdade (Chromium da VPS): `node tools/testar-navegador.js pagina.html` — ver `tools/ESTADO.md`.
